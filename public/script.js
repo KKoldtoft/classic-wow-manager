@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // User is logged in, display avatar
             const avatarUrl = user.avatar
                 ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`
-                : `https://cdn.discordapp.com/embed/avatars/${parseInt(user.discriminator) % 5}.png`; // Default Discord avatar
+                : `https://cdn.discordapp.com/embed/avatars/${parseInt(user.discriminator) % 5}.png`;
 
             authContainer.innerHTML = `
                 <img src="${avatarUrl}" alt="${user.username}'s avatar" class="user-avatar" title="Logged in as ${user.username}#${user.discriminator || ''}\nClick to Logout">
@@ -64,15 +64,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // Check if data.scheduledEvents exists and is an array with items
                 if (data && data.scheduledEvents && Array.isArray(data.scheduledEvents) && data.scheduledEvents.length > 0) {
                     eventsList.innerHTML = ''; // Clear previous message
-                    data.scheduledEvents.forEach(event => { // Iterate over the correct array
+                    data.scheduledEvents.forEach(event => {
                         const eventDiv = document.createElement('div');
                         eventDiv.classList.add('event-item');
-                        // Customize how you display event data based on Raid-Helper API response structure
-                        // Example properties from your Postman response: title, description, postTime, leaderName, channelName
-                        const eventPostDate = new Date(event.postTime * 1000); // postTime is Unix timestamp (seconds)
+
+                        // Convert Unix timestamps (seconds) to Date objects (milliseconds)
+                        const eventStartDate = new Date(event.startTime * 1000);
+                        const eventEndDate = new Date(event.endTime * 1000);
+
+                        // Format for CET (Central European Time)
+                        const optionsDate = { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Europe/Copenhagen' };
+                        const optionsTime = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Copenhagen' };
+
+                        const formattedDay = eventStartDate.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Europe/Copenhagen' });
+                        const formattedDate = eventStartDate.toLocaleDateString('en-GB', optionsDate).split(',')[0]; // Format as DD/MM/YYYY, then adjust to DD-MM-YYYY
+                        const formattedStartTime = eventStartDate.toLocaleTimeString('en-GB', optionsTime);
+                        const formattedEndTime = eventEndDate.toLocaleTimeString('en-GB', optionsTime);
+                        
+                        // Example: "Sunday" (27-07-2026) at 20:00 - 23:00
+
                         eventDiv.innerHTML = `
                             <h3>${event.title}</h3>
-                            <p><strong>Posted:</strong> ${eventPostDate.toLocaleDateString()} at ${eventPostDate.toLocaleTimeString()}</p>
+                            <p>
+                                <strong>When:</strong> ${formattedDay} (${formattedDate}) at ${formattedStartTime} - ${formattedEndTime} CET
+                            </p>
                             <p><strong>Leader:</strong> ${event.leaderName}</p>
                             <p><strong>Channel:</strong> #${event.channelName}</p>
                             <p><strong>Description:</strong> ${event.description || 'No description'}</p>
