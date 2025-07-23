@@ -6,6 +6,7 @@ const session = require('express-session'); // For session management
 const passport = require('passport'); // For authentication
 const DiscordStrategy = require('passport-discord').Strategy; // Discord OAuth strategy
 const { Pool } = require('pg'); // For PostgreSQL database
+const path = require('path'); // Node.js path module for serving static files
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,17 +21,17 @@ const pool = new Pool({
   }
 });
 
-let dbConnectionStatus = 'Connecting...';
+let dbConnectionStatus = 'Connecting...'; // Initial status for display
 
 pool.connect()
   .then(client => {
     console.log('Connected to PostgreSQL database!');
-    dbConnectionStatus = 'Connected';
-    client.release();
+    dbConnectionStatus = 'Connected'; // Update status on success
+    client.release(); // Release the client back to the pool immediately after testing connection
   })
   .catch(err => {
     console.error('Error connecting to PostgreSQL database:', err.stack);
-    dbConnectionStatus = 'Failed to Connect';
+    dbConnectionStatus = 'Failed to Connect'; // Update status on failure
   });
 
 // --- Session Configuration ---
@@ -75,43 +76,9 @@ passport.use(new DiscordStrategy({
 
 // --- Express Routes ---
 
-// Serve static files (for CSS and potentially other frontend assets)
-app.use(express.static('public'));
-
-// Root route - serves the main HTML page
-app.get('/', (req, res) => {
-  // This will be replaced by serving an actual HTML file in Step 5
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Classic WoW Manager</title>
-        <link rel="stylesheet" href="/style.css">
-        <!-- Font Awesome for Discord icon -->
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    </head>
-    <body>
-        <div class="top-bar">
-            <div class="app-title">Classic WoW Manager</div>
-            <div id="auth-container">
-                <!-- Login button or user avatar will be injected here by JavaScript -->
-            </div>
-        </div>
-
-        <div class="content">
-            <h1>Hello from Heroku!</h1>
-            <p>This is my Node.js app with database support.</p>
-            <p>Database Status: <strong>${dbConnectionStatus}</strong></p>
-            <p>Visit <a href="/db-test">/db-test</a> to confirm database query.</p>
-        </div>
-
-        <script src="/script.js"></script>
-    </body>
-    </html>
-  `);
-});
+// Serve static files from the 'public' directory
+// This line MUST be before any routes that might conflict with static file names.
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Discord OAuth routes
 app.get('/auth/discord', passport.authenticate('discord'));
@@ -151,6 +118,12 @@ app.get('/user', (req, res) => {
   }
 });
 
+// Route to get database connection status (for frontend to update dynamically if needed)
+app.get('/api/db-status', (req, res) => {
+  res.json({ status: dbConnectionStatus });
+});
+
+
 // Existing route to test database connection and fetch data
 app.get('/db-test', async (req, res) => {
   try {
@@ -170,6 +143,13 @@ app.get('/db-test', async (req, res) => {
     });
   }
 });
+
+// NEW: Catch-all route to serve your main index.html file for all frontend routes
+// This MUST be the LAST route definition, after all API routes.
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 
 // --- Server Start ---
 app.listen(PORT, () => {
