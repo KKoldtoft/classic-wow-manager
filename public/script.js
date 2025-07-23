@@ -61,29 +61,27 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const response = await fetch('/api/events');
                 const data = await response.json();
 
-                if (response.ok) {
-                    if (data && data.length > 0) {
-                        eventsList.innerHTML = ''; // Clear previous message
-                        data.forEach(event => {
-                            const eventDate = new Date(event.date); // Assuming 'date' is a valid date string
-                            eventDiv = document.createElement('div'); // Define eventDiv here
-                            eventDiv.classList.add('event-item');
-                            eventDiv.innerHTML = `
-                                <h3>${event.title}</h3>
-                                <p><strong>Date:</strong> ${eventDate.toLocaleDateString()}</p>
-                                <p><strong>Time:</strong> ${event.time}</p>
-                                <p><strong>Description:</strong> ${event.description || 'No description'}</p>
-                                <p><strong>Signed up:</strong> ${event.signups_count || 0}</p>
-                                <hr>
-                            `;
-                            eventsList.appendChild(eventDiv);
-                        });
-                    } else {
-                        eventsList.innerHTML = '<p>No upcoming events found for this server.</p>';
-                    }
+                // Check if data.scheduledEvents exists and is an array with items
+                if (data && data.scheduledEvents && Array.isArray(data.scheduledEvents) && data.scheduledEvents.length > 0) {
+                    eventsList.innerHTML = ''; // Clear previous message
+                    data.scheduledEvents.forEach(event => { // Iterate over the correct array
+                        const eventDiv = document.createElement('div');
+                        eventDiv.classList.add('event-item');
+                        // Customize how you display event data based on Raid-Helper API response structure
+                        // Example properties from your Postman response: title, description, postTime, leaderName, channelName
+                        const eventPostDate = new Date(event.postTime * 1000); // postTime is Unix timestamp (seconds)
+                        eventDiv.innerHTML = `
+                            <h3>${event.title}</h3>
+                            <p><strong>Posted:</strong> ${eventPostDate.toLocaleDateString()} at ${eventPostDate.toLocaleTimeString()}</p>
+                            <p><strong>Leader:</strong> ${event.leaderName}</p>
+                            <p><strong>Channel:</strong> #${event.channelName}</p>
+                            <p><strong>Description:</strong> ${event.description || 'No description'}</p>
+                            <hr>
+                        `;
+                        eventsList.appendChild(eventDiv);
+                    });
                 } else {
-                    eventsList.innerHTML = `<p>Error fetching events: ${data.message || 'Unknown error'}</p>`;
-                    console.error('Error from /api/events:', data);
+                    eventsList.innerHTML = '<p>No upcoming events found for this server.</p>';
                 }
             } catch (error) {
                 eventsList.innerHTML = '<p>An error occurred while fetching events.</p>';
