@@ -1,12 +1,12 @@
 // index.cjs
-require('dotenv').config(); // Load environment variables from .env file
+require('dotenv').config();
 
 const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
 const DiscordStrategy = require('passport-discord').Strategy;
 const { Pool } = require('pg');
-const path = require('path'); // Node.js path module for serving static files
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,27 +21,27 @@ const pool = new Pool({
   }
 });
 
-let dbConnectionStatus = 'Connecting...'; // Initial status for display
+let dbConnectionStatus = 'Connecting...';
 
 pool.connect()
   .then(client => {
     console.log('Connected to PostgreSQL database!');
-    dbConnectionStatus = 'Connected'; // Update status on success
-    client.release(); // Release the client back to the pool immediately after testing connection
+    dbConnectionStatus = 'Connected';
+    client.release();
   })
   .catch(err => {
     console.error('Error connecting to PostgreSQL database:', err.stack);
-    dbConnectionStatus = 'Failed to Connect'; // Update status on failure
+    dbConnectionStatus = 'Failed to Connect';
   });
 
 // --- Session Configuration ---
 app.use(session({
-  secret: process.env.SESSION_SECRET, // Use a strong, random string from .env
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    maxAge: 60 * 60 * 1000, // 1 hour
-    secure: process.env.NODE_ENV === 'production' // Use secure cookies in production (HTTPS)
+    maxAge: 60 * 60 * 1000,
+    secure: process.env.NODE_ENV === 'production'
   }
 }));
 
@@ -49,35 +49,30 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Passport serialization and deserialization
-// This determines what user data is stored in the session
 passport.serializeUser((user, done) => {
-  done(null, user); // Store the entire user object in the session
+  done(null, user);
 });
 
 passport.deserializeUser((obj, done) => {
-  done(null, obj); // Retrieve the user object from the session
+  done(null, obj);
 });
 
-// Discord OAuth2 Strategy
 passport.use(new DiscordStrategy({
     clientID: process.env.DISCORD_CLIENT_ID,
     clientSecret: process.env.DISCORD_CLIENT_SECRET,
     callbackURL: `${process.env.APP_BASE_URL}/auth/discord/callback`,
-    scope: ['identify', 'email'] // Request user ID, username, avatar, and email
+    scope: ['identify', 'email']
 },
 (accessToken, refreshToken, profile, done) => {
-    // This function is called when a user successfully authenticates with Discord.
-    // In a real app, you would save/update user data in your database here.
-    // For now, we'll just pass the Discord profile directly.
     return done(null, profile);
 }));
 
 // --- Express Routes ---
 
-// Serve static files from the 'public' directory
-// This line MUST be before any routes that might conflict with static file names.
-app.use(express.static('public'));
+// NEW: Place express.static at the very top of your route definitions,
+// before ANY other app.get(), app.post(), etc. that might conflict.
+app.use(express.static(path.join(__dirname, 'public')));
+
 
 // Discord OAuth routes
 app.get('/auth/discord', passport.authenticate('discord'));
@@ -140,17 +135,16 @@ app.get('/db-test', async (req, res) => {
   }
 });
 
-// NEW: Explicitly serve index.html for the root path
-// This helps ensure the main page is always served correctly.
+// Explicitly serve index.html for the root path
 app.get('/', (req, res) => {
-  res.sendFile(path.resolve('public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 
 // Catch-all route to serve your main index.html file for all other frontend routes.
-// This MUST be the LAST route definition in your application, after all other API/specific routes.
+// This MUST be the LAST route definition in your application.
 app.get('*', (req, res) => {
-  res.sendFile(path.resolve('public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 
