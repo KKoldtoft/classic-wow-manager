@@ -1,7 +1,7 @@
 // public/script.js
 document.addEventListener('DOMContentLoaded', async () => {
     const authContainer = document.getElementById('auth-container');
-    const eventsList = document.getElementById('events-list'); // Removed fetchEventsButton ref
+    const eventsList = document.getElementById('events-list');
 
     // Function to fetch user status
     async function getUserStatus() {
@@ -24,13 +24,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Check if data.scheduledEvents exists and is an array with items
             if (data && data.scheduledEvents && Array.isArray(data.scheduledEvents) && data.scheduledEvents.length > 0) {
-                // Sort events by startTime (newest first)
-                data.scheduledEvents.sort((a, b) => b.startTime - a.startTime);
+                // Fix for sorting: Sort by startTime (newest first).
+                // Ensure comparison is done on milliseconds for proper sorting.
+                data.scheduledEvents.sort((a, b) => (b.startTime * 1000) - (a.startTime * 1000));
 
                 eventsList.innerHTML = ''; // Clear previous message
 
-                let firstTodayEventRendered = false; // Flag to add spacer after the last 'Today' event
-                let otherEventsExist = false; // Flag to check if there are non-today events
+                let todayEventsRenderedCount = 0; // Track how many 'Today' events are rendered
+                let totalEventsRendered = 0; // Track total events for spacer logic
 
                 // Get today's date string in CET for comparison
                 const todayInCET = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Copenhagen' });
@@ -56,14 +57,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     let dateDisplayHTML;
                     if (isToday) {
                         dateDisplayHTML = `<span class="event-today-text">Today</span>`;
-                        // Add a class to the panel for specific 'Today' styling if needed
-                        eventDiv.classList.add('event-panel-today'); 
-                        firstTodayEventRendered = true; // Mark that at least one 'Today' event has been seen
+                        eventDiv.classList.add('event-panel-today'); // Add class for today's panel styling
+                        todayEventsRenderedCount++;
                     } else {
                         dateDisplayHTML = `${formattedDayName} (${formattedDate})`;
-                        if (firstTodayEventRendered) { // If we've passed all 'Today' events, mark other events exist
-                            otherEventsExist = true;
-                        }
                     }
 
                     eventDiv.innerHTML = `
@@ -72,17 +69,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <p><i class="far fa-calendar-alt event-icon"></i> ${dateDisplayHTML}</p>
                             <p><i class="far fa-clock event-icon"></i> ${formattedStartTime}</p>
                         </div>
-                        ${event.imageUrl ? `<img src="${event.imageUrl}" alt="${event.title} image" class="event-image">` : ''}
-                    `;
+                        `;
                     eventsList.appendChild(eventDiv);
-                });
+                    totalEventsRendered++;
 
-                // Add spacer after the last 'Today' event if there are other events below it
-                if (firstTodayEventRendered && otherEventsExist) {
-                    const spacerDiv = document.createElement('div');
-                    spacerDiv.classList.add('today-events-spacer');
-                    eventsList.appendChild(spacerDiv);
-                }
+                    // Add spacer AFTER the last 'Today' event, if it's a 'Today' event
+                    // and there are still other events left to render (implies non-Today events follow)
+                    if (isToday && todayEventsRenderedCount === data.scheduledEvents.filter(e => new Date(e.startTime * 1000).toLocaleDateString('en-GB', { timeZone: 'Europe/Copenhagen' }) === todayInCET).length && totalEventsRendered < data.scheduledEvents.length) {
+                        const spacerDiv = document.createElement('div');
+                        spacerDiv.classList.add('today-events-spacer');
+                        eventsList.appendChild(spacerDiv);
+                    }
+                });
 
             } else {
                 eventsList.innerHTML = '<p>No upcoming events found for this server.</p>';
@@ -109,8 +107,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 window.location.href = '/auth/logout';
             });
             
-            // NEW: Fetch events automatically on page load if user is logged in
-            fetchAndDisplayEvents();
+            fetchAndDisplayEvents(); // NEW: Fetch events automatically on page load if user is logged in
 
         } else {
             authContainer.innerHTML = `
@@ -119,7 +116,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     Sign in with Discord
                 </button>
             `;
-            // If not logged in, clear events or show default message
             eventsList.innerHTML = '<p>Please sign in with Discord to view upcoming events.</p>';
         }
     }
