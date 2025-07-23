@@ -69,17 +69,8 @@ passport.use(new DiscordStrategy({
 
 // --- Express Routes ---
 
-// TEMPORARY DIAGNOSTIC ROUTE - REMOVE AFTER TESTING
-// This route is placed very high to ensure it catches /script.js requests
-// before other middleware or catch-all routes.
-app.get('/script.js', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'script.js'));
-});
-// END TEMPORARY DIAGNOSTIC ROUTE
-
-
-// Critical: Place express.static as the main middleware to handle static files.
-// It should be after the temporary diagnostic route, but before other app.get() routes.
+// Critical: Place express.static as the FIRST middleware to handle static files.
+// This ensures /style.css and /script.js are served correctly without falling through to other routes.
 app.use(express.static(path.join(__dirname, 'public')));
 
 
@@ -141,6 +132,7 @@ app.get('/db-test', async (req, res) => {
 });
 
 // Explicitly serve index.html for the root path.
+// This should be the last app.get() route related to serving HTML directly.
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
