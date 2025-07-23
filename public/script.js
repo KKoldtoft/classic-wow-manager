@@ -64,14 +64,33 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // Check if data.scheduledEvents exists and is an array with items
                 if (data && data.scheduledEvents && Array.isArray(data.scheduledEvents) && data.scheduledEvents.length > 0) {
                     eventsList.innerHTML = ''; // Clear previous message
-                    data.scheduledEvents.forEach(event => {
-                        const eventDiv = document.createElement('div');
-                        // Add a class for the new panel styling
-                        eventDiv.classList.add('event-panel');
 
-                        // Convert Unix timestamps (seconds) to Date objects (milliseconds)
-                        const eventStartDate = new Date(event.startTime * 1000);
-                        // const eventEndDate = new Date(event.endTime * 1000); // Not needed for display
+                    const todayEvents = [];
+                    const otherEvents = [];
+                    // Get today's date string in CET for comparison
+                    const todayInCET = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Copenhagen' });
+
+                    data.scheduledEvents.forEach(event => {
+                        const eventStartDate = new Date(event.startTime * 1000); // Convert Unix timestamp (seconds) to Date object (milliseconds)
+                        const eventDateInCET = eventStartDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Copenhagen' });
+
+                        if (eventDateInCET === todayInCET) {
+                            todayEvents.push(event);
+                        } else {
+                            otherEvents.push(event);
+                        }
+                    });
+
+                    // Sort events: Today's events first, then others
+                    const sortedEvents = todayEvents.concat(otherEvents);
+
+                    let todayEventsRendered = 0; // Track how many "Today" events are rendered
+
+                    sortedEvents.forEach(event => {
+                        const eventDiv = document.createElement('div');
+                        eventDiv.classList.add('event-panel'); // Apply panel styling
+
+                        const eventStartDate = new Date(event.startTime * 1000); // Re-create for formatting
 
                         // --- Formatting for CET (Central European Time) ---
                         const optionsDay = { weekday: 'long', timeZone: 'Europe/Copenhagen' };
@@ -82,18 +101,34 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const formattedDate = eventStartDate.toLocaleDateString('en-GB', optionsDate); // e.g., "27/07/2026"
                         const formattedStartTime = eventStartDate.toLocaleTimeString('en-GB', optionsTime); // e.g., "20:00"
 
+                        // Determine if event is today and format display accordingly
+                        const isToday = eventStartDate.toLocaleDateString('en-GB', { timeZone: 'Europe/Copenhagen' }) === todayInCET;
+                        
+                        let dateDisplayHTML;
+                        if (isToday) {
+                            dateDisplayHTML = `<span class="event-today-text">Today</span>`;
+                            todayEventsRendered++; // Increment count for spacing
+                        } else {
+                            dateDisplayHTML = `${formattedDayName} (${formattedDate})`;
+                        }
+
                         eventDiv.innerHTML = `
                             <h3>${event.title}</h3>
                             <div class="event-time-info">
-                                <p><i class="far fa-calendar-alt event-icon"></i> ${formattedDayName} (${formattedDate})</p>
+                                <p><i class="far fa-calendar-alt event-icon"></i> ${dateDisplayHTML}</p>
                                 <p><i class="far fa-clock event-icon"></i> ${formattedStartTime}</p>
                             </div>
-                            <div class="event-details">
-                                <p class="event-description-hidden">${event.description || 'No description'}</p>
-                            </div>
-                        `;
+                            `;
                         eventsList.appendChild(eventDiv);
                     });
+
+                    // Add spacing after "Today" events if any were found
+                    if (todayEventsRendered > 0 && otherEvents.length > 0) {
+                        const spacerDiv = document.createElement('div');
+                        spacerDiv.classList.add('today-events-spacer');
+                        eventsList.appendChild(spacerDiv);
+                    }
+
                 } else {
                     eventsList.innerHTML = '<p>No upcoming events found for this server.</p>';
                 }

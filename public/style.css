@@ -68,7 +68,7 @@ body {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* --- New Styles for Event Panels --- */
+/* --- Event Panels --- */
 .event-panel {
     background-color: #ffffff; /* White background for the panel */
     border: 1px solid #e0e0e0; /* Light border */
@@ -115,20 +115,22 @@ body {
     text-align: center;
 }
 
-.event-details p {
-    margin: 5px 0;
-    color: #666;
+/* NEW: Style for "Today" text */
+.event-today-text {
+    color: #2ECC71; /* Dark green color */
+    font-weight: bold;
 }
 
-.event-description-hidden {
-    display: none; /* Hide description as requested */
+/* NEW: Spacer after "Today" events */
+.today-events-spacer {
+    height: 30px; /* Adjust height for desired space */
+    border-bottom: 2px dashed #ccc; /* Optional: A subtle dashed line */
+    margin-bottom: 20px; /* Space after the dashed line */
+    width: 50%; /* Make the line shorter than full width */
+    margin-left: auto;
+    margin-right: auto;
 }
 
-hr {
-    border: none;
-    border-top: 1px dashed #e0e0e0; /* Dashed line separator */
-    margin: 15px 0;
-}
 
 /* Basic responsiveness */
 @media (max-width: 600px) {
