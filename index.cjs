@@ -6,7 +6,7 @@ const session = require('express-session');
 const passport = require('passport');
 const DiscordStrategy = require('passport-discord').Strategy;
 const { Pool } = require('pg');
-const path = require('path');
+const path = require('path'); // Ensure path module is imported
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -69,12 +69,12 @@ passport.use(new DiscordStrategy({
 
 // --- Express Routes ---
 
-// NEW: Place express.static at the very top of your route definitions,
-// before ANY other app.get(), app.post(), etc. that might conflict.
+// Critical: Place express.static as the FIRST middleware to handle static files.
+// This ensures /style.css and /script.js are served correctly without falling through to other routes.
 app.use(express.static(path.join(__dirname, 'public')));
 
 
-// Discord OAuth routes
+// All API and authentication routes should come AFTER express.static
 app.get('/auth/discord', passport.authenticate('discord'));
 
 app.get('/auth/discord/callback',
@@ -86,7 +86,6 @@ app.get('/auth/discord/callback',
   }
 );
 
-// Logout route
 app.get('/auth/logout', (req, res, next) => {
   req.logout((err) => {
     if (err) { return next(err); }
@@ -94,7 +93,6 @@ app.get('/auth/logout', (req, res, next) => {
   });
 });
 
-// Endpoint to get user data (for frontend)
 app.get('/user', (req, res) => {
   if (req.isAuthenticated()) {
     res.json({
@@ -110,12 +108,10 @@ app.get('/user', (req, res) => {
   }
 });
 
-// Route to get database connection status (for frontend to update dynamically if needed)
 app.get('/api/db-status', (req, res) => {
   res.json({ status: dbConnectionStatus });
 });
 
-// Existing route to test database connection and fetch data
 app.get('/db-test', async (req, res) => {
   try {
     const client = await pool.connect();
@@ -135,14 +131,15 @@ app.get('/db-test', async (req, res) => {
   }
 });
 
-// Explicitly serve index.html for the root path
+// Explicitly serve index.html for the root path.
+// This should be the last app.get() route related to serving HTML directly.
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-
-// Catch-all route to serve your main index.html file for all other frontend routes.
-// This MUST be the LAST route definition in your application.
+// Fallback for any other route that hasn't been handled.
+// This acts as a catch-all for potential client-side routing.
+// It must be AFTER ALL other specific API and HTML-serving routes.
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
