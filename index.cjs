@@ -147,7 +147,7 @@ app.get('/db-test', async (req, res) => {
 // NEW: Catch-all route to serve your main index.html file for all frontend routes
 // This MUST be the LAST route definition, after all API routes.
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.resolve('public', 'index.html'));
 });
 
 
