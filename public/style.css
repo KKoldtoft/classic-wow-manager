@@ -84,6 +84,12 @@ body {
     box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
 }
 
+/* Specific styling for today's event panel */
+.event-panel-today {
+    border-color: #2ECC71; /* Green border for today */
+    box-shadow: 0 4px 10px rgba(46, 204, 113, 0.2); /* Green glow shadow */
+}
+
 .event-panel h3 {
     color: #5865F2; /* Discord blue for titles */
     margin-top: 0;
@@ -115,20 +121,31 @@ body {
     text-align: center;
 }
 
-/* NEW: Style for "Today" text */
+/* Style for "Today" text */
 .event-today-text {
     color: #2ECC71; /* Dark green color */
     font-weight: bold;
 }
 
-/* NEW: Spacer after "Today" events */
+/* Spacer after "Today" events */
 .today-events-spacer {
     height: 30px; /* Adjust height for desired space */
     border-bottom: 2px dashed #ccc; /* Optional: A subtle dashed line */
-    margin-bottom: 20px; /* Space after the dashed line */
+    margin-top: 15px; /* Space above the dashed line */
+    margin-bottom: 30px; /* Space after the dashed line */
     width: 50%; /* Make the line shorter than full width */
     margin-left: auto;
     margin-right: auto;
+}
+
+/* NEW: Image styling for event panels */
+.event-image {
+    max-width: 100%; /* Ensure image fits within panel */
+    height: auto; /* Maintain aspect ratio */
+    display: block; /* Remove extra space below image */
+    margin-top: 15px; /* Space above the image */
+    border-radius: 8px; /* Slightly rounded corners for images */
+    object-fit: contain; /* Ensures entire image is visible, scales down if too large */
 }
 
 
