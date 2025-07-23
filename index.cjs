@@ -131,17 +131,9 @@ app.get('/db-test', async (req, res) => {
   }
 });
 
-// Explicitly serve index.html for the root path.
-// This should be the last app.get() route related to serving HTML directly.
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// Catch-all route to serve your main index.html file for all other frontend routes.
-// This MUST be the LAST route definition in your application.
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+// IMPORTANT: The app.get('/') and app.get('*') routes are REMOVED here for diagnostic purposes.
+// Your app will now only serve static files for exact matches, and API routes.
+// Requests to '/' or any unmatched path will return a 404 from Express directly.
 
 
 // --- Server Start ---
