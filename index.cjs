@@ -166,6 +166,14 @@ app.get('/api/events', async (req, res) => {
     res.json(response.data);
   } catch (error) {
     console.error('Error fetching Raid-Helper events:', error.response ? error.response.data : error.message);
+    // NEW: Log full error response for more detail
+    if (error.response) {
+      console.error('Raid-Helper API Error Response Details:', {
+          status: error.response.status,
+          headers: error.response.headers,
+          data: error.response.data
+      });
+    }
     res.status(error.response ? error.response.status : 500).json({
       message: 'Failed to fetch events from Raid-Helper.',
       error: error.response ? (error.response.data || error.message) : error.message
