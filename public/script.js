@@ -66,32 +66,31 @@ document.addEventListener('DOMContentLoaded', async () => {
                     eventsList.innerHTML = ''; // Clear previous message
                     data.scheduledEvents.forEach(event => {
                         const eventDiv = document.createElement('div');
-                        eventDiv.classList.add('event-item');
+                        // Add a class for the new panel styling
+                        eventDiv.classList.add('event-panel');
 
                         // Convert Unix timestamps (seconds) to Date objects (milliseconds)
                         const eventStartDate = new Date(event.startTime * 1000);
-                        const eventEndDate = new Date(event.endTime * 1000);
+                        // const eventEndDate = new Date(event.endTime * 1000); // Not needed for display
 
-                        // Format for CET (Central European Time)
-                        const optionsDate = { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Europe/Copenhagen' };
+                        // --- Formatting for CET (Central European Time) ---
+                        const optionsDay = { weekday: 'long', timeZone: 'Europe/Copenhagen' };
+                        const optionsDate = { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Copenhagen' };
                         const optionsTime = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Copenhagen' };
 
-                        const formattedDay = eventStartDate.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Europe/Copenhagen' });
-                        const formattedDate = eventStartDate.toLocaleDateString('en-GB', optionsDate).split(',')[0]; // Format as DD/MM/YYYY, then adjust to DD-MM-YYYY
-                        const formattedStartTime = eventStartDate.toLocaleTimeString('en-GB', optionsTime);
-                        const formattedEndTime = eventEndDate.toLocaleTimeString('en-GB', optionsTime);
-                        
-                        // Example: "Sunday" (27-07-2026) at 20:00 - 23:00
+                        const formattedDayName = eventStartDate.toLocaleDateString('en-US', optionsDay); // e.g., "Sunday"
+                        const formattedDate = eventStartDate.toLocaleDateString('en-GB', optionsDate); // e.g., "27/07/2026"
+                        const formattedStartTime = eventStartDate.toLocaleTimeString('en-GB', optionsTime); // e.g., "20:00"
 
                         eventDiv.innerHTML = `
                             <h3>${event.title}</h3>
-                            <p>
-                                <strong>When:</strong> ${formattedDay} (${formattedDate}) at ${formattedStartTime} - ${formattedEndTime} CET
-                            </p>
-                            <p><strong>Leader:</strong> ${event.leaderName}</p>
-                            <p><strong>Channel:</strong> #${event.channelName}</p>
-                            <p><strong>Description:</strong> ${event.description || 'No description'}</p>
-                            <hr>
+                            <div class="event-time-info">
+                                <p><i class="far fa-calendar-alt event-icon"></i> ${formattedDayName} (${formattedDate})</p>
+                                <p><i class="far fa-clock event-icon"></i> ${formattedStartTime}</p>
+                            </div>
+                            <div class="event-details">
+                                <p class="event-description-hidden">${event.description || 'No description'}</p>
+                            </div>
                         `;
                         eventsList.appendChild(eventDiv);
                     });

@@ -1,7 +1,7 @@
 /* public/style.css */
 body {
     margin: 0;
-    font-family: 'Inter', sans-serif; /* Using Inter font as per instructions */
+    font-family: 'Inter', sans-serif;
     background-color: #f4f4f4;
     color: #333;
 }
@@ -66,6 +66,68 @@ body {
     background-color: white;
     border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* --- New Styles for Event Panels --- */
+.event-panel {
+    background-color: #ffffff; /* White background for the panel */
+    border: 1px solid #e0e0e0; /* Light border */
+    border-radius: 10px; /* Slightly rounded corners */
+    padding: 15px 20px;
+    margin-bottom: 15px; /* Space between panels */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05); /* Subtle shadow */
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.event-panel:hover {
+    transform: translateY(-3px); /* Slight lift on hover */
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+}
+
+.event-panel h3 {
+    color: #5865F2; /* Discord blue for titles */
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1.3em;
+    border-bottom: 1px solid #f0f0f0; /* Separator under title */
+    padding-bottom: 8px;
+}
+
+.event-time-info {
+    display: flex;
+    flex-direction: column; /* Stack time and date vertically */
+    margin-bottom: 10px;
+    font-size: 0.95em;
+    color: #555;
+}
+
+.event-time-info p {
+    margin: 3px 0; /* Space between date and time lines */
+    display: flex;
+    align-items: center;
+}
+
+.event-icon {
+    margin-right: 8px; /* Space between icon and text */
+    color: #7289da; /* Discord brand color for icons */
+    font-size: 1.1em;
+    width: 20px; /* Fixed width to align text */
+    text-align: center;
+}
+
+.event-details p {
+    margin: 5px 0;
+    color: #666;
+}
+
+.event-description-hidden {
+    display: none; /* Hide description as requested */
+}
+
+hr {
+    border: none;
+    border-top: 1px dashed #e0e0e0; /* Dashed line separator */
+    margin: 15px 0;
 }
 
 /* Basic responsiveness */
