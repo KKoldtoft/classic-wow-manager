@@ -65,7 +65,7 @@ passport.use(new DiscordStrategy({
     clientID: process.env.DISCORD_CLIENT_ID,
     clientSecret: process.env.DISCORD_CLIENT_SECRET,
     callbackURL: `${process.env.APP_BASE_URL}/auth/discord/callback`,
-    scope: ['identify', 'email', 'guilds'] // Added 'guilds' scope if needed for server-specific logic later
+    scope: ['identify', 'email', 'guilds']
 },
 (accessToken, refreshToken, profile, done) => {
     return done(null, profile);
@@ -147,24 +147,18 @@ app.get('/api/events', async (req, res) => {
       return res.status(500).json({ message: 'Server configuration error: API key missing.' });
   }
 
-  // IMPORTANT: Replace 'YOUR_DISCORD_SERVER_ID' with an actual Discord Guild ID
-  // This must be a server where the Raid-Helper bot is active and you want to fetch events from.
-  const discordGuildId = '777268886939893821'; // <--- Update this line!
-  if (discordGuildId === 'YOUR_DISCORD_SERVER_ID') {
-      console.warn('Raid-Helper: YOUR_DISCORD_SERVER_ID is not set in /api/events endpoint. Please update index.cjs');
-      return res.status(400).json({ message: 'Server ID not configured for Raid-Helper API.' });
-  }
+  // IMPORTANT: This must be the actual Discord Guild ID (Server ID) where Raid-Helper bot is active.
+  const discordGuildId = '777268886939893821'; // The ID you previously confirmed.
 
+  // Use the v3 API endpoint as per Raid-Helper documentation
+  // The guildId is now part of the URL path, not a query parameter.
   try {
     const response = await axios.get(
-      'https://raid-helper.dev/api/v2/events/upcoming',
+      `https://raid-helper.dev/api/v3/servers/${discordGuildId}/scheduledevents`,
       {
         headers: {
           'Authorization': `Bearer ${raidHelperApiKey}`,
           'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
-        },
-        params: {
-            guildId: discordGuildId
         }
       }
     );
