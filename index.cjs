@@ -157,18 +157,21 @@ app.get('/api/events', async (req, res) => {
       `https://raid-helper.dev/api/v3/servers/${discordGuildId}/scheduledevents`,
       {
         headers: {
-          'Authorization': `${raidHelperApiKey}`, // Removed 'Bearer '
+          'Authorization': `Bearer ${raidHelperApiKey}`, // OR try just `${raidHelperApiKey}` if 'Bearer' causes issues
           'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
         }
       }
     );
 
+    // NEW: Log the full response data from Raid-Helper for 200 OK responses
+    console.log('Raid-Helper API Raw Response Data (200 OK):', JSON.stringify(response.data, null, 2));
+
     res.json(response.data);
   } catch (error) {
     console.error('Error fetching Raid-Helper events:', error.response ? error.response.data : error.message);
-    // NEW: Log full error response for more detail
+    // NEW: Log full error response details for non-200 responses
     if (error.response) {
-      console.error('Raid-Helper API Error Response Details:', {
+      console.error('Raid-Helper API Error Response Details (Non-200):', {
           status: error.response.status,
           headers: error.response.headers,
           data: error.response.data
