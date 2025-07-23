@@ -1,11 +1,11 @@
-// index.js
+// index.cjs
 require('dotenv').config(); // Load environment variables from .env file
 
 const express = require('express');
-const session = require('express-session'); // For session management
-const passport = require('passport'); // For authentication
-const DiscordStrategy = require('passport-discord').Strategy; // Discord OAuth strategy
-const { Pool } = require('pg'); // For PostgreSQL database
+const session = require('express-session');
+const passport = require('passport');
+const DiscordStrategy = require('passport-discord').Strategy;
+const { Pool } = require('pg');
 const path = require('path'); // Node.js path module for serving static files
 
 const app = express();
@@ -63,14 +63,13 @@ passport.deserializeUser((obj, done) => {
 passport.use(new DiscordStrategy({
     clientID: process.env.DISCORD_CLIENT_ID,
     clientSecret: process.env.DISCORD_CLIENT_SECRET,
-    callbackURL: `${process.env.APP_BASE_URL}/auth/discord/callback`, // Use APP_BASE_URL
+    callbackURL: `${process.env.APP_BASE_URL}/auth/discord/callback`,
     scope: ['identify', 'email'] // Request user ID, username, avatar, and email
 },
 (accessToken, refreshToken, profile, done) => {
     // This function is called when a user successfully authenticates with Discord.
-    // You can save/update user data in your database here.
+    // In a real app, you would save/update user data in your database here.
     // For now, we'll just pass the Discord profile directly.
-    // The 'profile' object contains user data from Discord.
     return done(null, profile);
 }));
 
@@ -85,33 +84,31 @@ app.get('/auth/discord', passport.authenticate('discord'));
 
 app.get('/auth/discord/callback',
   passport.authenticate('discord', {
-    failureRedirect: '/' // Redirect on failure
+    failureRedirect: '/'
   }),
   (req, res) => {
-    // Successful authentication, redirect home or to a dashboard
     res.redirect('/');
   }
 );
 
 // Logout route
 app.get('/auth/logout', (req, res, next) => {
-  req.logout((err) => { // Passport's logout method
+  req.logout((err) => {
     if (err) { return next(err); }
-    res.redirect('/'); // Redirect to home after logout
+    res.redirect('/');
   });
 });
 
 // Endpoint to get user data (for frontend)
 app.get('/user', (req, res) => {
   if (req.isAuthenticated()) {
-    // req.user is populated by passport.deserializeUser
     res.json({
       loggedIn: true,
       id: req.user.id,
       username: req.user.username,
       discriminator: req.user.discriminator,
       avatar: req.user.avatar,
-      email: req.user.email // Only if 'email' scope was requested
+      email: req.user.email
     });
   } else {
     res.json({ loggedIn: false });
@@ -122,7 +119,6 @@ app.get('/user', (req, res) => {
 app.get('/api/db-status', (req, res) => {
   res.json({ status: dbConnectionStatus });
 });
-
 
 // Existing route to test database connection and fetch data
 app.get('/db-test', async (req, res) => {
@@ -144,8 +140,15 @@ app.get('/db-test', async (req, res) => {
   }
 });
 
-// NEW: Catch-all route to serve your main index.html file for all frontend routes
-// This MUST be the LAST route definition, after all API routes.
+// NEW: Explicitly serve index.html for the root path
+// This helps ensure the main page is always served correctly.
+app.get('/', (req, res) => {
+  res.sendFile(path.resolve('public', 'index.html'));
+});
+
+
+// Catch-all route to serve your main index.html file for all other frontend routes.
+// This MUST be the LAST route definition in your application, after all other API/specific routes.
 app.get('*', (req, res) => {
   res.sendFile(path.resolve('public', 'index.html'));
 });
