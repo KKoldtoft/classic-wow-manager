@@ -11,6 +11,9 @@ const path = require('path'); // Ensure path module is imported
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ADD THIS LINE:
+app.set('trust proxy', 1); // Trust Heroku's proxy for secure cookie handling
+
 // --- Database Configuration ---
 const connectionString = process.env.DATABASE_URL;
 
