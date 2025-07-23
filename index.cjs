@@ -157,7 +157,7 @@ app.get('/api/events', async (req, res) => {
       `https://raid-helper.dev/api/v3/servers/${discordGuildId}/scheduledevents`,
       {
         headers: {
-          'Authorization': `Bearer ${raidHelperApiKey}`,
+          'Authorization': `${raidHelperApiKey}`, // Removed 'Bearer '
           'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
         }
       }
