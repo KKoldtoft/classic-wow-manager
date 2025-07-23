@@ -74,7 +74,7 @@ passport.use(new DiscordStrategy({
 // --- Express Routes ---
 
 // Critical: Place express.static as the FIRST middleware to handle static files.
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static('public'));
 
 
 // All API and authentication routes should come AFTER express.static
