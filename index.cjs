@@ -6,13 +6,14 @@ const session = require('express-session');
 const passport = require('passport');
 const DiscordStrategy = require('passport-discord').Strategy;
 const { Pool } = require('pg');
-const path = require('path'); // Ensure path module is imported
+const path = require('path');
+const axios = require('axios'); // For making HTTP requests
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ADD THIS LINE:
-app.set('trust proxy', 1); // Trust Heroku's proxy for secure cookie handling
+// Configure Express to trust proxies (like Heroku's load balancer) for secure cookie handling
+app.set('trust proxy', 1);
 
 // --- Database Configuration ---
 const connectionString = process.env.DATABASE_URL;
@@ -64,7 +65,7 @@ passport.use(new DiscordStrategy({
     clientID: process.env.DISCORD_CLIENT_ID,
     clientSecret: process.env.DISCORD_CLIENT_SECRET,
     callbackURL: `${process.env.APP_BASE_URL}/auth/discord/callback`,
-    scope: ['identify', 'email']
+    scope: ['identify', 'email', 'guilds'] // Added 'guilds' scope if needed for server-specific logic later
 },
 (accessToken, refreshToken, profile, done) => {
     return done(null, profile);
@@ -73,7 +74,6 @@ passport.use(new DiscordStrategy({
 // --- Express Routes ---
 
 // Critical: Place express.static as the FIRST middleware to handle static files.
-// This ensures /style.css and /script.js are served correctly without falling through to other routes.
 app.use(express.static(path.join(__dirname, 'public')));
 
 
@@ -105,6 +105,7 @@ app.get('/user', (req, res) => {
       discriminator: req.user.discriminator,
       avatar: req.user.avatar,
       email: req.user.email
+      // guilds: req.user.guilds // Uncomment if you request 'guilds' scope and want to send to frontend
     });
   } else {
     res.json({ loggedIn: false });
@@ -134,9 +135,60 @@ app.get('/db-test', async (req, res) => {
   }
 });
 
-// IMPORTANT: The app.get('/') and app.get('*') routes are REMOVED here for diagnostic purposes.
-// Your app will now only serve static files for exact matches, and API routes.
-// Requests to '/' or any unmatched path will return a 404 from Express directly.
+// NEW: Endpoint to fetch upcoming Raid-Helper events
+app.get('/api/events', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
+  }
+
+  const raidHelperApiKey = process.env.RAID_HELPER_API_KEY;
+  if (!raidHelperApiKey) {
+      console.error('RAID_HELPER_API_KEY is not set in environment variables.');
+      return res.status(500).json({ message: 'Server configuration error: API key missing.' });
+  }
+
+  // IMPORTANT: Replace 'YOUR_DISCORD_SERVER_ID' with an actual Discord Guild ID
+  // This must be a server where the Raid-Helper bot is active and you want to fetch events from.
+  const discordGuildId = '777268886939893821'; // <--- Update this line!
+  if (discordGuildId === 'YOUR_DISCORD_SERVER_ID') {
+      console.warn('Raid-Helper: YOUR_DISCORD_SERVER_ID is not set in /api/events endpoint. Please update index.cjs');
+      return res.status(400).json({ message: 'Server ID not configured for Raid-Helper API.' });
+  }
+
+  try {
+    const response = await axios.get(
+      'https://raid-helper.dev/api/v2/events/upcoming',
+      {
+        headers: {
+          'Authorization': `Bearer ${raidHelperApiKey}`,
+          'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+        },
+        params: {
+            guildId: discordGuildId
+        }
+      }
+    );
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching Raid-Helper events:', error.response ? error.response.data : error.message);
+    res.status(error.response ? error.response.status : 500).json({
+      message: 'Failed to fetch events from Raid-Helper.',
+      error: error.response ? (error.response.data || error.message) : error.message
+    });
+  }
+});
+
+// Explicitly serve index.html for the root path.
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Catch-all route to serve your main index.html file for all other frontend routes.
+// This MUST be the LAST route definition in your application.
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 
 // --- Server Start ---
