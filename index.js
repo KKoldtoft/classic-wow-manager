@@ -78,7 +78,7 @@ passport.use(new DiscordStrategy({
 
 // Serve static files from the 'public' directory
 // This line MUST be before any routes that might conflict with static file names.
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static('public'));
 
 // Discord OAuth routes
 app.get('/auth/discord', passport.authenticate('discord'));
