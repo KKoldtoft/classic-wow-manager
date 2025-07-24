@@ -170,9 +170,9 @@ app.get('/api/events', async (req, res) => {
           'Authorization': `${raidHelperApiKey}`,
           'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
         },
-        params: { // TEMPORARY: Commenting out filters to see if any events return
-            // StartTimeFilter: nowUnixTimestamp,
-            // EndTimeFilter: futureUnixTimestamp,
+        params: {
+            StartTimeFilter: nowUnixTimestamp,
+            EndTimeFilter: futureUnixTimestamp,
         }
       }
     );
