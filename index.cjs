@@ -277,6 +277,17 @@ app.get('/api/roster/:eventId', async (req, res) => {
 
                 if (mainChar) {
                     player.mainCharacterName = mainChar.character_name;
+                } else {
+                    player.mainCharacterName = 'No match'; // Explicitly set "No match"
+                }
+
+                // Find all other characters (alts), excluding the one they signed up with
+                const alts = potentialMains.filter(
+                    alt => alt.character_name.toLowerCase() !== player.name.toLowerCase()
+                );
+
+                if (alts.length > 0) {
+                    player.altCharacters = alts.map(alt => `(${alt.character_name}-${alt.class})`);
                 }
             }
         });

@@ -57,7 +57,8 @@ body, html {
 /* Roster Cell (Slot) */
 .roster-cell {
     width: 200px;
-    height: 55px; /* Increased height for a third line */
+    min-height: 55px; /* Use min-height to allow the box to grow */
+    height: auto; /* Allow height to adjust to content */
     display: flex;
     flex-direction: column; /* Stack name and ID vertically */
     align-items: center;
@@ -81,10 +82,20 @@ body, html {
     color: #333; /* Changed from #ccc to a dark grey */
 }
 
-.main-char-name {
+.registered-char-name {
     font-size: 0.7em;
     color: #000; /* Changed from green to black */
     font-style: italic;
+}
+
+.registered-char-name.no-match {
+    color: red;
+    font-weight: bold;
+}
+
+.alt-char-name {
+    font-size: 0.7em;
+    color: #555; /* A neutral dark grey */
 }
 
 /* Make text darker on light backgrounds for better readability */
@@ -93,8 +104,12 @@ body, html {
 }
 
 .roster-cell.player-filled .player-name,
-.roster-cell.player-filled .main-char-name {
+.roster-cell.player-filled .registered-char-name {
     color: #000; /* Ensure player name and main name are black on colored backgrounds */
+}
+
+.roster-cell.player-filled .alt-char-name {
+    color: #333; /* Darker grey for light backgrounds */
 }
 
 .party-name {

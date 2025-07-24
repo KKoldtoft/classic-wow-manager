@@ -112,13 +112,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                         // Use innerHTML to structure the content
                         let mainCharacterHTML = '';
                         if (player.mainCharacterName) {
-                            mainCharacterHTML = `<div class="main-char-name">Main: ${player.mainCharacterName}</div>`;
+                            const isMatch = player.mainCharacterName !== 'No match';
+                            const className = isMatch ? 'registered-char-name' : 'registered-char-name no-match';
+                            mainCharacterHTML = `<div class="${className}">Registered: ${player.mainCharacterName}</div>`;
+                        }
+
+                        let altsHTML = '';
+                        if (player.altCharacters && player.altCharacters.length > 0) {
+                            altsHTML = player.altCharacters.map(alt => `<div class="alt-char-name">${alt}</div>`).join('');
                         }
 
                         cellDiv.innerHTML = `
                             <div class="player-name">${player.name}</div>
                             <div class="player-id">${player.userid || 'No ID'}</div>
                             ${mainCharacterHTML}
+                            ${altsHTML}
                         `;
 
                         if (player.color) {
