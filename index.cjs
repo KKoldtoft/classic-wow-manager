@@ -141,6 +141,27 @@ app.get('/db-test', async (req, res) => {
   }
 });
 
+app.get('/api/my-characters', async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'User not authenticated.' });
+    }
+
+    const discordId = req.user.id;
+
+    try {
+        const client = await pool.connect();
+        const result = await client.query({
+            text: 'SELECT character_name, class FROM players WHERE discord_id = $1 ORDER BY character_name',
+            values: [discordId],
+        });
+        client.release();
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Error fetching user characters:', error.stack);
+        res.status(500).json({ message: 'Error fetching characters from the database.' });
+    }
+});
+
 app.get('/api/players', async (req, res) => {
     try {
         const client = await pool.connect();

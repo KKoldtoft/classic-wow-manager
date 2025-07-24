@@ -34,6 +34,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
             
             fetchAndDisplayEvents();
+            fetchAndDisplayMyCharacters();
 
         } else {
             authContainer.innerHTML = `
@@ -46,10 +47,45 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    async function fetchAndDisplayMyCharacters() {
+        const myCharsContainer = document.getElementById('my-characters-list');
+        if (!myCharsContainer) return; // Don't run if the container doesn't exist
+
+        myCharsContainer.innerHTML = '<p>Loading my characters...</p>';
+
+        try {
+            const response = await fetch('/api/my-characters');
+            if (!response.ok) {
+                myCharsContainer.innerHTML = '<p>Could not load characters. Are you signed in?</p>';
+                return;
+            }
+
+            const characters = await response.json();
+
+            if (characters && characters.length > 0) {
+                myCharsContainer.innerHTML = ''; // Clear loading message
+                const list = document.createElement('ul');
+                list.classList.add('character-list');
+                characters.forEach(char => {
+                    const listItem = document.createElement('li');
+                    listItem.classList.add('character-item', `class-${char.class.toLowerCase().replace(/\s+/g, '-')}`);
+                    listItem.innerHTML = `<span class="char-name">${char.character_name}</span> <span class="char-class">${char.class}</span>`;
+                    list.appendChild(listItem);
+                });
+                myCharsContainer.appendChild(list);
+            } else {
+                myCharsContainer.innerHTML = '<p>No characters found for your Discord account.</p>';
+            }
+
+        } catch (error) {
+            console.error('Error fetching user characters:', error);
+            myCharsContainer.innerHTML = '<p>An error occurred while fetching your characters.</p>';
+        }
+    }
+
     // Function to fetch and display events (now called directly)
     async function fetchAndDisplayEvents() {
         eventsList.innerHTML = '<p>Fetching events...</p>';
-        const filterInfo = document.getElementById('filter-info');
 
         try {
             const response = await fetch('/api/events');
@@ -66,7 +102,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 today.setHours(0, 0, 0, 0); // Normalize to the beginning of the day in the local timezone
 
                 const formattedToday = today.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                filterInfo.innerHTML = `<p>Showing raids for <strong>${formattedToday}</strong> and later.</p>`;
+                // filterInfo.innerHTML = `<p>Showing raids for <strong>${formattedToday}</strong> and later.</p>`; // This line was removed
 
                 const upcomingEvents = data.scheduledEvents.filter(event => {
                     try {

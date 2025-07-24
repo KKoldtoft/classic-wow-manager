@@ -69,28 +69,31 @@ body {
 
 /* --- Event Panels --- */
 .event-panel {
-    background-color: #ffffff; /* White background for the panel */
-    border: 1px solid #e0e0e0; /* Light border */
-    border-radius: 10px; /* Slightly rounded corners */
-    padding: 15px 20px;
-    margin-bottom: 15px; /* Space between panels */
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05); /* Subtle shadow */
+    background-color: #fff; /* Fallback color */
+    background-image: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url('https://gamelegends.it/wp-content/uploads/2017/09/kelthuzad-talenti.jpg');
+    background-size: cover;
+    background-position: center;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 15px;
+    cursor: pointer;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
+    color: white; /* Make text white for readability */
 }
 
 .event-panel:hover {
     transform: translateY(-3px); /* Slight lift on hover */
-    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
 }
 
 /* Specific styling for today's event panel */
 .event-panel-today {
-    border-color: #2ECC71; /* Green border for today */
-    box-shadow: 0 4px 10px rgba(46, 204, 113, 0.2); /* Green glow shadow */
+
 }
 
 .event-panel h3 {
-    color: #5865F2; /* Discord blue for titles */
+    color: #ffffff; /* Discord blue for titles */
     margin-top: 0;
     margin-bottom: 10px;
     font-size: 1.3em;
@@ -103,27 +106,26 @@ body {
     flex-direction: column; /* Stack time and date vertically */
     margin-bottom: 10px;
     font-size: 0.95em;
-    color: #555;
+    color: #ffffff;
 }
 
 .event-time-info p {
-    margin: 3px 0; /* Space between date and time lines */
+    margin: 4px 0;
+    font-size: 0.9em;
     display: flex;
     align-items: center;
 }
 
 .event-icon {
     margin-right: 8px; /* Space between icon and text */
-    color: #7289da; /* Discord brand color for icons */
-    font-size: 1.1em;
-    width: 20px; /* Fixed width to align text */
+    width: 16px;
     text-align: center;
 }
 
 /* Style for "Today" text */
 .event-today-text {
-    color: #2ECC71; /* Dark green color */
     font-weight: bold;
+    color: white; /* Was Discord blue */
 }
 
 /* Spacer after "Today" events */
@@ -147,6 +149,80 @@ body {
     object-fit: contain; /* Ensures entire image is visible, scales down if too large */
 }
 
+/* Updated container for the events list */
+.events-container {
+    width: 360px;
+    margin: 0 auto; /* Center the container */
+}
+
+/* --- New Main Content Layout --- */
+.main-content-grid {
+    display: grid;
+    grid-template-columns: 400px 1fr; /* Fixed width for raids, flexible for the rest */
+    gap: 30px;
+    align-items: start;
+    padding: 30px;
+}
+
+.panel {
+    background-color: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 20px;
+    width: 360px;
+}
+
+.panel-title {
+    margin-top: 0;
+    font-size: 1.5em;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+}
+
+/* My Characters List Styling */
+.character-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px; /* Spacing between items */
+}
+
+.character-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center; /* Vertically center content */
+    height: 35px;
+    padding: 0 5px; /* Add side padding */
+    border-radius: 5px; /* Rounded corners */
+}
+
+.character-item:last-child {
+    border-bottom: none;
+}
+
+.char-name {
+    font-weight: normal;
+}
+
+/* --- Class Colors --- */
+.class-warrior { background-color: #C69B6D; }
+.class-paladin { background-color: #F48CBA; }
+.class-hunter { background-color: #AAD372; }
+.class-rogue { background-color: #FFF468; }
+.class-priest { background-color: #FFFFFF; border: 1px solid #ddd; }
+.class-shaman { background-color: #0070DD; }
+.class-mage { background-color: #3FC7EB; }
+.class-warlock { background-color: #8788EE; }
+.class-druid { background-color: #FF7C0A; }
+.class-tank { background-color: #C69B6D; } /* Alias for warrior */
+
+/* Ensure all text inside colored items is black */
+.character-item .char-name, .character-item .char-class {
+    color: black;
+}
 
 /* Basic responsiveness */
 @media (max-width: 600px) {
