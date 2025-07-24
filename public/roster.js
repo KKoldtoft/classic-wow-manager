@@ -1,22 +1,24 @@
 // public/roster.js
 document.addEventListener('DOMContentLoaded', async () => {
+    console.log('roster.js: DOMContentLoaded event fired. Script is running.'); // DEBUG LOG 1
+
     const rosterGrid = document.getElementById('roster-grid');
     const rosterEventTitle = document.getElementById('roster-event-title');
     const authContainer = document.getElementById('auth-container');
 
     // Extract event ID from the URL - NEW URL PATTERN
-    const pathParts = window.location.pathname.split('/');
     // Expected URL format: /event/123/roster
-    // So eventId should be at index 2 after splitting by '/', if 'event' is at index 1
+    const pathParts = window.location.pathname.split('/');
     const eventKeywordIndex = pathParts.indexOf('event');
     const eventId = (eventKeywordIndex !== -1 && pathParts.length > eventKeywordIndex + 1) ? pathParts[eventKeywordIndex + 1] : null;
 
-    console.log('Roster Page: Event ID found in URL:', eventId); // DEBUGGING LOG
+    console.log('roster.js: Extracted Event ID from URL:', eventId); // DEBUG LOG 2
 
     if (!eventId) {
         rosterGrid.innerHTML = '<p>Error: Event ID not found in URL.</p>';
         rosterEventTitle.textContent = 'Error Loading Roster';
-        return;
+        console.error('roster.js: Event ID is null, stopping execution.'); // DEBUG LOG 3
+        return; // Stop execution if no eventId is found
     }
 
     rosterEventTitle.textContent = `Roster for Event ID: ${eventId} (Loading...)`;
@@ -28,7 +30,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const data = await response.json();
             return data;
         } catch (error) {
-            console.error('Error fetching user status for top bar:', error);
+            console.error('roster.js: Error fetching user status for top bar:', error);
             return { loggedIn: false };
         }
     }
@@ -57,71 +59,93 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     updateAuthUIForRosterPage();
 
+    console.log('roster.js: Attempting to fetch roster data from /api/roster/eventId...'); // DEBUG LOG 4
     try {
         const response = await fetch(`/api/roster/${eventId}`);
+        console.log('roster.js: Fetch response received from /api/roster. Response object:', response); // DEBUG LOG 5
+        
+        if (!response.ok) { // Check if the HTTP response status is not 2xx
+            console.error('roster.js: HTTP Error Response for /api/roster:', response.status, response.statusText);
+            const errorData = await response.json();
+            console.error('roster.js: Error data from /api/roster:', errorData);
+            rosterGrid.innerHTML = `<p>Error fetching roster: ${errorData.message || 'Server returned an error'}</p>`;
+            return; // Stop execution on HTTP error
+        }
+
         const rosterData = await response.json();
+        console.log('roster.js: Roster data parsed successfully.', rosterData); // DEBUG LOG 6
 
-        if (response.ok) {
-            if (rosterData && rosterData.raidDrop) {
-                const partyPerRaid = rosterData.partyPerRaid;
-                const slotPerParty = rosterData.slotPerParty;
-                const raidDrop = rosterData.raidDrop;
+        if (rosterData && rosterData.raidDrop) {
+            const partyPerRaid = rosterData.partyPerRaid;
+            const slotPerParty = rosterData.slotPerParty;
+            const raidDrop = rosterData.raidDrop;
 
-                rosterGrid.style.gridTemplateColumns = `repeat(${partyPerRaid}, 1fr)`;
-                rosterGrid.innerHTML = '';
+            rosterGrid.style.gridTemplateColumns = `repeat(${partyPerRaid}, 1fr)`;
+            rosterGrid.innerHTML = '';
 
-                const rosterMatrix = Array(partyPerRaid).fill(null).map(() => Array(slotPerParty).fill(null));
+            const rosterMatrix = Array(partyPerRaid).fill(null).map(() => Array(slotPerParty).fill(null));
 
-                raidDrop.forEach(player => {
-                    if (player.partyId >= 1 && player.partyId <= partyPerRaid &&
-                        player.slotId >= 1 && player.slotId <= slotPerParty) {
-                        rosterMatrix[player.partyId - 1][player.slotId - 1] = player;
-                    }
-                });
+            raidDrop.forEach(player => {
+                if (player.partyId >= 1 && player.partyId <= partyPerRaid &&
+                    player.slotId >= 1 && player.slotId <= slotPerParty) {
+                    rosterMatrix[player.partyId - 1][player.slotId - 1] = player;
+                }
+            });
 
-                for (let i = 0; i < partyPerRaid; i++) {
-                    const columnDiv = document.createElement('div');
-                    columnDiv.classList.add('roster-column');
-                    
-                    if (rosterData.partyNames && rosterData.partyNames[i]) {
-                        const partyName = document.createElement('div');
-                        partyName.classList.add('party-name');
-                        partyName.textContent = rosterData.partyNames[i];
-                        columnDiv.appendChild(partyName);
-                    }
+            for (let i = 0; i < partyPerRaid; i++) {
+                const columnDiv = document.createElement('div');
+                columnDiv.classList.add('roster-column');
+                
+                if (rosterData.partyNames && rosterData.partyNames[i]) {
+                    const partyName = document.createElement('div');
+                    partyName.classList.add('party-name');
+                    partyName.textContent = rosterData.partyNames[i];
+                    columnDiv.appendChild(partyName);
+                }
 
-                    for (let j = 0; j < slotPerParty; j++) {
-                        const cellDiv = document.createElement('div');
-                        cellDiv.classList.add('roster-cell');
+                for (let j = 0; j < slotPerParty; j++) {
+                    const cellDiv = document.createElement('div');
+                    cellDiv.classList.add('roster-cell');
 
-                        const player = rosterMatrix[i][j];
-                        if (player && player.name) {
-                            cellDiv.classList.add('player-filled');
-                            cellDiv.textContent = player.name;
-                            if (player.color) {
-                                cellDiv.style.backgroundColor = player.color;
+                    const player = rosterMatrix[i][j];
+                    if (player && player.name) {
+                        cellDiv.classList.add('player-filled');
+                        cellDiv.textContent = player.name;
+                        if (player.color) {
+                            cellDiv.style.backgroundColor = player.color;
+                            // Convert "r,g,b" string to "rgb(r,g,b)" for CSS if needed
+                            if (player.color.includes(',')) {
+                                cellDiv.style.backgroundColor = `rgb(${player.color})`;
+                                // For text contrast on dynamic background colors
+                                // A simple check: if sum of RGB is low (dark), use white text
+                                const rgb = player.color.split(',').map(Number);
+                                const brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
+                                if (brightness < 128) {
+                                    cellDiv.style.color = 'white';
+                                } else {
+                                    cellDiv.style.color = 'black'; // Use black text for lighter backgrounds
+                                }
                             }
-                        } else {
-                            cellDiv.textContent = 'Empty';
                         }
-                        columnDiv.appendChild(cellDiv);
+                    } else {
+                        cellDiv.textContent = 'Empty';
                     }
-                    rosterGrid.appendChild(columnDiv);
+                    columnDiv.appendChild(cellDiv);
                 }
-
-                if (rosterData.title) {
-                    rosterEventTitle.textContent = rosterData.title;
-                }
-
-            } else {
-                rosterGrid.innerHTML = '<p>No roster data found for this event.</p>';
+                rosterGrid.appendChild(columnDiv);
             }
+
+            if (rosterData.title) {
+                rosterEventTitle.textContent = rosterData.title;
+            }
+            console.log('roster.js: Roster rendered successfully.'); // DEBUG LOG 7
+
         } else {
-            rosterGrid.innerHTML = `<p>Error fetching roster: ${rosterData.message || 'Unknown error'}</p>`;
-            console.error('Error from /api/roster:', rosterData);
+            rosterGrid.innerHTML = '<p>No roster data found or invalid format. Check /api/roster/:eventId response.</p>';
+            console.log('roster.js: No roster data found or invalid format.', rosterData); // DEBUG LOG 8
         }
     } catch (error) {
         rosterGrid.innerHTML = '<p>An error occurred while fetching roster data.</p>';
-        console.error('Client-side error fetching roster:', error);
+        console.error('roster.js: Client-side error during fetch operation. This might be a network issue or JSON parsing problem.', error); // DEBUG LOG 10
     }
 });
