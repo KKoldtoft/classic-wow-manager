@@ -51,6 +51,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const response = await fetch('/api/events');
             const data = await response.json();
 
+            // The data structure for /events is different from /scheduledevents
+            // Check the exact property name for the events array based on the API response.
+            // Assuming it's still 'scheduledEvents' as per previous logs, but be aware.
             if (data && data.scheduledEvents && Array.isArray(data.scheduledEvents) && data.scheduledEvents.length > 0) {
                 eventsList.innerHTML = ''; // Clear previous message
 
@@ -84,8 +87,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     eventDiv.classList.add('event-panel');
                     
                     eventDiv.style.cursor = 'pointer';
+                    // The event.id from the /events endpoint should now be the correct ID for roster
                     eventDiv.addEventListener('click', () => {
-                        // NEW URL PATTERN:
                         window.location.href = `/event/${event.id}/roster`;
                     });
 

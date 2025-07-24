@@ -75,13 +75,13 @@ passport.use(new DiscordStrategy({
 // Critical: Place express.static as the FIRST middleware to handle static files.
 app.use(express.static('public'));
 
-// NEW ROUTE PATTERN: Route to serve the Roster page for specific event IDs - HIGH PRIORITY
-app.get('/event/:eventId/roster', (req, res) => { // Changed from /event_id/:eventId/roster
+// Route to serve the Roster page for specific event IDs - HIGH PRIORITY
+app.get('/event/:eventId/roster', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'roster.html'));
 });
 
 
-// All API and authentication routes should come AFTER express.static AND specific HTML routes
+// All API and authentication routes should come AFTER express.static AND the roster HTML route
 app.get('/auth/discord', passport.authenticate('discord'));
 
 app.get('/auth/discord/callback',
@@ -138,6 +138,7 @@ app.get('/db-test', async (req, res) => {
   }
 });
 
+// UPDATED: Endpoint to fetch upcoming Raid-Helper events using /events endpoint with filters
 app.get('/api/events', async (req, res) => {
   if (!req.isAuthenticated()) {
     return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
@@ -151,13 +152,26 @@ app.get('/api/events', async (req, res) => {
 
   const discordGuildId = '777268886939893821';
 
+  // Calculate Unix timestamps for filtering
+  const nowUnixTimestamp = Math.floor(Date.now() / 1000); // Current time in seconds
+  // Set EndTimeFilter far into the future (e.g., 1 year from now)
+  const oneYearInSeconds = 365 * 24 * 60 * 60;
+  const futureUnixTimestamp = nowUnixTimestamp + oneYearInSeconds;
+
   try {
     const response = await axios.get(
-      `https://raid-helper.dev/api/v3/servers/${discordGuildId}/scheduledevents`,
+      `https://raid-helper.dev/api/v3/servers/${discordGuildId}/events`, // Changed from /scheduledevents to /events
       {
         headers: {
           'Authorization': `${raidHelperApiKey}`,
           'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+        },
+        params: { // Add filters to get only upcoming events
+            StartTimeFilter: nowUnixTimestamp,
+            EndTimeFilter: futureUnixTimestamp,
+            // You might want to add 'Page' or 'IncludeSignUps' if needed later
+            // Page: 1,
+            // IncludeSignUps: true
         }
       }
     );
@@ -203,7 +217,7 @@ app.get('/api/roster/:eventId', async (req, res) => {
 // This route will handle both the root path ('/') AND any other unmatched paths,
 // serving index.html. It MUST be the LAST route definition in your application.
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'events.html'));
+  res.sendFile(path.join(__dirname, 'events.html')); // Changed from index.html to events.html
 });
 
 
