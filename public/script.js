@@ -157,14 +157,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 });
 
-                // Add spacer ONLY if this is the last 'Today' event AND there are 'other' events to follow
-                if (hasRenderedTodayEventSpacer && todayEvents.length > 0 && otherEvents.length > 0) { // Refined condition
-                    const spacerDiv = document.createElement('div');
-                    spacerDiv.classList.add('today-events-spacer');
-                    eventsList.appendChild(spacerDiv);
-                }
-                console.log('script.js: Finished rendering events.'); // DEBUG LOG S9
-
             } else {
                 eventsList.innerHTML = '<p>No upcoming events found for this server.</p>';
                 console.log('script.js: Data is empty or invalid format. Full data object:', data); // DEBUG LOG S10
