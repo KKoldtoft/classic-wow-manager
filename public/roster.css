@@ -67,7 +67,6 @@ body, html {
     position: relative; /* Crucial for positioning the dropdown */
     cursor: default; /* Change cursor as the cell itself isn't a link anymore */
     background-color: #777; /* Background for empty cells */
-    overflow: hidden; /* Clip the corners of the icon */
 }
 
 .player-name {
@@ -101,6 +100,8 @@ body, html {
     padding: 5px;
     margin-left: 5px;
     line-height: 1;
+    position: relative; /* Needed for z-index to work */
+    z-index: 2; /* Lift the toggle above other elements in the cell */
 }
 
 .player-details-dropdown {
