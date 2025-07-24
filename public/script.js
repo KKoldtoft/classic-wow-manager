@@ -3,19 +3,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     const authContainer = document.getElementById('auth-container');
     const eventsList = document.getElementById('events-list');
 
-    // Function to fetch user status
+    console.log('script.js: DOMContentLoaded event fired.'); // DEBUG LOG S1
+
+    // Function to fetch user status (no changes)
     async function getUserStatus() {
         try {
             const response = await fetch('/user');
             const data = await response.json();
             return data;
         } catch (error) {
-            console.error('Error fetching user status:', error);
+            console.error('script.js: Error fetching user status:', error);
             return { loggedIn: false };
         }
     }
 
-    // Function to update the UI based on login status
+    // Function to update the UI based on login status (no changes)
     async function updateAuthUI() {
         const user = await getUserStatus();
 
@@ -51,16 +53,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             const response = await fetch('/api/events');
             const data = await response.json();
 
+            console.log('script.js: Data received from /api/events:', data); // DEBUG LOG S2
+
+            // Check if data.scheduledEvents exists and is an array with items
             if (data && data.scheduledEvents && Array.isArray(data.scheduledEvents) && data.scheduledEvents.length > 0) {
+                console.log('script.js: Found scheduledEvents array with length:', data.scheduledEvents.length); // DEBUG LOG S3
                 eventsList.innerHTML = ''; // Clear previous message
 
                 const todayEvents = [];
                 const otherEvents = [];
                 const todayInCET = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Copenhagen' });
+                console.log('script.js: Today in CET for comparison:', todayInCET); // DEBUG LOG S4
+
 
                 data.scheduledEvents.forEach(event => {
                     const eventStartDate = new Date(event.startTime * 1000);
                     const eventDateInCET = eventStartDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Copenhagen' });
+
+                    console.log(`script.js: Processing event "${event.title}" - StartTime: ${event.startTime}, DateInCET: ${eventDateInCET}`); // DEBUG LOG S5
 
                     if (eventDateInCET === todayInCET) {
                         todayEvents.push(event);
@@ -69,6 +79,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 });
 
+                console.log('script.js: Today events count:', todayEvents.length, 'Other events count:', otherEvents.length); // DEBUG LOG S6
+
                 // Sort Today's events (descending - newest first among today's events)
                 todayEvents.sort((a, b) => (b.startTime - a.startTime));
                 // Sort Other events (ascending - sooner first among other events)
@@ -76,6 +88,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 // Combine: Today's events first, then others
                 const sortedEvents = todayEvents.concat(otherEvents);
+                console.log('script.js: Total sorted events to render:', sortedEvents.length, sortedEvents.map(e => e.title)); // DEBUG LOG S7
 
                 let hasRenderedTodayEventSpacer = false; // Flag to ensure spacer is added only once
 
@@ -85,8 +98,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     
                     eventDiv.style.cursor = 'pointer';
                     eventDiv.addEventListener('click', () => {
-                        // NEW DIAGNOSTIC: Log the event.id being used for navigation
-                        console.log('script.js: Navigating to roster for event ID:', event.id);
+                        console.log('script.js: Navigating to roster for event ID:', event.id); // DEBUG LOG S8
                         window.location.href = `/event/${event.id}/roster`;
                     });
 
@@ -106,7 +118,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (isToday) {
                         dateDisplayHTML = `<span class="event-today-text">Today</span>`;
                         eventDiv.classList.add('event-panel-today');
-                        if (otherEvents.length > 0) { // If there are other events, we'll need a spacer
+                        if (otherEvents.length > 0) {
                             hasRenderedTodayEventSpacer = true;
                         }
                     } else {
@@ -121,21 +133,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     `;
                     eventsList.appendChild(eventDiv);
-
-                    // Add spacer ONLY if this is the last 'Today' event AND there are 'other' events to follow
-                    if (isToday && (sortedEvents.indexOf(event) === (todayEvents.length - 1)) && hasRenderedTodayEventSpacer) {
-                        const spacerDiv = document.createElement('div');
-                        spacerDiv.classList.add('today-events-spacer');
-                        eventsList.appendChild(spacerDiv);
-                    }
                 });
+
+                // Add spacer ONLY if this is the last 'Today' event AND there are 'other' events to follow
+                if (hasRenderedTodayEventSpacer && todayEvents.length > 0 && otherEvents.length > 0) { // Refined condition
+                    const spacerDiv = document.createElement('div');
+                    spacerDiv.classList.add('today-events-spacer');
+                    eventsList.appendChild(spacerDiv);
+                }
+                console.log('script.js: Finished rendering events.'); // DEBUG LOG S9
 
             } else {
                 eventsList.innerHTML = '<p>No upcoming events found for this server.</p>';
+                console.log('script.js: Data is empty or invalid format. Full data object:', data); // DEBUG LOG S10
             }
         } catch (error) {
-            eventsList.innerHTML = '<p>An error occurred while fetching events.</p>';
-            console.error('Client-side error fetching events:', error);
+            eventsList.innerHTML = '<p>An error occurred while fetching events. Check console for details.</p>';
+            console.error('script.js: Client-side error during fetch operation:', error); // DEBUG LOG S11
         }
     }
 
