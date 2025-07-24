@@ -109,6 +109,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const player = rosterMatrix[i][j];
                     if (player && player.name) {
                         cellDiv.classList.add('player-filled');
+
+                        let specIconHTML = '';
+                        if (player.spec_emote) {
+                            specIconHTML = `<img src="https://cdn.discordapp.com/emojis/${player.spec_emote}.png" class="spec-icon" alt="${player.spec}" title="${player.spec}">`;
+                        }
+                        
                         // Use innerHTML to structure the content
                         let mainCharacterHTML = '';
                         if (player.mainCharacterName) {
@@ -123,7 +129,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         }
 
                         cellDiv.innerHTML = `
-                            <div class="player-name">${player.name}</div>
+                            <div class="player-name">${specIconHTML}<span>${player.name}</span></div>
                             <div class="player-id">${player.userid || 'No ID'}</div>
                             ${mainCharacterHTML}
                             ${altsHTML}

@@ -75,6 +75,16 @@ body, html {
 .player-name {
     font-weight: bold;
     font-size: 0.9em;
+    display: flex; /* Use flexbox to align icon and name */
+    align-items: center;
+    justify-content: center;
+}
+
+.spec-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 5px;
+    vertical-align: middle;
 }
 
 .player-id {

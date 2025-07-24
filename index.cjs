@@ -275,16 +275,19 @@ app.get('/api/roster/:eventId', async (req, res) => {
                     main => getCanonicalClass(main.class) === rosterPlayerCanonicalClass
                 );
 
+                let alts = [];
                 if (mainChar) {
                     player.mainCharacterName = mainChar.character_name;
+                    // Alts are all characters that are not the identified main character
+                    alts = potentialMains.filter(
+                        p => p.character_name.toLowerCase() !== mainChar.character_name.toLowerCase() 
+                             || getCanonicalClass(p.class) !== getCanonicalClass(mainChar.class)
+                    );
                 } else {
-                    player.mainCharacterName = 'No match'; // Explicitly set "No match"
+                    player.mainCharacterName = 'No match';
+                    // If no main is found, all characters from the DB are alts
+                    alts = potentialMains;
                 }
-
-                // Find all other characters (alts), excluding the one they signed up with
-                const alts = potentialMains.filter(
-                    alt => alt.character_name.toLowerCase() !== player.name.toLowerCase()
-                );
 
                 if (alts.length > 0) {
                     player.altCharacters = alts.map(alt => `(${alt.character_name}-${alt.class})`);
