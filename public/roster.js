@@ -111,7 +111,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         cellDiv.classList.add('player-filled');
                         // Use innerHTML to structure the content
                         let mainCharacterHTML = '';
-                        if (player.mainCharacterName && player.mainCharacterName.toLowerCase() !== player.name.toLowerCase()) {
+                        if (player.mainCharacterName) {
                             mainCharacterHTML = `<div class="main-char-name">Main: ${player.mainCharacterName}</div>`;
                         }
 

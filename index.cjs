@@ -253,10 +253,17 @@ app.get('/api/roster/:eventId', async (req, res) => {
         }
 
         // Step 4: Cross-reference and add the main character name to each player in the roster
+        const classMap = {
+            'tank': 'warrior'
+        };
+
         rosterData.raidDrop.forEach(player => {
             if (player.userid && mainsData[player.userid]) {
                 const potentialMains = mainsData[player.userid];
-                const mainChar = potentialMains.find(m => m.class.toLowerCase() === player.class.toLowerCase());
+                const rosterPlayerClass = player.class.toLowerCase();
+                const targetDbClass = classMap[rosterPlayerClass] || rosterPlayerClass;
+                
+                const mainChar = potentialMains.find(m => m.class.toLowerCase() === targetDbClass);
                 if (mainChar) {
                     player.mainCharacterName = mainChar.character_name;
                 }

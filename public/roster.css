@@ -78,12 +78,12 @@ body, html {
 
 .player-id {
     font-size: 0.7em;
-    color: #ccc;
+    color: #333; /* Changed from #ccc to a dark grey */
 }
 
 .main-char-name {
     font-size: 0.7em;
-    color: #a0e0a0; /* A light green to stand out */
+    color: #000; /* Changed from green to black */
     font-style: italic;
 }
 
@@ -92,8 +92,9 @@ body, html {
     color: #555;
 }
 
+.roster-cell.player-filled .player-name,
 .roster-cell.player-filled .main-char-name {
-    color: #0b6623; /* Darker green for light backgrounds */
+    color: #000; /* Ensure player name and main name are black on colored backgrounds */
 }
 
 .party-name {
