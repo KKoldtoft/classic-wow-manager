@@ -82,7 +82,7 @@ app.get('/event_id/:eventId/roster', (req, res) => {
 
 
 // All API and authentication routes should come AFTER express.static AND the roster HTML route
-app.get('/auth/discord', passport.authenticate('discord');
+app.get('/auth/discord', passport.authenticate('discord')); 
 
 app.get('/auth/discord/callback',
   passport.authenticate('discord', {
