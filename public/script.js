@@ -86,10 +86,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const eventDiv = document.createElement('div');
                     eventDiv.classList.add('event-panel');
                     
+                    const eventId = event.id || 'unknown';
+                    const eventTitle = event.title || 'Untitled Event';
+
                     eventDiv.style.cursor = 'pointer';
                     eventDiv.addEventListener('click', () => {
-                        console.log('script.js: Navigating to roster for event ID:', event.id); // DEBUG LOG S8
-                        window.location.href = `/event/${event.id}/roster`;
+                        console.log('script.js: Navigating to roster for event ID:', eventId); // DEBUG LOG S8
+                        window.location.href = `/event/${eventId}/roster`;
                     });
 
                     const eventStartDate = new Date(event.startTime * 1000);
@@ -121,7 +124,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // --- End Date Formatting Logic ---
 
                     eventDiv.innerHTML = `
-                        <h3>${event.title}</h3>
+                        <h3>${eventTitle}</h3>
                         <div class="event-time-info">
                             <p><i class="far fa-calendar-alt event-icon"></i> ${dateDisplayHTML}</p>
                             <p><i class="far fa-clock event-icon"></i> ${formattedStartTime}</p>
