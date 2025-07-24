@@ -9,19 +9,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Extract event ID from the URL - NEW URL PATTERN
     const pathParts = window.location.pathname.split('/');
     const eventKeywordIndex = pathParts.indexOf('event');
-    const eventIdFromUrl = (eventKeywordIndex !== -1 && pathParts.length > eventKeywordIndex + 1) ? pathParts[eventKeywordIndex + 1] : null;
+    const eventId = (eventKeywordIndex !== -1 && pathParts.length > eventKeywordIndex + 1) ? pathParts[eventKeywordIndex + 1] : null;
 
-    // TEMPORARY: Hardcode the working _id to test rendering
-    const eventId = '1395487730066264127'; // <--- HARDCODED ID FOR TESTING
-    console.log('roster.js: Using HARDCODED Event ID for test:', eventId); // DEBUG LOG 2
-
-    // Original check for eventIdFromUrl (not eventId)
-    if (!eventIdFromUrl) { // Use the original parsed ID here for actual URL validation
-        rosterGrid.innerHTML = '<p>Error: Event ID not found in URL (URL parsing error).</p>';
+    if (!eventId) {
+        rosterGrid.innerHTML = '<p>Error: Event ID not found in URL.</p>';
         rosterEventTitle.textContent = 'Error Loading Roster';
-        console.error('roster.js: Event ID from URL is null, stopping execution (DEBUG: using hardcoded ID).'); // DEBUG LOG 3
-        // Do NOT return here if you want to test hardcoded ID.
+        console.error('roster.js: Event ID could not be parsed from the URL.');
+        return;
     }
+
+    console.log(`roster.js: Successfully parsed Event ID from URL: ${eventId}`);
 
     rosterEventTitle.textContent = `Roster for Event ID: ${eventId} (Loading...)`;
 
