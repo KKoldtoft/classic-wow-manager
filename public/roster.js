@@ -2,14 +2,16 @@
 document.addEventListener('DOMContentLoaded', async () => {
     const rosterGrid = document.getElementById('roster-grid');
     const rosterEventTitle = document.getElementById('roster-event-title');
-    const authContainer = document.getElementById('auth-container'); // NEW: For top-bar auth on roster page
+    const authContainer = document.getElementById('auth-container');
 
-    // Extract event ID from the URL
+    // Extract event ID from the URL - NEW URL PATTERN
     const pathParts = window.location.pathname.split('/');
-    const eventIdParam = pathParts[pathParts.length - 2];
-    const eventId = eventIdParam ? eventIdParam.replace('event_id=', '') : null;
+    // Expected URL format: /event/123/roster
+    // So eventId should be at index 2 after splitting by '/', if 'event' is at index 1
+    const eventKeywordIndex = pathParts.indexOf('event');
+    const eventId = (eventKeywordIndex !== -1 && pathParts.length > eventKeywordIndex + 1) ? pathParts[eventKeywordIndex + 1] : null;
 
-    console.log('Roster Page: Event ID found in URL:', eventId);
+    console.log('Roster Page: Event ID found in URL:', eventId); // DEBUGGING LOG
 
     if (!eventId) {
         rosterGrid.innerHTML = '<p>Error: Event ID not found in URL.</p>';
@@ -19,7 +21,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     rosterEventTitle.textContent = `Roster for Event ID: ${eventId} (Loading...)`;
 
-    // NEW: Functionality for top-bar auth (copied from script.js)
+    // Functionality for top-bar auth (copied from script.js)
     async function getUserStatus() {
         try {
             const response = await fetch('/user');
@@ -53,9 +55,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             `;
         }
     }
-    updateAuthUIForRosterPage(); // Call it for the roster page's top bar
+    updateAuthUIForRosterPage();
 
-    // ... (rest of roster.js code for fetching and rendering grid) ...
     try {
         const response = await fetch(`/api/roster/${eventId}`);
         const rosterData = await response.json();
@@ -66,7 +67,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const slotPerParty = rosterData.slotPerParty;
                 const raidDrop = rosterData.raidDrop;
 
-                rosterGrid.style.gridTemplateColumns = `repeat(${partyPerRraid}, 1fr)`;
+                rosterGrid.style.gridTemplateColumns = `repeat(${partyPerRaid}, 1fr)`;
                 rosterGrid.innerHTML = '';
 
                 const rosterMatrix = Array(partyPerRaid).fill(null).map(() => Array(slotPerParty).fill(null));

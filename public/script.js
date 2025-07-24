@@ -56,7 +56,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 const todayEvents = [];
                 const otherEvents = [];
-                // Date comparison uses today's date in CET. Time for comparison is irrelevant.
                 const todayInCET = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Copenhagen' });
 
                 data.scheduledEvents.forEach(event => {
@@ -86,7 +85,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     
                     eventDiv.style.cursor = 'pointer';
                     eventDiv.addEventListener('click', () => {
-                        window.location.href = `/event_id=${event.id}/roster`;
+                        // NEW URL PATTERN:
+                        window.location.href = `/event/${event.id}/roster`;
                     });
 
                     const eventStartDate = new Date(event.startTime * 1000);

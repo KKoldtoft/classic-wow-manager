@@ -75,9 +75,8 @@ passport.use(new DiscordStrategy({
 // Critical: Place express.static as the FIRST middleware to handle static files.
 app.use(express.static('public'));
 
-// NEW: Explicitly serve the Roster page HTML for its full specific path
-// This must come BEFORE any catch-all for index.html or API routes that might clash
-app.get('/event_id/:eventId/roster', (req, res) => {
+// NEW ROUTE PATTERN: Route to serve the Roster page for specific event IDs - HIGH PRIORITY
+app.get('/event/:eventId/roster', (req, res) => { // Changed from /event_id/:eventId/roster
     res.sendFile(path.join(__dirname, 'public', 'roster.html'));
 });
 
@@ -202,10 +201,9 @@ app.get('/api/roster/:eventId', async (req, res) => {
 });
 
 // This route will handle both the root path ('/') AND any other unmatched paths,
-// serving index.html. It MUST be the LAST route definition after ALL API routes
-// and ALL other specific HTML-serving routes (like the roster page route).
+// serving index.html. It MUST be the LAST route definition in your application.
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'events.html'));
 });
 
 
