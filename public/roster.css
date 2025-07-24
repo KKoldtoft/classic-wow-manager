@@ -1,0 +1,89 @@
+/* public/roster.css */
+
+/* Adjust content area for roster page if needed */
+.content {
+    background-color: #333; /* Dark background for the roster area */
+    color: white;
+    padding: 25px;
+}
+
+/* Back button style */
+.back-button {
+    display: inline-block;
+    background-color: #5865F2; /* Discord blue */
+    color: white;
+    padding: 8px 15px;
+    border-radius: 8px;
+    text-decoration: none;
+    margin-bottom: 20px;
+    transition: background-color 0.2s ease;
+}
+
+.back-button:hover {
+    background-color: #4752C4;
+}
+
+.back-button i {
+    margin-right: 5px;
+}
+
+#roster-event-title {
+    color: #fff;
+    margin-bottom: 25px;
+    text-align: center;
+    font-size: 1.8em;
+}
+
+/* Roster Grid Container */
+#roster-grid {
+    display: grid;
+    gap: 10px; /* Space between columns */
+    padding: 10px;
+    background-color: #444; /* Slightly lighter dark background for the grid itself */
+    border-radius: 10px;
+    overflow-x: auto; /* Allow horizontal scrolling if many columns */
+    padding-bottom: 15px; /* Extra padding for scrollbar visibility */
+}
+
+/* Roster Column (Party) */
+.roster-column {
+    background-color: #2c2f33; /* Even darker background for columns */
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px; /* Space between cells in a column */
+    min-width: 150px; /* Minimum width for each column */
+}
+
+/* Roster Cell (Slot) */
+.roster-cell {
+    background-color: #555; /* Default dark grey for empty cells */
+    color: white;
+    padding: 12px 10px;
+    border-radius: 6px;
+    text-align: center;
+    font-weight: bold;
+    min-height: 40px; /* Ensure consistent cell height */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    word-break: break-word; /* Allow long names to wrap */
+}
+
+/* Specific color for cells with players */
+.roster-cell.player-filled {
+    /* Background color will be set dynamically via JS from event.color */
+    color: #333; /* Darker text for colored cells for contrast */
+    text-shadow: 0 1px 1px rgba(0,0,0,0.2);
+    /* You can add more styling here like border, subtle gradients etc. */
+    border: 1px solid rgba(0,0,0,0.1);
+}
+
+/* Responsive grid for columns */
+@media (min-width: 768px) {
+    #roster-grid {
+        /* This will be set dynamically by JS, but if not enough columns, auto-fill */
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+}

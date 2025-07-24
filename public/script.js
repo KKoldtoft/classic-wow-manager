@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // NEW: Function to fetch and display events (now called directly)
+    // Function to fetch and display events (now called directly)
     async function fetchAndDisplayEvents() {
         eventsList.innerHTML = '<p>Fetching events...</p>';
         try {
@@ -24,21 +24,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Check if data.scheduledEvents exists and is an array with items
             if (data && data.scheduledEvents && Array.isArray(data.scheduledEvents) && data.scheduledEvents.length > 0) {
-                // Fix for sorting: Sort by startTime (newest first).
-                // Ensure comparison is done on milliseconds for proper sorting.
+                // Sort events by startTime (newest first)
                 data.scheduledEvents.sort((a, b) => (b.startTime * 1000) - (a.startTime * 1000));
 
                 eventsList.innerHTML = ''; // Clear previous message
 
                 let todayEventsRenderedCount = 0; // Track how many 'Today' events are rendered
-                let totalEventsRendered = 0; // Track total events for spacer logic
-
+                
                 // Get today's date string in CET for comparison
                 const todayInCET = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Copenhagen' });
 
                 data.scheduledEvents.forEach(event => {
                     const eventDiv = document.createElement('div');
                     eventDiv.classList.add('event-panel'); // Apply panel styling
+                    
+                    // Make the event panel clickable and link to the roster page
+                    eventDiv.style.cursor = 'pointer'; // Add pointer cursor to indicate clickability
+                    eventDiv.addEventListener('click', () => {
+                        window.location.href = `/event_id=${event.id}/roster`;
+                    });
 
                     const eventStartDate = new Date(event.startTime * 1000);
 
@@ -47,9 +51,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const optionsDate = { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Copenhagen' };
                     const optionsTime = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Copenhagen' };
 
-                    const formattedDayName = eventStartDate.toLocaleDateString('en-US', optionsDay); // e.g., "Sunday"
-                    const formattedDate = eventStartDate.toLocaleDateString('en-GB', optionsDate); // e.g., "27/07/2026"
-                    const formattedStartTime = eventStartDate.toLocaleTimeString('en-GB', optionsTime); // e.g., "20:00"
+                    const formattedDayName = eventStartDate.toLocaleDateString('en-US', optionsDay);
+                    const formattedDate = eventStartDate.toLocaleDateString('en-GB', optionsDate);
+                    const formattedStartTime = eventStartDate.toLocaleTimeString('en-GB', optionsTime);
 
                     // Determine if event is today and format display accordingly
                     const isToday = eventStartDate.toLocaleDateString('en-GB', { timeZone: 'Europe/Copenhagen' }) === todayInCET;
@@ -57,7 +61,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     let dateDisplayHTML;
                     if (isToday) {
                         dateDisplayHTML = `<span class="event-today-text">Today</span>`;
-                        eventDiv.classList.add('event-panel-today'); // Add class for today's panel styling
+                        eventDiv.classList.add('event-panel-today');
                         todayEventsRenderedCount++;
                     } else {
                         dateDisplayHTML = `${formattedDayName} (${formattedDate})`;
@@ -69,13 +73,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <p><i class="far fa-calendar-alt event-icon"></i> ${dateDisplayHTML}</p>
                             <p><i class="far fa-clock event-icon"></i> ${formattedStartTime}</p>
                         </div>
-                        `;
+                    `;
                     eventsList.appendChild(eventDiv);
-                    totalEventsRendered++;
 
                     // Add spacer AFTER the last 'Today' event, if it's a 'Today' event
                     // and there are still other events left to render (implies non-Today events follow)
-                    if (isToday && todayEventsRenderedCount === data.scheduledEvents.filter(e => new Date(e.startTime * 1000).toLocaleDateString('en-GB', { timeZone: 'Europe/Copenhagen' }) === todayInCET).length && totalEventsRendered < data.scheduledEvents.length) {
+                    if (isToday && (data.scheduledEvents.indexOf(event) === (todayEventsRenderedCount - 1)) && (data.scheduledEvents.length > todayEventsRenderedCount)) {
                         const spacerDiv = document.createElement('div');
                         spacerDiv.classList.add('today-events-spacer');
                         eventsList.appendChild(spacerDiv);
@@ -91,7 +94,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Function to update the UI based on login status
+    // Function to update the UI based on login status (remains the same)
     async function updateAuthUI() {
         const user = await getUserStatus();
 
@@ -107,7 +110,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 window.location.href = '/auth/logout';
             });
             
-            fetchAndDisplayEvents(); // NEW: Fetch events automatically on page load if user is logged in
+            fetchAndDisplayEvents();
 
         } else {
             authContainer.innerHTML = `

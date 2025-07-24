@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Roster - Classic WoW Manager</title>
+    <link rel="stylesheet" href="/style.css"> <!-- Re-use main styles for top-bar -->
+    <link rel="stylesheet" href="/roster.css"> <!-- New specific styles for roster -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+    <div class="top-bar">
+        <div class="app-title">Classic WoW Manager</div>
+        <div id="auth-container">
+            <!-- Login button or user avatar will be injected here by JavaScript -->
+        </div>
+    </div>
+
+    <div class="content">
+        <a href="/" class="back-button"><i class="fas fa-arrow-left"></i> Back to Events</a>
+        <h1 id="roster-event-title">Loading Roster...</h1>
+        <div id="roster-grid">
+            <!-- Roster columns and cells will be dynamically loaded here -->
+            <p>Loading roster data...</p>
+        </div>
+    </div>
+
+    <script src="/script.js"></script> <!-- To keep top-bar auth functionality -->
+    <script src="/roster.js"></script> <!-- New specific script for roster page -->
+</body>
+</html>

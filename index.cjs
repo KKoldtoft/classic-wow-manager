@@ -7,12 +7,11 @@ const passport = require('passport');
 const DiscordStrategy = require('passport-discord').Strategy;
 const { Pool } = require('pg');
 const path = require('path');
-const axios = require('axios'); // For making HTTP requests
+const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configure Express to trust proxies (like Heroku's load balancer) for secure cookie handling
 app.set('trust proxy', 1);
 
 // --- Database Configuration ---
@@ -105,7 +104,6 @@ app.get('/user', (req, res) => {
       discriminator: req.user.discriminator,
       avatar: req.user.avatar,
       email: req.user.email
-      // guilds: req.user.guilds // Uncomment if you request 'guilds' scope and want to send to frontend
     });
   } else {
     res.json({ loggedIn: false });
@@ -135,7 +133,6 @@ app.get('/db-test', async (req, res) => {
   }
 });
 
-// NEW: Endpoint to fetch upcoming Raid-Helper events
 app.get('/api/events', async (req, res) => {
   if (!req.isAuthenticated()) {
     return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
@@ -147,29 +144,24 @@ app.get('/api/events', async (req, res) => {
       return res.status(500).json({ message: 'Server configuration error: API key missing.' });
   }
 
-  // IMPORTANT: This must be the actual Discord Guild ID (Server ID) where Raid-Helper bot is active.
-  const discordGuildId = '777268886939893821'; // The ID you previously confirmed.
+  const discordGuildId = '777268886939893821';
 
-  // Use the v3 API endpoint as per Raid-Helper documentation
-  // The guildId is now part of the URL path, not a query parameter.
   try {
     const response = await axios.get(
       `https://raid-helper.dev/api/v3/servers/${discordGuildId}/scheduledevents`,
       {
         headers: {
-          'Authorization': `${raidHelperApiKey}`, // Fixed: Removed 'Bearer ' prefix, as it caused 'invalid token' error
+          'Authorization': `${raidHelperApiKey}`,
           'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
         }
       }
     );
 
-    // Log the full response data from Raid-Helper for 200 OK responses
     console.log('Raid-Helper API Raw Response Data (200 OK):', JSON.stringify(response.data, null, 2));
 
     res.json(response.data);
   } catch (error) {
     console.error('Error fetching Raid-Helper events:', error.response ? error.response.data : error.message);
-    // Log full error response details for non-200 responses
     if (error.response) {
       console.error('Raid-Helper API Error Response Details (Non-200):', {
           status: error.response.status,
@@ -182,6 +174,33 @@ app.get('/api/events', async (req, res) => {
       error: error.response ? (error.response.data || error.message) : error.message
     });
   }
+});
+
+// NEW: API endpoint to fetch Roster data for a specific event ID
+app.get('/api/roster/:eventId', async (req, res) => {
+    const eventId = req.params.eventId;
+    if (!eventId) {
+        return res.status(400).json({ message: 'Event ID is required.' });
+    }
+
+    try {
+        // Raid-Helper /raidplan API does not require authorization
+        const response = await axios.get(`https://raid-helper.dev/api/raidplan/${eventId}`);
+        console.log(`Fetched Roster for Event ID ${eventId}:`, JSON.stringify(response.data, null, 2));
+        res.json(response.data);
+    } catch (error) {
+        console.error(`Error fetching roster for event ${eventId}:`, error.response ? error.response.data : error.message);
+        res.status(error.response ? error.response.status : 500).json({
+            message: `Failed to fetch roster for event ${eventId}.`,
+            error: error.response ? (error.response.data || error.message) : error.message
+        });
+    }
+});
+
+// NEW: Route to serve the Roster page for specific event IDs
+// This MUST come BEFORE the general app.get('*') catch-all.
+app.get('/event_id/:eventId/roster', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'roster.html'));
 });
 
 // Explicitly serve index.html for the root path.
