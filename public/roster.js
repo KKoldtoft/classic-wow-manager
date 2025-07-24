@@ -109,7 +109,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const player = rosterMatrix[i][j];
                     if (player && player.name) {
                         cellDiv.classList.add('player-filled');
-                        cellDiv.textContent = player.name;
+                        // Use innerHTML to structure the content
+                        cellDiv.innerHTML = `
+                            <div class="player-name">${player.name}</div>
+                            <div class="player-id">${player.userId || 'No ID'}</div>
+                        `;
+
                         if (player.color) {
                             cellDiv.style.backgroundColor = player.color;
                             if (player.color.includes(',')) {
@@ -124,7 +129,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             }
                         }
                     } else {
-                        cellDiv.textContent = 'Empty';
+                        cellDiv.innerHTML = '<div class="player-name">Empty</div>';
                     }
                     columnDiv.appendChild(cellDiv);
                 }
