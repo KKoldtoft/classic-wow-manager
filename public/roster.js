@@ -7,18 +7,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     const authContainer = document.getElementById('auth-container');
 
     // Extract event ID from the URL - NEW URL PATTERN
-    // Expected URL format: /event/123/roster
     const pathParts = window.location.pathname.split('/');
     const eventKeywordIndex = pathParts.indexOf('event');
-    const eventId = (eventKeywordIndex !== -1 && pathParts.length > eventKeywordIndex + 1) ? pathParts[eventKeywordIndex + 1] : null;
+    const eventIdFromUrl = (eventKeywordIndex !== -1 && pathParts.length > eventKeywordIndex + 1) ? pathParts[eventKeywordIndex + 1] : null;
 
-    console.log('roster.js: Extracted Event ID from URL:', eventId); // DEBUG LOG 2
+    // TEMPORARY: Hardcode the working _id to test rendering
+    const eventId = '1395487730066264127'; // <--- HARDCODED ID FOR TESTING
+    console.log('roster.js: Using HARDCODED Event ID for test:', eventId); // DEBUG LOG 2
 
-    if (!eventId) {
-        rosterGrid.innerHTML = '<p>Error: Event ID not found in URL.</p>';
+    // Original check for eventIdFromUrl (not eventId)
+    if (!eventIdFromUrl) { // Use the original parsed ID here for actual URL validation
+        rosterGrid.innerHTML = '<p>Error: Event ID not found in URL (URL parsing error).</p>';
         rosterEventTitle.textContent = 'Error Loading Roster';
-        console.error('roster.js: Event ID is null, stopping execution.'); // DEBUG LOG 3
-        return; // Stop execution if no eventId is found
+        console.error('roster.js: Event ID from URL is null, stopping execution (DEBUG: using hardcoded ID).'); // DEBUG LOG 3
+        // Do NOT return here if you want to test hardcoded ID.
     }
 
     rosterEventTitle.textContent = `Roster for Event ID: ${eventId} (Loading...)`;
@@ -61,21 +63,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     console.log('roster.js: Attempting to fetch roster data from /api/roster/eventId...'); // DEBUG LOG 4
     try {
-        const response = await fetch(`/api/roster/${eventId}`);
+        const response = await fetch(`/api/roster/${eventId}`); // Use the hardcoded eventId
         console.log('roster.js: Fetch response received from /api/roster. Response object:', response); // DEBUG LOG 5
         
-        if (!response.ok) { // Check if the HTTP response status is not 2xx
+        if (!response.ok) {
             console.error('roster.js: HTTP Error Response for /api/roster:', response.status, response.statusText);
             const errorData = await response.json();
             console.error('roster.js: Error data from /api/roster:', errorData);
             rosterGrid.innerHTML = `<p>Error fetching roster: ${errorData.message || 'Server returned an error'}</p>`;
-            return; // Stop execution on HTTP error
+            return;
         }
 
         const rosterData = await response.json();
         console.log('roster.js: Roster data parsed successfully.', rosterData); // DEBUG LOG 6
 
-        if (rosterData && rosterData.raidDrop) {
+        if (rosterData && rosterData.raidDrop) { // Check for rosterData.raidDrop
             const partyPerRaid = rosterData.partyPerRaid;
             const slotPerParty = rosterData.slotPerParty;
             const raidDrop = rosterData.raidDrop;
@@ -113,17 +115,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                         cellDiv.textContent = player.name;
                         if (player.color) {
                             cellDiv.style.backgroundColor = player.color;
-                            // Convert "r,g,b" string to "rgb(r,g,b)" for CSS if needed
                             if (player.color.includes(',')) {
                                 cellDiv.style.backgroundColor = `rgb(${player.color})`;
-                                // For text contrast on dynamic background colors
-                                // A simple check: if sum of RGB is low (dark), use white text
                                 const rgb = player.color.split(',').map(Number);
                                 const brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
                                 if (brightness < 128) {
                                     cellDiv.style.color = 'white';
                                 } else {
-                                    cellDiv.style.color = 'black'; // Use black text for lighter backgrounds
+                                    cellDiv.style.color = 'black';
                                 }
                             }
                         }
