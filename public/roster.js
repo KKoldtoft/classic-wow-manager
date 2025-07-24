@@ -2,13 +2,14 @@
 document.addEventListener('DOMContentLoaded', async () => {
     const rosterGrid = document.getElementById('roster-grid');
     const rosterEventTitle = document.getElementById('roster-event-title');
+    const authContainer = document.getElementById('auth-container'); // NEW: For top-bar auth on roster page
 
     // Extract event ID from the URL
     const pathParts = window.location.pathname.split('/');
-    // Expected URL format: /event_id=123/roster
-    // So eventId should be at index 1 after splitting by '/', and remove 'event_id=' prefix
     const eventIdParam = pathParts[pathParts.length - 2];
     const eventId = eventIdParam ? eventIdParam.replace('event_id=', '') : null;
+
+    console.log('Roster Page: Event ID found in URL:', eventId);
 
     if (!eventId) {
         rosterGrid.innerHTML = '<p>Error: Event ID not found in URL.</p>';
@@ -16,40 +17,71 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
-    rosterEventTitle.textContent = `Roster for Event ID: ${eventId}`; // Initial title, will update with actual title
+    rosterEventTitle.textContent = `Roster for Event ID: ${eventId} (Loading...)`;
 
+    // NEW: Functionality for top-bar auth (copied from script.js)
+    async function getUserStatus() {
+        try {
+            const response = await fetch('/user');
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('Error fetching user status for top bar:', error);
+            return { loggedIn: false };
+        }
+    }
+
+    async function updateAuthUIForRosterPage() {
+        const user = await getUserStatus();
+        if (user.loggedIn) {
+            const avatarUrl = user.avatar
+                ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`
+                : `https://cdn.discordapp.com/embed/avatars/${parseInt(user.discriminator) % 5}.png`;
+
+            authContainer.innerHTML = `
+                <img src="${avatarUrl}" alt="${user.username}'s avatar" class="user-avatar" title="Logged in as ${user.username}#${user.discriminator || ''}\nClick to Logout">
+            `;
+            authContainer.querySelector('.user-avatar').addEventListener('click', () => {
+                window.location.href = '/auth/logout';
+            });
+        } else {
+            authContainer.innerHTML = `
+                <button class="discord-button" onclick="window.location.href='/auth/discord'">
+                    <i class="fab fa-discord discord-icon"></i>
+                    Sign in with Discord
+                </button>
+            `;
+        }
+    }
+    updateAuthUIForRosterPage(); // Call it for the roster page's top bar
+
+    // ... (rest of roster.js code for fetching and rendering grid) ...
     try {
         const response = await fetch(`/api/roster/${eventId}`);
         const rosterData = await response.json();
 
         if (response.ok) {
             if (rosterData && rosterData.raidDrop) {
-                const partyPerRaid = rosterData.partyPerRaid; // Number of columns
-                const slotPerParty = rosterData.slotPerParty; // Cells per column (rows)
-                const raidDrop = rosterData.raidDrop; // Array of players
+                const partyPerRaid = rosterData.partyPerRaid;
+                const slotPerParty = rosterData.slotPerParty;
+                const raidDrop = rosterData.raidDrop;
 
-                // Set grid columns dynamically based on partyPerRaid
-                rosterGrid.style.gridTemplateColumns = `repeat(${partyPerRaid}, 1fr)`;
-                rosterGrid.innerHTML = ''; // Clear loading message
+                rosterGrid.style.gridTemplateColumns = `repeat(${partyPerRraid}, 1fr)`;
+                rosterGrid.innerHTML = '';
 
-                // Create a 2D array to hold player data for easy lookup
                 const rosterMatrix = Array(partyPerRaid).fill(null).map(() => Array(slotPerParty).fill(null));
 
-                // Populate the matrix with actual player data
                 raidDrop.forEach(player => {
-                    // partyId is 1-indexed, slotId is 1-indexed
                     if (player.partyId >= 1 && player.partyId <= partyPerRaid &&
                         player.slotId >= 1 && player.slotId <= slotPerParty) {
                         rosterMatrix[player.partyId - 1][player.slotId - 1] = player;
                     }
                 });
 
-                // Dynamically build the roster grid
                 for (let i = 0; i < partyPerRaid; i++) {
                     const columnDiv = document.createElement('div');
                     columnDiv.classList.add('roster-column');
                     
-                    // Add Party Name (if available) - Assuming partyNames array is in order
                     if (rosterData.partyNames && rosterData.partyNames[i]) {
                         const partyName = document.createElement('div');
                         partyName.classList.add('party-name');
@@ -65,21 +97,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                         if (player && player.name) {
                             cellDiv.classList.add('player-filled');
                             cellDiv.textContent = player.name;
-                            // Set background color using the 'color' property from JSON
-                            // Ensure color is a valid CSS format (e.g., "#HEX" or "rgb(r,g,b)")
                             if (player.color) {
                                 cellDiv.style.backgroundColor = player.color;
                             }
                         } else {
-                            // Empty cell - keep default dark grey
-                            cellDiv.textContent = 'Empty'; // Or leave blank for true empty
+                            cellDiv.textContent = 'Empty';
                         }
                         columnDiv.appendChild(cellDiv);
                     }
                     rosterGrid.appendChild(columnDiv);
                 }
 
-                // Update event title with the actual title from rosterData if available
                 if (rosterData.title) {
                     rosterEventTitle.textContent = rosterData.title;
                 }
