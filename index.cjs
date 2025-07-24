@@ -75,8 +75,15 @@ passport.use(new DiscordStrategy({
 // Critical: Place express.static as the FIRST middleware to handle static files.
 app.use(express.static('public'));
 
+// NEW POSITION: Route to serve the Roster page for specific event IDs
+// This MUST come IMMEDIATELY after express.static, or other core middleware.
+// This ensures it catches /event_id/:eventId/roster before any other HTML-serving route.
+app.get('/event_id/:eventId/roster', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'roster.html'));
+});
 
-// All API and authentication routes should come AFTER express.static
+
+// All API and authentication routes should come AFTER express.static AND the roster HTML route
 app.get('/auth/discord', passport.authenticate('discord'));
 
 app.get('/auth/discord/callback',
@@ -124,7 +131,7 @@ app.get('/db-test', async (req, res) => {
       message: 'Database connection successful!',
       currentTime: result.rows[0].current_time
     });
-  } catch (error) { // Changed 'err' to 'error' for consistency
+  } catch (error) {
     console.error('Error executing query:', error.stack);
     res.status(500).json({
         message: 'Error connecting to or querying the database.',
@@ -160,7 +167,7 @@ app.get('/api/events', async (req, res) => {
     console.log('Raid-Helper API Raw Response Data (200 OK):', JSON.stringify(response.data, null, 2));
 
     res.json(response.data);
-  } catch (error) { // Changed 'err' to 'error' for consistency
+  } catch (error) {
     console.error('Error fetching Raid-Helper events:', error.response ? error.response.data : error.message);
     if (error.response) {
       console.error('Raid-Helper API Error Response Details (Non-200):', {
@@ -176,7 +183,6 @@ app.get('/api/events', async (req, res) => {
   }
 });
 
-// NEW: API endpoint to fetch Roster data for a specific event ID
 app.get('/api/roster/:eventId', async (req, res) => {
     const eventId = req.params.eventId;
     if (!eventId) {
@@ -187,20 +193,13 @@ app.get('/api/roster/:eventId', async (req, res) => {
         const response = await axios.get(`https://raid-helper.dev/api/raidplan/${eventId}`);
         console.log(`Fetched Roster for Event ID ${eventId}:`, JSON.stringify(response.data, null, 2));
         res.json(response.data);
-    } catch (error) { // Changed 'err' to 'error' for consistency
+    } catch (error) {
         console.error(`Error fetching roster for event ${eventId}:`, error.response ? error.response.data : error.message);
         res.status(error.response ? error.response.status : 500).json({
             message: `Failed to fetch roster for event ${eventId}.`,
             error: error.response ? (error.response.data || error.message) : error.message
         });
     }
-});
-
-// NEW: Route to serve the Roster page for specific event IDs
-// This MUST come AFTER all API routes, but BEFORE the general catch-all routes.
-app.get('/event_id/:eventId/roster', (req, res) => {
-    // This serves the roster.html file for any URL matching /event_id/SOME_ID/roster
-    res.sendFile(path.join(__dirname, 'public', 'roster.html'));
 });
 
 // Explicitly serve index.html for the root path.

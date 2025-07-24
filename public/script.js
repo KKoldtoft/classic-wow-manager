@@ -69,9 +69,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 });
 
-                // Sort both arrays newest first (descending)
-                todayEvents.sort((a, b) => (b.startTime - a.startTime)); // Sort by raw timestamp, which is a number
-                otherEvents.sort((a, b) => (b.startTime - a.startTime)); // Sort by raw timestamp
+                // Sort Today's events (descending - newest first)
+                todayEvents.sort((a, b) => (b.startTime - a.startTime));
+                // Sort Other events (ascending - sooner first) <-- FIXED
+                otherEvents.sort((a, b) => (a.startTime - b.startTime));
 
                 // Combine: Today's events first, then others
                 const sortedEvents = todayEvents.concat(otherEvents);
@@ -103,8 +104,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (isToday) {
                         dateDisplayHTML = `<span class="event-today-text">Today</span>`;
                         eventDiv.classList.add('event-panel-today');
-                        // Ensure spacer is set to render if we have other events and this is a 'Today' event
-                        if (otherEvents.length > 0) {
+                        if (otherEvents.length > 0) { // If there are other events, we'll need a spacer
                             hasRenderedTodayEventSpacer = true;
                         }
                     } else {
@@ -119,14 +119,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     `;
                     eventsList.appendChild(eventDiv);
-                });
 
-                // Add spacer after the last 'Today' event section if needed
-                if (hasRenderedTodayEventSpacer) {
-                    const spacerDiv = document.createElement('div');
-                    spacerDiv.classList.add('today-events-spacer');
-                    eventsList.appendChild(spacerDiv);
-                }
+                    // Add spacer ONLY if this is the last 'Today' event AND there are 'other' events to follow
+                    if (isToday && (sortedEvents.indexOf(event) === (todayEvents.length - 1)) && hasRenderedTodayEventSpacer) {
+                        const spacerDiv = document.createElement('div');
+                        spacerDiv.classList.add('today-events-spacer');
+                        eventsList.appendChild(spacerDiv);
+                    }
+                });
 
             } else {
                 eventsList.innerHTML = '<p>No upcoming events found for this server.</p>';
