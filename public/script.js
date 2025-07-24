@@ -56,6 +56,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 const todayEvents = [];
                 const otherEvents = [];
+                // Date comparison uses today's date in CET. Time for comparison is irrelevant.
                 const todayInCET = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Copenhagen' });
 
                 data.scheduledEvents.forEach(event => {
@@ -69,9 +70,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 });
 
-                // Sort Today's events (descending - newest first)
+                // Sort Today's events (descending - newest first among today's events)
                 todayEvents.sort((a, b) => (b.startTime - a.startTime));
-                // Sort Other events (ascending - sooner first) <-- FIXED
+                // Sort Other events (ascending - sooner first among other events)
                 otherEvents.sort((a, b) => (a.startTime - b.startTime));
 
                 // Combine: Today's events first, then others
