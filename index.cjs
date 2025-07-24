@@ -75,14 +75,15 @@ passport.use(new DiscordStrategy({
 // Critical: Place express.static as the FIRST middleware to handle static files.
 app.use(express.static('public'));
 
-// Route to serve the Roster page for specific event IDs - HIGH PRIORITY
+// NEW: Explicitly serve the Roster page HTML for its full specific path
+// This must come BEFORE any catch-all for index.html or API routes that might clash
 app.get('/event_id/:eventId/roster', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'roster.html'));
 });
 
 
-// All API and authentication routes should come AFTER express.static AND the roster HTML route
-app.get('/auth/discord', passport.authenticate('discord')); 
+// All API and authentication routes should come AFTER express.static AND specific HTML routes
+app.get('/auth/discord', passport.authenticate('discord'));
 
 app.get('/auth/discord/callback',
   passport.authenticate('discord', {
@@ -200,9 +201,9 @@ app.get('/api/roster/:eventId', async (req, res) => {
     }
 });
 
-// REMOVED: app.get('/') explicitly
-// Combined into a single catch-all that serves index.html for all non-API/non-roster routes.
-// This MUST be the LAST route definition in your application.
+// This route will handle both the root path ('/') AND any other unmatched paths,
+// serving index.html. It MUST be the LAST route definition after ALL API routes
+// and ALL other specific HTML-serving routes (like the roster page route).
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
