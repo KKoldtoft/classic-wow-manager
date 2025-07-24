@@ -124,11 +124,11 @@ app.get('/db-test', async (req, res) => {
       message: 'Database connection successful!',
       currentTime: result.rows[0].current_time
     });
-  } catch (err) {
-    console.error('Error executing query:', err.stack);
+  } catch (error) { // Changed 'err' to 'error' for consistency
+    console.error('Error executing query:', error.stack);
     res.status(500).json({
         message: 'Error connecting to or querying the database.',
-        error: err.message
+        error: error.message
     });
   }
 });
@@ -160,7 +160,7 @@ app.get('/api/events', async (req, res) => {
     console.log('Raid-Helper API Raw Response Data (200 OK):', JSON.stringify(response.data, null, 2));
 
     res.json(response.data);
-  } catch (error) {
+  } catch (error) { // Changed 'err' to 'error' for consistency
     console.error('Error fetching Raid-Helper events:', error.response ? error.response.data : error.message);
     if (error.response) {
       console.error('Raid-Helper API Error Response Details (Non-200):', {
@@ -184,11 +184,10 @@ app.get('/api/roster/:eventId', async (req, res) => {
     }
 
     try {
-        // Raid-Helper /raidplan API does not require authorization
         const response = await axios.get(`https://raid-helper.dev/api/raidplan/${eventId}`);
         console.log(`Fetched Roster for Event ID ${eventId}:`, JSON.stringify(response.data, null, 2));
         res.json(response.data);
-    } catch (error) {
+    } catch (error) { // Changed 'err' to 'error' for consistency
         console.error(`Error fetching roster for event ${eventId}:`, error.response ? error.response.data : error.message);
         res.status(error.response ? error.response.status : 500).json({
             message: `Failed to fetch roster for event ${eventId}.`,
@@ -198,8 +197,9 @@ app.get('/api/roster/:eventId', async (req, res) => {
 });
 
 // NEW: Route to serve the Roster page for specific event IDs
-// This MUST come BEFORE the general app.get('*') catch-all.
+// This MUST come AFTER all API routes, but BEFORE the general catch-all routes.
 app.get('/event_id/:eventId/roster', (req, res) => {
+    // This serves the roster.html file for any URL matching /event_id/SOME_ID/roster
     res.sendFile(path.join(__dirname, 'public', 'roster.html'));
 });
 
