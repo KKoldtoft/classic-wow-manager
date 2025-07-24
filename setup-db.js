@@ -30,12 +30,18 @@ async function setupDatabase() {
     `);
     console.log('Table "players" is ready.');
 
-    // Step 2: Read and parse the TSV file
+    // Step 2: Create an index on discord_id for faster lookups
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_players_discord_id ON players (discord_id);
+    `);
+    console.log('Index on "discord_id" is ready.');
+
+    // Step 3: Read and parse the TSV file
     const fileContent = fs.readFileSync(tsvFilePath, 'utf8');
     const rows = fileContent.split('\n');
     console.log(`Found ${rows.length} rows in players.tsv.`);
 
-    // Step 3: Insert data into the database
+    // Step 4: Insert data into the database
     let insertedCount = 0;
     // Use a transaction for bulk inserts
     await client.query('BEGIN');

@@ -220,9 +220,52 @@ app.get('/api/roster/:eventId', async (req, res) => {
     }
 
     try {
-        const response = await axios.get(`https://raid-helper.dev/api/raidplan/${eventId}`);
-        console.log(`Fetched Roster for Event ID ${eventId}:`, JSON.stringify(response.data, null, 2));
-        res.json(response.data);
+        // Step 1: Fetch the main roster data from Raid-Helper
+        const rosterResponse = await axios.get(`https://raid-helper.dev/api/raidplan/${eventId}`);
+        const rosterData = rosterResponse.data;
+
+        if (!rosterData || !rosterData.raidDrop) {
+            return res.status(404).json({ message: 'Roster data not found or is invalid.' });
+        }
+
+        // Step 2: Collect all unique Discord IDs from the roster
+        const discordIds = [...new Set(rosterData.raidDrop.map(p => p.userid).filter(id => id))];
+
+        // Step 3: Fetch all potential main characters for these IDs from our database in one query
+        let mainsData = {};
+        if (discordIds.length > 0) {
+            const dbClient = await pool.connect();
+            try {
+                const dbResult = await dbClient.query({
+                    text: 'SELECT discord_id, character_name, class FROM players WHERE discord_id = ANY($1::text[])',
+                    values: [discordIds],
+                });
+                // Organize mains by discord_id for quick lookup
+                dbResult.rows.forEach(row => {
+                    if (!mainsData[row.discord_id]) {
+                        mainsData[row.discord_id] = [];
+                    }
+                    mainsData[row.discord_id].push(row);
+                });
+            } finally {
+                dbClient.release();
+            }
+        }
+
+        // Step 4: Cross-reference and add the main character name to each player in the roster
+        rosterData.raidDrop.forEach(player => {
+            if (player.userid && mainsData[player.userid]) {
+                const potentialMains = mainsData[player.userid];
+                const mainChar = potentialMains.find(m => m.class.toLowerCase() === player.class.toLowerCase());
+                if (mainChar) {
+                    player.mainCharacterName = mainChar.character_name;
+                }
+            }
+        });
+
+        console.log(`Fetched and enriched Roster for Event ID ${eventId}`);
+        res.json(rosterData);
+
     } catch (error) {
         console.error(`Error fetching roster for event ${eventId}:`, error.response ? error.response.data : error.message);
         res.status(error.response ? error.response.status : 500).json({

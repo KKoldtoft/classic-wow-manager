@@ -110,9 +110,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (player && player.name) {
                         cellDiv.classList.add('player-filled');
                         // Use innerHTML to structure the content
+                        let mainCharacterHTML = '';
+                        if (player.mainCharacterName && player.mainCharacterName.toLowerCase() !== player.name.toLowerCase()) {
+                            mainCharacterHTML = `<div class="main-char-name">Main: ${player.mainCharacterName}</div>`;
+                        }
+
                         cellDiv.innerHTML = `
                             <div class="player-name">${player.name}</div>
-                            <div class="player-id">${player.userId || 'No ID'}</div>
+                            <div class="player-id">${player.userid || 'No ID'}</div>
+                            ${mainCharacterHTML}
                         `;
 
                         if (player.color) {

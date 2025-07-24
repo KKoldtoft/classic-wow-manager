@@ -57,7 +57,7 @@ body, html {
 /* Roster Cell (Slot) */
 .roster-cell {
     width: 200px;
-    height: 40px; /* Increased height to fit two lines comfortably */
+    height: 55px; /* Increased height for a third line */
     display: flex;
     flex-direction: column; /* Stack name and ID vertically */
     align-items: center;
@@ -68,7 +68,7 @@ body, html {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    padding: 2px 5px; /* Add some padding */
+    padding: 3px 5px; /* Adjusted padding */
 }
 
 .player-name {
@@ -81,9 +81,19 @@ body, html {
     color: #ccc;
 }
 
+.main-char-name {
+    font-size: 0.7em;
+    color: #a0e0a0; /* A light green to stand out */
+    font-style: italic;
+}
+
 /* Make text darker on light backgrounds for better readability */
 .roster-cell.player-filled .player-id {
     color: #555;
+}
+
+.roster-cell.player-filled .main-char-name {
+    color: #0b6623; /* Darker green for light backgrounds */
 }
 
 .party-name {
