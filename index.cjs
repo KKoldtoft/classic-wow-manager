@@ -213,6 +213,19 @@ app.get('/api/events', async (req, res) => {
   }
 });
 
+// A helper function to normalize class names to their canonical form
+const getCanonicalClass = (className) => {
+    if (typeof className !== 'string') {
+        return '';
+    }
+    const lowerClass = className.toLowerCase().trim();
+    const classMap = {
+        'tank': 'warrior',
+        // Add other mappings here if needed, e.g., 'prot': 'warrior'
+    };
+    return classMap[lowerClass] || lowerClass;
+};
+
 app.get('/api/roster/:eventId', async (req, res) => {
     const eventId = req.params.eventId;
     if (!eventId) {
@@ -253,17 +266,15 @@ app.get('/api/roster/:eventId', async (req, res) => {
         }
 
         // Step 4: Cross-reference and add the main character name to each player in the roster
-        const classMap = {
-            'tank': 'warrior'
-        };
-
         rosterData.raidDrop.forEach(player => {
             if (player.userid && mainsData[player.userid]) {
                 const potentialMains = mainsData[player.userid];
-                const rosterPlayerClass = player.class.toLowerCase();
-                const targetDbClass = classMap[rosterPlayerClass] || rosterPlayerClass;
+                const rosterPlayerCanonicalClass = getCanonicalClass(player.class);
                 
-                const mainChar = potentialMains.find(m => m.class.toLowerCase() === targetDbClass);
+                const mainChar = potentialMains.find(
+                    main => getCanonicalClass(main.class) === rosterPlayerCanonicalClass
+                );
+
                 if (mainChar) {
                     player.mainCharacterName = mainChar.character_name;
                 }
