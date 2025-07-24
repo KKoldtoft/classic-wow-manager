@@ -69,10 +69,27 @@ document.addEventListener('DOMContentLoaded', async () => {
                 filterInfo.innerHTML = `<p>Showing raids for <strong>${formattedToday}</strong> and later.</p>`;
 
                 const upcomingEvents = data.scheduledEvents.filter(event => {
-                    const eventStartDate = new Date(event.startTime * 1000);
-                    const isUpcoming = eventStartDate >= today;
-                    console.log(`Event: ${event.title}, Start: ${eventStartDate.toLocaleString()}, Is Upcoming: ${isUpcoming}`);
-                    return isUpcoming;
+                    try {
+                        if (typeof event.startTime !== 'number') {
+                            console.warn('Event is missing a numeric startTime. Skipping.', event);
+                            return false;
+                        }
+
+                        const eventStartDate = new Date(event.startTime * 1000);
+                        
+                        if (isNaN(eventStartDate.getTime())) {
+                            console.warn('Event has an invalid startTime, resulting in an invalid date. Skipping.', event);
+                            return false;
+                        }
+
+                        const isUpcoming = eventStartDate >= today;
+                        console.log(`Event: ${event.title || 'Untitled'}, Start: ${eventStartDate.toLocaleString()}, Is Upcoming: ${isUpcoming}`);
+                        return isUpcoming;
+                    } catch (filterError) {
+                        console.error('An error occurred during event filtering. Skipping this event.', filterError);
+                        console.error('Problematic event during filtering:', event);
+                        return false;
+                    }
                 });
 
                 if (upcomingEvents.length === 0) {
