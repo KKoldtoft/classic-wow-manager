@@ -179,7 +179,9 @@ app.get('/api/events', async (req, res) => {
 
     console.log('Raid-Helper API Raw Response Data (200 OK):', JSON.stringify(response.data, null, 2));
 
-    res.json(response.data);
+    // FIX: The actual event data is in response.data.data.
+    // We will send this back to the frontend under the expected 'scheduledEvents' key.
+    res.json({ scheduledEvents: response.data.data || [] });
   } catch (error) {
     console.error('Error fetching Raid-Helper events:', error.response ? error.response.data : error.message);
     if (error.response) {
