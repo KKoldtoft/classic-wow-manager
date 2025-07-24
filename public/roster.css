@@ -56,56 +56,79 @@ body, html {
 
 /* Roster Cell (Slot) */
 .roster-cell {
-    width: 200px;
-    min-height: 55px; /* Use min-height to allow the box to grow */
-    height: auto; /* Allow height to adjust to content */
+    width: 140px;
+    height: 39px; /* Match icon height */
     display: flex;
-    flex-direction: column; /* Stack name and ID vertically */
     align-items: center;
-    justify-content: center;
+    justify-content: space-between; /* Pushes name and toggle apart */
     border: 1px solid #444;
-    border-radius: 4px;
-    font-size: 0.9em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    padding: 3px 5px; /* Adjusted padding */
+    border-radius: 7px;
+    padding: 0 8px 0 0; /* Remove left padding */
+    position: relative; /* Crucial for positioning the dropdown */
+    cursor: default; /* Change cursor as the cell itself isn't a link anymore */
+    background-color: #777; /* Background for empty cells */
+    overflow: hidden; /* Clip the corners of the icon */
 }
 
 .player-name {
-    font-weight: bold;
-    font-size: 0.9em;
-    display: flex; /* Use flexbox to align icon and name */
+    font-weight: normal;
+    font-size: 1.0em;
+    text-shadow: none;
+    display: flex;
     align-items: center;
-    justify-content: center;
+    flex-grow: 1; /* Allows the name to take up available space */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.spec-icon {
-    width: 16px;
-    height: 16px;
-    margin-right: 5px;
-    vertical-align: middle;
-}
-
-.player-id {
-    font-size: 0.7em;
-    color: #333; /* Changed from #ccc to a dark grey */
-}
-
-.registered-char-name {
-    font-size: 0.7em;
-    color: #000; /* Changed from green to black */
+.player-name.unregistered-name span {
+    color: #9e2a2b; /* Dark red for unregistered names */
     font-style: italic;
 }
 
-.registered-char-name.no-match {
-    color: red;
-    font-weight: bold;
+
+.spec-icon {
+    width: 39px;
+    height: 39px;
+    margin-right: 5px;
+    flex-shrink: 0; /* Prevent the icon from shrinking */
 }
 
-.alt-char-name {
-    font-size: 0.7em;
-    color: #555; /* A neutral dark grey */
+/* Dropdown Styles */
+.dropdown-toggle {
+    cursor: pointer;
+    padding: 5px;
+    margin-left: 5px;
+    line-height: 1;
+}
+
+.player-details-dropdown {
+    display: none; /* Hidden by default */
+    position: absolute;
+    top: 100%; /* Position it right below the cell */
+    left: 0;
+    width: 100%;
+    background-color: #333;
+    border: 1px solid #555;
+    border-radius: 0 0 5px 5px;
+    z-index: 10;
+    padding: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.player-details-dropdown.show {
+    display: block; /* Show the dropdown */
+}
+
+.dropdown-item {
+    font-size: 0.8em;
+    padding: 3px 0;
+    color: #ddd;
+}
+
+.dropdown-item.alt-char {
+    padding-left: 10px; /* Indent alts slightly */
 }
 
 /* Make text darker on light backgrounds for better readability */

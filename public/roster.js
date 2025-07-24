@@ -110,29 +110,27 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (player && player.name) {
                         cellDiv.classList.add('player-filled');
 
+                        const isRegistered = player.mainCharacterName && player.mainCharacterName !== 'No match';
+                        const displayName = isRegistered ? player.mainCharacterName : player.name;
+                        const nameClass = isRegistered ? 'player-name' : 'player-name unregistered-name';
+
                         let specIconHTML = '';
                         if (player.spec_emote) {
                             specIconHTML = `<img src="https://cdn.discordapp.com/emojis/${player.spec_emote}.png" class="spec-icon" alt="${player.spec}" title="${player.spec}">`;
                         }
-                        
-                        // Use innerHTML to structure the content
-                        let mainCharacterHTML = '';
-                        if (player.mainCharacterName) {
-                            const isMatch = player.mainCharacterName !== 'No match';
-                            const className = isMatch ? 'registered-char-name' : 'registered-char-name no-match';
-                            mainCharacterHTML = `<div class="${className}">Registered: ${player.mainCharacterName}</div>`;
-                        }
 
-                        let altsHTML = '';
+                        // Build the dropdown content first
+                        let dropdownContentHTML = `<div class="dropdown-item"><b>Signed up as:</b> ${player.name}</div>`;
+                        dropdownContentHTML += `<div class="dropdown-item"><b>Discord ID:</b> ${player.userid || 'N/A'}</div>`;
                         if (player.altCharacters && player.altCharacters.length > 0) {
-                            altsHTML = player.altCharacters.map(alt => `<div class="alt-char-name">${alt}</div>`).join('');
+                            dropdownContentHTML += player.altCharacters.map(alt => `<div class="dropdown-item alt-char">${alt}</div>`).join('');
                         }
 
+                        // Build the final cell HTML
                         cellDiv.innerHTML = `
-                            <div class="player-name">${specIconHTML}<span>${player.name}</span></div>
-                            <div class="player-id">${player.userid || 'No ID'}</div>
-                            ${mainCharacterHTML}
-                            ${altsHTML}
+                            <div class="${nameClass}">${specIconHTML}<span>${displayName}</span></div>
+                            <div class="dropdown-toggle"><i class="fas fa-chevron-down"></i></div>
+                            <div class="player-details-dropdown">${dropdownContentHTML}</div>
                         `;
 
                         if (player.color) {
@@ -156,6 +154,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                 rosterGrid.appendChild(columnDiv);
             }
 
+            // Add event listeners to all new dropdown toggles
+            document.querySelectorAll('.dropdown-toggle').forEach(toggle => {
+                toggle.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent the click from bubbling up
+                    const dropdown = toggle.nextElementSibling;
+                    const allDropdowns = document.querySelectorAll('.player-details-dropdown');
+                    
+                    // Close all other dropdowns
+                    allDropdowns.forEach(d => {
+                        if (d !== dropdown) {
+                            d.classList.remove('show');
+                        }
+                    });
+
+                    // Toggle the clicked one
+                    dropdown.classList.toggle('show');
+                });
+            });
+
             if (rosterData.title) {
                 rosterEventTitle.textContent = rosterData.title;
             }
@@ -169,4 +186,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         rosterGrid.innerHTML = '<p>An error occurred while fetching roster data.</p>';
         console.error('roster.js: Client-side error during fetch operation. This might be a network issue or JSON parsing problem.', error); // DEBUG LOG 10
     }
+
+    // Close dropdowns if clicking outside
+    window.addEventListener('click', () => {
+        document.querySelectorAll('.player-details-dropdown.show').forEach(dropdown => {
+            dropdown.classList.remove('show');
+        });
+    });
 });
