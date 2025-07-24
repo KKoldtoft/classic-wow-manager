@@ -83,54 +83,61 @@ document.addEventListener('DOMContentLoaded', async () => {
                 upcomingEvents.sort((a, b) => a.startTime - b.startTime);
 
                 upcomingEvents.forEach(event => {
-                    const eventDiv = document.createElement('div');
-                    eventDiv.classList.add('event-panel');
-                    
-                    const eventId = event.id || 'unknown';
-                    const eventTitle = event.title || 'Untitled Event';
+                    try {
+                        const eventDiv = document.createElement('div');
+                        eventDiv.classList.add('event-panel');
+                        
+                        const eventId = event.id || 'unknown';
+                        const eventTitle = event.title || 'Untitled Event';
 
-                    eventDiv.style.cursor = 'pointer';
-                    eventDiv.addEventListener('click', () => {
-                        console.log('script.js: Navigating to roster for event ID:', eventId); // DEBUG LOG S8
-                        window.location.href = `/event/${eventId}/roster`;
-                    });
+                        if (eventId !== 'unknown') {
+                            eventDiv.style.cursor = 'pointer';
+                            eventDiv.addEventListener('click', () => {
+                                console.log('script.js: Navigating to roster for event ID:', eventId); // DEBUG LOG S8
+                                window.location.href = `/event/${eventId}/roster`;
+                            });
+                        }
 
-                    const eventStartDate = new Date(event.startTime * 1000);
+                        const eventStartDate = new Date(event.startTime * 1000);
 
-                    // --- Date Formatting Logic ---
-                    const cetTimeZone = 'Europe/Copenhagen';
-                    const nowInCET = new Date();
+                        // --- Date Formatting Logic ---
+                        const cetTimeZone = 'Europe/Copenhagen';
+                        const nowInCET = new Date();
 
-                    // Get today's date at midnight in CET
-                    const todayAtMidnightCET = new Date(nowInCET.toLocaleDateString('en-CA', { timeZone: cetTimeZone }));
+                        // Get today's date at midnight in CET
+                        const todayAtMidnightCET = new Date(nowInCET.toLocaleDateString('en-CA', { timeZone: cetTimeZone }));
 
-                    // Normalize event start date to date only
-                    const eventDateOnly = new Date(eventStartDate.toLocaleDateString('en-CA', { timeZone: cetTimeZone }));
+                        // Normalize event start date to date only
+                        const eventDateOnly = new Date(eventStartDate.toLocaleDateString('en-CA', { timeZone: cetTimeZone }));
 
-                    let dateDisplayHTML;
-                    if (eventDateOnly.getTime() === todayAtMidnightCET.getTime()) {
-                        dateDisplayHTML = `<span class="event-today-text">Today</span>`;
-                        eventDiv.classList.add('event-panel-today');
-                    } else {
-                        const optionsDay = { weekday: 'long', timeZone: cetTimeZone };
-                        const optionsDate = { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: cetTimeZone };
-                        const formattedDayName = eventStartDate.toLocaleDateString('en-US', optionsDay);
-                        const formattedDate = eventStartDate.toLocaleDateString('en-GB', optionsDate);
-                        dateDisplayHTML = `${formattedDayName} (${formattedDate})`;
+                        let dateDisplayHTML;
+                        if (eventDateOnly.getTime() === todayAtMidnightCET.getTime()) {
+                            dateDisplayHTML = `<span class="event-today-text">Today</span>`;
+                            eventDiv.classList.add('event-panel-today');
+                        } else {
+                            const optionsDay = { weekday: 'long', timeZone: cetTimeZone };
+                            const optionsDate = { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: cetTimeZone };
+                            const formattedDayName = eventStartDate.toLocaleDateString('en-US', optionsDay);
+                            const formattedDate = eventStartDate.toLocaleDateString('en-GB', optionsDate);
+                            dateDisplayHTML = `${formattedDayName} (${formattedDate})`;
+                        }
+                        
+                        const optionsTime = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: cetTimeZone };
+                        const formattedStartTime = eventStartDate.toLocaleTimeString('en-GB', optionsTime);
+                        // --- End Date Formatting Logic ---
+
+                        eventDiv.innerHTML = `
+                            <h3>${eventTitle}</h3>
+                            <div class="event-time-info">
+                                <p><i class="far fa-calendar-alt event-icon"></i> ${dateDisplayHTML}</p>
+                                <p><i class="far fa-clock event-icon"></i> ${formattedStartTime}</p>
+                            </div>
+                        `;
+                        eventsList.appendChild(eventDiv);
+                    } catch (renderError) {
+                        console.error('Error rendering a single event. Skipping it.', renderError);
+                        console.error('Problematic event data:', event);
                     }
-                    
-                    const optionsTime = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: cetTimeZone };
-                    const formattedStartTime = eventStartDate.toLocaleTimeString('en-GB', optionsTime);
-                    // --- End Date Formatting Logic ---
-
-                    eventDiv.innerHTML = `
-                        <h3>${eventTitle}</h3>
-                        <div class="event-time-info">
-                            <p><i class="far fa-calendar-alt event-icon"></i> ${dateDisplayHTML}</p>
-                            <p><i class="far fa-clock event-icon"></i> ${formattedStartTime}</p>
-                        </div>
-                    `;
-                    eventsList.appendChild(eventDiv);
                 });
 
                 // Add spacer ONLY if this is the last 'Today' event AND there are 'other' events to follow
