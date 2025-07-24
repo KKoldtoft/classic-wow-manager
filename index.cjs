@@ -16,12 +16,11 @@ app.set('trust proxy', 1);
 
 // --- Database Configuration ---
 const connectionString = process.env.DATABASE_URL;
+const isProduction = process.env.NODE_ENV === 'production';
 
 const pool = new Pool({
   connectionString: connectionString,
-  ssl: {
-    rejectUnauthorized: false
-  }
+  ssl: isProduction ? { rejectUnauthorized: false } : false,
 });
 
 let dbConnectionStatus = 'Connecting...';
@@ -80,6 +79,10 @@ app.get('/event/:eventId/roster', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'roster.html'));
 });
 
+app.get('/players', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'players.html'));
+});
+
 
 // All API and authentication routes should come AFTER express.static AND specific HTML routes
 app.get('/auth/discord', passport.authenticate('discord'));
@@ -136,6 +139,18 @@ app.get('/db-test', async (req, res) => {
         error: error.message
     });
   }
+});
+
+app.get('/api/players', async (req, res) => {
+    try {
+        const client = await pool.connect();
+        const result = await client.query('SELECT * FROM players ORDER BY character_name');
+        client.release();
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Error fetching players:', error.stack);
+        res.status(500).json({ message: 'Error fetching players from the database.' });
+    }
 });
 
 // UPDATED: Endpoint to fetch upcoming Raid-Helper events using /events endpoint with filters
