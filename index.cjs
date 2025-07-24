@@ -81,7 +81,7 @@ app.get('/event/:eventId/roster', (req, res) => {
 });
 
 
-// All API and authentication routes should come AFTER express.static AND the roster HTML route
+// All API and authentication routes should come AFTER express.static AND specific HTML routes
 app.get('/auth/discord', passport.authenticate('discord'));
 
 app.get('/auth/discord/callback',
@@ -154,9 +154,13 @@ app.get('/api/events', async (req, res) => {
 
   // Calculate Unix timestamps for filtering
   const nowUnixTimestamp = Math.floor(Date.now() / 1000); // Current time in seconds
-  // Set EndTimeFilter far into the future (e.g., 1 year from now)
   const oneYearInSeconds = 365 * 24 * 60 * 60;
   const futureUnixTimestamp = nowUnixTimestamp + oneYearInSeconds;
+
+  // NEW: Log the timestamp values for debugging
+  console.log(`Debug: StartTimeFilter (now): ${nowUnixTimestamp}`);
+  console.log(`Debug: EndTimeFilter (1 year from now): ${futureUnixTimestamp}`);
+
 
   try {
     const response = await axios.get(
@@ -166,12 +170,9 @@ app.get('/api/events', async (req, res) => {
           'Authorization': `${raidHelperApiKey}`,
           'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
         },
-        params: { // Add filters to get only upcoming events
-            StartTimeFilter: nowUnixTimestamp,
-            EndTimeFilter: futureUnixTimestamp,
-            // You might want to add 'Page' or 'IncludeSignUps' if needed later
-            // Page: 1,
-            // IncludeSignUps: true
+        params: { // TEMPORARY: Commenting out filters to see if any events return
+            // StartTimeFilter: nowUnixTimestamp,
+            // EndTimeFilter: futureUnixTimestamp,
         }
       }
     );
@@ -215,9 +216,9 @@ app.get('/api/roster/:eventId', async (req, res) => {
 });
 
 // This route will handle both the root path ('/') AND any other unmatched paths,
-// serving index.html. It MUST be the LAST route definition in your application.
+// serving events.html. It MUST be the LAST route definition in your application.
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'events.html')); // Correct path
+  res.sendFile(path.join(__dirname, 'public', 'events.html')); // Corrected path to events.html
 });
 
 
