@@ -4,7 +4,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const rosterGrid = document.getElementById('roster-grid');
     const rosterEventTitle = document.getElementById('roster-event-title');
-    const authContainer = document.getElementById('auth-container');
 
     // Extract event ID from the URL - NEW URL PATTERN
     const pathParts = window.location.pathname.split('/');
@@ -21,44 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log(`roster.js: Successfully parsed Event ID from URL: ${eventId}`);
 
     rosterEventTitle.textContent = `Roster for Event ID: ${eventId} (Loading...)`;
-
-    // Functionality for top-bar auth (copied from script.js)
-    async function getUserStatus() {
-        try {
-            const response = await fetch('/user');
-            const data = await response.json();
-            return data;
-        } catch (error) {
-            console.error('roster.js: Error fetching user status for top bar:', error);
-            return { loggedIn: false };
-        }
-    }
-
-    async function updateAuthUIForRosterPage() {
-        const user = await getUserStatus();
-        if (user.loggedIn) {
-            const avatarUrl = user.avatar
-                ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`
-                : `https://cdn.discordapp.com/embed/avatars/${parseInt(user.discriminator) % 5}.png`;
-
-            authContainer.innerHTML = `
-                <img src="${avatarUrl}" alt="${user.username}'s avatar" class="user-avatar" title="Logged in as ${user.username}#${user.discriminator || ''}\nClick to Logout">
-            `;
-            authContainer.querySelector('.user-avatar').addEventListener('click', () => {
-                window.location.href = '/auth/logout';
-            });
-        } else {
-            authContainer.innerHTML = `
-                <button class="discord-button" onclick="window.location.href='/auth/discord'">
-                    <i class="fab fa-discord discord-icon"></i>
-                    Sign in with Discord
-                </button>
-            `;
-        }
-    }
-    updateAuthUIForRosterPage();
-
-    console.log('roster.js: Attempting to fetch roster data from /api/roster/eventId...'); // DEBUG LOG 4
+    
     try {
         const response = await fetch(`/api/roster/${eventId}`); // Use the hardcoded eventId
         console.log('roster.js: Fetch response received from /api/roster. Response object:', response); // DEBUG LOG 5

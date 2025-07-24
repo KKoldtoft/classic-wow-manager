@@ -6,21 +6,107 @@ body {
     color: #333;
 }
 
+/* --- Universal Top Bar --- */
 .top-bar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background-color: #36393f; /* Discord dark theme color */
+    background-color: #2c2f33;
     padding: 10px 20px;
     color: white;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    border-bottom-left-radius: 8px;
-    border-bottom-right-radius: 8px;
 }
 
-.app-title {
-    font-size: 1.5em;
+.top-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.top-nav {
+    display: flex;
+    gap: 15px;
+}
+
+.top-nav-link {
+    color: #b9bbbe;
+    text-decoration: none;
+    padding: 8px 12px;
+    border-radius: 5px;
+    transition: background-color 0.2s;
+}
+
+.top-nav-link:hover {
+    background-color: #40444b;
+}
+
+.top-nav-link.active {
+    background-color: #5865F2;
+    color: white;
     font-weight: bold;
+}
+
+#auth-container {
+    display: flex;
+    align-items: center;
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: relative; /* For dropdown positioning */
+}
+
+.user-name {
+    color: white;
+}
+
+.user-avatar-small {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%; /* Make it round */
+    cursor: pointer; /* Show it's clickable */
+}
+
+/* New User Dropdown Styles */
+.user-dropdown {
+    display: none;
+    position: absolute;
+    top: 40px; /* Position below the top bar */
+    right: 0;
+    background-color: #2c2f33;
+    border: 1px solid #40444b;
+    border-radius: 5px;
+    min-width: 150px;
+    z-index: 100;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.user-dropdown.show {
+    display: block;
+}
+
+.user-dropdown .dropdown-item {
+    color: #b9bbbe;
+    padding: 10px 15px;
+    text-decoration: none;
+    display: block;
+}
+
+.user-dropdown .dropdown-item:hover {
+    background-color: #40444b;
+}
+
+.logout-button {
+    display: none; /* Hide the old button */
+    background-color: #747f8d;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-left: 15px;
+    text-decoration: none;
 }
 
 .discord-button {
@@ -70,7 +156,7 @@ body {
 /* --- Event Panels --- */
 .event-panel {
     background-color: #fff; /* Fallback color */
-    background-image: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url('https://gamelegends.it/wp-content/uploads/2017/09/kelthuzad-talenti.jpg');
+    background-image: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.2)), url('/images/AQ40-background.png');
     background-size: cover;
     background-position: center;
     border: 1px solid #444;

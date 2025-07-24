@@ -1,49 +1,26 @@
 // public/script.js
 document.addEventListener('DOMContentLoaded', async () => {
-    const authContainer = document.getElementById('auth-container');
     const eventsList = document.getElementById('events-list');
 
-    console.log('script.js: DOMContentLoaded event fired.'); // DEBUG LOG S1
-
-    // Function to fetch user status (no changes)
-    async function getUserStatus() {
+    // The user status and auth UI are now handled by top-bar.js
+    // We just need to check if the user is logged in to fetch events.
+    async function checkLoginAndFetch() {
         try {
             const response = await fetch('/user');
-            const data = await response.json();
-            return data;
-        } catch (error) {
-            console.error('script.js: Error fetching user status:', error);
-            return { loggedIn: false };
-        }
-    }
-
-    // Function to update the UI based on login status (no changes)
-    async function updateAuthUI() {
-        const user = await getUserStatus();
-
-        if (user.loggedIn) {
-            const avatarUrl = user.avatar
-                ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`
-                : `https://cdn.discordapp.com/embed/avatars/${parseInt(user.discriminator) % 5}.png`;
-
-            authContainer.innerHTML = `
-                <img src="${avatarUrl}" alt="${user.username}'s avatar" class="user-avatar" title="Logged in as ${user.username}#${user.discriminator || ''}\nClick to Logout">
-            `;
-            authContainer.querySelector('.user-avatar').addEventListener('click', () => {
-                window.location.href = '/auth/logout';
-            });
+            const user = await response.json();
             
-            fetchAndDisplayEvents();
-            fetchAndDisplayMyCharacters();
-
-        } else {
-            authContainer.innerHTML = `
-                <button class="discord-button" onclick="window.location.href='/auth/discord'">
-                    <i class="fab fa-discord discord-icon"></i>
-                    Sign in with Discord
-                </button>
-            `;
-            eventsList.innerHTML = '<p>Please sign in with Discord to view upcoming events.</p>';
+            if (user.loggedIn) {
+                fetchAndDisplayEvents();
+                fetchAndDisplayMyCharacters();
+            } else {
+                document.getElementById('events-list').innerHTML = '<p>Please sign in with Discord to view upcoming events.</p>';
+                const myCharsContainer = document.getElementById('my-characters-list');
+                if (myCharsContainer) {
+                    myCharsContainer.innerHTML = '<p>Please sign in to see your characters.</p>';
+                }
+            }
+        } catch (error) {
+            console.error('Error checking user status:', error);
         }
     }
 
@@ -85,6 +62,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Function to fetch and display events (now called directly)
     async function fetchAndDisplayEvents() {
+        if (!eventsList) return; // Don't run if the container doesn't exist
         eventsList.innerHTML = '<p>Fetching events...</p>';
 
         try {
@@ -203,6 +181,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Initial UI update on page load
-    updateAuthUI();
+    // Initial check on page load
+    checkLoginAndFetch();
 });

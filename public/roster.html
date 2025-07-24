@@ -10,13 +10,20 @@
 </head>
 <body>
     <div class="top-bar">
-        <div class="app-title">Classic WoW Manager</div>
+        <div class="top-bar-left">
+            <div class="app-title">Classic WoW Manager</div>
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Events</a>
+                <a href="/players" class="top-nav-link">Players</a>
+            </nav>
+        </div>
         <div id="auth-container">
-            </div>
+            <!-- Auth content is now loaded by top-bar.js -->
+        </div>
     </div>
 
     <div class="content">
-        <p style="background-color: yellow; color: black; padding: 5px; text-align: center;">THIS IS THE ROSTER PAGE</p> <a href="/" class="back-button"><i class="fas fa-arrow-left"></i> Back to Events</a>
+        <a href="/" class="back-button"><i class="fas fa-arrow-left"></i> Back to Events</a>
         <h1 id="roster-event-title">Loading Roster...</h1>
         <div id="roster-grid">
             <p>Loading roster data...</p>
@@ -24,5 +31,6 @@
     </div>
 
     <script src="/roster.js"></script>
+    <script src="/top-bar.js"></script>
 </body>
 </html>

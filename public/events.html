@@ -8,17 +8,19 @@
 </head>
 <body>
     <div class="top-bar">
-        <div class="app-title">Classic WoW Manager</div>
+        <div class="top-bar-left">
+            <div class="app-title">Classic WoW Manager</div>
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Events</a>
+                <a href="/players" class="top-nav-link">Players</a>
+            </nav>
+        </div>
         <div id="auth-container">
-            </div>
+            <!-- Auth content is now loaded by top-bar.js -->
+        </div>
     </div>
 
     <div class="container">
-        <div class="navigation-links">
-            <a href="/" class="nav-link active">Events</a>
-            <a href="/players" class="nav-link">Players</a>
-        </div>
-        
         <div class="main-content-grid">
             <div class="panel">
                 <h1 class="panel-title">Upcoming Raids</h1>
@@ -36,5 +38,7 @@
     </div>
 
     <script src="/script.js"></script>
+    <script src="/top-bar.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </body>
 </html>
