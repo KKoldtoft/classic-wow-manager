@@ -217,7 +217,7 @@ app.get('/api/roster/:eventId', async (req, res) => {
 // This route will handle both the root path ('/') AND any other unmatched paths,
 // serving index.html. It MUST be the LAST route definition in your application.
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'events.html')); // Changed from index.html to events.html
+  res.sendFile(path.join(__dirname, 'public', 'events.html')); // Correct path
 });
 
 
