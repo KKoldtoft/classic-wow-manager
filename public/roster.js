@@ -1,190 +1,282 @@
 // public/roster.js
-document.addEventListener('DOMContentLoaded', async () => {
-    console.log('roster.js: DOMContentLoaded event fired. Script is running.'); // DEBUG LOG 1
 
+document.addEventListener('DOMContentLoaded', async () => {
     const rosterGrid = document.getElementById('roster-grid');
     const rosterEventTitle = document.getElementById('roster-event-title');
     const compToolButton = document.getElementById('comp-tool-button');
+    const revertButton = document.getElementById('revert-roster-button');
 
-    // Extract event ID from the URL - NEW URL PATTERN
     const pathParts = window.location.pathname.split('/');
     const eventKeywordIndex = pathParts.indexOf('event');
     const eventId = (eventKeywordIndex !== -1 && pathParts.length > eventKeywordIndex + 1) ? pathParts[eventKeywordIndex + 1] : null;
 
     if (!eventId) {
         rosterGrid.innerHTML = '<p>Error: Event ID not found in URL.</p>';
-        rosterEventTitle.textContent = 'Error Loading Roster';
-        console.error('roster.js: Event ID could not be parsed from the URL.');
         return;
     }
 
-    // Set the href for the Comp-tool button
     if (compToolButton) {
         compToolButton.href = `https://raid-helper.dev/raidplan/${eventId}`;
     }
 
-    console.log(`roster.js: Successfully parsed Event ID from URL: ${eventId}`);
+    let isManaged = false;
+    let specData = {};
+    let initialRosterSnapshot = {};
 
-    rosterEventTitle.textContent = `Roster for Event ID: ${eventId} (Loading...)`;
-    
     try {
-        const response = await fetch(`/api/roster/${eventId}`); // Use the hardcoded eventId
-        console.log('roster.js: Fetch response received from /api/roster. Response object:', response); // DEBUG LOG 5
-        
-        if (!response.ok) {
-            console.error('roster.js: HTTP Error Response for /api/roster:', response.status, response.statusText);
-            const errorData = await response.json();
-            console.error('roster.js: Error data from /api/roster:', errorData);
-            rosterGrid.innerHTML = `<p>Error fetching roster: ${errorData.message || 'Server returned an error'}</p>`;
-            return;
-        }
-
-        const rosterData = await response.json();
-        console.log('roster.js: Roster data parsed successfully.', rosterData); // DEBUG LOG 6
-
-        if (rosterData && rosterData.raidDrop) { // Check for rosterData.raidDrop
-            const partyPerRaid = rosterData.partyPerRaid;
-            const slotPerParty = rosterData.slotPerParty;
-            const raidDrop = rosterData.raidDrop;
-
-            rosterGrid.style.gridTemplateColumns = `repeat(${partyPerRaid}, 1fr)`;
-            rosterGrid.innerHTML = '';
-
-            const rosterMatrix = Array(partyPerRaid).fill(null).map(() => Array(slotPerParty).fill(null));
-
-            raidDrop.forEach(player => {
-                if (player.partyId >= 1 && player.partyId <= partyPerRaid &&
-                    player.slotId >= 1 && player.slotId <= slotPerParty) {
-                    rosterMatrix[player.partyId - 1][player.slotId - 1] = player;
-                }
-            });
-
-            for (let i = 0; i < partyPerRaid; i++) {
-                const columnDiv = document.createElement('div');
-                columnDiv.classList.add('roster-column');
-                
-                if (rosterData.partyNames && rosterData.partyNames[i]) {
-                    const partyName = document.createElement('div');
-                    partyName.classList.add('party-name');
-                    partyName.textContent = rosterData.partyNames[i];
-                    columnDiv.appendChild(partyName);
-                }
-
-                for (let j = 0; j < slotPerParty; j++) {
-                    const cellDiv = document.createElement('div');
-                    cellDiv.classList.add('roster-cell');
-
-                    const player = rosterMatrix[i][j];
-                    if (player && player.name) {
-                        cellDiv.classList.add('player-filled');
-
-                        const isRegistered = player.mainCharacterName && player.mainCharacterName !== 'No match';
-                        const displayName = isRegistered ? player.mainCharacterName : player.name;
-                        const nameClass = isRegistered ? 'player-name' : 'player-name unregistered-name';
-
-                        let specIconHTML = '';
-                        if (player.spec_emote) {
-                            specIconHTML = `<img src="https://cdn.discordapp.com/emojis/${player.spec_emote}.png" class="spec-icon" alt="${player.spec}" title="${player.spec}">`;
-                        }
-
-                        // Build the dropdown content first
-                        let dropdownContentHTML = `<div class="dropdown-item"><b>Signed up as:</b> ${player.name}</div>`;
-                        dropdownContentHTML += `<div class="dropdown-item"><b>Discord ID:</b> ${player.userid || 'N/A'}</div>`;
-                        if (player.altCharacters && player.altCharacters.length > 0) {
-                            dropdownContentHTML += player.altCharacters.map(alt => `<div class="dropdown-item alt-char">${alt}</div>`).join('');
-                        }
-
-                        // Build the final cell HTML
-                        cellDiv.innerHTML = `
-                            <div class="${nameClass}" data-character-name="${displayName}" data-discord-name="${player.name}">${specIconHTML}<span>${displayName}</span></div>
-                            <div class="dropdown-toggle"><i class="fas fa-chevron-down"></i></div>
-                            <div class="player-details-dropdown">${dropdownContentHTML}</div>
-                        `;
-
-                        if (player.color) {
-                            cellDiv.style.backgroundColor = player.color;
-                            if (player.color.includes(',')) {
-                                cellDiv.style.backgroundColor = `rgb(${player.color})`;
-                                const rgb = player.color.split(',').map(Number);
-                                const brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
-                                if (brightness < 128) {
-                                    cellDiv.style.color = 'white';
-                                } else {
-                                    cellDiv.style.color = 'black';
-                                }
-                            }
-                        }
-                    } else {
-                        cellDiv.innerHTML = '<div class="player-name">Empty</div>';
-                    }
-                    columnDiv.appendChild(cellDiv);
-                }
-                rosterGrid.appendChild(columnDiv);
-            }
-
-            // Add event listeners to all new dropdown toggles
-            document.querySelectorAll('.dropdown-toggle').forEach(toggle => {
-                toggle.addEventListener('click', (e) => {
-                    e.stopPropagation(); // Prevent the click from bubbling up
-                    const dropdown = toggle.nextElementSibling;
-                    const allDropdowns = document.querySelectorAll('.player-details-dropdown');
-                    
-                    // Close all other dropdowns
-                    allDropdowns.forEach(d => {
-                        if (d !== dropdown) {
-                            d.classList.remove('show');
-                        }
-                    });
-
-                    // Toggle the clicked one
-                    dropdown.classList.toggle('show');
-                });
-            });
-
-            const toggleNamesButton = document.getElementById('toggle-names-button');
-            if (toggleNamesButton) {
-                let showDiscordNames = false;
-                toggleNamesButton.addEventListener('click', () => {
-                    showDiscordNames = !showDiscordNames;
-                    toggleNamesButton.classList.toggle('active', showDiscordNames);
-                    
-                    document.querySelectorAll('.player-name').forEach(nameDiv => {
-                        const span = nameDiv.querySelector('span');
-                        if (span) {
-                            if (showDiscordNames) {
-                                span.textContent = nameDiv.dataset.discordName;
-                            } else {
-                                span.textContent = nameDiv.dataset.characterName;
-                            }
-                        }
-                    });
-
-                    if (showDiscordNames) {
-                        toggleNamesButton.innerHTML = '<i class="fas fa-user-check"></i> Show char names';
-                    } else {
-                        toggleNamesButton.innerHTML = '<i class="fas fa-user-secret"></i> Show disc names';
-                    }
-                });
-            }
-
-            if (rosterData.title) {
-                rosterEventTitle.textContent = rosterData.title;
-            }
-            console.log('roster.js: Roster rendered successfully.'); // DEBUG LOG 7
-
-        } else {
-            rosterGrid.innerHTML = '<p>No roster data found or invalid format. Check /api/roster/:eventId response.</p>';
-            console.log('roster.js: No roster data found or invalid format.', rosterData); // DEBUG LOG 8
-        }
+        const response = await fetch('/api/specs');
+        specData = await response.json();
     } catch (error) {
-        rosterGrid.innerHTML = '<p>An error occurred while fetching roster data.</p>';
-        console.error('roster.js: Client-side error during fetch operation. This might be a network issue or JSON parsing problem.', error); // DEBUG LOG 10
+        console.error('Failed to load spec data:', error);
     }
 
-    // Close dropdowns if clicking outside
-    window.addEventListener('click', () => {
-        document.querySelectorAll('.player-details-dropdown.show').forEach(dropdown => {
-            dropdown.classList.remove('show');
+    async function renderRoster() {
+        rosterEventTitle.textContent = `Roster for Event ID: ${eventId} (Loading...)`;
+        try {
+            const rosterData = await fetchRoster(eventId);
+            isManaged = rosterData.isManaged;
+
+            if (Object.keys(initialRosterSnapshot).length === 0 && !isManaged) {
+                rosterData.raidDrop.forEach(p => {
+                    if (p.userid) {
+                        initialRosterSnapshot[p.userid] = p.mainCharacterName || p.name;
+                    }
+                });
+            }
+
+            updateRevertButtonVisibility();
+            renderGrid(rosterData);
+        } catch (error) {
+            rosterGrid.innerHTML = `<p>Error fetching roster: ${error.message}</p>`;
+        }
+    }
+
+    function renderGrid(rosterData) {
+        const { raidDrop, partyPerRaid, slotPerParty, partyNames, title } = rosterData;
+        rosterGrid.style.gridTemplateColumns = `repeat(${partyPerRaid}, 1fr)`;
+        rosterGrid.innerHTML = '';
+        
+        const rosterMatrix = Array(partyPerRaid).fill(null).map(() => Array(slotPerParty).fill(null));
+        raidDrop.forEach(p => {
+            if (p.partyId >= 1 && p.partyId <= partyPerRaid && p.slotId >= 1 && p.slotId <= slotPerParty) {
+                rosterMatrix[p.partyId - 1][p.slotId - 1] = p;
+            }
         });
+
+        for (let i = 0; i < partyPerRaid; i++) {
+            const columnDiv = document.createElement('div');
+            columnDiv.classList.add('roster-column');
+            if (partyNames && partyNames[i]) {
+                const partyName = document.createElement('div');
+                partyName.classList.add('party-name');
+                partyName.textContent = partyNames[i];
+                columnDiv.appendChild(partyName);
+            }
+
+            for (let j = 0; j < slotPerParty; j++) {
+                const cellDiv = document.createElement('div');
+                cellDiv.classList.add('roster-cell');
+                const player = rosterMatrix[i][j];
+
+                if (player && player.name) {
+                    cellDiv.classList.add('player-filled');
+                    const displayName = player.mainCharacterName || player.name;
+                    const nameClass = player.mainCharacterName ? 'player-name' : 'player-name unregistered-name';
+
+                    let specIconHTML = '';
+                    if (player.spec_emote) {
+                        specIconHTML = `<img src="https://cdn.discordapp.com/emojis/${player.spec_emote}.png" class="spec-icon">`;
+                    }
+                    
+                    let dropdownContentHTML = `<div class="dropdown-item"><b>Signed up as:</b> ${player.name}</div>`;
+                    
+                    // --- Actions Section ---
+                    dropdownContentHTML += '<div class="dropdown-header">Actions</div>';
+                    
+                    const canonicalClass = getCanonicalClass(player.class);
+                    const specsForClass = specData[canonicalClass] || [];
+                    if (specsForClass.length > 0) {
+                        let specSubmenuHTML = '<div class="spec-submenu">';
+                        specsForClass.forEach(spec => {
+                            specSubmenuHTML += `<div class="dropdown-item" data-action="swap-spec" data-userid="${player.userid}" data-spec-name="${spec.name}">${spec.name}</div>`;
+                        });
+                        specSubmenuHTML += '</div>';
+                        dropdownContentHTML += `<div class="dropdown-item has-submenu"><i class="fas fa-magic menu-icon"></i>Swap Spec ${specSubmenuHTML}</div>`;
+                    }
+
+                    const initialName = initialRosterSnapshot[player.userid];
+                    if (isManaged && player.mainCharacterName !== initialName) {
+                        dropdownContentHTML += `<div class="dropdown-item" data-action="revert-char" data-userid="${player.userid}"><i class="fas fa-undo menu-icon"></i>Revert to Original</div>`;
+                    }
+
+                    // --- Alts Section ---
+                    if (player.altCharacters && player.altCharacters.length > 0) {
+                        dropdownContentHTML += '<div class="dropdown-separator"></div>';
+                        dropdownContentHTML += '<div class="dropdown-header">Switch to Alt</div>';
+                        
+                        dropdownContentHTML += player.altCharacters.map(alt => {
+                            const iconHtml = alt.icon ? `<img src="https://cdn.discordapp.com/emojis/${alt.icon}.png" class="menu-icon">` : '<i class="fas fa-user menu-icon"></i>';
+                            const colorStyle = alt.color ? `style="color: rgb(${alt.color});"` : '';
+                            return `<div class="dropdown-item" data-action="swap-char" data-userid="${player.userid}" data-alt-name="${alt.name}" data-alt-class="${alt.class}">${iconHtml}<span ${colorStyle}>${alt.name}</span></div>`;
+                        }).join('');
+                    }
+
+                    cellDiv.innerHTML = `
+                        <div class="${nameClass}" data-character-name="${displayName}" data-discord-name="${player.name}">${specIconHTML}<span>${displayName}</span></div>
+                        <div class="dropdown-toggle"><i class="fas fa-chevron-down"></i></div>
+                        <div class="player-details-dropdown">${dropdownContentHTML}</div>`;
+
+                    if (player.color) {
+                        const color = player.color;
+                        if (typeof color === 'string' && color.includes(',')) { // RGB color
+                            cellDiv.style.backgroundColor = `rgb(${color})`;
+                            const rgb = color.split(',').map(Number);
+                            const brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
+                            cellDiv.style.color = brightness < 128 ? 'white' : 'black';
+                        } else { // Handle hex or other color formats
+                            cellDiv.style.backgroundColor = color;
+                            // A robust solution for text color on any background is complex,
+                            // but we can default to black or white based on a simple hex check.
+                            const hexColor = color.startsWith('#') ? color.substring(1) : color;
+                            const r = parseInt(hexColor.substr(0, 2), 16);
+                            const g = parseInt(hexColor.substr(2, 2), 16);
+                            const b = parseInt(hexColor.substr(4, 2), 16);
+                            const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+                            cellDiv.style.color = brightness < 128 ? 'white' : 'black';
+                        }
+                    }
+                } else {
+                    cellDiv.innerHTML = '<div class="player-name">Empty</div>';
+                }
+                columnDiv.appendChild(cellDiv);
+            }
+            rosterGrid.appendChild(columnDiv);
+        }
+
+        if (title) {
+            rosterEventTitle.textContent = title;
+        }
+        setupEventListeners();
+    }
+
+    function setupEventListeners() {
+        document.querySelectorAll('.dropdown-toggle').forEach(toggle => {
+            toggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const dropdown = toggle.nextElementSibling;
+                document.querySelectorAll('.player-details-dropdown').forEach(d => {
+                    if (d !== dropdown) d.classList.remove('show');
+                });
+                dropdown.classList.toggle('show');
+            });
+        });
+
+        document.querySelectorAll('[data-action="swap-char"]').forEach(item => {
+            item.addEventListener('click', async (e) => {
+                const { userid, altName, altClass } = e.currentTarget.dataset;
+                try {
+                    // Ensure the API call is awaited and handles the response
+                    const result = await updatePlayerCharacter(eventId, userid, altName, altClass);
+                    console.log('Update successful:', result.message);
+                    renderRoster(); // Re-render to show changes
+                } catch (error) {
+                    console.error('Failed to swap character:', error);
+                    alert(`Error swapping character: ${error.message}`);
+                }
+            });
+        });
+
+        document.querySelectorAll('[data-action="revert-char"]').forEach(item => {
+            item.addEventListener('click', async (e) => {
+                const { userid } = e.currentTarget.dataset;
+                try {
+                    // Pass null to signal a revert to the original character
+                    const result = await updatePlayerCharacter(eventId, userid, null, null);
+                    console.log('Revert successful:', result.message);
+                    renderRoster();
+                } catch (error) {
+                    console.error('Failed to revert character:', error);
+                    alert(`Error reverting character: ${error.message}`);
+                }
+            });
+        });
+
+        document.querySelectorAll('[data-action="swap-spec"]').forEach(item => {
+            item.addEventListener('click', async (e) => {
+                const { userid, specName } = e.currentTarget.dataset;
+                try {
+                    await updatePlayerSpec(eventId, userid, specName);
+                    renderRoster();
+                } catch (error) {
+                    console.error('Failed to swap spec:', error);
+                    alert(`Error swapping spec: ${error.message}`);
+                }
+            });
+        });
+    }
+
+    function getCanonicalClass(className) {
+        if (!className) return 'unknown';
+        const lower = className.toLowerCase();
+        if (lower.includes('death knight')) return 'death knight';
+        if (lower.includes('druid')) return 'druid';
+        if (lower.includes('hunter')) return 'hunter';
+        if (lower.includes('mage')) return 'mage';
+        if (lower.includes('paladin')) return 'paladin';
+        if (lower.includes('priest')) return 'priest';
+        if (lower.includes('rogue')) return 'rogue';
+        if (lower.includes('shaman')) return 'shaman';
+        if (lower.includes('warlock')) return 'warlock';
+        if (lower.includes('warrior')) return 'warrior';
+        return 'unknown';
+    }
+    
+    function setupNameToggle() {
+        const toggleNamesButton = document.getElementById('toggle-names-button');
+        if (!toggleNamesButton) return;
+
+        let showDiscordNames = false;
+
+        toggleNamesButton.addEventListener('click', () => {
+            showDiscordNames = !showDiscordNames;
+            toggleNamesButton.classList.toggle('active', showDiscordNames);
+
+            document.querySelectorAll('.player-name').forEach(nameDiv => {
+                const span = nameDiv.querySelector('span');
+                if (span) {
+                    span.textContent = showDiscordNames 
+                        ? nameDiv.dataset.discordName 
+                        : nameDiv.dataset.characterName;
+                }
+            });
+
+            toggleNamesButton.innerHTML = showDiscordNames
+                ? '<i class="fas fa-user-check"></i> Show Char Names'
+                : '<i class="fas fa-user-secret"></i> Show Disc Names';
+        });
+    }
+
+    function updateRevertButtonVisibility() {
+        revertButton.style.display = isManaged ? 'inline-flex' : 'none';
+    }
+
+    revertButton.addEventListener('click', async () => {
+        if (confirm('Are you sure you want to revert to the unmanaged roster? All local changes will be lost.')) {
+            try {
+                await revertToUnmanaged(eventId);
+                isManaged = false;
+                updateRevertButtonVisibility();
+                renderRoster();
+            } catch (error) {
+                alert(`Failed to revert: ${error.message}`);
+            }
+        }
     });
+
+    window.addEventListener('click', () => {
+        document.querySelectorAll('.player-details-dropdown.show').forEach(d => d.classList.remove('show'));
+    });
+
+    renderRoster();
+    setupNameToggle();
 });
