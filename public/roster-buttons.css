@@ -1,0 +1,39 @@
+/* public/roster-buttons.css */
+
+.button-panel {
+    display: flex;
+    flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
+    justify-content: center;
+    gap: 8px; /* Adjust gap for smaller buttons */
+    margin-bottom: 20px;
+    background-color: #2c2f33; /* Dark panel background */
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid #444;
+}
+
+.panel-button {
+    background-color: #5865F2; /* Discord blue */
+    color: white;
+    padding: 6px 12px; /* Smaller padding */
+    border: none;
+    border-radius: 6px; /* Smaller border radius */
+    text-decoration: none;
+    font-size: 0.9em; /* Smaller font */
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+}
+
+.panel-button.active {
+    background-color: #7289da; /* Lighter blue for active state */
+}
+
+.panel-button:hover {
+    background-color: #4752C4;
+}
+
+.panel-button i {
+    margin-right: 6px; /* Adjust icon margin */
+} 

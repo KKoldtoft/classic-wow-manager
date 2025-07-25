@@ -57,12 +57,12 @@ body, html {
 /* Roster Cell (Slot) */
 .roster-cell {
     width: 140px;
-    height: 39px; /* Match icon height */
+    height: 30px; /* Match icon height */
     display: flex;
     align-items: center;
     justify-content: space-between; /* Pushes name and toggle apart */
     border: 1px solid #444;
-    border-radius: 7px;
+    border-radius: 0px;
     padding: 0 8px 0 0; /* Remove left padding */
     position: relative; /* Crucial for positioning the dropdown */
     cursor: default; /* Change cursor as the cell itself isn't a link anymore */
@@ -71,7 +71,7 @@ body, html {
 
 .player-name {
     font-weight: normal;
-    font-size: 1.0em;
+    font-size: 0.8em;
     text-shadow: none;
     display: flex;
     align-items: center;
@@ -88,8 +88,8 @@ body, html {
 
 
 .spec-icon {
-    width: 39px;
-    height: 39px;
+    width: 30px;
+    height: 30px;
     margin-right: 5px;
     flex-shrink: 0; /* Prevent the icon from shrinking */
 }

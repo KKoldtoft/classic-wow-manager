@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const rosterGrid = document.getElementById('roster-grid');
     const rosterEventTitle = document.getElementById('roster-event-title');
+    const compToolButton = document.getElementById('comp-tool-button');
 
     // Extract event ID from the URL - NEW URL PATTERN
     const pathParts = window.location.pathname.split('/');
@@ -15,6 +16,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         rosterEventTitle.textContent = 'Error Loading Roster';
         console.error('roster.js: Event ID could not be parsed from the URL.');
         return;
+    }
+
+    // Set the href for the Comp-tool button
+    if (compToolButton) {
+        compToolButton.href = `https://raid-helper.dev/raidplan/${eventId}`;
     }
 
     console.log(`roster.js: Successfully parsed Event ID from URL: ${eventId}`);
@@ -90,7 +96,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                         // Build the final cell HTML
                         cellDiv.innerHTML = `
-                            <div class="${nameClass}">${specIconHTML}<span>${displayName}</span></div>
+                            <div class="${nameClass}" data-character-name="${displayName}" data-discord-name="${player.name}">${specIconHTML}<span>${displayName}</span></div>
                             <div class="dropdown-toggle"><i class="fas fa-chevron-down"></i></div>
                             <div class="player-details-dropdown">${dropdownContentHTML}</div>
                         `;
@@ -134,6 +140,32 @@ document.addEventListener('DOMContentLoaded', async () => {
                     dropdown.classList.toggle('show');
                 });
             });
+
+            const toggleNamesButton = document.getElementById('toggle-names-button');
+            if (toggleNamesButton) {
+                let showDiscordNames = false;
+                toggleNamesButton.addEventListener('click', () => {
+                    showDiscordNames = !showDiscordNames;
+                    toggleNamesButton.classList.toggle('active', showDiscordNames);
+                    
+                    document.querySelectorAll('.player-name').forEach(nameDiv => {
+                        const span = nameDiv.querySelector('span');
+                        if (span) {
+                            if (showDiscordNames) {
+                                span.textContent = nameDiv.dataset.discordName;
+                            } else {
+                                span.textContent = nameDiv.dataset.characterName;
+                            }
+                        }
+                    });
+
+                    if (showDiscordNames) {
+                        toggleNamesButton.innerHTML = '<i class="fas fa-user-check"></i> Show char names';
+                    } else {
+                        toggleNamesButton.innerHTML = '<i class="fas fa-user-secret"></i> Show disc names';
+                    }
+                });
+            }
 
             if (rosterData.title) {
                 rosterEventTitle.textContent = rosterData.title;
