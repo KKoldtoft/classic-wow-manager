@@ -1213,6 +1213,129 @@ app.post('/api/roster/:eventId/revert', async (req, res) => {
     }
 });
 
+// --- Database Migration Endpoints ---
+app.post('/api/admin/setup-database', async (req, res) => {
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Create players table
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS players (
+                discord_id VARCHAR(255),
+                character_name VARCHAR(255),
+                class VARCHAR(50),
+                PRIMARY KEY (discord_id, character_name)
+            )
+        `);
+        
+        // Create roster_overrides table
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS roster_overrides (
+                event_id VARCHAR(255),
+                discord_user_id VARCHAR(255),
+                original_signup_name VARCHAR(255),
+                assigned_char_name VARCHAR(255),
+                assigned_char_class VARCHAR(50),
+                assigned_char_spec VARCHAR(50),
+                assigned_char_spec_emote VARCHAR(10),
+                player_color VARCHAR(50),
+                party_id INTEGER,
+                slot_id INTEGER,
+                PRIMARY KEY (event_id, discord_user_id)
+            )
+        `);
+        
+        // Create indexes
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_players_discord_id ON players (discord_id)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_roster_overrides_event_id ON roster_overrides (event_id)
+        `);
+        
+        res.json({ 
+            success: true, 
+            message: 'Database tables created successfully!' 
+        });
+        
+    } catch (error) {
+        console.error('Error setting up database:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error setting up database', 
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+app.post('/api/admin/migrate-players', async (req, res) => {
+    const fs = require('fs');
+    const path = require('path');
+    let client;
+    
+    try {
+        // Read players.tsv file
+        const tsvPath = path.join(__dirname, 'players.tsv');
+        if (!fs.existsSync(tsvPath)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'players.tsv file not found' 
+            });
+        }
+        
+        const tsvContent = fs.readFileSync(tsvPath, 'utf8');
+        const lines = tsvContent.split('\n');
+        
+        client = await pool.connect();
+        let processedCount = 0;
+        let errors = [];
+        
+        for (const line of lines) {
+            if (line.trim() !== '') {
+                const fields = line.split('\t');
+                if (fields.length >= 3) {
+                    const discordId = fields[0].trim();
+                    const characterName = fields[1].trim();
+                    const characterClass = fields[2].trim();
+                    
+                    if (characterName !== '' && characterClass !== '') {
+                        try {
+                            await client.query(`
+                                INSERT INTO players (discord_id, character_name, class) 
+                                VALUES ($1, $2, $3) 
+                                ON CONFLICT (discord_id, character_name) DO NOTHING
+                            `, [discordId, characterName, characterClass]);
+                            processedCount++;
+                        } catch (error) {
+                            errors.push(`Error processing ${characterName}: ${error.message}`);
+                        }
+                    }
+                }
+            }
+        }
+        
+        res.json({ 
+            success: true, 
+            message: `Migration completed! Processed ${processedCount} records.`,
+            processedCount,
+            errors: errors.length > 0 ? errors : undefined
+        });
+        
+    } catch (error) {
+        console.error('Error migrating players:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error migrating players', 
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // This route will handle both the root path ('/') AND any other unmatched paths,
 // serving events.html. It MUST be the LAST route definition in your application.
 app.get('*', (req, res) => {
