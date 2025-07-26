@@ -10,6 +10,12 @@ body, html {
     width: 100%;
     box-sizing: border-box; /* Ensures padding is included in the width */
     padding: 20px;
+    text-align: center; /* Center the roster-container */
+}
+
+.back-button-wrapper {
+    text-align: left; /* Keep the back button left-aligned */
+    margin-bottom: 20px;
 }
 
 /* Back button style */
@@ -20,7 +26,7 @@ body, html {
     padding: 8px 15px;
     border-radius: 8px;
     text-decoration: none;
-    margin-bottom: 20px;
+    /* margin-bottom is now on the wrapper */
     transition: background-color 0.2s ease;
 }
 
@@ -37,6 +43,15 @@ body, html {
     margin-bottom: 25px;
     text-align: center;
     font-size: 1.8em;
+}
+
+.roster-container {
+    background-color: #2c2f33;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #444;
+    display: inline-block; /* Allow the container to shrink to fit the content */
+    min-width: 0; /* Override default min-width for flex children */
 }
 
 /* Roster Grid Container */
@@ -56,11 +71,11 @@ body, html {
 
 /* Roster Cell (Slot) */
 .roster-cell {
-    width: 140px;
+    width: 120px;
     height: 30px; /* Match icon height */
     display: flex;
     align-items: center;
-    justify-content: space-between; /* Pushes name and toggle apart */
+    justify-content: flex-start; /* Align content to the left */
     border: 1px solid #444;
     border-radius: 0px;
     padding: 0 8px 0 0; /* Remove left padding */
@@ -68,6 +83,168 @@ body, html {
     cursor: default; /* Change cursor as the cell itself isn't a link anymore */
     background-color: #777; /* Background for empty cells */
     margin-bottom: 10px;
+    /* Add smooth transitions for all changes */
+    transition: all 0.3s ease, background-color 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* Smooth transitions for content changes */
+.roster-cell .player-name {
+    transition: color 0.2s ease, opacity 0.2s ease;
+}
+
+.roster-cell .spec-icon {
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* Animation classes for smooth updates */
+.updating {
+    opacity: 0.7;
+    transform: scale(0.98);
+}
+
+.roster-cell.updating {
+    animation: pulseUpdate 0.4s ease-in-out;
+}
+
+@keyframes pulseUpdate {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.02); opacity: 0.8; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* Smooth movement animation */
+.moving {
+    animation: smoothMove 0.3s ease-in-out;
+    z-index: 100;
+}
+
+@keyframes smoothMove {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.05); opacity: 0.9; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* Bench movement animation */
+.moving-to-bench {
+    animation: fadeToGray 0.4s ease-in-out;
+}
+
+@keyframes fadeToGray {
+    0% { opacity: 1; transform: translateY(0); }
+    50% { opacity: 0.5; transform: translateY(-5px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Spec change animation */
+.spec-changing .spec-icon {
+    animation: iconSpin 0.5s ease-in-out;
+}
+
+@keyframes iconSpin {
+    0% { transform: rotate(0deg) scale(1); }
+    50% { transform: rotate(180deg) scale(1.1); }
+    100% { transform: rotate(360deg) scale(1); }
+}
+
+/* Character swap animation */
+.character-swapping {
+    animation: characterChange 0.6s ease-in-out;
+}
+
+@keyframes characterChange {
+    0% { opacity: 1; transform: scale(1); }
+    25% { opacity: 0.7; transform: scale(0.95); }
+    50% { opacity: 0.4; transform: scale(0.9); }
+    75% { opacity: 0.7; transform: scale(0.95); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+/* Error state animation for rollbacks */
+.error-rollback {
+    animation: errorShake 0.5s ease-in-out;
+    border-color: #d32f2f !important;
+}
+
+@keyframes errorShake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-3px); }
+    75% { transform: translateX(3px); }
+}
+
+/* Success state animation */
+.success-update {
+    animation: successGlow 0.6s ease-in-out;
+}
+
+@keyframes successGlow {
+    0% { box-shadow: none; }
+    50% { box-shadow: 0 0 10px rgba(88, 101, 242, 0.5); }
+    100% { box-shadow: none; }
+}
+
+/* Prevent interactions during animations */
+.roster-cell.moving,
+.roster-cell.moving-to-bench,
+.roster-cell.spec-changing,
+.roster-cell.character-swapping,
+.roster-cell.updating {
+    pointer-events: none;
+}
+
+/* Loading state for better user feedback */
+.roster-cell.loading {
+    opacity: 0.8;
+    cursor: wait;
+}
+
+.roster-cell.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 5px;
+    width: 12px;
+    height: 12px;
+    margin-top: -6px;
+    border: 2px solid #ddd;
+    border-top: 2px solid #5865F2;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Make filled roster cells clickable */
+.roster-cell.player-filled {
+    cursor: pointer;
+}
+
+/* Make empty slots clickable */
+.roster-cell.empty-slot-clickable {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.roster-cell.empty-slot-clickable:hover {
+    background-color: #888 !important;
+    border-color: #5865F2;
+}
+
+.roster-cell.empty-slot-clickable .player-name {
+    color: #ccc;
+    font-style: italic;
+}
+
+/* Center the text in empty cells */
+.roster-cell:not(.player-filled) .player-name {
+    justify-content: center;
+}
+
+/* Ensure filled cells are left-aligned */
+.roster-cell.player-filled .player-name {
+    justify-content: flex-start;
 }
 
 .player-name {
@@ -89,34 +266,28 @@ body, html {
 
 
 .spec-icon {
-    width: 30px;
-    height: 30px;
-    margin-right: 5px;
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    margin-left: 5px;
     flex-shrink: 0; /* Prevent the icon from shrinking */
 }
 
 /* Dropdown Styles */
-.dropdown-toggle {
-    cursor: pointer;
-    padding: 5px;
-    margin-left: 5px;
-    line-height: 1;
-    position: relative; /* Needed for z-index to work */
-    z-index: 2; /* Lift the toggle above other elements in the cell */
-}
 
 .player-details-dropdown {
     display: none; /* Hidden by default */
     position: absolute;
     top: 100%; /* Position it right below the cell */
     left: 0;
-    width: 100%;
+    width: 250px;
     background-color: #333;
     border: 1px solid #555;
     border-radius: 0 0 5px 5px;
     z-index: 10;
     padding: 8px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    text-align: left; /* Override parent's text-align: center */
 }
 
 .player-details-dropdown.show {
@@ -125,8 +296,31 @@ body, html {
 
 .dropdown-item {
     font-size: 0.8em;
-    padding: 3px 0;
+    padding: 6px 8px; /* Increased padding for better hover */
     color: #ddd;
+    display: flex; /* Align icons and text nicely */
+    align-items: center;
+    border-radius: 3px; /* Rounded corners for hover effect */
+    transition: background-color 0.1s ease, text-shadow 0.1s ease; /* Smooth transition */
+}
+
+.dropdown-item[data-action]:hover,
+.dropdown-item.has-submenu:hover {
+    background-color: #4a4a4a;
+    cursor: pointer;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+}
+
+.dropdown-item.disabled {
+    opacity: 0.6;
+    cursor: default;
+    background-color: #2a2a2a;
+}
+
+.dropdown-item.disabled:hover {
+    background-color: #2a2a2a;
+    cursor: default;
+    text-shadow: none;
 }
 
 .dropdown-item.alt-char {
@@ -155,12 +349,29 @@ body, html {
     position: relative;
 }
 
-.dropdown-item.has-submenu:hover .spec-submenu {
+.dropdown-item.has-submenu:hover .spec-submenu,
+.dropdown-item.has-submenu:hover .move-submenu {
     display: block;
 }
 
-.spec-submenu .dropdown-item:hover {
+.spec-submenu .dropdown-item:hover,
+.move-submenu .dropdown-item:hover {
     background-color: #5865F2;
+}
+
+.move-submenu {
+    display: none;
+    position: absolute;
+    left: 100%;
+    top: 0;
+    background-color: #3a3a3a;
+    border: 1px solid #555;
+    border-radius: 5px;
+    z-index: 12; /* One level higher than spec submenu */
+    min-width: 150px;
+    max-height: 200px; /* Allow scrolling for long lists */
+    overflow-y: auto;
+    padding: 5px;
 }
 
 .dropdown-header {
@@ -205,7 +416,7 @@ body, html {
     font-weight: bold;
     text-align: center;
     margin-bottom: 10px;
-    font-size: 1.2em;
+    font-size: 1.0em;
     color: #fff;
 }
 
@@ -224,4 +435,60 @@ body, html {
         /* This will be set dynamically by JS, but if not enough columns, auto-fill */
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     }
+}
+
+#bench-container.bench-container {
+    background-color: #2c2f33 !important; /* Match roster-container background */
+    border: 1px solid #444 !important; /* Keep consistent with roster-container */
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 20px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    display: inline-block !important; /* Adjust width to content like roster-container */
+    min-width: 0; /* Override default min-width for flex children */
+    text-align: center; /* Center the bench title and content */
+}
+
+#bench-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+}
+
+#bench-title {
+    color: white;
+    text-align: center;
+    margin-bottom: 15px;
+    font-size: 1.0em;
+}
+
+.bench-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+#benched-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.absent-player {
+    opacity: 1;
+}
+
+.absent-player .player-name {
+    color: #999;
+}
+
+.absent-icon {
+    margin-left: 5px;
+    vertical-align: middle;
+}
+
+/* Ensure roster cells in the bench are styled consistently */
+#bench-list .roster-cell {
+    margin-bottom: 5px; /* Same gap as in the new lists */
 }

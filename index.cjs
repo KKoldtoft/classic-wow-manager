@@ -177,6 +177,38 @@ app.get('/api/players', async (req, res) => {
     }
 });
 
+// New endpoint to get registered character for a Discord user ID
+app.get('/api/registered-character/:discordUserId', async (req, res) => {
+    const { discordUserId } = req.params;
+    let client;
+    
+    try {
+        client = await pool.connect();
+        
+        // Get the first registered character for this Discord user (their main character)
+        const result = await client.query(
+            'SELECT character_name, class FROM players WHERE discord_id = $1 ORDER BY character_name LIMIT 1',
+            [discordUserId]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'No registered character found for this Discord user.' });
+        }
+        
+        const character = result.rows[0];
+        res.json({
+            characterName: character.character_name,
+            characterClass: character.class
+        });
+        
+    } catch (error) {
+        console.error('Error fetching registered character:', error);
+        res.status(500).json({ message: 'Internal Server Error' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // UPDATED: Endpoint to fetch upcoming Raid-Helper events using /events endpoint with filters
 app.get('/api/events', async (req, res) => {
   if (!req.isAuthenticated()) {
@@ -317,208 +349,397 @@ const getCanonicalClass = (className) => {
 
 // Refactored helper to ONLY get data from the Raid Helper API
 async function getRosterDataFromApi(eventId) {
-    const rosterResponse = await axios.get(`https://raid-helper.dev/api/raidplan/${eventId}`);
-    if (!rosterResponse.data || !rosterResponse.data.raidDrop) {
-        throw new Error('Roster data not found or is invalid from Raid Helper API.');
+    try {
+        const rosterResponse = await axios.get(`https://raid-helper.dev/api/raidplan/${eventId}`, {
+            timeout: 10000, // 10 second timeout
+            headers: {
+                'User-Agent': 'Classic-WoW-Manager/1.0'
+            }
+        });
+        if (!rosterResponse.data || !rosterResponse.data.raidDrop) {
+            throw new Error('Roster data not found or is invalid from Raid Helper API.');
+        }
+        return rosterResponse.data;
+    } catch (error) {
+        console.error(`Failed to fetch roster data from Raid Helper API for event ${eventId}:`, error.message);
+        
+        // Return a minimal roster structure for managed rosters to work
+        return {
+            raidDrop: [],
+            partyPerRaid: 8,
+            slotPerParty: 5,
+            partyNames: ['Group 1', 'Group 2', 'Group 3', 'Group 4', 'Group 5', 'Group 6', 'Group 7', 'Group 8'],
+            title: `Event ${eventId} (Offline Mode)`
+        };
     }
-    return rosterResponse.data;
 }
 
-// Refactored helper to enrich API data with local database info
-async function enrichRosterWithDbData(rosterData, client) {
-    const discordIds = [...new Set(rosterData.raidDrop.map(p => p.userid).filter(id => id))];
-    let mainsData = {};
-
-    if (discordIds.length > 0) {
-        const dbResult = await client.query('SELECT discord_id, character_name, class FROM players WHERE discord_id = ANY($1::text[])', [discordIds]);
-        dbResult.rows.forEach(row => {
-            if (!mainsData[row.discord_id]) mainsData[row.discord_id] = [];
-            mainsData[row.discord_id].push(row);
-        });
+// This function takes an array of player objects and enriches them
+// with main character names and alt characters from the database.
+async function enrichPlayersWithDbData(players, client) {
+    if (!players || !Array.isArray(players) || players.length === 0) {
+        return [];
     }
 
-    rosterData.raidDrop.forEach(player => {
-        if (!player) return;
-        player.altCharacters = [];
-
-        if (player.userid && mainsData[player.userid]) {
-            const potentialMains = mainsData[player.userid];
-            const mainChar = potentialMains.find(main => main && main.class && getCanonicalClass(main.class) === getCanonicalClass(player.class));
-
-            if (mainChar && mainChar.character_name) {
-                player.mainCharacterName = mainChar.character_name;
-                const alts = potentialMains.filter(p => p && p.character_name && p.character_name.toLowerCase() !== mainChar.character_name.toLowerCase());
-                if (alts.length > 0) {
-                    player.altCharacters = alts.map(alt => {
-                        const canonicalClass = getCanonicalClass(alt.class);
-                        return { name: alt.character_name, class: alt.class, color: CLASS_COLORS[canonicalClass], icon: CLASS_ICONS[canonicalClass] };
-                    });
-                }
-            } else {
-                player.mainCharacterName = player.name;
-                player.altCharacters = potentialMains
-                    .filter(alt => alt && alt.character_name)
-                    .map(alt => {
-                        const canonicalClass = getCanonicalClass(alt.class);
-                        return { name: alt.character_name, class: alt.class, color: CLASS_COLORS[canonicalClass], icon: CLASS_ICONS[canonicalClass] };
-                    });
-            }
-        } else {
-            player.mainCharacterName = player.name;
-        }
+    // 1. Separate actual player objects from nulls
+    const playerObjects = players.filter(p => p && p.userid);
+    
+    // 2. If no actual players, no need to query DB
+    if (playerObjects.length === 0) {
+        return players; // Return the original array (e.g., [null, null] for empty slots)
+    }
+    
+    // 3. Get all characters for the found discord IDs
+    const discordIds = [...new Set(playerObjects.map(p => p.userid))];
+    const dbResult = await client.query('SELECT discord_id, character_name, class FROM players WHERE discord_id = ANY($1::text[])', [discordIds]);
+    const allPlayerChars = {};
+    dbResult.rows.forEach(row => {
+        if (!allPlayerChars[row.discord_id]) allPlayerChars[row.discord_id] = [];
+        allPlayerChars[row.discord_id].push(row);
     });
-    return rosterData;
+
+    // 4. Create a map of enriched players for easy lookup
+    const enrichedPlayersMap = new Map();
+    playerObjects.forEach(player => {
+        const userChars = allPlayerChars[player.userid] || [];
+        let mainChar = userChars.find(c => c.character_name === player.name) || userChars[0];
+        
+        // Detect if there's a class/spec mismatch indicating API data is newer than DB data
+        let mainCharacterClass = player.class; // Start with API class
+        let mainCharacterName = player.name; // Start with API name
+        
+        // Only use DB data if there's a clear match and no obvious mismatch
+        if (mainChar && mainChar.class) {
+            const apiCanonicalClass = getCanonicalClass(player.class);
+            const dbCanonicalClass = getCanonicalClass(mainChar.class);
+            
+            // If classes match or player has no specific spec, use DB data
+            if (apiCanonicalClass === dbCanonicalClass || !player.spec_emote) {
+                mainCharacterClass = mainChar.class;
+                mainCharacterName = mainChar.character_name;
+            } else {
+                // There's a mismatch - try to find a better character name for the spec
+                // Look for characters in the database that match the API class
+                const matchingChar = userChars.find(c => getCanonicalClass(c.class) === apiCanonicalClass);
+                if (matchingChar) {
+                    mainCharacterName = matchingChar.character_name;
+                    console.log(`🔄 Name correction: ${player.name} -> ${matchingChar.character_name} (class mismatch detected)`);
+                }
+            }
+        }
+
+        const alts = userChars
+            .filter(char => char && char.character_name !== mainCharacterName)
+            .map(alt => {
+                const canonicalClass = getCanonicalClass(alt.class);
+                return {
+                    name: alt.character_name,
+                    class: alt.class,
+                    color: CLASS_COLORS[canonicalClass],
+                    icon: CLASS_ICONS[canonicalClass]
+                };
+            });
+        
+        // ALWAYS calculate color based on the definitive canonical class.
+        const canonicalClass = getCanonicalClass(mainCharacterClass);
+        const playerColor = CLASS_COLORS[canonicalClass] || CLASS_COLORS['unknown'];
+
+        enrichedPlayersMap.set(player.userid, {
+            ...player,
+            mainCharacterName,
+            altCharacters: alts,
+            class: mainCharacterClass,
+            color: playerColor // Use the recalculated, correct color.
+        });
+    });
+
+    // 5. Rebuild the original array, substituting enriched players and preserving nulls
+    return players.map(p => {
+        if (!p || !p.userid) return null; // If it was null or a bad player object, return null
+        return enrichedPlayersMap.get(p.userid) || p; // Get the enriched version, or the original if lookup fails
+    });
+}
+
+// This function is now a simple wrapper around enrichPlayersWithDbData
+async function enrichRosterWithDbData(rosterData, client) {
+    if (!rosterData || !rosterData.raidDrop) {
+        return rosterData;
+    }
+    const enrichedPlayers = await enrichPlayersWithDbData(rosterData.raidDrop, client);
+    return { ...rosterData, raidDrop: enrichedPlayers };
+}
+
+// Helper to "fork" a roster from the API into the DB if it's not already managed
+async function forkRosterIfNeeded(eventId, client) {
+    const checkResult = await client.query('SELECT id FROM roster_overrides WHERE event_id = $1 LIMIT 1', [eventId]);
+    if (checkResult.rows.length > 0) {
+        return; // Already forked
+    }
+
+    console.log(`Forking roster for event ${eventId}...`);
+    const rosterDataFromApi = await getRosterDataFromApi(eventId);
+    const enrichedRoster = await enrichRosterWithDbData(rosterDataFromApi, client);
+
+    const insertPromises = enrichedRoster.raidDrop.map(player => {
+        if (!player || !player.userid) return null; // Skip empty slots or players without IDs
+        const query = `
+            INSERT INTO roster_overrides 
+            (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, player_color, party_id, slot_id) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `;
+        const values = [
+            eventId,
+            player.userid,
+            player.name, // original_signup_name
+            player.mainCharacterName,
+            player.class,
+            player.spec,
+            player.spec_emote,
+            player.color,
+            player.partyId,
+            player.slotId
+        ];
+        return client.query(query, values);
+    }).filter(Boolean);
+
+    await Promise.all(insertPromises);
+    console.log(`Roster for event ${eventId} successfully forked.`);
+}
+
+// Helper to get a single player's full data, ready for insertion into overrides
+async function getPlayerForInsert(eventId, discordUserId, client) {
+    const fullEventData = await getFullEventDataFromApi(eventId);
+    const signup = fullEventData.signUps.find(s => s.userId === discordUserId);
+    if (!signup) throw new Error(`Player with Discord ID ${discordUserId} not found in signups for event ${eventId}.`);
+
+    const playerToEnrich = [{
+        userid: signup.userId,
+        name: signup.name,
+        class: signup.className,
+        spec: signup.specName,
+        spec_emote: signup.specEmoteId || signup.classEmoteId,
+        color: null, // Let enrichPlayersWithDbData determine the correct color
+    }];
+    
+    const [enrichedPlayer] = await enrichPlayersWithDbData(playerToEnrich, client);
+    return enrichedPlayer;
+}
+
+async function getFullEventDataFromApi(eventId) {
+    try {
+        const response = await axios.get(`https://raid-helper.dev/api/v2/events/${eventId}`, {
+            timeout: 10000, // 10 second timeout
+            headers: { 
+                'Authorization': process.env.RAID_HELPER_API_KEY,
+                'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+            }
+        });
+        // More robust check: The v2 endpoint returns an object with a 'signUps' array.
+        if (!response.data || typeof response.data !== 'object' || !Array.isArray(response.data.signUps)) {
+            console.error('[DETAILED LOG] Unexpected API response structure:', response.data);
+            throw new Error('Full event data not found or is invalid from Raid Helper API v2.');
+        }
+        return response.data;
+    } catch (error) {
+        console.error(`Failed to fetch full event data from Raid Helper API for event ${eventId}:`, error.message);
+        
+        // Return minimal event data structure for offline mode
+        return {
+            signUps: []
+        };
+    }
 }
 
 
 app.get('/api/roster/:eventId', async (req, res) => {
     const { eventId } = req.params;
     let client;
-
     try {
         client = await pool.connect();
+        let rosterData;
         const managedRosterResult = await client.query('SELECT * FROM roster_overrides WHERE event_id = $1', [eventId]);
-        
+
+
+
         const rosterDataFromApi = await getRosterDataFromApi(eventId);
-
         if (managedRosterResult.rows.length > 0) {
-            // Roster is MANAGED
-            const managedPlayers = managedRosterResult.rows;
-            const discordIds = [...new Set(managedPlayers.map(p => p.discord_user_id))];
+            // Roster IS managed. Reconstruct it from overrides and full signup data.
+            const fullEventData = await getFullEventDataFromApi(eventId);
 
-            let allPlayerChars = {};
-            if (discordIds.length > 0) {
-                const dbResult = await client.query('SELECT discord_id, character_name, class FROM players WHERE discord_id = ANY($1::text[])', [discordIds]);
-                dbResult.rows.forEach(row => {
-                    if (!allPlayerChars[row.discord_id]) allPlayerChars[row.discord_id] = [];
-                    allPlayerChars[row.discord_id].push(row);
-                });
-            }
+            // Enrich all signed-up players at once for efficiency
+            const allSignedUpPlayers = fullEventData.signUps.map(signup => ({
+                userid: signup.userId,
+                name: signup.name,
+                class: signup.className,
+                spec: signup.specName,
+                spec_emote: signup.specEmoteId || signup.classEmoteId,
+                status: signup.status,
+            }));
+            const enrichedAllPlayers = await enrichPlayersWithDbData(allSignedUpPlayers, client);
+            const enrichedPlayersMap = new Map(enrichedAllPlayers.map(p => [p.userid, p]));
 
-            const players = managedPlayers.map(row => {
-                const userChars = allPlayerChars[row.discord_user_id] || [];
-                const alts = userChars
-                    .filter(char => char.character_name !== row.assigned_char_name)
-                    .map(alt => {
-                        const canonicalClass = getCanonicalClass(alt.class);
-                        return { name: alt.character_name, class: alt.class, color: CLASS_COLORS[canonicalClass], icon: CLASS_ICONS[canonicalClass] };
-                    });
+            const finalRosterPlayers = [];
+            const playersInRosterOverrides = new Set();
 
-                return {
-                    name: row.original_signup_name,
-                    userid: row.discord_user_id,
-                    partyId: row.party_id,
-                    slotId: row.slot_id,
-                    mainCharacterName: row.assigned_char_name,
-                    spec: row.assigned_char_spec,
-                    spec_emote: row.assigned_char_spec_emote,
-                    color: row.player_color,
-                    class: row.assigned_char_class,
-                    altCharacters: alts,
-                };
+            managedRosterResult.rows.forEach(override => {
+                if (override.party_id !== null) { // Only add players assigned to a party to the roster
+                    const basePlayer = enrichedPlayersMap.get(override.discord_user_id);
+                    
+                    if (basePlayer) {
+                        // Player exists in original signups - use enriched data
+                        finalRosterPlayers.push({
+                            ...basePlayer,
+                            mainCharacterName: override.assigned_char_name,
+                            class: override.assigned_char_class,
+                            spec: override.assigned_char_spec,
+                            spec_emote: override.assigned_char_spec_emote,
+                            partyId: override.party_id,
+                            slotId: override.slot_id,
+                            color: override.player_color,
+                        });
+                    } else {
+                        // Player doesn't exist in original signups - create from override data only
+                        finalRosterPlayers.push({
+                            userid: override.discord_user_id,
+                            name: override.original_signup_name,
+                            mainCharacterName: override.assigned_char_name,
+                            class: override.assigned_char_class,
+                            spec: override.assigned_char_spec,
+                            spec_emote: override.assigned_char_spec_emote,
+                            partyId: override.party_id,
+                            slotId: override.slot_id,
+                            color: override.player_color,
+                            altCharacters: [], // No alt data for manually added characters
+                            status: 'confirmed' // Assume confirmed for manually added
+                        });
+                    }
+                    playersInRosterOverrides.add(override.discord_user_id);
+                }
             });
-            
-            res.json({
-                raidDrop: players,
-                title: rosterDataFromApi.title,
-                partyPerRaid: rosterDataFromApi.partyPerRaid,
-                slotPerParty: rosterDataFromApi.slotPerParty,
-                partyNames: rosterDataFromApi.partyNames,
-                isManaged: true
-            });
+
+            rosterData = { ...rosterDataFromApi, raidDrop: finalRosterPlayers, isManaged: true };
+
+            // Bench logic: players who are in signups but NOT in a roster spot in our overrides table
+            const benchPlayers = enrichedAllPlayers.filter(p => !playersInRosterOverrides.has(p.userid));
+            rosterData.bench = benchPlayers;
 
         } else {
-            // Roster is NOT managed
-            const enrichedRoster = await enrichRosterWithDbData(rosterDataFromApi, client);
-            res.json({ ...enrichedRoster, isManaged: false });
+            // Roster is NOT managed - original logic
+            rosterData = await enrichRosterWithDbData(rosterDataFromApi, client);
+            rosterData.isManaged = false;
+
+            // Original bench logic for unmanaged rosters
+            try {
+                const fullEventData = await getFullEventDataFromApi(eventId);
+                const raidDropPlayerIds = new Set(rosterData.raidDrop.map(p => p && p.userid).filter(Boolean));
+                
+                const benchSignups = fullEventData.signUps.filter(signup => {
+                    return signup.userId && !raidDropPlayerIds.has(signup.userId);
+                });
+
+                let benchPlayers = benchSignups.map(signup => {
+                    const canonicalClass = getCanonicalClass(signup.className);
+                    return {
+                        userid: signup.userId,
+                        name: signup.name,
+                        class: signup.className,
+                        spec: signup.specName,
+                        spec_emote: signup.specEmoteId || signup.classEmoteId,
+                        class_emote: signup.classEmoteId,
+                        status: signup.status,
+                        color: CLASS_COLORS[canonicalClass] || null,
+                        partyId: null, 
+                        slotId: null
+                    };
+                });
+                
+                rosterData.bench = await enrichPlayersWithDbData(benchPlayers, client);
+            } catch (error) {
+                console.warn(`\n[WARNING] Could not fetch/process bench data for event ${eventId}.\nThe main roster will be displayed, but the bench will be empty.\n\n[DETAILED ERROR] ${error.stack}\n`);
+                rosterData.bench = [];
+            }
         }
+        
+        res.json(rosterData);
     } catch (error) {
-        console.error(`Error fetching roster for event ${eventId}:`, error);
+        console.error(`Error in /api/roster/:eventId for event ${eventId}:\n`, error);
         res.status(500).json({ message: 'Internal Server Error' });
     } finally {
-        if (client) client.release();
+        if (client) {
+            client.release();
+        }
     }
 });
 
-
 // Helper function to get details that might not be in our DB
 async function getRaidDetailsFromRaidHelper(eventId) {
-    const response = await axios.get(`https://raid-helper.dev/api/v2/events/${eventId}`, {
-        headers: { Authorization: `Bearer ${process.env.RAID_HELPER_API_KEY}` }
-    });
-    const event = response.data;
-    return {
-        title: event.name,
-        partyPerRaid: event.raid.parties,
-        slotPerParty: event.raid.slots,
-        partyNames: event.raid.party_names.map(p => p.name)
-    };
+    try {
+        const response = await axios.get(`https://raid-helper.dev/api/raidplan/${eventId}`);
+        const event = response.data;
+        return {
+            title: event.name,
+            partyPerRaid: event.raid.parties,
+            slotPerParty: event.raid.slots,
+            partyNames: event.raid.party_names.map(p => p.name)
+        };
+    } catch (error) {
+        console.error('Error fetching Raid-Helper event details:', error.response ? error.response.data : error.message);
+        if (error.response) {
+            console.error('Raid-Helper API Error Response Details (Non-200):', {
+                status: error.response.status,
+                headers: error.response.headers,
+                data: error.response.data
+            });
+        }
+        throw new Error(`Failed to fetch event details for event ID: ${eventId}`);
+    }
 }
 
-
+// Endpoint to handle swapping a player's character
 app.put('/api/roster/:eventId/player/:discordUserId', async (req, res) => {
     const { eventId, discordUserId } = req.params;
     let { characterName, characterClass } = req.body;
-    let client;
 
+    let client;
     try {
         client = await pool.connect();
         await client.query('BEGIN');
 
-        const checkResult = await client.query('SELECT id FROM roster_overrides WHERE event_id = $1 LIMIT 1', [eventId]);
+        await forkRosterIfNeeded(eventId, client);
 
-        if (checkResult.rows.length === 0) {
-            // Forking logic: Create the managed roster first
-            const rosterData = await getRosterDataFromApi(eventId);
-            const enrichedRoster = await enrichRosterWithDbData(rosterData, client);
-            
-            const insertPromises = enrichedRoster.raidDrop
-                .filter(p => p.userid)
-                .map(p => {
-                    const params = [eventId, p.userid, p.name, p.mainCharacterName || p.name, p.class, p.spec, p.spec_emote, p.color, p.partyId, p.slotId];
-                    return client.query(
-                        `INSERT INTO roster_overrides (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, player_color, party_id, slot_id)
-                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                         ON CONFLICT (event_id, discord_user_id) DO NOTHING`,
-                        params
-                    );
-                });
-            await Promise.all(insertPromises);
-        }
+        if (!characterName) { // This is a "revert to registered character" action
+            // Get the first registered character for this Discord user
+            const originalCharacterResult = await client.query(
+                'SELECT character_name, class FROM players WHERE discord_id = $1 ORDER BY character_name LIMIT 1',
+                [discordUserId]
+            );
+            const originalCharacter = originalCharacterResult.rows[0];
 
-        if (characterName === null) {
-            // Revert Logic
-            const apiRoster = await getRosterDataFromApi(eventId);
-            const enrichedRoster = await enrichRosterWithDbData(apiRoster, client);
-            const originalPlayerState = enrichedRoster.raidDrop.find(p => p.userid === discordUserId);
-
-            if (originalPlayerState) {
-                await client.query(
-                    `UPDATE roster_overrides 
-                     SET assigned_char_name = $1, assigned_char_class = $2, assigned_char_spec = $3, assigned_char_spec_emote = $4, player_color = $5
-                     WHERE event_id = $6 AND discord_user_id = $7`,
-                    [
-                        originalPlayerState.mainCharacterName, // This now uses the CORRECT enriched name
-                        originalPlayerState.class,
-                        originalPlayerState.spec,
-                        originalPlayerState.spec_emote,
-                        originalPlayerState.color,
-                        eventId,
-                        discordUserId
-                    ]
-                );
+            if (!originalCharacter) {
+                throw new Error(`Could not find original registered character for discord user ${discordUserId}`);
             }
-        } else if (characterName && characterClass) {
-            // Swap Logic
+
+            const canonicalClass = getCanonicalClass(originalCharacter.class);
+            const color = CLASS_COLORS[canonicalClass] || '#808080';
+            const classIcon = CLASS_ICONS[canonicalClass] || null;
+            
+            await client.query(
+                `UPDATE roster_overrides SET assigned_char_name = $1, assigned_char_class = $2, player_color = $3, assigned_char_spec = NULL, assigned_char_spec_emote = $4 WHERE event_id = $5 AND discord_user_id = $6`,
+                [originalCharacter.character_name, originalCharacter.class, color, classIcon, eventId, discordUserId]
+            );
+
+        } else { // This is a "swap to alt" action
             const canonicalClass = getCanonicalClass(characterClass);
-            const newColor = CLASS_COLORS[canonicalClass] || CLASS_COLORS['unknown'];
-            const newIcon = CLASS_ICONS[canonicalClass] || null;
+            const color = CLASS_COLORS[canonicalClass] || '#808080';
+            
+            // When swapping characters, reset spec to null and use class icon
+            const classIcon = CLASS_ICONS[canonicalClass] || null;
 
             await client.query(
                 `UPDATE roster_overrides 
                  SET assigned_char_name = $1, assigned_char_class = $2, player_color = $3, assigned_char_spec = NULL, assigned_char_spec_emote = $4
                  WHERE event_id = $5 AND discord_user_id = $6`,
-                [characterName, characterClass, newColor, newIcon, eventId, discordUserId]
+                [characterName, characterClass, color, classIcon, eventId, discordUserId]
             );
         }
 
@@ -537,10 +758,11 @@ app.get('/api/specs', (req, res) => {
     res.json(SPEC_DATA);
 });
 
-// New endpoint to update just the spec
+// Endpoint to handle updating a player's spec
 app.put('/api/roster/:eventId/player/:discordUserId/spec', async (req, res) => {
     const { eventId, discordUserId } = req.params;
     const { specName } = req.body;
+
     let client;
 
     try {
@@ -554,14 +776,25 @@ app.put('/api/roster/:eventId/player/:discordUserId/spec', async (req, res) => {
             // This case should ideally not be hit if the UI is correct, but as a fallback:
             const rosterData = await getRosterDataFromApi(eventId);
             const enrichedRoster = await enrichRosterWithDbData(rosterData, client);
-            const insertPromises = enrichedRoster.raidDrop.filter(p => p.userid).map(p => {
+            const insertPromises = enrichedRoster.raidDrop.filter(p => p && p.userid).map(p => {
                 const params = [eventId, p.userid, p.name, p.mainCharacterName || p.name, p.class, p.spec, p.spec_emote, p.color, p.partyId, p.slotId];
                 return client.query(`INSERT INTO roster_overrides (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, player_color, party_id, slot_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (event_id, discord_user_id) DO NOTHING`, params);
             });
             await Promise.all(insertPromises);
         }
 
-        const playerClass = checkResult.rows.length > 0 ? checkResult.rows[0].assigned_char_class : (await client.query('SELECT assigned_char_class FROM roster_overrides WHERE event_id = $1 AND discord_user_id = $2', [eventId, discordUserId])).rows[0].assigned_char_class;
+        // Get the player class after ensuring the override exists
+        let playerClass;
+        if (checkResult.rows.length > 0) {
+            playerClass = checkResult.rows[0].assigned_char_class;
+        } else {
+            // Query again after the INSERT operations to get the class
+            const updatedResult = await client.query('SELECT assigned_char_class FROM roster_overrides WHERE event_id = $1 AND discord_user_id = $2', [eventId, discordUserId]);
+            if (updatedResult.rows.length === 0) {
+                throw new Error(`Player ${discordUserId} not found in roster for event ${eventId}`);
+            }
+            playerClass = updatedResult.rows[0].assigned_char_class;
+        }
         const canonicalClass = getCanonicalClass(playerClass);
         const specsForClass = SPEC_DATA[canonicalClass] || [];
         const selectedSpec = specsForClass.find(s => s.name === specName);
@@ -578,6 +811,386 @@ app.put('/api/roster/:eventId/player/:discordUserId/spec', async (req, res) => {
     } catch (error) {
         if (client) await client.query('ROLLBACK');
         console.error('Error updating player spec:', error);
+        res.status(500).json({ message: 'Internal Server Error' });
+    } finally {
+        if (client) client.release();
+            }
+        });
+
+// Endpoint to handle adding a new character to roster
+app.post('/api/roster/:eventId/add-character', async (req, res) => {
+    const { eventId } = req.params;
+    const { characterName, class: characterClass, discordId, spec, targetPartyId, targetSlotId } = req.body;
+
+    let client;
+
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+
+        // Validate input
+        if (!characterName || !characterClass || !discordId || !targetPartyId || !targetSlotId) {
+            throw new Error('Missing required fields');
+        }
+
+        // Validate Discord ID format
+        if (!/^\d{17,19}$/.test(discordId)) {
+            throw new Error('Invalid Discord ID format');
+        }
+
+        // Check if there's already a player in this position
+        const existingPlayer = await client.query(
+            'SELECT discord_user_id FROM roster_overrides WHERE event_id = $1 AND party_id = $2 AND slot_id = $3',
+            [eventId, targetPartyId, targetSlotId]
+        );
+
+        if (existingPlayer.rows.length > 0) {
+            throw new Error('Position is already occupied');
+        }
+
+        // Check for existing characters with same name and class (refuse creation)
+        const exactMatch = await client.query(
+            'SELECT character_name FROM players WHERE LOWER(character_name) = LOWER($1) AND class = $2',
+            [characterName, characterClass]
+        );
+
+        if (exactMatch.rows.length > 0) {
+            return res.status(409).json({ 
+                error: 'EXACT_DUPLICATE',
+                message: `A character named "${characterName}" with class "${characterClass}" already exists. Please choose a different name or class.`
+            });
+        }
+
+        // Check for existing characters with same name but different class (show warning)
+        const nameMatch = await client.query(
+            'SELECT character_name, class FROM players WHERE LOWER(character_name) = LOWER($1) AND class != $2',
+            [characterName, characterClass]
+        );
+
+        if (nameMatch.rows.length > 0) {
+            const existingClass = nameMatch.rows[0].class;
+            return res.status(409).json({ 
+                error: 'NAME_CONFLICT',
+                message: `A character named "${characterName}" already exists with class "${existingClass}". Are you sure you want to create this character with class "${characterClass}"?`,
+                existingCharacter: {
+                    name: characterName,
+                    class: existingClass
+                }
+            });
+        }
+
+        // Check for existing characters with same Discord ID (show warning)
+        const discordIdMatches = await client.query(
+            'SELECT character_name, class FROM players WHERE discord_id = $1',
+            [discordId]
+        );
+
+        if (discordIdMatches.rows.length > 0) {
+            return res.status(409).json({ 
+                error: 'DISCORD_ID_CONFLICT',
+                message: `There ${discordIdMatches.rows.length === 1 ? 'is already 1 character' : `are already ${discordIdMatches.rows.length} characters`} with this Discord ID. Do you want to create this character?`,
+                existingCharacters: discordIdMatches.rows.map(row => ({
+                    name: row.character_name,
+                    class: row.class
+                }))
+            });
+        }
+
+        // Ensure roster is managed by creating initial overrides if needed
+        await forkRosterIfNeeded(eventId, client);
+
+        // Get canonical class and determine spec
+        const canonicalClass = getCanonicalClass(characterClass);
+        const specsForClass = SPEC_DATA[canonicalClass] || [];
+        
+        // Use provided spec if valid, otherwise use default
+        let selectedSpec;
+        if (spec && specsForClass.find(s => s.name === spec)) {
+            selectedSpec = specsForClass.find(s => s.name === spec);
+        } else {
+            selectedSpec = specsForClass.length > 0 ? specsForClass[0] : { name: characterClass, emote: null };
+        }
+
+        // Get class color
+        const classColors = {
+            'death knight': '196,30,59',
+            'druid': '255,125,10',
+            'hunter': '171,212,115',
+            'mage': '105,204,240',
+            'paladin': '245,140,186',
+            'priest': '255,255,255',
+            'rogue': '255,245,105',
+            'shaman': '0,112,222',
+            'warlock': '148,130,201',
+            'warrior': '199,156,110'
+        };
+        const playerColor = classColors[canonicalClass] || '128,128,128';
+
+        // First, add the character to the main players table
+        await client.query(`
+            INSERT INTO players (discord_id, character_name, class) 
+            VALUES ($1, $2, $3)
+            ON CONFLICT (discord_id, character_name) DO NOTHING`,
+            [discordId, characterName, characterClass]
+        );
+
+        // Then, insert the new character into the roster
+        await client.query(`
+            INSERT INTO roster_overrides 
+            (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, player_color, party_id, slot_id) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (event_id, discord_user_id) 
+            DO UPDATE SET 
+                assigned_char_name = EXCLUDED.assigned_char_name,
+                assigned_char_class = EXCLUDED.assigned_char_class,
+                assigned_char_spec = EXCLUDED.assigned_char_spec,
+                assigned_char_spec_emote = EXCLUDED.assigned_char_spec_emote,
+                player_color = EXCLUDED.player_color,
+                party_id = EXCLUDED.party_id,
+                slot_id = EXCLUDED.slot_id`,
+            [eventId, discordId, characterName, characterName, characterClass, selectedSpec.name, selectedSpec.emote, playerColor, targetPartyId, targetSlotId]
+        );
+
+        await client.query('COMMIT');
+        res.json({ 
+            message: 'Character added to roster successfully',
+            character: {
+                characterName,
+                class: characterClass,
+                discordId,
+                spec: selectedSpec.name,
+                partyId: targetPartyId,
+                slotId: targetSlotId
+            }
+        });
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Error adding character to roster:', error);
+        res.status(500).json({ message: error.message || 'Internal Server Error' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Endpoint to handle adding a new character to roster (force creation, bypassing warnings)
+app.post('/api/roster/:eventId/add-character/force', async (req, res) => {
+    const { eventId } = req.params;
+    const { characterName, class: characterClass, discordId, spec, targetPartyId, targetSlotId } = req.body;
+
+    let client;
+
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+
+        // Validate input
+        if (!characterName || !characterClass || !discordId || !targetPartyId || !targetSlotId) {
+            throw new Error('Missing required fields');
+        }
+
+        // Validate Discord ID format
+        if (!/^\d{17,19}$/.test(discordId)) {
+            throw new Error('Invalid Discord ID format');
+        }
+
+        // Check if there's already a player in this position
+        const existingPlayer = await client.query(
+            'SELECT discord_user_id FROM roster_overrides WHERE event_id = $1 AND party_id = $2 AND slot_id = $3',
+            [eventId, targetPartyId, targetSlotId]
+        );
+
+        if (existingPlayer.rows.length > 0) {
+            throw new Error('Position is already occupied');
+        }
+
+        // Still check for exact duplicates (same name + class) as these should never be allowed
+        const exactMatch = await client.query(
+            'SELECT character_name FROM players WHERE LOWER(character_name) = LOWER($1) AND class = $2',
+            [characterName, characterClass]
+        );
+
+        if (exactMatch.rows.length > 0) {
+            throw new Error(`A character named "${characterName}" with class "${characterClass}" already exists. Cannot create duplicate.`);
+        }
+
+        // Continue with creation (bypassing name and Discord ID warnings)
+        await forkRosterIfNeeded(eventId, client);
+
+        // Get canonical class and determine spec
+        const canonicalClass = getCanonicalClass(characterClass);
+        const specsForClass = SPEC_DATA[canonicalClass] || [];
+        
+        // Use provided spec if valid, otherwise use default
+        let selectedSpec;
+        if (spec && specsForClass.find(s => s.name === spec)) {
+            selectedSpec = specsForClass.find(s => s.name === spec);
+        } else {
+            selectedSpec = specsForClass.length > 0 ? specsForClass[0] : { name: characterClass, emote: null };
+        }
+
+        // Get class color
+        const classColors = {
+            'death knight': '196,30,59',
+            'druid': '255,125,10',
+            'hunter': '171,212,115',
+            'mage': '105,204,240',
+            'paladin': '245,140,186',
+            'priest': '255,255,255',
+            'rogue': '255,245,105',
+            'shaman': '0,112,222',
+            'warlock': '148,130,201',
+            'warrior': '199,156,110'
+        };
+        const playerColor = classColors[canonicalClass] || '128,128,128';
+
+        // First, add the character to the main players table
+        await client.query(`
+            INSERT INTO players (discord_id, character_name, class) 
+            VALUES ($1, $2, $3)
+            ON CONFLICT (discord_id, character_name) DO NOTHING`,
+            [discordId, characterName, characterClass]
+        );
+
+        // Then, insert the new character into the roster
+        await client.query(`
+            INSERT INTO roster_overrides 
+            (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, player_color, party_id, slot_id) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (event_id, discord_user_id) 
+            DO UPDATE SET 
+                assigned_char_name = EXCLUDED.assigned_char_name,
+                assigned_char_class = EXCLUDED.assigned_char_class,
+                assigned_char_spec = EXCLUDED.assigned_char_spec,
+                assigned_char_spec_emote = EXCLUDED.assigned_char_spec_emote,
+                player_color = EXCLUDED.player_color,
+                party_id = EXCLUDED.party_id,
+                slot_id = EXCLUDED.slot_id`,
+            [eventId, discordId, characterName, characterName, characterClass, selectedSpec.name, selectedSpec.emote, playerColor, targetPartyId, targetSlotId]
+        );
+
+        await client.query('COMMIT');
+        res.json({ 
+            message: 'Character added to roster successfully',
+            character: {
+                characterName,
+                class: characterClass,
+                discordId,
+                spec: selectedSpec.name,
+                partyId: targetPartyId,
+                slotId: targetSlotId
+            }
+        });
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Error force adding character to roster:', error);
+        res.status(500).json({ message: error.message || 'Internal Server Error' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Endpoint to handle moving a player
+app.put('/api/roster/:eventId/player/:discordUserId/position', async (req, res) => {
+    const { eventId, discordUserId } = req.params;
+    const targetPartyId = parseInt(req.body.targetPartyId, 10);
+    const targetSlotId = parseInt(req.body.targetSlotId, 10);
+    let client;
+
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+
+        await forkRosterIfNeeded(eventId, client);
+
+        const sourcePlayerRes = await client.query('SELECT party_id, slot_id FROM roster_overrides WHERE event_id = $1 AND discord_user_id = $2', [eventId, discordUserId]);
+        const sourcePlayer = sourcePlayerRes.rows[0];
+        const isSourcePlayerInRoster = !!(sourcePlayer && sourcePlayer.party_id !== null);
+
+        const targetPlayerRes = await client.query('SELECT discord_user_id FROM roster_overrides WHERE event_id = $1 AND party_id = $2 AND slot_id = $3', [eventId, targetPartyId, targetSlotId]);
+        const targetPlayer = targetPlayerRes.rows[0];
+
+        if (isSourcePlayerInRoster) {
+            // --- MOVING A PLAYER WHO IS ALREADY IN THE ROSTER ---
+            if (targetPlayer && targetPlayer.discord_user_id === discordUserId) {
+                // Source and target are the same player in the same slot. No action taken.
+            } else {
+                if (targetPlayer) { // It's a SWAP with another player
+                    await client.query(
+                        `UPDATE roster_overrides SET party_id = $1, slot_id = $2 WHERE event_id = $3 AND discord_user_id = $4`,
+                        [sourcePlayer.party_id, sourcePlayer.slot_id, eventId, targetPlayer.discord_user_id]
+                    );
+                }
+                // This query always runs for a move-to-empty or a swap with another player
+                await client.query(
+                    `UPDATE roster_overrides SET party_id = $1, slot_id = $2 WHERE event_id = $3 AND discord_user_id = $4`,
+                    [targetPartyId, targetSlotId, eventId, discordUserId]
+                );
+            }
+        } else {
+            // --- MOVING A PLAYER FROM THE BENCH ---
+            if (targetPlayer) {
+                // A player is in the destination. DELETE them from the roster.
+                // They will reappear on the bench because they're still in the API signups.
+                await client.query(`DELETE FROM roster_overrides WHERE event_id = $1 AND discord_user_id = $2`, [eventId, targetPlayer.discord_user_id]);
+            }
+
+            // The player might exist in our table but with NULL position (if they were moved to bench).
+            // A simple delete is cleaner than checking and avoids conflicts.
+            await client.query(`DELETE FROM roster_overrides WHERE event_id = $1 AND discord_user_id = $2`, [eventId, discordUserId]);
+            
+            // Now, insert a fresh record for the player from the bench into their new spot.
+            const playerToInsert = await getPlayerForInsert(eventId, discordUserId, client);
+            await client.query(
+                `INSERT INTO roster_overrides (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, player_color, party_id, slot_id) 
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                [eventId, discordUserId, playerToInsert.name, playerToInsert.mainCharacterName, playerToInsert.class, playerToInsert.spec, playerToInsert.spec_emote, playerToInsert.color, targetPartyId, targetSlotId]
+            );
+        }
+
+        await client.query('COMMIT');
+        res.status(200).json({ message: 'Player position updated successfully.' });
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Error updating player position:', error.stack);
+        res.status(500).json({ message: 'Internal Server Error' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+app.post('/api/roster/:eventId/player/:discordUserId/bench', async (req, res) => {
+    const { eventId, discordUserId } = req.params;
+    let client;
+
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+
+        // Forking ensures the roster is managed, which is a prerequisite for benching.
+        await forkRosterIfNeeded(eventId, client);
+
+        // Check if the player is actually in the roster before trying to "bench" them.
+        const rosterCheck = await client.query(
+            'SELECT * FROM roster_overrides WHERE event_id = $1 AND discord_user_id = $2 AND party_id IS NOT NULL',
+            [eventId, discordUserId]
+        );
+
+        if (rosterCheck.rows.length === 0) {
+            // It's good practice to send a success response even if no action was taken,
+            // as the desired state (player on bench) is already met.
+            await client.query('COMMIT'); // Commit the no-op transaction
+            return res.status(200).json({ message: 'Player is already on the bench.' });
+        }
+
+        // Deleting the player's override record effectively "benches" them.
+        // They will reappear on the bench on the next fetch because they are still in the original API signups.
+        await client.query('DELETE FROM roster_overrides WHERE event_id = $1 AND discord_user_id = $2', [eventId, discordUserId]);
+
+        await client.query('COMMIT');
+        res.status(200).json({ message: 'Player moved to bench successfully.' });
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Error benching player:', error.stack);
         res.status(500).json({ message: 'Internal Server Error' });
     } finally {
         if (client) client.release();
