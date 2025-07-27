@@ -1294,6 +1294,17 @@ app.post('/api/admin/setup-database', async (req, res) => {
     }
 });
 
+// Simple test endpoint
+app.get('/api/test', (req, res) => {
+    console.log('[TEST] Test endpoint called');
+    res.json({ message: 'Test endpoint working', timestamp: new Date().toISOString() });
+});
+
+app.put('/api/test-put', (req, res) => {
+    console.log('[TEST] PUT test endpoint called with body:', req.body);
+    res.json({ message: 'PUT test endpoint working', body: req.body, timestamp: new Date().toISOString() });
+});
+
 // Debug endpoint to check database schema and data
 app.get('/api/admin/debug-db', async (req, res) => {
     let client;
