@@ -488,6 +488,25 @@ body, html {
     vertical-align: middle;
 }
 
+/* Confirmation status icons */
+.confirmation-icon {
+    font-size: 10px;
+    margin-left: 3px;
+    margin-right: 3px;
+    width: 10px;
+    height: 10px;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.confirmation-icon.confirmed {
+    color: #2d5016; /* Dark green */
+}
+
+.confirmation-icon.unconfirmed {
+    color: #722f37; /* Dark red */
+}
+
 /* Ensure roster cells in the bench are styled consistently */
 #bench-list .roster-cell {
     margin-bottom: 5px; /* Same gap as in the new lists */

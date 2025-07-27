@@ -77,10 +77,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 cell.classList.remove('absent-player');
             }
 
+            // Add confirmation status indicator
+            let confirmationIconHTML = '';
+            if (newPlayerData.isConfirmed === "confirmed" || newPlayerData.isConfirmed === true) {
+                confirmationIconHTML = '<i class="fas fa-check confirmation-icon confirmed" title="Confirmed"></i>';
+            } else {
+                confirmationIconHTML = '<i class="fas fa-times confirmation-icon unconfirmed" title="Not Confirmed"></i>';
+            }
+
             let dropdownContentHTML = await buildDropdownContent(newPlayerData, isBenched);
 
             cell.innerHTML = `
-                <div class="${nameClass}" data-character-name="${displayName}" data-discord-name="${newPlayerData.name}">${specIconHTML}<span>${displayName}</span></div>
+                <div class="${nameClass}" data-character-name="${displayName}" data-discord-name="${newPlayerData.name}">${specIconHTML}${confirmationIconHTML}<span>${displayName}</span></div>
                 <div class="player-details-dropdown">${dropdownContentHTML}</div>`;
 
             applyPlayerColor(cell, newPlayerData.color);
@@ -832,10 +840,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             specIconHTML += '<img src="https://cdn.discordapp.com/emojis/612343589070045200.png" class="spec-icon absent-icon">';
         }
 
+        // Add confirmation status indicator
+        let confirmationIconHTML = '';
+        if (player.isConfirmed === "confirmed" || player.isConfirmed === true) {
+            confirmationIconHTML = '<i class="fas fa-check confirmation-icon confirmed" title="Confirmed"></i>';
+        } else {
+            confirmationIconHTML = '<i class="fas fa-times confirmation-icon unconfirmed" title="Not Confirmed"></i>';
+        }
+
         let dropdownContentHTML = await buildDropdownContent(player, isBenched);
 
         cellDiv.innerHTML = `
-            <div class="player-name" data-character-name="${displayName}" data-discord-name="${player.name}">${specIconHTML}<span>${displayName}</span></div>
+            <div class="player-name" data-character-name="${displayName}" data-discord-name="${player.name}">${specIconHTML}${confirmationIconHTML}<span>${displayName}</span></div>
             <div class="player-details-dropdown">${dropdownContentHTML}</div>`;
 
         applyPlayerColor(cellDiv, player.color);

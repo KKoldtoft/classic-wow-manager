@@ -586,6 +586,8 @@ app.get('/api/roster/:eventId', async (req, res) => {
                     
                     if (basePlayer) {
                         // Player exists in original signups - use enriched data
+                        // Find the original roster position to get isConfirmed status
+                        const originalRosterPlayer = rosterDataFromApi.raidDrop?.find(p => p?.userid === override.discord_user_id);
                         finalRosterPlayers.push({
                             ...basePlayer,
                             mainCharacterName: override.assigned_char_name,
@@ -595,6 +597,7 @@ app.get('/api/roster/:eventId', async (req, res) => {
                             partyId: override.party_id,
                             slotId: override.slot_id,
                             color: override.player_color,
+                            isConfirmed: originalRosterPlayer?.isConfirmed || false,
                         });
                     } else {
                         // Player doesn't exist in original signups - create from override data only
@@ -609,7 +612,8 @@ app.get('/api/roster/:eventId', async (req, res) => {
                             slotId: override.slot_id,
                             color: override.player_color,
                             altCharacters: [], // No alt data for manually added characters
-                            status: 'confirmed' // Assume confirmed for manually added
+                            status: 'confirmed', // Assume confirmed for manually added
+                            isConfirmed: true // Manually added players are confirmed
                         });
                     }
                     playersInRosterOverrides.add(override.discord_user_id);
