@@ -74,6 +74,110 @@ passport.use(new DiscordStrategy({
 // Add the JSON middleware to parse request bodies
 app.use(express.json());
 
+// Add request logging middleware for debugging
+app.use('/api/discord', (req, res, next) => {
+  console.log(`🔍 Discord API Request: ${req.method} ${req.path}`);
+  console.log('🔍 Full URL:', req.originalUrl);
+  console.log('🔍 Params:', req.params);
+  next();
+});
+
+// Discord channel information cache
+const channelCache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// Simple test endpoint to verify API routing
+app.get('/api/discord/test', (req, res) => {
+  console.log('✅ Discord API test endpoint hit');
+  res.json({ message: 'Discord API routing works', timestamp: new Date().toISOString() });
+});
+
+// Endpoint to fetch Discord channel information
+app.get('/api/discord/channel/:channelId', async (req, res) => {
+  console.log('🔍 Discord channel API endpoint called for channelId:', req.params.channelId);
+  
+  if (!req.isAuthenticated()) {
+    console.log('❌ User not authenticated');
+    return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
+  }
+
+  const { channelId } = req.params;
+  console.log('📋 Processing channel request for ID:', channelId);
+  
+  // Check cache first
+  const cached = channelCache.get(channelId);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    console.log('✅ Returning cached channel data:', cached.data);
+    return res.json(cached.data);
+  }
+
+  // Try to get Discord bot token from environment
+  const discordBotToken = process.env.DISCORD_BOT_TOKEN;
+  console.log('🔑 Discord bot token available:', !!discordBotToken);
+  
+  if (!discordBotToken) {
+    console.log('⚠️ No Discord bot token configured, returning fallback');
+    // Fallback to channel ID if no bot token
+    const fallbackData = { 
+      id: channelId, 
+      name: channelId, // Don't add # here, let frontend handle it
+      error: 'No Discord bot token configured' 
+    };
+    console.log('📤 Returning fallback data:', fallbackData);
+    return res.json(fallbackData);
+  }
+
+  try {
+    console.log('🌐 Making Discord API request for channel:', channelId);
+    const response = await axios.get(`https://discord.com/api/v10/channels/${channelId}`, {
+      headers: {
+        'Authorization': `Bot ${discordBotToken}`,
+        'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+      }
+    });
+
+    console.log('✅ Discord API response received:', {
+      status: response.status,
+      channelName: response.data.name,
+      channelType: response.data.type
+    });
+
+    const channelData = {
+      id: response.data.id,
+      name: response.data.name,
+      type: response.data.type
+    };
+
+    // Cache the result
+    channelCache.set(channelId, {
+      data: channelData,
+      timestamp: Date.now()
+    });
+
+    console.log('💾 Cached channel data and returning:', channelData);
+    res.json(channelData);
+  } catch (error) {
+    console.error('❌ Error fetching Discord channel:', {
+      channelId,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      message: error.message
+    });
+    
+    // Fallback response
+    const fallbackData = { 
+      id: channelId, 
+      name: channelId, // Don't add # here, let frontend handle it
+      error: 'Failed to fetch from Discord API',
+      details: error.response ? error.response.data : error.message
+    };
+    
+    console.log('📤 Returning error fallback data:', fallbackData);
+    res.json(fallbackData);
+  }
+});
+
 // Critical: Place express.static as the FIRST middleware to handle static files.
 app.use(express.static('public'));
 
@@ -294,6 +398,8 @@ app.get('/api/events', async (req, res) => {
     });
   }
 });
+
+
 
 // A helper function to normalize class names to their canonical form
 const CLASS_COLORS = {

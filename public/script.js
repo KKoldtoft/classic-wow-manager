@@ -60,6 +60,129 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    // Channel name cache
+    const channelNameCache = new Map();
+
+    // Function to fetch channel name from Discord API
+    async function fetchChannelName(channelId) {
+        console.log('🔍 fetchChannelName called with channelId:', channelId);
+        
+        if (!channelId) {
+            console.log('❌ No channelId provided, returning #unknown');
+            return '#unknown';
+        }
+        
+        // Check cache first
+        if (channelNameCache.has(channelId)) {
+            const cachedName = channelNameCache.get(channelId);
+            console.log('✅ Found cached channel name:', cachedName);
+            return cachedName;
+        }
+
+        // Quick authentication check
+        try {
+            console.log('🔐 Checking user authentication status...');
+            const authResponse = await fetch('/user');
+            const authData = await authResponse.json();
+            console.log('🔐 Auth status:', authData.loggedIn ? 'Logged in' : 'Not logged in');
+            
+            if (!authData.loggedIn) {
+                console.log('❌ User not authenticated, skipping Discord API call');
+                const fallbackName = `#${channelId}`;
+                channelNameCache.set(channelId, fallbackName);
+                return fallbackName;
+            }
+        } catch (authError) {
+            console.error('❌ Error checking authentication:', authError);
+            const fallbackName = `#${channelId}`;
+            channelNameCache.set(channelId, fallbackName);
+            return fallbackName;
+        }
+
+        try {
+            // First test if Discord API routing works at all
+            console.log('🧪 Testing basic Discord API routing...');
+            try {
+                const basicTestResponse = await fetch('/api/discord/test');
+                const basicTestData = await basicTestResponse.json();
+                console.log('✅ Basic Discord API test:', basicTestData);
+            } catch (testError) {
+                console.error('❌ Basic Discord API test failed:', testError);
+            }
+            
+            console.log('🌐 Fetching channel info from API:', `/api/discord/channel/${channelId}`);
+            
+            // Test if the endpoint exists first
+            console.log('🧪 Testing API endpoint availability...');
+            const testResponse = await fetch(`/api/discord/channel/${channelId}`, { method: 'HEAD' });
+            console.log('🧪 HEAD request status:', testResponse.status);
+            
+            const response = await fetch(`/api/discord/channel/${channelId}`);
+            console.log('📡 API response status:', response.status);
+            console.log('📡 API response headers:', Object.fromEntries(response.headers.entries()));
+            
+            // Check if response is actually JSON
+            const contentType = response.headers.get('content-type');
+            console.log('📄 Response content type:', contentType);
+            
+            if (!response.ok) {
+                console.error('❌ API response not OK:', response.status, response.statusText);
+                const errorText = await response.text();
+                console.error('❌ Error response body:', errorText.substring(0, 500));
+                throw new Error(`API returned ${response.status}: ${response.statusText}`);
+            }
+            
+            if (!contentType || !contentType.includes('application/json')) {
+                console.error('❌ Response is not JSON, content-type:', contentType);
+                const responseText = await response.text();
+                console.error('❌ Response body (first 500 chars):', responseText.substring(0, 500));
+                throw new Error('API returned non-JSON response');
+            }
+            
+            const channelData = await response.json();
+            console.log('📋 Channel data received:', channelData);
+            
+            const channelName = channelData.name ? `#${channelData.name}` : `#${channelId}`;
+            console.log('🏷️ Final channel name:', channelName);
+            
+            // Cache the result
+            channelNameCache.set(channelId, channelName);
+            console.log('💾 Cached channel name for future use');
+            
+            return channelName;
+        } catch (error) {
+            console.error('❌ Error fetching channel name:', error);
+            const fallbackName = `#${channelId}`;
+            channelNameCache.set(channelId, fallbackName);
+            console.log('🔄 Using fallback name:', fallbackName);
+            return fallbackName;
+        }
+    }
+
+    // Function to get channel name (sync version for immediate display)
+    function getChannelName(channelId) {
+        console.log('🔄 getChannelName called with channelId:', channelId);
+        
+        // Simple mapping for immediate display (fallback)
+        const fallbackMapping = {
+            '1202206206782091264': '📅sunday-aqbwl',
+            // Add more as needed
+        };
+        
+        const cachedName = channelNameCache.get(channelId);
+        const fallbackName = fallbackMapping[channelId];
+        const finalName = cachedName || fallbackName || `#${channelId}`;
+        
+        console.log('📝 Channel name resolution:', {
+            channelId,
+            cached: cachedName,
+            fallback: fallbackName,
+            final: finalName
+        });
+        
+        return finalName;
+    }
+
     // Function to fetch and display events (now called directly)
     async function fetchAndDisplayEvents() {
         if (!eventsList) return; // Don't run if the container doesn't exist
@@ -73,7 +196,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Check if data.scheduledEvents exists and is an array with items
             if (data && Array.isArray(data.scheduledEvents) && data.scheduledEvents.length > 0) {
-                // Found scheduled events (debug log removed)
+                console.log('📅 Found scheduled events:', data.scheduledEvents.length);
+                console.log('🔍 Sample event data:', data.scheduledEvents[0]);
                 eventsList.innerHTML = ''; // Clear previous message
 
                 const today = new Date();
@@ -113,10 +237,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 upcomingEvents.sort((a, b) => a.startTime - b.startTime);
 
-                upcomingEvents.forEach(event => {
+                upcomingEvents.forEach(async (event, index) => {
+                    console.log(`🎯 Processing event ${index + 1}:`, {
+                        id: event.id,
+                        title: event.title,
+                        channelId: event.channelId,
+                        signUpCount: event.signUpCount
+                    });
+                    
                     try {
                         const eventDiv = document.createElement('div');
                         eventDiv.classList.add('event-panel');
+                        eventDiv.setAttribute('data-event-index', index); // For updating later
                         
                         const eventId = event.id || 'unknown';
                         const eventTitle = event.title || 'Untitled Event';
@@ -157,14 +289,39 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const formattedStartTime = eventStartDate.toLocaleTimeString('en-GB', optionsTime);
                         // --- End Date Formatting Logic ---
 
+                        // Get signup count and initial channel name
+                        const signUpCount = event.signUpCount || '0';
+                        const initialChannelName = getChannelName(event.channelId);
+
                         eventDiv.innerHTML = `
                             <h3>${eventTitle}</h3>
                             <div class="event-time-info">
                                 <p><i class="far fa-calendar-alt event-icon"></i> ${dateDisplayHTML}</p>
                                 <p><i class="far fa-clock event-icon"></i> ${formattedStartTime}</p>
+                                <p><i class="fas fa-user event-icon"></i> ${signUpCount} Signed</p>
+                                <p class="channel-info"><i class="fas fa-hashtag event-icon"></i> ${initialChannelName}</p>
                             </div>
                         `;
                         eventsList.appendChild(eventDiv);
+
+                        // Fetch real channel name asynchronously and update
+                        if (event.channelId) {
+                            console.log('🚀 Starting async channel fetch for event:', event.id, 'channelId:', event.channelId);
+                            fetchChannelName(event.channelId).then(realChannelName => {
+                                console.log('✅ Got real channel name:', realChannelName, 'for event:', event.id);
+                                const channelInfoElement = eventDiv.querySelector('.channel-info');
+                                if (channelInfoElement) {
+                                    console.log('🔄 Updating channel display from:', channelInfoElement.innerHTML, 'to:', realChannelName);
+                                    channelInfoElement.innerHTML = `<i class="fas fa-hashtag event-icon"></i> ${realChannelName}`;
+                                } else {
+                                    console.error('❌ Could not find .channel-info element in event div');
+                                }
+                            }).catch(error => {
+                                console.error('❌ Error updating channel name for event:', event.id, error);
+                            });
+                        } else {
+                            console.log('⚠️ No channelId found for event:', event.id);
+                        }
                     } catch (renderError) {
                         console.error('Error rendering a single event. Skipping it.', renderError);
                         console.error('Problematic event data:', event);
