@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS roster_overrides (
     assigned_char_name VARCHAR(255),
     assigned_char_class VARCHAR(50),
     assigned_char_spec VARCHAR(50),
-    assigned_char_spec_emote VARCHAR(10),
+    assigned_char_spec_emote VARCHAR(50),
     player_color VARCHAR(50),
     party_id INTEGER,
     slot_id INTEGER,

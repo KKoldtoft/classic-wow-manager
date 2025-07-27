@@ -1261,7 +1261,7 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 assigned_char_name VARCHAR(255),
                 assigned_char_class VARCHAR(50),
                 assigned_char_spec VARCHAR(50),
-                assigned_char_spec_emote VARCHAR(10),
+                assigned_char_spec_emote VARCHAR(50),
                 player_color VARCHAR(50),
                 party_id INTEGER,
                 slot_id INTEGER,
@@ -1275,6 +1275,12 @@ app.post('/api/admin/setup-database', async (req, res) => {
         `);
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_roster_overrides_event_id ON roster_overrides (event_id)
+        `);
+        
+        // Fix column size for spec emotes (Discord IDs can be 17-19 chars)
+        await client.query(`
+            ALTER TABLE roster_overrides 
+            ALTER COLUMN assigned_char_spec_emote TYPE VARCHAR(50)
         `);
         
         res.json({ 
