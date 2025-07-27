@@ -123,14 +123,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return false;
             }
 
-            console.log('Starting move:', {
-                movingPlayer: movingPlayer.name,
-                fromBench: isMovingFromBench,
-                fromPosition: isMovingFromBench ? 'bench' : `${movingPlayer.partyId}-${movingPlayer.slotId}`,
-                toPosition: `${targetPartyId}-${targetSlotId}`,
-                targetHasPlayer: !!targetPlayerInOriginalPos,
-                targetPlayerName: targetPlayerInOriginalPos?.name
-            });
+            // Move operation starting (debug details removed)
 
             // Add moving animation
             sourceCell.classList.add('moving');
@@ -195,7 +188,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     if (isMovingFromBench) {
                         // Moving from bench to roster
-                        console.log('Moving from bench to roster');
+                        // Moving from bench to roster
                         
                         // Remove player from bench visually (sourceCell is in bench)
                         sourceCell.remove();
@@ -205,7 +198,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         
                         // If there was a target player, add them to bench
                         if (targetPlayerInOriginalPos) {
-                            console.log('Adding displaced player to bench:', targetPlayerInOriginalPos.name);
+                            // Player displaced to bench
                             // Show bench container if it was hidden
                             document.getElementById('bench-container').style.display = 'block';
                             await this.createBenchCell(targetPlayerInOriginalPos);
@@ -222,11 +215,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                         // Rebuild source cell
                         if (targetPlayerInOriginalPos) {
                             // There was a player in target - they go to source position
-                            console.log('Updating source cell with target player:', targetPlayerInOriginalPos.name);
+                            // Updating source cell
                             updatedSourceCell = await this.updatePlayerCell(sourceCell, targetPlayerInOriginalPos, false);
                                             } else {
                         // Target was empty - source becomes empty, restore empty slot functionality
-                        console.log('Making source cell empty');
+                                                    // Making source cell empty
                         sourceCell.classList.remove('player-filled');
                         sourceCell.classList.add('empty-slot-clickable');
                         
@@ -252,7 +245,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
 
                         // Rebuild target cell with moving player
-                        console.log('Updating target cell with moving player:', movingPlayer.name);
+                        // Updating target cell with moving player
                         updatedTargetCell = await this.updatePlayerCell(targetCell, movingPlayer, false);
                     }
 
@@ -265,7 +258,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // Refresh all dropdown content to reflect current positions
                     await this.refreshAllDropdownContent();
                     
-                    console.log('Move visual update completed successfully');
+                    // Move visual update completed
                 } catch (error) {
                     console.error('Error during visual update:', error);
                 }
@@ -934,14 +927,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         }
         
-        // Debug logging
-        console.log(`Building character list for ${player.name}:`, {
-            currentCharacter: currentCharacterName,
-            signupName: signupName,
-            altCharacters: player.altCharacters,
-            characterHistory: Array.from(playerCharacterHistory[player.userid]),
-            characterDetails: playerCharacterDetails[player.userid]
-        });
+        // Character list building (debug removed for cleaner logs)
         
         const existingNames = new Set();
         
@@ -1192,7 +1178,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     isManaged = true;
                     updateRevertButtonVisibility();
                     
-                    console.log('Character added successfully:', characterData);
+                    // Character added successfully
                 } catch (error) {
                     console.error('Error adding character:', error);
                     
@@ -1206,7 +1192,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             },
             onCancel: () => {
-                console.log('Add character cancelled');
+                // Character addition cancelled
             }
         });
         
@@ -1320,7 +1306,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             isManaged = true;
             updateRevertButtonVisibility();
             
-            console.log('Character force-created successfully:', characterData);
+                            // Character force-created successfully
         } catch (error) {
             console.error('Error force creating character:', error);
             showAlert('Create Character Error', `Error creating character: ${error.message}`);

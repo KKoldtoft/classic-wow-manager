@@ -229,8 +229,7 @@ app.get('/api/events', async (req, res) => {
   const futureUnixTimestamp = nowUnixTimestamp + oneYearInSeconds;
 
   // NEW: Log the timestamp values for debugging
-  console.log(`Debug: StartTimeFilter (now): ${nowUnixTimestamp}`);
-  console.log(`Debug: EndTimeFilter (1 year from now): ${futureUnixTimestamp}`);
+      // Time filters set (debug logs removed)
 
 
   try {
@@ -248,7 +247,7 @@ app.get('/api/events', async (req, res) => {
       }
     );
 
-    console.log('Raid-Helper API Raw Response Data (200 OK):', JSON.stringify(response.data, null, 2));
+    // API response data logged (debug removed for cleaner logs)
 
     // FIX: The actual event data is in response.data.postedEvents.
     // We will send this back to the frontend under the expected 'scheduledEvents' key.
@@ -471,7 +470,7 @@ async function enrichRosterWithDbData(rosterData, client) {
 
 // Helper to "fork" a roster from the API into the DB if it's not already managed
 async function forkRosterIfNeeded(eventId, client) {
-    const checkResult = await client.query('SELECT id FROM roster_overrides WHERE event_id = $1 LIMIT 1', [eventId]);
+    const checkResult = await client.query('SELECT event_id FROM roster_overrides WHERE event_id = $1 LIMIT 1', [eventId]);
     if (checkResult.rows.length > 0) {
         return; // Already forked
     }

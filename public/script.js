@@ -69,11 +69,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const response = await fetch('/api/events');
             const data = await response.json();
 
-            console.log('script.js: Data received from /api/events:', data); // DEBUG LOG S2
+            // Events data received (debug log removed)
 
             // Check if data.scheduledEvents exists and is an array with items
             if (data && Array.isArray(data.scheduledEvents) && data.scheduledEvents.length > 0) {
-                console.log('script.js: Found scheduledEvents array with length:', data.scheduledEvents.length); // DEBUG LOG S3
+                // Found scheduled events (debug log removed)
                 eventsList.innerHTML = ''; // Clear previous message
 
                 const today = new Date();
@@ -97,7 +97,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         }
 
                         const isUpcoming = eventStartDate >= today;
-                        console.log(`Event: ${event.title || 'Untitled'}, Start: ${eventStartDate.toLocaleString()}, Is Upcoming: ${isUpcoming}`);
+                        // Event processing (debug log removed)
                         return isUpcoming;
                     } catch (filterError) {
                         console.error('An error occurred during event filtering. Skipping this event.', filterError);
@@ -124,7 +124,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         if (eventId !== 'unknown') {
                             eventDiv.style.cursor = 'pointer';
                             eventDiv.addEventListener('click', () => {
-                                console.log('script.js: Navigating to roster for event ID:', eventId); // DEBUG LOG S8
+                                // Navigating to roster (debug log removed)
                                 window.location.href = `/event/${eventId}/roster`;
                             });
                         }
@@ -173,7 +173,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             } else {
                 eventsList.innerHTML = '<p>No upcoming events found for this server.</p>';
-                console.log('script.js: Data is empty or invalid format. Full data object:', data); // DEBUG LOG S10
+                // No events data available (debug log removed)
             }
         } catch (error) {
             eventsList.innerHTML = '<p>An error occurred while fetching events. Check console for details.</p>';
