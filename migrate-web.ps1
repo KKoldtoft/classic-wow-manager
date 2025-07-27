@@ -16,15 +16,17 @@
 param (
     [switch]$setupDb,
     [switch]$migrateData,
+    [switch]$cleanupPlayers,
     [string]$appUrl
 )
 
-if (-not $setupDb -and -not $migrateData) {
-    Write-Host "Usage: .\migrate-web.ps1 -setupDb and/or -migrateData"
+if (-not $setupDb -and -not $migrateData -and -not $cleanupPlayers) {
+    Write-Host "Usage: .\migrate-web.ps1 -setupDb and/or -migrateData and/or -cleanupPlayers"
     Write-Host ""
     Write-Host "Examples:"
     Write-Host "  .\migrate-web.ps1 -setupDb              # Creates database tables"
     Write-Host "  .\migrate-web.ps1 -migrateData          # Migrates players data"
+    Write-Host "  .\migrate-web.ps1 -cleanupPlayers       # Removes players without Discord IDs"
     Write-Host "  .\migrate-web.ps1 -setupDb -migrateData # Does both"
     Write-Host ""
     Write-Host "Optional:"
@@ -139,15 +141,28 @@ if ($migrateData) {
     }
 }
 
+if ($cleanupPlayers) {
+    Write-Host ""
+    Write-Host "Step 3: Cleaning up players without Discord IDs..."
+    
+    $success = Invoke-MigrationRequest -Endpoint "cleanup-players" -Description "player cleanup"
+    if (-not $success) {
+        $allSuccessful = $false
+    }
+}
+
 Write-Host ""
 if ($allSuccessful) {
     Write-Host "🎉 All database operations completed successfully!"
+    if ($setupDb) { Write-Host "   - Database tables created/updated" }
+    if ($migrateData) { Write-Host "   - Player data migrated" }
+    if ($cleanupPlayers) { Write-Host "   - Players without Discord IDs removed" }
 } else {
     Write-Host "⚠️  Some operations failed. Check the messages above."
 }
 
 Write-Host ""
-Write-Host "To verify the migration worked, you can:"
+Write-Host "To verify the operations worked, you can:"
 Write-Host "  1. Visit your app and check if player data is showing correctly"
 Write-Host "  2. Check the logs: heroku logs --tail"
 Write-Host "  3. Use psql if you have it: heroku pg:psql" 

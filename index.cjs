@@ -1351,6 +1351,53 @@ app.get('/api/admin/debug-db', async (req, res) => {
     }
 });
 
+// Cleanup endpoint to remove players without Discord IDs
+app.post('/api/admin/cleanup-players', async (req, res) => {
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // First, check how many players have empty/null Discord IDs
+        const countResult = await client.query(`
+            SELECT COUNT(*) as count 
+            FROM players 
+            WHERE discord_id IS NULL OR discord_id = ''
+        `);
+        
+        const countToDelete = parseInt(countResult.rows[0].count);
+        
+        if (countToDelete === 0) {
+            return res.json({
+                success: true,
+                message: 'No players found with empty Discord IDs.',
+                deletedCount: 0
+            });
+        }
+        
+        // Delete players without Discord IDs
+        const deleteResult = await client.query(`
+            DELETE FROM players 
+            WHERE discord_id IS NULL OR discord_id = ''
+        `);
+        
+        res.json({
+            success: true,
+            message: `Successfully removed ${deleteResult.rowCount} players without Discord IDs.`,
+            deletedCount: deleteResult.rowCount
+        });
+        
+    } catch (error) {
+        console.error('Error cleaning up players:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error cleaning up players',
+            error: error.message
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 app.post('/api/admin/migrate-players', async (req, res) => {
     const fs = require('fs');
     const path = require('path');
