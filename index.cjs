@@ -63,11 +63,196 @@ passport.use(new DiscordStrategy({
     clientID: process.env.DISCORD_CLIENT_ID,
     clientSecret: process.env.DISCORD_CLIENT_SECRET,
     callbackURL: `${process.env.APP_BASE_URL}/auth/discord/callback`,
-    scope: ['identify', 'email', 'guilds']
+    scope: ['identify', 'email', 'guilds', 'guilds.members.read']
 },
 (accessToken, refreshToken, profile, done) => {
+    // Store the access token in the profile for later use
+    profile.accessToken = accessToken;
+    profile.refreshToken = refreshToken;
     return done(null, profile);
 }));
+
+// --- Role-Based Access Control Functions ---
+
+// Your Discord server ID - update this with your actual server ID
+const DISCORD_GUILD_ID = '777268886939893821'; // Your guild ID from the events API
+
+// Define management role - the only role that matters
+const MANAGEMENT_ROLE_NAME = 'Management';
+
+// Function to fetch user's guild member data including roles (with caching)
+async function fetchUserGuildMember(accessToken, guildId) {
+    // Create cache key based on access token and guild ID
+    const cacheKey = `${accessToken.substring(0, 10)}_${guildId}`;
+    
+    // Check cache first
+    const cached = userMemberCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < USER_CACHE_TTL) {
+        console.log(`💾 Using cached user member data (${cached.data.roles.length} roles)`);
+        return cached.data;
+    }
+
+    try {
+        console.log(`🔍 Fetching guild member data for guild ${guildId}`);
+        const response = await axios.get(`https://discord.com/api/v10/users/@me/guilds/${guildId}/member`, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+            }
+        });
+        
+        console.log(`✅ Guild member data received:`, response.data);
+        
+        // Cache the successful response
+        userMemberCache.set(cacheKey, {
+            data: response.data,
+            timestamp: Date.now()
+        });
+        
+        return response.data;
+    } catch (error) {
+        console.error('❌ Error fetching guild member data:', {
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            data: error.response?.data,
+            message: error.message
+        });
+        
+        // If we have stale cached data and it's a rate limit error, use the stale data
+        if (error.response?.status === 429 && cached) {
+            console.log(`⚠️ Rate limited, using stale cached data (${Math.floor((Date.now() - cached.timestamp) / 1000)}s old)`);
+            return cached.data;
+        }
+        
+        return null;
+    }
+}
+
+// Cache for guild roles to avoid repeated API calls
+let guildRolesCache = null;
+let guildRolesCacheTime = 0;
+
+// Cache for user member data to avoid repeated API calls
+const userMemberCache = new Map();
+const USER_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
+const GUILD_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+// Clean up old cache entries every 30 minutes
+setInterval(() => {
+    const now = Date.now();
+    let cleanedCount = 0;
+    
+    for (const [key, value] of userMemberCache.entries()) {
+        if (now - value.timestamp > USER_CACHE_TTL * 2) { // Remove entries older than 30 minutes
+            userMemberCache.delete(key);
+            cleanedCount++;
+        }
+    }
+    
+    if (cleanedCount > 0) {
+        console.log(`🧹 Cleaned up ${cleanedCount} old cache entries`);
+    }
+}, 30 * 60 * 1000); // Run every 30 minutes
+
+// Function to fetch guild roles to map role IDs to names
+async function fetchGuildRoles(guildId) {
+    // Check cache first
+    if (guildRolesCache && (Date.now() - guildRolesCacheTime) < GUILD_CACHE_TTL) {
+        console.log(`💾 Using cached guild roles (${guildRolesCache.length} roles)`);
+        return guildRolesCache;
+    }
+
+    try {
+        console.log(`🔍 Fetching guild roles for guild ${guildId}`);
+        console.log(`🤖 Bot token configured: ${process.env.DISCORD_BOT_TOKEN ? 'Yes' : 'No'}`);
+        
+        if (!process.env.DISCORD_BOT_TOKEN) {
+            console.log('⚠️ No bot token configured - cannot fetch guild roles');
+            return [];
+        }
+        
+        const response = await axios.get(`https://discord.com/api/v10/guilds/${guildId}/roles`, {
+            headers: {
+                'Authorization': `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+                'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+            }
+        });
+        
+        console.log(`✅ Guild roles received: ${response.data.length} roles`);
+        
+        // Cache the results
+        guildRolesCache = response.data;
+        guildRolesCacheTime = Date.now();
+        
+        return response.data;
+    } catch (error) {
+        console.error('❌ Error fetching guild roles:', {
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            data: error.response?.data,
+            message: error.message,
+            botTokenExists: !!process.env.DISCORD_BOT_TOKEN
+        });
+        return [];
+    }
+}
+
+// Check if user has Management role
+async function hasManagementRole(accessToken) {
+    const memberData = await fetchUserGuildMember(accessToken, DISCORD_GUILD_ID);
+    if (!memberData || !memberData.roles) {
+        console.log('❌ No member data or roles found');
+        return false;
+    }
+
+    const guildRoles = await fetchGuildRoles(DISCORD_GUILD_ID);
+    if (guildRoles.length === 0) {
+        console.log('⚠️ No guild roles available - cannot verify Management role');
+        return false;
+    }
+    
+    const roleMap = new Map(guildRoles.map(role => [role.id, role.name]));
+
+    // DEBUG: Show user's actual role names
+    const userRoleNames = memberData.roles
+        .map(roleId => roleMap.get(roleId))
+        .filter(roleName => roleName !== undefined);
+    console.log(`👤 User's actual role names: [${userRoleNames.join(', ')}]`);
+
+    // Check if user has "Management" role
+    const hasRole = memberData.roles.some(roleId => {
+        const roleName = roleMap.get(roleId);
+        return roleName === MANAGEMENT_ROLE_NAME;
+    });
+    
+    console.log(`🔍 Checking for "${MANAGEMENT_ROLE_NAME}" role: ${hasRole ? '✅ FOUND' : '❌ NOT FOUND'}`);
+    
+    // DEBUG: Check for similar role names
+    const similarRoles = userRoleNames.filter(name => 
+        name.toLowerCase().includes('manage') || 
+        name.toLowerCase().includes('admin') || 
+        name.toLowerCase().includes('officer')
+    );
+    if (similarRoles.length > 0) {
+        console.log(`💡 Found similar roles: [${similarRoles.join(', ')}]`);
+    }
+    
+    return hasRole;
+}
+
+// Middleware to require Management role
+async function requireManagement(req, res, next) {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const hasRole = await hasManagementRole(req.user.accessToken);
+    if (!hasRole) {
+        return res.status(403).json({ message: 'Management role required' });
+    }
+
+    next();
+}
 
 // --- Express Routes ---
 
@@ -86,6 +271,10 @@ app.get('/event/:eventId/roster', (req, res) => {
 
 app.get('/players', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'players.html'));
+});
+
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
 
@@ -108,16 +297,41 @@ app.get('/auth/logout', (req, res, next) => {
   });
 });
 
-app.get('/user', (req, res) => {
+app.get('/user', async (req, res) => {
   if (req.isAuthenticated()) {
-    res.json({
-      loggedIn: true,
-      id: req.user.id,
-      username: req.user.username,
-      discriminator: req.user.discriminator,
-      avatar: req.user.avatar,
-      email: req.user.email
-    });
+    try {
+      // Check if user has Management role
+      console.log(`👤 Checking permissions for user ${req.user.username}`);
+      const isManagement = await hasManagementRole(req.user.accessToken);
+
+      res.json({
+        loggedIn: true,
+        id: req.user.id,
+        username: req.user.username,
+        discriminator: req.user.discriminator,
+        avatar: req.user.avatar,
+        email: req.user.email,
+        hasManagementRole: isManagement,
+        permissions: {
+          canManage: isManagement
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching user permissions:', error);
+      // Fallback to basic user info if role fetching fails
+      res.json({
+        loggedIn: true,
+        id: req.user.id,
+        username: req.user.username,
+        discriminator: req.user.discriminator,
+        avatar: req.user.avatar,
+        email: req.user.email,
+        hasManagementRole: false,
+        permissions: {
+          canManage: false
+        }
+      });
+    }
   } else {
     res.json({ loggedIn: false });
   }
@@ -125,6 +339,131 @@ app.get('/user', (req, res) => {
 
 app.get('/api/db-status', (req, res) => {
   res.json({ status: dbConnectionStatus });
+});
+
+// --- Role-Based Access Control Endpoints ---
+
+// Endpoint to get user's permissions only
+app.get('/api/user/permissions', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+
+  try {
+    const isManagement = await hasManagementRole(req.user.accessToken);
+
+    res.json({
+      hasManagementRole: isManagement,
+      permissions: {
+        canManage: isManagement
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching user permissions:', error);
+    res.status(500).json({ 
+      message: 'Error fetching permissions',
+      error: error.message 
+    });
+  }
+});
+
+// Management-only endpoint for user data
+app.get('/api/management/users', requireManagement, async (req, res) => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query('SELECT discord_id, character_name, class FROM players ORDER BY character_name');
+    client.release();
+    res.json({ 
+      message: 'Management access granted',
+      users: result.rows 
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error.stack);
+    res.status(500).json({ message: 'Error fetching users from the database.' });
+  }
+});
+
+// Management-only endpoint for roster statistics
+app.get('/api/management/roster-stats', requireManagement, async (req, res) => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query(`
+      SELECT 
+        COUNT(DISTINCT event_id) as managed_events,
+        COUNT(*) as total_roster_entries,
+        COUNT(DISTINCT discord_user_id) as unique_players
+      FROM roster_overrides
+    `);
+    client.release();
+    res.json({ 
+      message: 'Management access granted',
+      stats: result.rows[0] 
+    });
+  } catch (error) {
+    console.error('Error fetching roster stats:', error.stack);
+    res.status(500).json({ message: 'Error fetching roster statistics.' });
+  }
+});
+
+// DEBUG: Endpoint to clear all caches and check roles
+app.get('/api/debug/clear-cache', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+
+  try {
+    // Clear both caches
+    guildRolesCache = null;
+    guildRolesCacheTime = 0;
+    userMemberCache.clear();
+    console.log('🧹 All caches cleared (guild roles + user member data)');
+
+    // Check roles again with fresh data
+    const isManagement = await hasManagementRole(req.user.accessToken);
+    
+    res.json({
+      message: 'All caches cleared and roles rechecked',
+      hasManagementRole: isManagement,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error during cache clear and role check:', error);
+    res.status(500).json({ 
+      message: 'Error during debug check',
+      error: error.message 
+    });
+  }
+});
+
+// DEBUG: Cache status endpoint
+app.get('/api/debug/cache-status', (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+
+  const now = Date.now();
+  const guildCacheAge = guildRolesCache ? Math.floor((now - guildRolesCacheTime) / 1000) : null;
+  
+  res.json({
+    guildRoles: {
+      cached: !!guildRolesCache,
+      ageSeconds: guildCacheAge,
+      roles: guildRolesCache ? guildRolesCache.length : 0
+    },
+    userMembers: {
+      totalCached: userMemberCache.size,
+      entries: Array.from(userMemberCache.entries()).map(([key, value]) => ({
+        key: key,
+        ageSeconds: Math.floor((now - value.timestamp) / 1000),
+        roles: value.data.roles.length
+      }))
+    },
+    cacheTtls: {
+      userCacheTtlMinutes: USER_CACHE_TTL / (60 * 1000),
+      guildCacheTtlMinutes: GUILD_CACHE_TTL / (60 * 1000)
+    },
+    timestamp: new Date().toISOString()
+  });
 });
 
 app.get('/db-test', async (req, res) => {
