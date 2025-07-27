@@ -310,6 +310,8 @@ body {
     color: black;
 }
 
+
+
 /* Basic responsiveness */
 @media (max-width: 600px) {
     .top-bar {

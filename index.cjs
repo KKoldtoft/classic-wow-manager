@@ -74,109 +74,7 @@ passport.use(new DiscordStrategy({
 // Add the JSON middleware to parse request bodies
 app.use(express.json());
 
-// Add request logging middleware for debugging
-app.use('/api/discord', (req, res, next) => {
-  console.log(`🔍 Discord API Request: ${req.method} ${req.path}`);
-  console.log('🔍 Full URL:', req.originalUrl);
-  console.log('🔍 Params:', req.params);
-  next();
-});
-
-// Discord channel information cache
-const channelCache = new Map();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-
-// Simple test endpoint to verify API routing
-app.get('/api/discord/test', (req, res) => {
-  console.log('✅ Discord API test endpoint hit');
-  res.json({ message: 'Discord API routing works', timestamp: new Date().toISOString() });
-});
-
-// Endpoint to fetch Discord channel information
-app.get('/api/discord/channel/:channelId', async (req, res) => {
-  console.log('🔍 Discord channel API endpoint called for channelId:', req.params.channelId);
-  
-  if (!req.isAuthenticated()) {
-    console.log('❌ User not authenticated');
-    return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
-  }
-
-  const { channelId } = req.params;
-  console.log('📋 Processing channel request for ID:', channelId);
-  
-  // Check cache first
-  const cached = channelCache.get(channelId);
-  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-    console.log('✅ Returning cached channel data:', cached.data);
-    return res.json(cached.data);
-  }
-
-  // Try to get Discord bot token from environment
-  const discordBotToken = process.env.DISCORD_BOT_TOKEN;
-  console.log('🔑 Discord bot token available:', !!discordBotToken);
-  
-  if (!discordBotToken) {
-    console.log('⚠️ No Discord bot token configured, returning fallback');
-    // Fallback to channel ID if no bot token
-    const fallbackData = { 
-      id: channelId, 
-      name: channelId, // Don't add # here, let frontend handle it
-      error: 'No Discord bot token configured' 
-    };
-    console.log('📤 Returning fallback data:', fallbackData);
-    return res.json(fallbackData);
-  }
-
-  try {
-    console.log('🌐 Making Discord API request for channel:', channelId);
-    const response = await axios.get(`https://discord.com/api/v10/channels/${channelId}`, {
-      headers: {
-        'Authorization': `Bot ${discordBotToken}`,
-        'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
-      }
-    });
-
-    console.log('✅ Discord API response received:', {
-      status: response.status,
-      channelName: response.data.name,
-      channelType: response.data.type
-    });
-
-    const channelData = {
-      id: response.data.id,
-      name: response.data.name,
-      type: response.data.type
-    };
-
-    // Cache the result
-    channelCache.set(channelId, {
-      data: channelData,
-      timestamp: Date.now()
-    });
-
-    console.log('💾 Cached channel data and returning:', channelData);
-    res.json(channelData);
-  } catch (error) {
-    console.error('❌ Error fetching Discord channel:', {
-      channelId,
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-      message: error.message
-    });
-    
-    // Fallback response
-    const fallbackData = { 
-      id: channelId, 
-      name: channelId, // Don't add # here, let frontend handle it
-      error: 'Failed to fetch from Discord API',
-      details: error.response ? error.response.data : error.message
-    };
-    
-    console.log('📤 Returning error fallback data:', fallbackData);
-    res.json(fallbackData);
-  }
-});
+// 🎯 Discord API endpoints removed - we now get channel names directly from Raid-Helper API!
 
 // Critical: Place express.static as the FIRST middleware to handle static files.
 app.use(express.static('public'));
@@ -381,8 +279,201 @@ app.get('/api/events', async (req, res) => {
     // API response data logged (debug removed for cleaner logs)
 
     // FIX: The actual event data is in response.data.postedEvents.
+    const events = response.data.postedEvents || [];
+    
+    // Use global cache for channel names (10 minute TTL)
+    if (!global.channelNameCache) {
+      global.channelNameCache = new Map();
+    }
+    const channelNameCache = global.channelNameCache;
+    const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+    
+    // CRITICAL: Filter and sort events exactly like the frontend does
+    // to ensure we process the same events that will actually be displayed
+    const today = new Date();
+    const upcomingEvents = events.filter(event => {
+      if (!event.startTime) return false;
+      const eventStartDate = new Date(parseInt(event.startTime) * 1000);
+      return eventStartDate >= today;
+    }).sort((a, b) => parseInt(a.startTime) - parseInt(b.startTime));
+    
+    // OPTIMIZATION: Only enrich the first 10 upcoming events to avoid rate limits
+    const eventsToEnrich = upcomingEvents.slice(0, 10);
+    const remainingEvents = upcomingEvents.slice(10);
+    
+    console.log(`📊 Filtered to ${upcomingEvents.length} upcoming events, processing ${eventsToEnrich.length} for channel names, skipping ${remainingEvents.length}`);
+    
+    // Enrich only the visible events with channelName from individual event API 
+    const enrichedEvents = [];
+    
+    // Helper function to fetch channel name with retry and rate limit handling
+    const fetchChannelNameWithRetry = async (eventId, maxRetries = 3) => {
+      // Check cache first
+      const cacheKey = `channel_${eventId}`;
+      const cached = channelNameCache.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+        console.log(`💾 Using cached channelName for event ${eventId}: "${cached.channelName}"`);
+        return cached.channelName;
+      }
+      
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`🔄 Fetching channelName for event ${eventId} (attempt ${attempt}/${maxRetries})`);
+          
+          const eventDetailResponse = await axios.get(
+            `https://raid-helper.dev/api/v2/events/${eventId}`,
+            {
+              headers: {
+                'Authorization': `${raidHelperApiKey}`,
+                'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+              },
+              timeout: 8000 // 8 second timeout
+            }
+          );
+          
+          const channelName = eventDetailResponse.data.channelName;
+          console.log(`📡 API Response for event ${eventId}: channelName="${channelName}"`);
+          
+          // Validate that we got a real channel name, not just an ID
+          if (channelName && 
+              channelName.trim() && 
+              channelName !== eventId &&
+              !channelName.match(/^\d+$/)) { // Not just a number
+            console.log(`✅ Valid channelName found: "${channelName}"`);
+            
+            // Cache the successful result
+            channelNameCache.set(cacheKey, {
+              channelName: channelName,
+              timestamp: Date.now()
+            });
+            
+            return channelName;
+          }
+          
+          console.log(`⚠️ Invalid or empty channelName: "${channelName}"`);
+          
+          // Cache the invalid result  
+          channelNameCache.set(cacheKey, {
+            channelName: null,
+            timestamp: Date.now()
+          });
+          
+          return null; // Invalid or missing channel name
+          
+        } catch (error) {
+          console.log(`❌ Attempt ${attempt} failed for event ${eventId}:`, error.message);
+          
+          // Special handling for rate limits
+          if (error.response && error.response.status === 429) {
+            const rateLimitDelay = attempt * 2000; // 2s, 4s, 6s for rate limits
+            console.log(`🚦 Rate limit hit, waiting ${rateLimitDelay}ms before retry...`);
+            if (attempt < maxRetries) {
+              await new Promise(resolve => setTimeout(resolve, rateLimitDelay));
+              continue;
+            }
+          }
+          
+          if (attempt === maxRetries) {
+            console.log(`💥 All ${maxRetries} attempts failed for event ${eventId}`);
+            
+            // Cache the failed result 
+            channelNameCache.set(cacheKey, {
+              channelName: null,
+              timestamp: Date.now()
+            });
+            
+            return null;
+          }
+          
+          // Wait before retry with standard delays
+          const delay = attempt * 1500; // 1.5s, 3s
+          console.log(`⏳ Waiting ${delay}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+      return null;
+    };
+    
+    // Process only the first 10 events with a total timeout
+    const startTime = Date.now();
+    const TOTAL_TIMEOUT = 30000; // 30 second total timeout
+    
+    for (let i = 0; i < eventsToEnrich.length; i++) {
+      const event = eventsToEnrich[i];
+      
+      // Check if we're running out of time
+      if (Date.now() - startTime > TOTAL_TIMEOUT) {
+        console.log(`⏰ Timeout reached, skipping remaining ${eventsToEnrich.length - i} events`);
+        // Add remaining events without channel names
+        for (let j = i; j < eventsToEnrich.length; j++) {
+          enrichedEvents.push({
+            ...eventsToEnrich[j],
+            channelName: null
+          });
+        }
+        break;
+      }
+      
+      try {
+        const channelName = await fetchChannelNameWithRetry(event.id);
+        console.log(`📋 Final result for event ${event.id}: channelName = "${channelName}"`);
+        
+        enrichedEvents.push({
+          ...event,
+          channelName: channelName
+        });
+        
+        // Longer delay between requests to respect rate limits (skip delay for last item)
+        if (i < eventsToEnrich.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 750)); // 750ms delay
+        }
+        
+      } catch (error) {
+        console.log(`💀 Critical error processing event ${event.id}:`, error);
+        // Add event without channelName if something goes very wrong
+        enrichedEvents.push({
+          ...event,
+          channelName: null
+        });
+      }
+    }
+    
+    // Add remaining upcoming events without channel names
+    remainingEvents.forEach(event => {
+      enrichedEvents.push({
+        ...event,
+        channelName: null
+      });
+    });
+    
+    // Add all past events without channel names (frontend may filter these out anyway)
+    const pastEvents = events.filter(event => {
+      if (!event.startTime) return true; // Include events without startTime
+      const eventStartDate = new Date(parseInt(event.startTime) * 1000);
+      return eventStartDate < today;
+    });
+    
+    pastEvents.forEach(event => {
+      enrichedEvents.push({
+        ...event,
+        channelName: null
+      });
+    });
+    
+    const processingTime = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`⏱️ Channel name processing completed in ${processingTime}s`);
+    
+    // Summary logging
+    const totalEvents = enrichedEvents.length;
+    const totalUpcomingEvents = upcomingEvents.length;
+    const processedEvents = eventsToEnrich.length;
+    const eventsWithChannelNames = enrichedEvents.filter(e => e.channelName).length;
+    const successRate = processedEvents > 0 ? ((eventsWithChannelNames / processedEvents) * 100).toFixed(1) : 0;
+    
+    console.log(`📈 Channel name fetch summary: ${eventsWithChannelNames}/${processedEvents} processed upcoming events (${successRate}% success rate), ${totalUpcomingEvents} total upcoming, ${totalEvents} total returned`);
+    
     // We will send this back to the frontend under the expected 'scheduledEvents' key.
-    res.json({ scheduledEvents: response.data.postedEvents || [] });
+    res.json({ scheduledEvents: enrichedEvents });
   } catch (error) {
     console.error('Error fetching Raid-Helper events:', error.response ? error.response.data : error.message);
     if (error.response) {
@@ -1756,7 +1847,12 @@ app.post('/api/admin/migrate-players', async (req, res) => {
 
 // This route will handle both the root path ('/') AND any other unmatched paths,
 // serving events.html. It MUST be the LAST route definition in your application.
+// BUT exclude API routes to avoid interfering with API endpoints.
 app.get('*', (req, res) => {
+  // Don't catch API routes
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  }
   res.sendFile(path.join(__dirname, 'public', 'events.html')); // Corrected path to events.html
 });
 
