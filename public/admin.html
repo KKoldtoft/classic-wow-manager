@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Management Panel - Classic WoW Manager</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
         body {
             background-color: #2c2f33;
@@ -120,7 +121,19 @@
     </style>
 </head>
 <body>
-    <div id="top-bar"></div>
+    <!-- Universal Top Bar -->
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <div class="app-title">Classic WoW Manager</div>
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Events</a>
+                <a href="/players" class="top-nav-link">Players</a>
+            </nav>
+        </div>
+        <div id="auth-container">
+            <!-- Auth content is now loaded by top-bar.js -->
+        </div>
+    </div>
     
     <div class="management-panel">
         <h1>Management Panel</h1>

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Settings - Classic WoW Manager</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="roster.css">
+    <link rel="stylesheet" href="add-character.css">
+    <link rel="stylesheet" href="user-settings.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <!-- Universal Top Bar -->
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <div class="app-title">Classic WoW Manager</div>
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Events</a>
+                <a href="/players" class="top-nav-link">Players</a>
+            </nav>
+        </div>
+        <div id="auth-container">
+            <!-- Auth content is now loaded by top-bar.js -->
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="header-section">
+            <h1><i class="fas fa-user-cog"></i> User Settings</h1>
+            <p>Manage your account and characters</p>
+        </div>
+
+        <div class="settings-container">
+            <div class="settings-section">
+                <h2><i class="fas fa-users"></i> My Characters</h2>
+                <div id="user-characters-list" class="characters-container">
+                    <p>Loading your characters...</p>
+                </div>
+                
+                <div class="action-buttons">
+                    <a href="/roster" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Add New Character
+                    </a>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h2><i class="fas fa-info-circle"></i> Account Information</h2>
+                <div id="account-info" class="account-info">
+                    <p>Loading account information...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="top-bar.js"></script>
+    <script src="user-settings.js"></script>
+</body>
+</html> 

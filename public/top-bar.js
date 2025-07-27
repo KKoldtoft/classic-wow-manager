@@ -24,13 +24,22 @@ async function updateAuthUI() {
             ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=32`
             : `https://cdn.discordapp.com/embed/avatars/${parseInt(user.discriminator) % 5}.png`;
 
+        // Build dropdown menu items based on user permissions
+        let dropdownItems = `<a href="/user-settings" class="dropdown-item">User settings</a>`;
+        
+        // Add Admin settings option only for management users
+        if (user.hasManagementRole) {
+            dropdownItems += `<a href="/admin" class="dropdown-item">Admin settings</a>`;
+        }
+        
+        dropdownItems += `<a href="/auth/logout" class="dropdown-item">Logout</a>`;
+
         authContainer.innerHTML = `
             <div class="user-info">
                 <span class="user-name">${user.username}</span>
                 <img src="${avatarUrl}" alt="${user.username}'s avatar" class="user-avatar-small" id="user-avatar-toggle">
                 <div class="user-dropdown" id="user-dropdown-menu">
-                    <a href="#" class="dropdown-item">User settings</a>
-                    <a href="/auth/logout" class="dropdown-item">Logout</a>
+                    ${dropdownItems}
                 </div>
             </div>
         `;
