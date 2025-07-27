@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS roster_overrides (
     player_color VARCHAR(50),
     party_id INTEGER,
     slot_id INTEGER,
+    in_raid BOOLEAN DEFAULT FALSE,
     PRIMARY KEY (event_id, discord_user_id)
 );
 

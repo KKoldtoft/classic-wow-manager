@@ -177,6 +177,33 @@ app.get('/api/players', async (req, res) => {
     }
 });
 
+// Search players by name (minimum 3 characters)
+app.get('/api/players/search', async (req, res) => {
+    const { q } = req.query;
+    
+    if (!q || q.length < 3) {
+        return res.json([]);
+    }
+    
+    try {
+        const client = await pool.connect();
+        const result = await client.query(
+            `SELECT discord_id, character_name, class 
+             FROM players 
+             WHERE LOWER(character_name) LIKE LOWER($1) 
+             AND discord_id IS NOT NULL AND discord_id != ''
+             ORDER BY character_name 
+             LIMIT 10`,
+            [`%${q}%`]
+        );
+        client.release();
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Error searching players:', error.stack);
+        res.status(500).json({ message: 'Error searching players from the database.' });
+    }
+});
+
 // New endpoint to get registered character for a Discord user ID
 app.get('/api/registered-character/:discordUserId', async (req, res) => {
     const { discordUserId } = req.params;
@@ -598,6 +625,7 @@ app.get('/api/roster/:eventId', async (req, res) => {
                             slotId: override.slot_id,
                             color: override.player_color,
                             isConfirmed: originalRosterPlayer?.isConfirmed || false,
+                            inRaid: override.in_raid || false,
                         });
                     } else {
                         // Player doesn't exist in original signups - create from override data only
@@ -613,7 +641,8 @@ app.get('/api/roster/:eventId', async (req, res) => {
                             color: override.player_color,
                             altCharacters: [], // No alt data for manually added characters
                             status: 'confirmed', // Assume confirmed for manually added
-                            isConfirmed: true // Manually added players are confirmed
+                            isConfirmed: true, // Manually added players are confirmed
+                            inRaid: override.in_raid || false
                         });
                     }
                     playersInRosterOverrides.add(override.discord_user_id);
@@ -819,6 +848,42 @@ app.put('/api/roster/:eventId/player/:discordUserId/spec', async (req, res) => {
         if (client) client.release();
             }
         });
+
+// Endpoint to toggle a player's "in raid" status
+app.put('/api/roster/:eventId/player/:discordUserId/in-raid', async (req, res) => {
+    const { eventId, discordUserId } = req.params;
+    const { inRaid } = req.body;
+
+    let client;
+
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+
+        // First ensure the player exists in roster_overrides
+        const checkResult = await client.query('SELECT in_raid FROM roster_overrides WHERE event_id = $1 AND discord_user_id = $2', [eventId, discordUserId]);
+
+        if (checkResult.rows.length === 0) {
+            // If player doesn't exist in overrides, we need to fork the roster first
+            await forkRosterIfNeeded(eventId, client);
+        }
+
+        // Update the in_raid status
+        await client.query(
+            `UPDATE roster_overrides SET in_raid = $1 WHERE event_id = $2 AND discord_user_id = $3`,
+            [inRaid, eventId, discordUserId]
+        );
+
+        await client.query('COMMIT');
+        res.json({ message: 'Player in-raid status updated successfully.', inRaid });
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Error updating player in-raid status:', error);
+        res.status(500).json({ message: 'Internal Server Error' });
+    } finally {
+        if (client) client.release();
+    }
+});
 
 // Endpoint to handle adding a new character to roster
 app.post('/api/roster/:eventId/add-character', async (req, res) => {
@@ -1092,6 +1157,116 @@ app.post('/api/roster/:eventId/add-character/force', async (req, res) => {
     }
 });
 
+// Endpoint to add an existing player to roster (from players table)
+app.post('/api/roster/:eventId/add-existing-player', async (req, res) => {
+    const { eventId } = req.params;
+    const { characterName, class: characterClass, discordId, spec, targetPartyId, targetSlotId } = req.body;
+
+    let client;
+
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+
+        // Validate input
+        if (!characterName || !characterClass || !discordId || !targetPartyId || !targetSlotId) {
+            throw new Error('Missing required fields');
+        }
+
+        // Validate Discord ID format
+        if (!/^\d{17,19}$/.test(discordId)) {
+            throw new Error('Invalid Discord ID format');
+        }
+
+        // Check if there's already a player in this position
+        const existingPlayer = await client.query(
+            'SELECT discord_user_id FROM roster_overrides WHERE event_id = $1 AND party_id = $2 AND slot_id = $3',
+            [eventId, targetPartyId, targetSlotId]
+        );
+
+        if (existingPlayer.rows.length > 0) {
+            throw new Error('Position is already occupied');
+        }
+
+        // Verify the player exists in the players table
+        const playerExists = await client.query(
+            'SELECT character_name, class FROM players WHERE discord_id = $1 AND LOWER(character_name) = LOWER($2) AND class = $3',
+            [discordId, characterName, characterClass]
+        );
+
+        if (playerExists.rows.length === 0) {
+            throw new Error(`Player "${characterName}" with class "${characterClass}" not found in players database`);
+        }
+
+        // Fork roster if needed
+        await forkRosterIfNeeded(eventId, client);
+
+        // Get canonical class and determine spec
+        const canonicalClass = getCanonicalClass(characterClass);
+        const specsForClass = SPEC_DATA[canonicalClass] || [];
+        
+        // Use provided spec if valid, otherwise use default
+        let selectedSpec;
+        if (spec && specsForClass.find(s => s.name === spec)) {
+            selectedSpec = specsForClass.find(s => s.name === spec);
+        } else {
+            selectedSpec = specsForClass.length > 0 ? specsForClass[0] : { name: characterClass, emote: null };
+        }
+
+        // Get class color
+        const classColors = {
+            'death knight': '196,30,59',
+            'druid': '255,125,10',
+            'hunter': '171,212,115',
+            'mage': '105,204,240',
+            'paladin': '245,140,186',
+            'priest': '255,255,255',
+            'rogue': '255,245,105',
+            'shaman': '0,112,222',
+            'warlock': '148,130,201',
+            'warrior': '199,156,110'
+        };
+        const playerColor = classColors[canonicalClass] || '128,128,128';
+
+        // Insert the existing player into the roster (no need to add to players table - they already exist)
+        await client.query(`
+            INSERT INTO roster_overrides 
+            (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, player_color, party_id, slot_id) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (event_id, discord_user_id) 
+            DO UPDATE SET 
+                assigned_char_name = EXCLUDED.assigned_char_name,
+                assigned_char_class = EXCLUDED.assigned_char_class,
+                assigned_char_spec = EXCLUDED.assigned_char_spec,
+                assigned_char_spec_emote = EXCLUDED.assigned_char_spec_emote,
+                player_color = EXCLUDED.player_color,
+                party_id = EXCLUDED.party_id,
+                slot_id = EXCLUDED.slot_id`,
+            [eventId, discordId, characterName, characterName, characterClass, selectedSpec.name, selectedSpec.emote, playerColor, targetPartyId, targetSlotId]
+        );
+
+        await client.query('COMMIT');
+        res.json({ 
+            message: 'Existing player added to roster successfully',
+            character: {
+                characterName,
+                class: characterClass,
+                discordId,
+                spec: selectedSpec.name,
+                partyId: targetPartyId,
+                slotId: targetSlotId
+            }
+        });
+
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Error adding existing player to roster:', error);
+        res.status(500).json({ message: error.message || 'Internal Server Error' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // Endpoint to handle moving a player
 app.put('/api/roster/:eventId/player/:discordUserId/position', async (req, res) => {
     const { eventId, discordUserId } = req.params;
@@ -1285,6 +1460,12 @@ app.post('/api/admin/setup-database', async (req, res) => {
         await client.query(`
             ALTER TABLE roster_overrides 
             ALTER COLUMN assigned_char_spec_emote TYPE VARCHAR(50)
+        `);
+        
+        // Add in_raid column for tracking who has joined the group in-game
+        await client.query(`
+            ALTER TABLE roster_overrides 
+            ADD COLUMN IF NOT EXISTS in_raid BOOLEAN DEFAULT FALSE
         `);
         
         res.json({ 

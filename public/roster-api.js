@@ -49,6 +49,19 @@ async function updatePlayerSpec(eventId, discordUserId, newSpecName) {
     return response.json();
 }
 
+async function togglePlayerInRaid(eventId, discordUserId, inRaid) {
+    const response = await fetch(`/api/roster/${eventId}/player/${discordUserId}/in-raid`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inRaid }),
+    });
+    if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to toggle in-raid status');
+    }
+    return response.json();
+}
+
 async function updatePlayerPosition(eventId, discordUserId, targetPartyId, targetSlotId) {
     const response = await fetch(`/api/roster/${eventId}/player/${discordUserId}/position`, {
         method: 'PUT',
@@ -126,6 +139,26 @@ async function addCharacterToRosterForce(eventId, characterData, targetPartyId, 
     if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to force add character to roster');
+    }
+    return response.json();
+}
+
+async function addExistingPlayerToRoster(eventId, characterData, targetPartyId, targetSlotId) {
+    const response = await fetch(`/api/roster/${eventId}/add-existing-player`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            characterName: characterData.characterName,
+            class: characterData.class,
+            discordId: characterData.discordId,
+            spec: characterData.spec,
+            targetPartyId: targetPartyId,
+            targetSlotId: targetSlotId
+        }),
+    });
+    if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to add existing player to roster');
     }
     return response.json();
 }

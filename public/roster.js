@@ -655,6 +655,48 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
             });
 
+            // Toggle in-raid status actions
+            cell.querySelectorAll('[data-action="toggle-in-raid"]').forEach(item => {
+                item.addEventListener('click', async (e) => {
+                    const { userid, currentStatus } = e.currentTarget.dataset;
+                    const newStatus = currentStatus === 'true' ? false : true;
+                    
+                    try {
+                        await togglePlayerInRaid(eventId, userid, newStatus);
+                        
+                        // Update the player data in our local state
+                        const player = currentRosterData.raidDrop.find(p => p && p.userid === userid);
+                        if (player) {
+                            player.inRaid = newStatus;
+                        }
+                        
+                        // Force dropdown rebuild to show updated status
+                        const cell = this.findPlayerCell(userid);
+                        if (cell) {
+                            const dropdownDiv = cell.querySelector('.player-details-dropdown');
+                            if (dropdownDiv) {
+                                const isBenched = cell.closest('#benched-list') !== null;
+                                const playerData = currentRosterData.raidDrop.find(p => p && p.userid === userid) || 
+                                                 currentRosterData.bench?.find(p => p && p.userid === userid);
+                                if (playerData) {
+                                    dropdownDiv.innerHTML = await buildDropdownContent(playerData, isBenched);
+                                    this.attachDropdownListeners(cell);
+                                }
+                            }
+                        }
+                        
+                        // Apply visual effects for both toggles
+                        applyInRaidVisibility();
+                        applyConfirmedVisibility();
+                        
+                        isManaged = true; // Mark roster as managed
+                        updateRevertButtonVisibility(); // Show revert button
+                    } catch (error) {
+                        showAlert('In-Raid Error', `Error toggling in-raid status: ${error.message}`);
+                    }
+                });
+            });
+
             // Swap character actions
             cell.querySelectorAll('[data-action="swap-char"]:not(.disabled)').forEach(item => {
                 item.addEventListener('click', async (e) => {
@@ -716,7 +758,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             await renderGrid(rosterData);
             await renderBench(rosterData.bench || []);
             setupEventListeners();
+            setupToggleSwitches();
             setupNameToggle();
+            setupHideInRaidToggle();
+            setupHideBenchToggle();
+            setupHideConfirmedToggle();
+            setupPlayerSearchModal();
+            
+            // Apply all visibility effects after roster is rendered
+            setTimeout(() => {
+                applyInRaidVisibility();
+                applyConfirmedVisibility();
+            }, 100);
         } catch (error) {
             console.error('roster.js: A critical error occurred during renderRoster:', error);
             const rosterGrid = document.getElementById('roster-grid');
@@ -762,7 +815,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     
                     // Add confirmation status indicator
                     let confirmationIconHTML = '';
-                    console.log(`[DEBUG] Player ${displayName} isConfirmed:`, player.isConfirmed, typeof player.isConfirmed);
                     if (player.isConfirmed === "confirmed" || player.isConfirmed === true) {
                         confirmationIconHTML = '<i class="fas fa-check confirmation-icon confirmed" title="Confirmed"></i>';
                     } else {
@@ -885,6 +937,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (!isBenched) {
             content += `<div class="dropdown-item" data-action="move-to-bench" data-userid="${player.userid}"><i class="fas fa-archive menu-icon"></i>Move to Bench</div>`;
+        }
+
+        // In raid toggle for roster players (not bench players)
+        if (!isBenched) {
+            const inRaidIcon = player.inRaid ? 'fas fa-check-circle' : 'fas fa-circle';
+            const inRaidText = player.inRaid ? 'Mark not in raid' : 'Mark in raid';
+            content += `<div class="dropdown-item" data-action="toggle-in-raid" data-userid="${player.userid}" data-current-status="${player.inRaid || false}"><i class="${inRaidIcon} menu-icon"></i>${inRaidText}</div>`;
         }
 
         // Only show spec swap for roster players, not bench players
@@ -1042,6 +1101,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="dropdown-item" data-action="add-new-character" data-target-party="${partyId}" data-target-slot="${slotId}">
                 <i class="fas fa-plus menu-icon"></i>Add New Character
             </div>
+            <div class="dropdown-item" data-action="add-existing-player" data-target-party="${partyId}" data-target-slot="${slotId}">
+                <i class="fas fa-search menu-icon"></i>Add Existing Player
+            </div>
         `;
     }
 
@@ -1097,6 +1159,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 handleAddNewCharacter(parseInt(targetParty), parseInt(targetSlot));
             });
         }
+
+        // Add listener for "Add existing player" action
+        const addExistingPlayerItem = newCell.querySelector('[data-action="add-existing-player"]');
+        
+        if (addExistingPlayerItem) {
+            addExistingPlayerItem.addEventListener('click', (e) => {
+                const { targetParty, targetSlot } = e.currentTarget.dataset;
+                openPlayerSearchModal(parseInt(targetParty), parseInt(targetSlot));
+            });
+        }
         
         return newCell; // Return the updated cell reference
     }
@@ -1145,20 +1217,368 @@ document.addEventListener('DOMContentLoaded', async () => {
         return classColors[canonicalClass] || '128,128,128'; // Default gray
     }
 
+    // General toggle switch functionality
+    function setupToggleSwitches() {
+        document.querySelectorAll('.toggle-switch').forEach(toggle => {
+            toggle.addEventListener('click', () => {
+                toggle.classList.toggle('active');
+            });
+        });
+    }
+
     function setupNameToggle() {
-        const toggleNamesButton = document.getElementById('toggle-names-button');
-        if (!toggleNamesButton) return;
-        let showDiscordNames = false;
-        toggleNamesButton.addEventListener('click', () => {
-            showDiscordNames = !showDiscordNames;
-            toggleNamesButton.classList.toggle('active', showDiscordNames);
-            document.querySelectorAll('.player-name').forEach(nameDiv => {
-                const span = nameDiv.querySelector('span');
-                if (span) {
-                    span.textContent = showDiscordNames ? nameDiv.dataset.discordName : nameDiv.dataset.characterName;
+        const toggleNamesSwitch = document.getElementById('toggle-names-switch');
+        if (!toggleNamesSwitch) return;
+        
+        // Restore saved state from localStorage
+        const savedState = localStorage.getItem('showDiscordNames');
+        let showDiscordNames = savedState === 'true';
+        if (showDiscordNames) {
+            toggleNamesSwitch.classList.add('active');
+        }
+        
+        // Apply initial state
+        document.querySelectorAll('.player-name').forEach(nameDiv => {
+            const span = nameDiv.querySelector('span');
+            if (span) {
+                span.textContent = showDiscordNames ? nameDiv.dataset.discordName : nameDiv.dataset.characterName;
+            }
+        });
+        
+        toggleNamesSwitch.addEventListener('click', () => {
+            setTimeout(() => {
+                showDiscordNames = toggleNamesSwitch.classList.contains('active');
+                localStorage.setItem('showDiscordNames', showDiscordNames.toString());
+                
+                document.querySelectorAll('.player-name').forEach(nameDiv => {
+                    const span = nameDiv.querySelector('span');
+                    if (span) {
+                        span.textContent = showDiscordNames ? nameDiv.dataset.discordName : nameDiv.dataset.characterName;
+                    }
+                });
+            }, 10);
+        });
+    }
+
+    function setupHideInRaidToggle() {
+        const hideInRaidSwitch = document.getElementById('hide-in-raid-switch');
+        if (!hideInRaidSwitch) return;
+        
+        // Restore saved state from localStorage (default to ON if not set)
+        const savedState = localStorage.getItem('hideInRaid');
+        if (savedState === null || savedState === 'true') {
+            hideInRaidSwitch.classList.add('active');
+        } else {
+            hideInRaidSwitch.classList.remove('active');
+        }
+        applyInRaidVisibility(); // Apply initial state
+        
+        hideInRaidSwitch.addEventListener('click', () => {
+            setTimeout(() => {
+                const isActive = hideInRaidSwitch.classList.contains('active');
+                localStorage.setItem('hideInRaid', isActive.toString());
+                applyInRaidVisibility();
+            }, 10);
+        });
+    }
+
+    function setupHideBenchToggle() {
+        const hideBenchSwitch = document.getElementById('hide-bench-switch');
+        const benchContainer = document.getElementById('bench-container');
+        if (!hideBenchSwitch || !benchContainer) return;
+        
+        // Restore saved state from localStorage
+        const savedState = localStorage.getItem('hideBench');
+        if (savedState === 'true') {
+            hideBenchSwitch.classList.add('active');
+            benchContainer.classList.add('bench-hidden');
+        }
+        
+        hideBenchSwitch.addEventListener('click', () => {
+            // Small delay to ensure the toggle class has been updated
+            setTimeout(() => {
+                // Check if toggle is active (ON state)
+                const isActive = hideBenchSwitch.classList.contains('active');
+                
+                // Save state to localStorage
+                localStorage.setItem('hideBench', isActive.toString());
+                
+                if (isActive) {
+                    // Toggle is ON - hide the bench using CSS class
+                    benchContainer.classList.add('bench-hidden');
+                } else {
+                    // Toggle is OFF - show the bench by removing CSS class
+                    benchContainer.classList.remove('bench-hidden');
+                }
+            }, 10);
+        });
+    }
+
+    function setupHideConfirmedToggle() {
+        const hideConfirmedSwitch = document.getElementById('hide-confirmed-switch');
+        if (!hideConfirmedSwitch) return;
+        
+        // Restore saved state from localStorage (default to OFF)
+        const savedState = localStorage.getItem('hideConfirmed');
+        if (savedState === 'true') {
+            hideConfirmedSwitch.classList.add('active');
+        }
+        applyConfirmedVisibility(); // Apply initial state
+        
+        hideConfirmedSwitch.addEventListener('click', () => {
+            setTimeout(() => {
+                const isActive = hideConfirmedSwitch.classList.contains('active');
+                localStorage.setItem('hideConfirmed', isActive.toString());
+                applyConfirmedVisibility();
+            }, 10);
+        });
+    }
+
+    // Function to apply visual effects based on in-raid status
+    function applyInRaidVisibility() {
+        const hideInRaidSwitch = document.getElementById('hide-in-raid-switch');
+        const isEnabled = hideInRaidSwitch && hideInRaidSwitch.classList.contains('active');
+        
+        if (isEnabled) {
+            // Set opacity to 20% for players marked as "in raid" - only affect player name, not entire cell
+            document.querySelectorAll('.roster-cell.player-filled').forEach(cell => {
+                // Try multiple ways to find the user ID
+                let userId = null;
+                const dropdownItems = cell.querySelectorAll('[data-userid]');
+                if (dropdownItems.length > 0) {
+                    userId = dropdownItems[0].dataset.userid;
+                }
+                
+                if (userId) {
+                    const player = currentRosterData.raidDrop?.find(p => p && p.userid === userId) || 
+                                 currentRosterData.bench?.find(p => p && p.userid === userId);
+                    const playerName = cell.querySelector('.player-name');
+                    if (player && player.inRaid) {
+                        // Only dim the player name, not the entire cell
+                        if (playerName) playerName.style.opacity = '0.2';
+                    } else {
+                        // Reset player name opacity (but check other toggles)
+                        applyAllVisibilityEffects(playerName, player);
+                    }
                 }
             });
-            toggleNamesButton.innerHTML = showDiscordNames ? '<i class="fas fa-user-check"></i> Show Char Names' : '<i class="fas fa-user-secret"></i> Show Disc Names';
+        } else {
+            // Reset and reapply other visibility effects
+            document.querySelectorAll('.roster-cell.player-filled').forEach(cell => {
+                const userId = cell.querySelector('[data-userid]')?.dataset.userid;
+                if (userId) {
+                    const player = currentRosterData.raidDrop?.find(p => p && p.userid === userId) || 
+                                 currentRosterData.bench?.find(p => p && p.userid === userId);
+                    const playerName = cell.querySelector('.player-name');
+                    applyAllVisibilityEffects(playerName, player);
+                }
+            });
+        }
+    }
+
+    // Function to apply visual effects based on confirmed status
+    function applyConfirmedVisibility() {
+        const hideConfirmedSwitch = document.getElementById('hide-confirmed-switch');
+        const isEnabled = hideConfirmedSwitch && hideConfirmedSwitch.classList.contains('active');
+        
+        if (isEnabled) {
+            // Set opacity to 20% for players marked as "confirmed" - only affect player name, not entire cell
+            document.querySelectorAll('.roster-cell.player-filled').forEach(cell => {
+                // Try multiple ways to find the user ID
+                let userId = null;
+                const dropdownItems = cell.querySelectorAll('[data-userid]');
+                if (dropdownItems.length > 0) {
+                    userId = dropdownItems[0].dataset.userid;
+                }
+                
+                if (userId) {
+                    const player = currentRosterData.raidDrop?.find(p => p && p.userid === userId) || 
+                                 currentRosterData.bench?.find(p => p && p.userid === userId);
+                    const playerName = cell.querySelector('.player-name');
+                    if (player && (player.isConfirmed === true || player.isConfirmed === "confirmed")) {
+                        // Only dim the player name, not the entire cell
+                        if (playerName) playerName.style.opacity = '0.2';
+                    } else {
+                        // Reset player name opacity (but check other toggles)
+                        applyAllVisibilityEffects(playerName, player);
+                    }
+                }
+            });
+        } else {
+            // Reset and reapply other visibility effects
+            document.querySelectorAll('.roster-cell.player-filled').forEach(cell => {
+                const userId = cell.querySelector('[data-userid]')?.dataset.userid;
+                if (userId) {
+                    const player = currentRosterData.raidDrop?.find(p => p && p.userid === userId) || 
+                                 currentRosterData.bench?.find(p => p && p.userid === userId);
+                    const playerName = cell.querySelector('.player-name');
+                    applyAllVisibilityEffects(playerName, player);
+                }
+            });
+        }
+    }
+
+    // Function to apply all visibility effects (both in-raid and confirmed)
+    function applyAllVisibilityEffects(playerName, player) {
+        if (!playerName || !player) return;
+        
+        const hideInRaidSwitch = document.getElementById('hide-in-raid-switch');
+        const hideConfirmedSwitch = document.getElementById('hide-confirmed-switch');
+        
+        const hideInRaidEnabled = hideInRaidSwitch && hideInRaidSwitch.classList.contains('active');
+        const hideConfirmedEnabled = hideConfirmedSwitch && hideConfirmedSwitch.classList.contains('active');
+        
+        // Check if player should be dimmed by either toggle
+        const shouldDimForInRaid = hideInRaidEnabled && player.inRaid;
+        const shouldDimForConfirmed = hideConfirmedEnabled && (player.isConfirmed === true || player.isConfirmed === "confirmed");
+        
+        if (shouldDimForInRaid || shouldDimForConfirmed) {
+            playerName.style.opacity = '0.2';
+        } else {
+            playerName.style.opacity = '1';
+        }
+    }
+
+    // Player search modal functionality
+    let currentSearchTarget = null;
+
+    function openPlayerSearchModal(partyId, slotId) {
+        currentSearchTarget = { partyId, slotId };
+        const overlay = document.getElementById('player-search-overlay');
+        const input = document.getElementById('player-search-input');
+        const results = document.getElementById('player-search-results');
+        
+        // Reset the modal
+        input.value = '';
+        results.innerHTML = '<div class="player-search-no-results">Type at least 3 characters to search</div>';
+        
+        // Show the modal
+        overlay.style.display = 'flex';
+        input.focus();
+    }
+
+    function closePlayerSearchModal() {
+        const overlay = document.getElementById('player-search-overlay');
+        overlay.style.display = 'none';
+        currentSearchTarget = null;
+    }
+
+    async function searchPlayers(query) {
+        if (query.length < 3) {
+            const results = document.getElementById('player-search-results');
+            results.innerHTML = '<div class="player-search-no-results">Type at least 3 characters to search</div>';
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/players/search?q=${encodeURIComponent(query)}`);
+            const players = await response.json();
+            
+            const results = document.getElementById('player-search-results');
+            
+            if (players.length === 0) {
+                results.innerHTML = '<div class="player-search-no-results">No players found</div>';
+                return;
+            }
+
+            const playersHTML = players.map(player => {
+                const canonicalClass = getCanonicalClass(player.class);
+                const classColor = getClassColor(canonicalClass);
+                const rgb = classColor.split(',').map(Number);
+                const textColor = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000 < 128 ? 'white' : 'black';
+                
+                return `
+                    <div class="player-search-item" data-discord-id="${player.discord_id}" data-character-name="${player.character_name}" data-class="${player.class}" 
+                         style="background-color: rgb(${classColor}); color: ${textColor};">
+                        <div>
+                            <div class="player-search-item-name">${player.character_name}</div>
+                            <div class="player-search-item-class">${player.class}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            results.innerHTML = playersHTML;
+
+            // Add click listeners to search results
+            results.querySelectorAll('.player-search-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const discordId = item.dataset.discordId;
+                    const characterName = item.dataset.characterName;
+                    const characterClass = item.dataset.class;
+                    
+                    selectExistingPlayer(discordId, characterName, characterClass);
+                });
+            });
+
+        } catch (error) {
+            console.error('Error searching players:', error);
+            const results = document.getElementById('player-search-results');
+            results.innerHTML = '<div class="player-search-no-results">Error searching players</div>';
+        }
+    }
+
+    async function selectExistingPlayer(discordId, characterName, characterClass) {
+        if (!currentSearchTarget) return;
+
+        const { partyId, slotId } = currentSearchTarget;
+
+        try {
+            // Close the modal first
+            closePlayerSearchModal();
+
+            // Add the existing player to the roster using force (bypass duplicate checks)
+            const characterData = {
+                characterName: characterName,
+                class: characterClass,
+                discordId: discordId,
+                spec: null // Let the system determine default spec
+            };
+
+            await addExistingPlayerToRoster(eventId, characterData, partyId, slotId);
+            
+            // Mark roster as managed and show revert button
+            isManaged = true;
+            updateRevertButtonVisibility();
+            
+            // Reload the roster to show the change
+            await renderRoster();
+            
+        } catch (error) {
+            console.error('Error adding existing player:', error);
+            showAlert('Add Player Error', `Error adding player to roster: ${error.message}`);
+        }
+    }
+
+    function setupPlayerSearchModal() {
+        const overlay = document.getElementById('player-search-overlay');
+        const closeBtn = overlay.querySelector('.player-search-close');
+        const input = document.getElementById('player-search-input');
+
+        // Close modal when clicking close button
+        closeBtn.addEventListener('click', closePlayerSearchModal);
+
+        // Close modal when clicking outside
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                closePlayerSearchModal();
+            }
+        });
+
+        // Close modal when pressing Escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && overlay.style.display === 'flex') {
+                closePlayerSearchModal();
+            }
+        });
+
+        // Search on input
+        let searchTimeout;
+        input.addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                searchPlayers(e.target.value.trim());
+            }, 300); // Debounce search by 300ms
         });
     }
 

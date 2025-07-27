@@ -30,18 +30,6 @@
             <a href="/" class="back-button"><i class="fas fa-arrow-left"></i> Back to Events</a>
         </div>
 
-        <div class="button-panel">
-            <a id="comp-tool-button" href="#" class="panel-button" target="_blank">
-                <i class="fas fa-wrench"></i> Go to Comp-tool
-            </a>
-            <button id="toggle-names-button" class="panel-button">
-                <i class="fas fa-user-secret"></i> Show disc names
-            </button>
-            <button id="revert-roster-button" class="panel-button" style="display: none;">
-                <i class="fas fa-undo"></i> Revert to unmanaged roster
-            </button>
-        </div>
-
         <h1 id="roster-event-title">Loading Roster...</h1>
         <div class="roster-container">
             <div id="roster-grid">
@@ -53,6 +41,58 @@
             <h2 id="bench-title">Bench</h2>
             <div id="bench-list-container" class="bench-list-container">
                 <div id="benched-list" class="benched-list"></div>
+            </div>
+        </div>
+
+        <div class="button-panel">
+            <a id="comp-tool-button" href="#" class="panel-button" target="_blank">
+                <i class="fas fa-wrench"></i>
+                <span>Comp-tool</span>
+            </a>
+            <button id="revert-roster-button" class="panel-button" style="display: none;">
+                <i class="fas fa-undo"></i>
+                <span>Revert</span>
+            </button>
+            
+            <!-- Toggle switches -->
+            <div class="toggle-container">
+                <span class="toggle-label">Disc names</span>
+                <div id="toggle-names-switch" class="toggle-switch">
+                    <div class="toggle-slider"></div>
+                </div>
+            </div>
+            
+            <div class="toggle-container">
+                <span class="toggle-label">Hide in raid</span>
+                <div id="hide-in-raid-switch" class="toggle-switch active">
+                    <div class="toggle-slider"></div>
+                </div>
+            </div>
+            
+            <div class="toggle-container">
+                <span class="toggle-label">Hide bench</span>
+                <div id="hide-bench-switch" class="toggle-switch">
+                    <div class="toggle-slider"></div>
+                </div>
+            </div>
+            
+            <div class="toggle-container">
+                <span class="toggle-label">Hide confirmed</span>
+                <div id="hide-confirmed-switch" class="toggle-switch">
+                    <div class="toggle-slider"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Player Search Overlay -->
+    <div id="player-search-overlay" class="player-search-overlay">
+        <div class="player-search-modal">
+            <button class="player-search-close">&times;</button>
+            <div class="player-search-header">Search for Player</div>
+            <input type="text" id="player-search-input" class="player-search-input" placeholder="Type player name (min 3 characters)..." autocomplete="off">
+            <div id="player-search-results" class="player-search-results">
+                <div class="player-search-no-results">Type at least 3 characters to search</div>
             </div>
         </div>
     </div>
