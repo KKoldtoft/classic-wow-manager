@@ -5,13 +5,12 @@
     grid-template-columns: repeat(2, 1fr); /* 2 columns for buttons */
     gap: 8px; /* Small gap between buttons */
     width: 390px; /* Width for 2 columns of 150px buttons */
-    margin: 20px 0; /* Margin top and bottom */
+    margin: 20px auto; /* Center the panel horizontally */
     background-color: #2c2f33; /* Dark panel background */
     padding: 12px;
     border-radius: 0px;
     border: 1px solid #000;
     text-align: left; /* Override parent's center alignment */
-    margin-left: 0; /* Ensure left alignment */
 }
 
 .panel-button {
