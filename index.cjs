@@ -1096,17 +1096,24 @@ app.put('/api/roster/:eventId/player/:discordUserId/position', async (req, res) 
     let client;
 
     try {
+        console.log(`[MOVE DEBUG] Starting move: eventId=${eventId}, discordUserId=${discordUserId}, targetParty=${targetPartyId}, targetSlot=${targetSlotId}`);
+        
         client = await pool.connect();
         await client.query('BEGIN');
+        
+        console.log('[MOVE DEBUG] Database transaction started');
 
         await forkRosterIfNeeded(eventId, client);
+        console.log('[MOVE DEBUG] Roster forked if needed');
 
         const sourcePlayerRes = await client.query('SELECT party_id, slot_id FROM roster_overrides WHERE event_id = $1 AND discord_user_id = $2', [eventId, discordUserId]);
         const sourcePlayer = sourcePlayerRes.rows[0];
         const isSourcePlayerInRoster = !!(sourcePlayer && sourcePlayer.party_id !== null);
+        console.log(`[MOVE DEBUG] Source player query result:`, { sourcePlayer, isSourcePlayerInRoster });
 
         const targetPlayerRes = await client.query('SELECT discord_user_id FROM roster_overrides WHERE event_id = $1 AND party_id = $2 AND slot_id = $3', [eventId, targetPartyId, targetSlotId]);
         const targetPlayer = targetPlayerRes.rows[0];
+        console.log(`[MOVE DEBUG] Target player query result:`, { targetPlayer });
 
         if (isSourcePlayerInRoster) {
             // --- MOVING A PLAYER WHO IS ALREADY IN THE ROSTER ---
@@ -1147,11 +1154,28 @@ app.put('/api/roster/:eventId/player/:discordUserId/position', async (req, res) 
         }
 
         await client.query('COMMIT');
+        console.log('[MOVE DEBUG] Transaction committed successfully');
         res.status(200).json({ message: 'Player position updated successfully.' });
     } catch (error) {
         if (client) await client.query('ROLLBACK');
-        console.error('Error updating player position:', error.stack);
-        res.status(500).json({ message: 'Internal Server Error' });
+        console.error('[MOVE DEBUG] Error occurred:', error.message);
+        console.error('[MOVE DEBUG] Full error stack:', error.stack);
+        console.error('[MOVE DEBUG] Error details:', {
+            name: error.name,
+            code: error.code,
+            detail: error.detail,
+            hint: error.hint,
+            position: error.position,
+            internalPosition: error.internalPosition,
+            internalQuery: error.internalQuery,
+            where: error.where,
+            schema: error.schema,
+            table: error.table,
+            column: error.column,
+            dataType: error.dataType,
+            constraint: error.constraint
+        });
+        res.status(500).json({ message: 'Internal Server Error', debug: error.message });
     } finally {
         if (client) client.release();
     }
@@ -1263,6 +1287,46 @@ app.post('/api/admin/setup-database', async (req, res) => {
         res.status(500).json({ 
             success: false, 
             message: 'Error setting up database', 
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Debug endpoint to check database schema and data
+app.get('/api/admin/debug-db', async (req, res) => {
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Get table structure
+        const schemaResult = await client.query(`
+            SELECT column_name, data_type, is_nullable, column_default 
+            FROM information_schema.columns 
+            WHERE table_name = 'roster_overrides' 
+            ORDER BY ordinal_position
+        `);
+        
+        // Get sample data from roster_overrides
+        const dataResult = await client.query('SELECT * FROM roster_overrides LIMIT 5');
+        
+        // Get sample data from players  
+        const playersResult = await client.query('SELECT * FROM players LIMIT 5');
+        
+        res.json({
+            success: true,
+            schema: {
+                roster_overrides_columns: schemaResult.rows,
+                sample_roster_data: dataResult.rows,
+                sample_players_data: playersResult.rows
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error debugging database:', error);
+        res.status(500).json({ 
+            success: false, 
             error: error.message 
         });
     } finally {
