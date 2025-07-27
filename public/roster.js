@@ -760,12 +760,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const nameClass = player.mainCharacterName ? 'player-name' : 'player-name unregistered-name';
                     const specIconHTML = player.spec_emote ? `<img src="https://cdn.discordapp.com/emojis/${player.spec_emote}.png" class="spec-icon">` : '';
                     
+                    // Add confirmation status indicator
+                    let confirmationIconHTML = '';
+                    console.log(`[DEBUG] Player ${displayName} isConfirmed:`, player.isConfirmed, typeof player.isConfirmed);
+                    if (player.isConfirmed === "confirmed" || player.isConfirmed === true) {
+                        confirmationIconHTML = '<i class="fas fa-check confirmation-icon confirmed" title="Confirmed"></i>';
+                    } else {
+                        confirmationIconHTML = '<i class="fas fa-times confirmation-icon unconfirmed" title="Not Confirmed"></i>';
+                    }
 
                     
                     let dropdownContentHTML = await buildDropdownContent(player, false);
 
                         cellDiv.innerHTML = `
-                        <div class="${nameClass}" data-character-name="${displayName}" data-discord-name="${player.name}">${specIconHTML}<span>${displayName}</span></div>
+                        <div class="${nameClass}" data-character-name="${displayName}" data-discord-name="${player.name}">${specIconHTML}${confirmationIconHTML}<span>${displayName}</span></div>
                         <div class="player-details-dropdown">${dropdownContentHTML}</div>`;
 
                     applyPlayerColor(cellDiv, player.color);
