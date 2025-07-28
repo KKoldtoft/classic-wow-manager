@@ -552,6 +552,10 @@ app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
+app.get('/guild-members', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'guild-members.html'));
+});
+
 app.get('/user-settings', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'user-settings.html'));
 });
@@ -685,6 +689,456 @@ app.get('/api/management/roster-stats', requireManagement, async (req, res) => {
   } catch (error) {
     console.error('Error fetching roster stats:', error.stack);
     res.status(500).json({ message: 'Error fetching roster statistics.' });
+  }
+});
+
+// Guild import preview endpoint - shows what will be added/removed/updated
+app.post('/api/management/guild-import-preview', requireManagement, async (req, res) => {
+  try {
+    const { importData } = req.body;
+    
+    if (!importData || typeof importData !== 'string') {
+      return res.status(400).json({ message: 'Import data is required' });
+    }
+
+    const client = await pool.connect();
+    
+    // Parse the import data
+    const lines = importData.trim().split('\n');
+    if (lines.length < 2) {
+      client.release();
+      return res.status(400).json({ message: 'Invalid import data format' });
+    }
+
+    // Skip header line and parse characters
+    const importedChars = [];
+    for (let i = 1; i < lines.length; i++) {
+      const fields = lines[i].split(';');
+      if (fields.length >= 17) {
+        const level = parseInt(fields[2]);
+        if (level === 60) { // Only import level 60 characters
+          importedChars.push({
+            character_name: fields[0],
+            rank_name: fields[1],
+            level: level,
+            class: fields[3],
+            race: fields[4],
+            sex: fields[5],
+            last_online_days: parseFloat(fields[6]) || null,
+            main_alt: fields[7],
+            player_alts: fields[8],
+            join_date: fields[9],
+            promo_date: fields[10],
+            rank_history: fields[11],
+            birthday: fields[12],
+            public_note: fields[13],
+            officer_note: fields[14],
+            custom_note: fields[15],
+            faction: fields[16]
+          });
+        }
+      }
+    }
+
+    // Get current guildies from database
+    const currentResult = await client.query('SELECT * FROM guildies');
+    const currentGuildies = currentResult.rows;
+
+    // Get players for discord ID matching
+    const playersResult = await client.query('SELECT discord_id, character_name, class FROM players');
+    const playersMap = new Map();
+    playersResult.rows.forEach(player => {
+      const key = `${player.character_name.toLowerCase()}_${player.class.toLowerCase()}`;
+      playersMap.set(key, player.discord_id);
+    });
+
+    // Add discord_id to imported chars where possible
+    importedChars.forEach(char => {
+      const key = `${char.character_name.toLowerCase()}_${char.class.toLowerCase()}`;
+      char.discord_id = playersMap.get(key) || null;
+    });
+
+    // Determine changes
+    const currentCharMap = new Map(currentGuildies.map(char => [char.character_name, char]));
+    const importedCharMap = new Map(importedChars.map(char => [char.character_name, char]));
+
+    const toAdd = importedChars.filter(char => !currentCharMap.has(char.character_name));
+    const toRemove = currentGuildies.filter(char => !importedCharMap.has(char.character_name));
+    const toUpdate = [];
+
+    // Check for updates
+    for (const importedChar of importedChars) {
+      const currentChar = currentCharMap.get(importedChar.character_name);
+      if (currentChar) {
+        // Compare relevant fields (excluding timestamps and discord_id changes)
+        const hasChanges = (
+          currentChar.rank_name !== importedChar.rank_name ||
+          currentChar.level !== importedChar.level ||
+          currentChar.class !== importedChar.class ||
+          currentChar.race !== importedChar.race ||
+          currentChar.sex !== importedChar.sex ||
+          currentChar.last_online_days !== importedChar.last_online_days ||
+          currentChar.main_alt !== importedChar.main_alt ||
+          currentChar.player_alts !== importedChar.player_alts ||
+          currentChar.join_date !== importedChar.join_date ||
+          currentChar.promo_date !== importedChar.promo_date ||
+          currentChar.rank_history !== importedChar.rank_history ||
+          currentChar.birthday !== importedChar.birthday ||
+          currentChar.public_note !== importedChar.public_note ||
+          currentChar.officer_note !== importedChar.officer_note ||
+          currentChar.custom_note !== importedChar.custom_note ||
+          currentChar.faction !== importedChar.faction ||
+          currentChar.discord_id !== importedChar.discord_id
+        );
+
+        if (hasChanges) {
+          toUpdate.push({
+            character_name: importedChar.character_name,
+            changes: {
+              old: currentChar,
+              new: importedChar
+            }
+          });
+        }
+      }
+    }
+
+    client.release();
+
+    res.json({
+      success: true,
+      summary: {
+        totalImported: importedChars.length,
+        toAdd: toAdd.length,
+        toRemove: toRemove.length,
+        toUpdate: toUpdate.length
+      },
+      changes: {
+        toAdd,
+        toRemove,
+        toUpdate
+      }
+    });
+
+  } catch (error) {
+    console.error('Error previewing guild import:', error.stack);
+    console.error('Error details:', error);
+    res.status(500).json({ 
+      message: 'Error processing guild import preview',
+      error: error.message 
+    });
+  }
+});
+
+// Guild import execute endpoint - performs the actual import
+app.post('/api/management/guild-import-execute', requireManagement, async (req, res) => {
+  try {
+    const { importData } = req.body;
+    
+    if (!importData || typeof importData !== 'string') {
+      return res.status(400).json({ message: 'Import data is required' });
+    }
+
+    const client = await pool.connect();
+    
+    try {
+      await client.query('BEGIN');
+
+      // Parse the import data (same logic as preview)
+      const lines = importData.trim().split('\n');
+      if (lines.length < 2) {
+        await client.query('ROLLBACK');
+        client.release();
+        return res.status(400).json({ message: 'Invalid import data format' });
+      }
+
+      // Parse characters
+      const importedChars = [];
+      for (let i = 1; i < lines.length; i++) {
+        const fields = lines[i].split(';');
+        if (fields.length >= 17) {
+          const level = parseInt(fields[2]);
+          if (level === 60) {
+            importedChars.push({
+              character_name: fields[0],
+              rank_name: fields[1],
+              level: level,
+              class: fields[3],
+              race: fields[4],
+              sex: fields[5],
+              last_online_days: parseFloat(fields[6]) || null,
+              main_alt: fields[7],
+              player_alts: fields[8],
+              join_date: fields[9],
+              promo_date: fields[10],
+              rank_history: fields[11],
+              birthday: fields[12],
+              public_note: fields[13],
+              officer_note: fields[14],
+              custom_note: fields[15],
+              faction: fields[16]
+            });
+          }
+        }
+      }
+
+      // Get players for discord ID matching
+      const playersResult = await client.query('SELECT discord_id, character_name, class FROM players');
+      const playersMap = new Map();
+      playersResult.rows.forEach(player => {
+        const key = `${player.character_name.toLowerCase()}_${player.class.toLowerCase()}`;
+        playersMap.set(key, player.discord_id);
+      });
+
+      // Add discord_id to imported chars
+      importedChars.forEach(char => {
+        const key = `${char.character_name.toLowerCase()}_${char.class.toLowerCase()}`;
+        char.discord_id = playersMap.get(key) || null;
+      });
+
+      // Clear existing guildies and insert new ones
+      await client.query('DELETE FROM guildies');
+      
+      // Insert all imported characters
+      for (const char of importedChars) {
+        await client.query(`
+          INSERT INTO guildies (
+            character_name, rank_name, level, class, race, sex, last_online_days,
+            main_alt, player_alts, join_date, promo_date, rank_history, birthday,
+            public_note, officer_note, custom_note, faction, discord_id, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP)
+          ON CONFLICT (character_name, class) 
+          DO UPDATE SET 
+            rank_name = EXCLUDED.rank_name,
+            level = EXCLUDED.level,
+            race = EXCLUDED.race,
+            sex = EXCLUDED.sex,
+            last_online_days = EXCLUDED.last_online_days,
+            main_alt = EXCLUDED.main_alt,
+            player_alts = EXCLUDED.player_alts,
+            join_date = EXCLUDED.join_date,
+            promo_date = EXCLUDED.promo_date,
+            rank_history = EXCLUDED.rank_history,
+            birthday = EXCLUDED.birthday,
+            public_note = EXCLUDED.public_note,
+            officer_note = EXCLUDED.officer_note,
+            custom_note = EXCLUDED.custom_note,
+            faction = EXCLUDED.faction,
+            discord_id = EXCLUDED.discord_id,
+            updated_at = CURRENT_TIMESTAMP
+        `, [
+          char.character_name, char.rank_name, char.level, char.class, char.race, char.sex,
+          char.last_online_days, char.main_alt, char.player_alts, char.join_date, char.promo_date,
+          char.rank_history, char.birthday, char.public_note, char.officer_note, char.custom_note,
+          char.faction, char.discord_id
+        ]);
+      }
+
+      await client.query('COMMIT');
+      
+      res.json({
+        success: true,
+        message: `Successfully imported ${importedChars.length} guild members`,
+        imported: importedChars.length
+      });
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+  } catch (error) {
+    console.error('Error executing guild import:', error.stack);
+    console.error('Error details:', error);
+    res.status(500).json({ 
+      message: 'Error executing guild import',
+      error: error.message 
+    });
+  }
+});
+
+// Get all guild members - public endpoint
+app.get('/api/guild-members', async (req, res) => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query(`
+      SELECT 
+        character_name, 
+        class, 
+        level, 
+        rank_name, 
+        race, 
+        sex,
+        last_online_days,
+        discord_id,
+        CASE WHEN discord_id IS NOT NULL THEN true ELSE false END as has_discord_link
+      FROM guildies 
+      ORDER BY rank_name, character_name
+    `);
+    client.release();
+    
+    res.json({ 
+      success: true,
+      members: result.rows,
+      count: result.rows.length
+    });
+  } catch (error) {
+    console.error('Error fetching guild members:', error.stack);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error fetching guild members',
+      error: error.message 
+    });
+  }
+});
+
+// DEBUG: Endpoint to recreate guildies table with correct structure
+app.get('/api/debug/recreate-guildies-table', async (req, res) => {
+  try {
+    const client = await pool.connect();
+    
+    // Drop existing table if it exists
+    await client.query(`DROP TABLE IF EXISTS guildies CASCADE`);
+    
+    // Create guildies table with composite primary key
+    await client.query(`
+      CREATE TABLE guildies (
+        character_name VARCHAR(255),
+        rank_name VARCHAR(100),
+        level INTEGER,
+        class VARCHAR(50),
+        race VARCHAR(50),
+        sex VARCHAR(20),
+        last_online_days DECIMAL,
+        main_alt VARCHAR(50),
+        player_alts TEXT,
+        join_date VARCHAR(50),
+        promo_date VARCHAR(50),
+        rank_history TEXT,
+        birthday VARCHAR(50),
+        public_note TEXT,
+        officer_note TEXT,
+        custom_note TEXT,
+        faction VARCHAR(20),
+        discord_id VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (character_name, class)
+      )
+    `);
+    
+    // Create indexes
+    await client.query(`CREATE INDEX idx_guildies_discord_id ON guildies (discord_id)`);
+    await client.query(`CREATE INDEX idx_guildies_class_name ON guildies (class, character_name)`);
+    
+    client.release();
+    
+    res.json({
+      success: true,
+      message: 'Guildies table recreated successfully with composite primary key (character_name, class)!'
+    });
+  } catch (error) {
+    console.error('Error recreating guildies table:', error);
+    res.status(500).json({ 
+      error: error.message,
+      success: false 
+    });
+  }
+});
+
+// DEBUG: Endpoint to create guildies table if it doesn't exist
+app.get('/api/debug/create-guildies-table', async (req, res) => {
+  try {
+    const client = await pool.connect();
+    
+    // Create guildies table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS guildies (
+        character_name VARCHAR(255),
+        rank_name VARCHAR(100),
+        level INTEGER,
+        class VARCHAR(50),
+        race VARCHAR(50),
+        sex VARCHAR(20),
+        last_online_days DECIMAL,
+        main_alt VARCHAR(50),
+        player_alts TEXT,
+        join_date VARCHAR(50),
+        promo_date VARCHAR(50),
+        rank_history TEXT,
+        birthday VARCHAR(50),
+        public_note TEXT,
+        officer_note TEXT,
+        custom_note TEXT,
+        faction VARCHAR(20),
+        discord_id VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (character_name, class)
+      )
+    `);
+    
+    // Create indexes
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_guildies_discord_id ON guildies (discord_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_guildies_class_name ON guildies (class, character_name)`);
+    
+    client.release();
+    
+    res.json({
+      success: true,
+      message: 'Guildies table created successfully!'
+    });
+  } catch (error) {
+    console.error('Error creating guildies table:', error);
+    res.status(500).json({ 
+      error: error.message,
+      success: false 
+    });
+  }
+});
+
+// DEBUG: Endpoint to check guildies table
+app.get('/api/debug/check-guildies-table', async (req, res) => {
+  try {
+    const client = await pool.connect();
+    
+    // Check if guildies table exists
+    const tableExists = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'guildies'
+      )
+    `);
+    
+    let tableInfo = null;
+    if (tableExists.rows[0].exists) {
+      // Get table structure
+      tableInfo = await client.query(`
+        SELECT column_name, data_type, is_nullable 
+        FROM information_schema.columns 
+        WHERE table_name = 'guildies'
+        ORDER BY ordinal_position
+      `);
+      
+      // Count existing records
+      const countResult = await client.query('SELECT COUNT(*) FROM guildies');
+      tableInfo.recordCount = countResult.rows[0].count;
+    }
+    
+    client.release();
+    
+    res.json({
+      tableExists: tableExists.rows[0].exists,
+      tableInfo: tableInfo ? {
+        columns: tableInfo.rows,
+        recordCount: tableInfo.recordCount
+      } : null
+    });
+  } catch (error) {
+    console.error('Error checking guildies table:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -934,7 +1388,129 @@ app.post('/api/events/refresh', async (req, res) => {
   }
 });
 
+// RPB Google Apps Script Proxy Endpoint
+app.post('/api/logs/rpb', async (req, res) => {
+  try {
+    const { action, logUrl } = req.body;
+    
+    if (!action) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Action is required' 
+      });
+    }
 
+    // Google Apps Script Web App URL
+    const rpbWebAppUrl = 'https://script.google.com/macros/s/AKfycbwO9wfxxFryGtcgP-ETD1IFtS9HtHAihzjR7fp51tHRGDWcYXHMX_PcuMyUZDSt77l1/exec';
+    
+    // Prepare request data
+    const requestData = { action };
+    if (logUrl) {
+      requestData.logUrl = logUrl;
+    }
+
+    console.log(`🔄 RPB ${action} request:`, requestData);
+    
+    // Ensure clearF11 action is allowed
+    const allowedActions = ['startRPB', 'checkStatus', 'clearF11', 'archiveRPB'];
+    if (!allowedActions.includes(action)) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid action '${action}'. Must be one of: ${allowedActions.join(', ')}`
+      });
+    }
+
+    // Make request to Google Apps Script
+    const response = await axios({
+      method: 'POST',
+      url: rpbWebAppUrl,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      data: requestData,
+      timeout: action === 'startRPB' ? 400000 : 30000, // 6.5 min for startRPB, 30s for status checks
+    });
+
+    console.log(`✅ RPB ${action} response:`, response.data);
+
+    // Return the response from Google Apps Script
+    res.json(response.data);
+
+  } catch (error) {
+    console.error('❌ RPB proxy error:', error);
+    
+    if (error.code === 'ECONNABORTED') {
+      return res.status(408).json({
+        success: false,
+        error: 'RPB processing timed out. Please try again.'
+      });
+    }
+
+    if (error.response) {
+      // Google Apps Script returned an error
+      return res.status(error.response.status).json({
+        success: false,
+        error: error.response.data || 'Google Apps Script error'
+      });
+    }
+
+    // Network or other error
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to communicate with RPB service'
+    });
+  }
+});
+
+// RPB Archive Endpoint
+app.post('/api/logs/rpb-archive', async (req, res) => {
+  try {
+    // Use the same RPB web app URL since archive functions are now merged into RPB.gs
+    const rpbWebAppUrl = 'https://script.google.com/macros/s/AKfycbwyCWlXk_oJuK0DGTCMO0e41Yp9-Ne4jR6X-yQibFc6xHp2BJmxmCLfZ9yzh4d0ZUOP/exec';
+    
+    console.log('🗂️ Starting RPB archive process...');
+
+    // Make request to RPB Google Apps Script (now includes archive functionality)
+    const response = await axios({
+      method: 'POST',
+      url: rpbWebAppUrl,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      data: { action: 'archiveRPB' },
+      timeout: 60000, // 1 minute timeout for archive creation
+    });
+
+    console.log('✅ RPB archive response:', response.data);
+
+    // Return the response from Archive Google Apps Script
+    res.json(response.data);
+
+  } catch (error) {
+    console.error('❌ RPB archive error:', error);
+    
+    if (error.code === 'ECONNABORTED') {
+      return res.status(408).json({
+        success: false,
+        error: 'Archive creation timed out. Please try again.'
+      });
+    }
+
+    if (error.response) {
+      // Archive Google Apps Script returned an error
+      return res.status(error.response.status).json({
+        success: false,
+        error: error.response.data || 'Archive service error'
+      });
+    }
+
+    // Network or other error
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to communicate with archive service'
+    });
+  }
+});
 
 // A helper function to normalize class names to their canonical form
 const CLASS_COLORS = {
@@ -2089,12 +2665,45 @@ app.post('/api/admin/setup-database', async (req, res) => {
             )
         `);
         
+        // Create guildies table for guild member data
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS guildies (
+                character_name VARCHAR(255),
+                rank_name VARCHAR(100),
+                level INTEGER,
+                class VARCHAR(50),
+                race VARCHAR(50),
+                sex VARCHAR(20),
+                last_online_days DECIMAL,
+                main_alt VARCHAR(50),
+                player_alts TEXT,
+                join_date VARCHAR(50),
+                promo_date VARCHAR(50),
+                rank_history TEXT,
+                birthday VARCHAR(50),
+                public_note TEXT,
+                officer_note TEXT,
+                custom_note TEXT,
+                faction VARCHAR(20),
+                discord_id VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (character_name, class)
+            )
+        `);
+        
         // Create indexes
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_players_discord_id ON players (discord_id)
         `);
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_roster_overrides_event_id ON roster_overrides (event_id)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_guildies_discord_id ON guildies (discord_id)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_guildies_class_name ON guildies (class, character_name)
         `);
         
         // Fix column size for spec emotes (Discord IDs can be 17-19 chars)

@@ -5,7 +5,7 @@ function generateAllSheet() {
   var maxColumns = 71;
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = SpreadsheetApp.getActiveSheet();
+  var sheet = ss.getSheetByName("All");
   var instructionsSheet = ss.getSheetByName("Instructions");
 
   var darkMode = false;
@@ -3819,4 +3819,553 @@ function generateAllSheet() {
     var conf_del = ss.getSheetByName("configAll" + rnd);
     ss.deleteSheet(conf_del);
   } catch (err) { }
+}
+
+// Web App Endpoint Functions for external integration
+function doPost(e) {
+  try {
+    console.log('📨 [WEB APP] Received POST request');
+    console.log('📨 [WEB APP] Request timestamp:', new Date().toISOString());
+    
+    if (!e || !e.postData || !e.postData.contents) {
+      console.error('❌ [WEB APP] Invalid request: missing postData');
+      throw new Error('Invalid request: missing postData');
+    }
+    
+    console.log('📨 [WEB APP] Raw POST data:', e.postData.contents);
+    
+    const data = JSON.parse(e.postData.contents);
+    console.log('📨 [WEB APP] Parsed data:', data);
+    
+    const action = data.action;
+    const logUrl = data.logUrl;
+    
+    console.log('🎯 [WEB APP] Action requested:', action);
+    console.log('🔗 [WEB APP] Log URL provided:', logUrl);
+    
+    if (action === 'startRPB') {
+      console.log('🚀 [WEB APP] Routing to startRPBProcessing');
+      return startRPBProcessing(logUrl);
+    } else if (action === 'checkStatus') {
+      console.log('🔍 [WEB APP] Routing to checkRPBStatus');
+      return checkRPBStatus();
+    } else if (action === 'clearStatus') {
+      console.log('🧹 [WEB APP] Routing to clearRPBStatus');
+      return clearRPBStatus();
+    } else if (action === 'clearF11') {
+      console.log('🧹 [WEB APP] Routing to clearF11Only');
+      return clearF11Only();
+    } else if (action === 'archiveRPB') {
+      console.log('🗂️ [WEB APP] Routing to archiveRPBResults');
+      return archiveRPBResults();
+    }
+    
+    console.error('❌ [WEB APP] Unknown action requested:', action);
+    return ContentService
+      .createTextOutput(JSON.stringify({success: false, error: 'Unknown action: ' + action}))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (error) {
+    console.error('❌ [WEB APP] doPost failed:', error.toString());
+    console.error('❌ [WEB APP] doPost error stack:', error.stack);
+    console.error('❌ [WEB APP] Request details:', e);
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: false, 
+        error: error.toString(),
+        timestamp: new Date().toISOString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function startRPBProcessing(logUrl) {
+  var startTime = new Date();
+  var executionId = 'RPB_' + startTime.getTime(); // Unique execution ID
+  var ss, instructionsSheet, statusCell;
+  
+  try {
+    console.log('🚀 [WEB APP] Starting RPB processing for URL:', logUrl);
+    console.log('🆔 [WEB APP] Execution ID:', executionId);
+    console.log('🕐 [WEB APP] Start time:', startTime.toISOString());
+    
+    // Get spreadsheet and Instructions sheet (F11 already cleared in Phase 1)
+    console.log('📊 [WEB APP] PHASE 2: Getting active spreadsheet...');
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+    console.log('📊 [WEB APP] Got spreadsheet:', ss.getName(), '- ID:', ss.getId());
+    
+    console.log('📋 [WEB APP] Getting Instructions sheet...');
+    instructionsSheet = ss.getSheetByName("Instructions");
+    if (!instructionsSheet) {
+      throw new Error('Could not find Instructions sheet in spreadsheet');
+    }
+    console.log('📋 [WEB APP] Found Instructions sheet');
+    
+    // Get status cell (should be empty from Phase 1)
+    console.log('📍 [WEB APP] Getting F11 status cell...');
+    statusCell = instructionsSheet.getRange("F11");
+    var currentStatus = statusCell.getValue();
+    console.log('📍 [WEB APP] F11 status after Phase 1 clearing:', currentStatus);
+    
+    // Set to PROCESSING (F11 should already be empty from Phase 1)
+    console.log('⏳ [WEB APP] Setting status to PROCESSING (Phase 1 already cleared F11)');
+    statusCell.setValue("PROCESSING - Initializing... [" + executionId + "]");
+    SpreadsheetApp.flush();
+    console.log('✅ [WEB APP] Status set to PROCESSING with execution ID');
+    
+    // Insert the log URL into E11 (where RPB expects it)
+    console.log('📝 [WEB APP] Setting log URL in E11:', logUrl);
+    var urlCell = instructionsSheet.getRange("E11");
+    var currentUrl = urlCell.getValue();
+    console.log('📝 [WEB APP] Current E11 value:', currentUrl);
+    urlCell.setValue(logUrl);
+    console.log('📝 [WEB APP] Set new E11 value:', logUrl);
+    
+    // Flush changes to ensure they're saved before proceeding
+    console.log('💾 [WEB APP] Flushing spreadsheet changes...');
+    SpreadsheetApp.flush();
+    console.log('💾 [WEB APP] Spreadsheet changes flushed');
+    
+    // Update status to indicate main processing is starting
+    console.log('⏳ [WEB APP] Updating status to main processing...');
+    statusCell.setValue("PROCESSING - Running analysis... [" + executionId + "]");
+    SpreadsheetApp.flush();
+    
+    // Wait a moment for changes to settle
+    console.log('⏸️ [WEB APP] Brief pause before starting analysis...');
+    Utilities.sleep(500);
+    
+    // Run the RPB analysis
+    console.log('🔄 [WEB APP] Starting generateAllSheet()...');
+    var analysisStartTime = new Date();
+    
+    try {
+      generateAllSheet();
+      var analysisEndTime = new Date();
+      var analysisDuration = (analysisEndTime - analysisStartTime) / 1000;
+      console.log('✅ [WEB APP] generateAllSheet() completed successfully in', analysisDuration, 'seconds');
+      
+      // CRITICAL: Verify that the analysis actually did something by checking the "All" sheet
+      var allSheet = ss.getSheetByName("All");
+      if (allSheet) {
+        var lastRow = allSheet.getLastRow();
+        var lastCol = allSheet.getLastColumn();
+        console.log('📊 [WEB APP] "All" sheet verification - Last row:', lastRow, 'Last col:', lastCol);
+        
+        if (lastRow <= 1 || lastCol <= 1) {
+          throw new Error('generateAllSheet() completed but "All" sheet appears to be empty (lastRow: ' + lastRow + ', lastCol: ' + lastCol + ')');
+        }
+        console.log('✅ [WEB APP] "All" sheet verification passed - sheet has data');
+      } else {
+        throw new Error('generateAllSheet() completed but "All" sheet not found');
+      }
+      
+    } catch (analysisError) {
+      console.error('❌ [WEB APP] generateAllSheet() FAILED:', analysisError.toString());
+      console.error('❌ [WEB APP] generateAllSheet() error stack:', analysisError.stack);
+      console.error('❌ [WEB APP] generateAllSheet() error name:', analysisError.name);
+      
+      // Check if this is the specific sheet ID error
+      if (analysisError.toString().includes("doesn't exist")) {
+        console.error('🔍 [WEB APP] SHEET ID ERROR DETECTED');
+        console.error('🔍 [WEB APP] This appears to be a sheet reference issue in the RPB script');
+        console.error('🔍 [WEB APP] The RPB script may be trying to reference a temporary sheet that was deleted or never created');
+        
+        // Try to get current sheet list for debugging
+        try {
+          var currentSheets = ss.getSheets();
+          console.log('📊 [WEB APP] Current sheets in spreadsheet:', currentSheets.map(function(sheet) { 
+            return sheet.getName() + ' (ID: ' + sheet.getSheetId() + ')'; 
+          }));
+        } catch (sheetListError) {
+          console.error('❌ [WEB APP] Could not list current sheets:', sheetListError.toString());
+        }
+      }
+      
+      // Set specific error status with truncated message
+      var errorMessage = "ERROR: " + analysisError.toString() + " [" + executionId + "]";
+      if (errorMessage.length > 1000) {
+        errorMessage = errorMessage.substring(0, 997) + "...";
+      }
+      statusCell.setValue(errorMessage);
+      SpreadsheetApp.flush();
+      
+      throw new Error('RPB analysis failed: ' + analysisError.toString());
+    }
+    
+    // Set final status to COMPLETE
+    console.log('🎉 [WEB APP] Setting final status to COMPLETE in F11');
+    var expectedStatus = "COMPLETE [" + executionId + "]";
+    statusCell.setValue(expectedStatus);
+    SpreadsheetApp.flush();
+    console.log('🎉 [WEB APP] Status set to COMPLETE and flushed');
+    
+    // CRITICAL: Verify that F11 actually shows the expected status
+    var finalStatus = statusCell.getValue();
+    console.log('🔍 [WEB APP] Final status verification - F11 value:', finalStatus);
+    
+    if (finalStatus !== expectedStatus) {
+      throw new Error('Status verification failed: Expected "' + expectedStatus + '" but F11 shows "' + finalStatus + '"');
+    }
+    console.log('✅ [WEB APP] Final status verification passed');
+    
+    var totalDuration = (new Date() - startTime) / 1000;
+    console.log('🏁 [WEB APP] Total processing completed successfully in', totalDuration, 'seconds');
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: true, 
+        status: "COMPLETE",
+        message: "RPB processing completed successfully",
+        duration: totalDuration,
+        timestamp: new Date().toISOString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (error) {
+    var errorTime = new Date();
+    var errorDuration = (errorTime - startTime) / 1000;
+    
+    console.error('❌ [WEB APP] RPB processing FAILED after', errorDuration, 'seconds');
+    console.error('❌ [WEB APP] Error message:', error.message);
+    console.error('❌ [WEB APP] Error toString:', error.toString());
+    console.error('❌ [WEB APP] Error stack:', error.stack);
+    console.error('❌ [WEB APP] Error name:', error.name);
+    
+    // Try to set error status in F11
+    try {
+      console.log('📝 [WEB APP] Attempting to set error status in F11...');
+      if (!ss) {
+        console.log('📊 [WEB APP] Spreadsheet reference lost, getting it again...');
+        ss = SpreadsheetApp.getActiveSpreadsheet();
+      }
+      if (!statusCell) {
+        console.log('📍 [WEB APP] Status cell reference lost, getting it again...');
+        instructionsSheet = ss.getSheetByName("Instructions");
+        statusCell = instructionsSheet.getRange("F11");
+      }
+      
+      var errorMessage = "ERROR: " + error.toString();
+      // Truncate error message if too long for cell (Google Sheets limit)
+      if (errorMessage.length > 1000) {
+        errorMessage = errorMessage.substring(0, 997) + "...";
+        console.log('⚠️ [WEB APP] Error message truncated due to length');
+      }
+      
+      console.log('📝 [WEB APP] Setting error status:', errorMessage);
+      statusCell.setValue(errorMessage);
+      SpreadsheetApp.flush();
+      console.log('📝 [WEB APP] Error status set and flushed');
+      
+    } catch (statusError) {
+      console.error('❌ [WEB APP] CRITICAL: Failed to set error status in F11:', statusError.toString());
+      console.error('❌ [WEB APP] Status error stack:', statusError.stack);
+    }
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: false, 
+        status: "ERROR",
+        error: error.toString(),
+        duration: errorDuration,
+        timestamp: new Date().toISOString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function checkRPBStatus() {
+  try {
+    var checkTime = new Date();
+    var checkId = 'CHECK_' + checkTime.getTime();
+    console.log('🔍 [STATUS CHECK] Checking RPB status...');
+    console.log('🆔 [STATUS CHECK] Check ID:', checkId);
+    console.log('🕐 [STATUS CHECK] Check time:', checkTime.toISOString());
+    
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    console.log('📊 [STATUS CHECK] Got spreadsheet:', ss.getName(), 'ID:', ss.getId());
+    
+    var instructionsSheet = ss.getSheetByName("Instructions");
+    if (!instructionsSheet) {
+      throw new Error('Instructions sheet not found');
+    }
+    console.log('📋 [STATUS CHECK] Found Instructions sheet');
+    
+    var statusCell = instructionsSheet.getRange("F11");
+    var status = statusCell.getValue();
+    console.log('📍 [STATUS CHECK] F11 status value:', status);
+    
+    var normalizedStatus = status || "IDLE";
+    console.log('✅ [STATUS CHECK] Returning status as-is:', normalizedStatus);
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: true,
+        status: normalizedStatus,
+        rawStatus: status,
+        timestamp: new Date().toISOString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (error) {
+    console.error('❌ [STATUS CHECK] Failed to check status:', error.toString());
+    console.error('❌ [STATUS CHECK] Error stack:', error.stack);
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: false,
+        error: error.toString(),
+        timestamp: new Date().toISOString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function clearF11Only() {
+  try {
+    var clearTime = new Date();
+    console.log('🧹 [CLEAR F11] PHASE 1: Clearing F11 cell only...');
+    console.log('🕐 [CLEAR F11] Clear time:', clearTime.toISOString());
+    
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    console.log('📊 [CLEAR F11] Got spreadsheet:', ss.getName());
+    
+    var instructionsSheet = ss.getSheetByName("Instructions");
+    if (!instructionsSheet) {
+      throw new Error('Instructions sheet not found');
+    }
+    console.log('📋 [CLEAR F11] Found Instructions sheet');
+    
+    var statusCell = instructionsSheet.getRange("F11");
+    var currentStatus = statusCell.getValue();
+    console.log('📍 [CLEAR F11] Current F11 status before clearing:', currentStatus);
+    
+    // Clear the status cell
+    statusCell.setValue("");
+    SpreadsheetApp.flush();
+    console.log('✅ [CLEAR F11] F11 status cleared successfully - ready for new run');
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: true,
+        message: "F11 cleared successfully - ready for Phase 2",
+        previousStatus: currentStatus,
+        timestamp: new Date().toISOString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (error) {
+    console.error('❌ [CLEAR F11] Failed to clear F11:', error.toString());
+    console.error('❌ [CLEAR F11] Error stack:', error.stack);
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: false,
+        error: error.toString(),
+        timestamp: new Date().toISOString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function clearRPBStatus() {
+  try {
+    var clearTime = new Date();
+    console.log('🧹 [CLEAR STATUS] Clearing RPB completion status...');
+    console.log('🕐 [CLEAR STATUS] Clear time:', clearTime.toISOString());
+    
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    console.log('📊 [CLEAR STATUS] Got spreadsheet:', ss.getName());
+    
+    var instructionsSheet = ss.getSheetByName("Instructions");
+    if (!instructionsSheet) {
+      throw new Error('Instructions sheet not found');
+    }
+    console.log('📋 [CLEAR STATUS] Found Instructions sheet');
+    
+    var statusCell = instructionsSheet.getRange("F11");
+    var currentStatus = statusCell.getValue();
+    console.log('📍 [CLEAR STATUS] Current F11 status:', currentStatus);
+    
+    // Clear the status cell
+    statusCell.setValue("");
+    SpreadsheetApp.flush();
+    console.log('✅ [CLEAR STATUS] F11 status cleared successfully');
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: true,
+        message: "Status cleared successfully",
+        previousStatus: currentStatus,
+        timestamp: new Date().toISOString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (error) {
+    console.error('❌ [CLEAR STATUS] Failed to clear status:', error.toString());
+    console.error('❌ [CLEAR STATUS] Error stack:', error.stack);
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: false,
+        error: error.toString(),
+        timestamp: new Date().toISOString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// Test function to verify the modification works
+function testGenerateAllSheet() {
+  try {
+    // This should now work even when called from the script editor
+    generateAllSheet();
+    console.log("SUCCESS: generateAllSheet() executed without active sheet dependency");
+    return true;
+  } catch (error) {
+    console.error("ERROR: generateAllSheet() failed:", error);
+    return false;
+  }
+}
+
+// Archive RPB Results Functions
+function archiveRPBResults() {
+  var startTime = new Date();
+  
+  try {
+    console.log('🗂️ [ARCHIVE] Starting archive process...');
+    console.log('🕐 [ARCHIVE] Start time:', startTime.toISOString());
+    
+    // Master RPB Sheet ID (the one we run analysis on)
+    const masterSheetId = '11Y9nIYRdxPsQivpQGaK1B0Mc-tbnCR45A1I4-RaKvyk';
+    console.log('🆔 [ARCHIVE] Master sheet ID:', masterSheetId);
+    
+    // Target folder ID for archives (your public Google Drive folder)
+    const archiveFolderId = '1YgXMDYl5GdBlO3y9MXBNeaWw2j8FvJ7W';
+    console.log('📁 [ARCHIVE] Archive folder ID:', archiveFolderId);
+    
+    // Generate filename with current date
+    const today = new Date();
+    const dateString = formatDateForFilename(today);
+    const fileName = `RPB-${dateString}`;
+    console.log('📝 [ARCHIVE] Generated filename:', fileName);
+    
+    // Get the master spreadsheet
+    console.log('📊 [ARCHIVE] Opening master spreadsheet...');
+    const masterSpreadsheet = SpreadsheetApp.openById(masterSheetId);
+    console.log('📊 [ARCHIVE] Opened master spreadsheet:', masterSpreadsheet.getName());
+    
+    console.log('📋 [ARCHIVE] Getting "All" sheet from master...');
+    const allSheet = masterSpreadsheet.getSheetByName('All');
+    
+    if (!allSheet) {
+      throw new Error('Could not find "All" tab in master sheet');
+    }
+    console.log('📋 [ARCHIVE] Found "All" sheet');
+    
+    // Create new spreadsheet in the archive folder
+    console.log('🆕 [ARCHIVE] Creating new spreadsheet...');
+    const newSpreadsheet = SpreadsheetApp.create(fileName);
+    const newSpreadsheetId = newSpreadsheet.getId();
+    console.log('🆕 [ARCHIVE] Created new spreadsheet with ID:', newSpreadsheetId);
+    
+    // Move the new spreadsheet to the archive folder
+    console.log('📁 [ARCHIVE] Moving spreadsheet to archive folder...');
+    const file = DriveApp.getFileById(newSpreadsheetId);
+    console.log('📁 [ARCHIVE] Got file reference');
+    
+    const folder = DriveApp.getFolderById(archiveFolderId);
+    console.log('📁 [ARCHIVE] Got folder reference');
+    
+    // Remove from root and add to archive folder
+    console.log('📁 [ARCHIVE] Removing from root folder...');
+    DriveApp.getRootFolder().removeFile(file);
+    console.log('📁 [ARCHIVE] Adding to archive folder...');
+    folder.addFile(file);
+    console.log('📁 [ARCHIVE] File moved successfully');
+    
+    // Copy the "All" sheet to the new spreadsheet
+    console.log('📋 [ARCHIVE] Copying "All" sheet to new spreadsheet...');
+    const copiedSheet = allSheet.copyTo(newSpreadsheet);
+    console.log('📋 [ARCHIVE] Sheet copied, setting name to "All"...');
+    copiedSheet.setName('All');
+    console.log('📋 [ARCHIVE] Sheet renamed successfully');
+    
+    // Remove the default "Sheet1" that was created
+    console.log('🗑️ [ARCHIVE] Removing default "Sheet1"...');
+    const defaultSheet = newSpreadsheet.getSheetByName('Sheet1');
+    if (defaultSheet) {
+      newSpreadsheet.deleteSheet(defaultSheet);
+      console.log('🗑️ [ARCHIVE] Default sheet removed');
+    } else {
+      console.log('⚠️ [ARCHIVE] No default "Sheet1" found to remove');
+    }
+    
+    // Get the URL of the new spreadsheet
+    const newSheetUrl = newSpreadsheet.getUrl();
+    console.log('🔗 [ARCHIVE] New spreadsheet URL:', newSheetUrl);
+    
+    var totalDuration = (new Date() - startTime) / 1000;
+    console.log('✅ [ARCHIVE] Archive completed successfully in', totalDuration, 'seconds');
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: true,
+        fileName: fileName,
+        sheetUrl: newSheetUrl,
+        sheetId: newSpreadsheetId,
+        message: 'RPB results archived successfully',
+        duration: totalDuration,
+        timestamp: new Date().toISOString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (error) {
+    var errorDuration = (new Date() - startTime) / 1000;
+    
+    console.error('❌ [ARCHIVE] Archive creation FAILED after', errorDuration, 'seconds');
+    console.error('❌ [ARCHIVE] Error message:', error.message);
+    console.error('❌ [ARCHIVE] Error toString:', error.toString());
+    console.error('❌ [ARCHIVE] Error stack:', error.stack);
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: false,
+        error: error.toString(),
+        duration: errorDuration,
+        timestamp: new Date().toISOString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// Helper function to format date as DD-MM-YYYY
+function formatDateForFilename(date) {
+  const day = date.getDate().toString().padStart(2, '0');
+  const month = (date.getMonth() + 1).toString().padStart(2, '0'); // getMonth() is 0-indexed
+  const year = date.getFullYear();
+  
+  return `${day}-${month}-${year}`;
+}
+
+// Test function to verify the archive functionality
+function testArchiveRPBResults() {
+  try {
+    const result = archiveRPBResults();
+    const response = JSON.parse(result.getContent());
+    
+    if (response.success) {
+      console.log('✅ Test successful!');
+      console.log('File name:', response.fileName);
+      console.log('Sheet URL:', response.sheetUrl);
+      return true;
+    } else {
+      console.error('❌ Test failed:', response.error);
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Test error:', error);
+    return false;
+  }
 }

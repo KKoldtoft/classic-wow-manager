@@ -5,6 +5,10 @@ class WoWLogsAnalyzer {
         this.apiKey = 'e5c41ab0436b3a44c0e9c2fbd6cf016d';
         this.baseUrl = 'https://vanilla.warcraftlogs.com:443/v1/';
         this.currentLogData = null;
+        
+        // Use our backend proxy endpoint instead of direct Google Apps Script call
+        this.rpbApiUrl = '/api/logs/rpb';
+        
         this.initializeEventListeners();
     }
 
@@ -12,6 +16,11 @@ class WoWLogsAnalyzer {
         // Analyze button click
         document.getElementById('analyzeBtn').addEventListener('click', () => {
             this.analyzeLog();
+        });
+
+        // RPB button click
+        document.getElementById('runRpbBtn').addEventListener('click', () => {
+            this.runRPBAnalysis();
         });
 
         // Enter key in input field
@@ -303,8 +312,8 @@ class WoWLogsAnalyzer {
             };
 
             // Display the data
-            this.displayLogData();
             this.showData();
+            this.displayLogData();
 
         } catch (error) {
             console.error('Analysis failed:', error);
@@ -326,6 +335,11 @@ class WoWLogsAnalyzer {
     displayFightData() {
         const data = this.currentLogData.fights;
         const container = document.getElementById('fightDataContent');
+
+        if (!container) {
+            console.error('fightDataContent element not found');
+            return;
+        }
 
         // Basic info cards
         const infoCards = `
@@ -392,6 +406,11 @@ class WoWLogsAnalyzer {
         const data = this.currentLogData.fights;
         const container = document.getElementById('charactersDataContent');
 
+        if (!container) {
+            console.error('charactersDataContent element not found');
+            return;
+        }
+
         // Get characters from exportedCharacters (contains all 40 players)
         const exportedCharacters = data.exportedCharacters;
         const friendlies = data.friendlies;
@@ -452,6 +471,11 @@ class WoWLogsAnalyzer {
         const damageData = this.currentLogData.damage;
         const container = document.getElementById('damageDataContent');
 
+        if (!container) {
+            console.error('damageDataContent element not found');
+            return;
+        }
+
         console.log('Displaying damage data:', damageData);
 
         if (!damageData) {
@@ -503,6 +527,11 @@ class WoWLogsAnalyzer {
     displayHealingData() {
         const healingData = this.currentLogData.healing;
         const container = document.getElementById('healingDataContent');
+
+        if (!container) {
+            console.error('healingDataContent element not found');
+            return;
+        }
 
         console.log('Displaying healing data:', healingData);
 
@@ -595,6 +624,11 @@ class WoWLogsAnalyzer {
         const summaries = this.currentLogData.summaries;
         const container = document.getElementById('summaryDataContent');
 
+        if (!container) {
+            console.error('summaryDataContent element not found');
+            return;
+        }
+
         if (!summaries || summaries.length === 0) {
             container.innerHTML = '<p>No summary data available (no boss fights found).</p>';
             return;
@@ -682,8 +716,15 @@ class WoWLogsAnalyzer {
 
     displayRawData() {
         // Display raw JSON data
-        document.getElementById('rawFightsJson').textContent = JSON.stringify(this.currentLogData.fights, null, 2);
-        document.getElementById('rawSummaryJson').textContent = JSON.stringify(this.currentLogData.summaries, null, 2);
+        const fightsElement = document.getElementById('rawFightsJson');
+        if (fightsElement) {
+            fightsElement.textContent = JSON.stringify(this.currentLogData.fights, null, 2);
+        }
+        
+        const summaryElement = document.getElementById('rawSummaryJson');
+        if (summaryElement) {
+            summaryElement.textContent = JSON.stringify(this.currentLogData.summaries, null, 2);
+        }
         
         // Display damage data (even if null or has errors)
         const damageElement = document.getElementById('rawDamageJson');
@@ -751,6 +792,353 @@ class WoWLogsAnalyzer {
         };
         
         return zones[zoneId] || `Zone ${zoneId}`;
+    }
+
+    // RPB Integration Methods
+
+    async runRPBAnalysis() {
+        const input = document.getElementById('logInput').value;
+        const logId = this.extractLogId(input);
+
+        if (!logId) {
+            this.showError('Invalid log URL or ID. Please check the format and try again.');
+            return;
+        }
+
+        // Show loading state
+        this.showRPBLoading();
+
+        try {
+            // Two-phase approach to eliminate race conditions
+            await this.twoPhaseRPBExecution(input.trim());
+
+        } catch (error) {
+            console.error('RPB Analysis failed:', error);
+            this.showError(`Failed to run RPB analysis: ${error.message}`);
+        }
+    }
+
+    async twoPhaseRPBExecution(logUrl) {
+        try {
+            // PHASE 1: Clear F11 cell
+            console.log('🧹 [FRONTEND] PHASE 1: Clearing F11 status cell...');
+            this.updateRPBProgressMessage('Phase 1: Clearing previous status...');
+            
+            const clearResponse = await fetch(this.rpbApiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'clearF11'
+                })
+            });
+
+            const clearResult = await clearResponse.json();
+            
+            if (!clearResult.success) {
+                throw new Error('Phase 1 failed: ' + clearResult.error);
+            }
+            
+            console.log('✅ [FRONTEND] Phase 1 completed - F11 cleared');
+            console.log('📝 [FRONTEND] Previous status was:', clearResult.previousStatus);
+            
+            // PHASE 2: Wait 5 seconds before starting RPB
+            console.log('⏳ [FRONTEND] Waiting 5 seconds before Phase 2...');
+            this.updateRPBProgressMessage('Waiting 5 seconds before starting analysis...');
+            
+            // Visual countdown
+            for (let i = 5; i > 0; i--) {
+                this.updateRPBProgressMessage(`Starting analysis in ${i} seconds...`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            
+            // PHASE 2: Start RPB processing
+            console.log('🚀 [FRONTEND] PHASE 2: Starting RPB processing...');
+            this.updateRPBProgressMessage('Phase 2: Starting analysis...');
+            
+            // Start RPB in background (don't wait for completion)
+            fetch(this.rpbApiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'startRPB',
+                    logUrl: logUrl
+                })
+            }).catch(error => {
+                console.error('Failed to start RPB Phase 2:', error);
+                if (!this.rpbCompleted) {
+                    this.showError(`Phase 2 failed: ${error.message}`);
+                }
+            });
+
+            // Start polling immediately after starting Phase 2
+            this.rpbCompleted = false;
+            this.pollRPBStatusWithTimer();
+            
+        } catch (error) {
+            console.error('❌ [FRONTEND] Two-phase execution failed:', error);
+            this.showError(`Two-phase execution failed: ${error.message}`);
+        }
+    }
+
+    updateRPBProgressMessage(message) {
+        const progressText = document.getElementById('rpbProgressText');
+        if (progressText) {
+            progressText.textContent = message;
+        }
+    }
+
+    async pollRPBStatusWithTimer() {
+        const maxDurationMs = 6 * 60 * 1000; // 6 minutes
+        const pollIntervalMs = 5000; // 5 seconds
+        const startTime = Date.now();
+
+        const checkStatus = async () => {
+            if (this.rpbCompleted) return;
+
+            const elapsedMs = Date.now() - startTime;
+            const progressPercent = Math.min((elapsedMs / maxDurationMs) * 100, 95); // Cap at 95% until complete
+
+            // Update progress based on time, not attempts
+            this.updateRPBProgressByTime(elapsedMs, progressPercent);
+
+            try {
+                const response = await fetch(this.rpbApiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'checkStatus'
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.status === 'COMPLETE' || (result.status && result.status.toString().startsWith('COMPLETE'))) {
+                    this.rpbCompleted = true;
+                    this.showRPBComplete();
+                    return;
+                } else if (result.status && result.status.toString().startsWith('ERROR')) {
+                    this.rpbCompleted = true;
+                    throw new Error(result.status);
+                }
+
+                // Continue polling if still processing or if status check failed
+                if (elapsedMs < maxDurationMs) {
+                    setTimeout(checkStatus, pollIntervalMs);
+                } else {
+                    this.rpbCompleted = true;
+                    throw new Error('RPB processing timed out after 6 minutes');
+                }
+
+            } catch (error) {
+                if (!this.rpbCompleted) {
+                    // Only show error if we haven't completed yet
+                    if (elapsedMs >= maxDurationMs) {
+                        this.showError('RPB processing timed out after 6 minutes');
+                    } else {
+                        // For status check errors, continue polling
+                        console.warn('Status check failed, continuing...', error);
+                        setTimeout(checkStatus, pollIntervalMs);
+                    }
+                }
+            }
+        };
+
+        checkStatus();
+    }
+
+    showRPBLoading() {
+        document.getElementById('loadingIndicator').style.display = 'block';
+        document.getElementById('loadingIndicator').innerHTML = `
+            <div class="spinner"></div>
+            <p>Running RPB analysis... This may take up to 6 minutes.</p>
+            <div id="rpbProgress" style="margin-top: 10px;">
+                <div style="background: #333; border-radius: 4px; overflow: hidden;">
+                    <div id="rpbProgressBar" style="height: 6px; background: var(--primary-color, #4a9eff); width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <p id="rpbProgressText" style="font-size: 0.9em; color: var(--text-secondary, #bbb);">Starting...</p>
+            </div>
+        `;
+        document.getElementById('errorDisplay').style.display = 'none';
+        document.getElementById('logData').style.display = 'none';
+    }
+
+    updateRPBProgressByTime(elapsedMs, progressPercent) {
+        const progressBar = document.getElementById('rpbProgressBar');
+        const progressText = document.getElementById('rpbProgressText');
+        
+        const elapsedSeconds = Math.floor(elapsedMs / 1000);
+        const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+        const remainingSeconds = elapsedSeconds % 60;
+        
+        if (progressBar) {
+            progressBar.style.width = `${Math.round(progressPercent)}%`;
+        }
+        if (progressText) {
+            const timeStr = elapsedMinutes > 0 ? 
+                `${elapsedMinutes}:${remainingSeconds.toString().padStart(2, '0')}` : 
+                `${elapsedSeconds}s`;
+            progressText.textContent = 
+                `Processing... ${timeStr} elapsed (${Math.round(progressPercent)}%)`;
+        }
+    }
+
+    showRPBComplete() {
+        // Jump progress to 100% before showing completion
+        const progressBar = document.getElementById('rpbProgressBar');
+        const progressText = document.getElementById('rpbProgressText');
+        if (progressBar) {
+            progressBar.style.width = '100%';
+        }
+        if (progressText) {
+            progressText.textContent = 'Complete! (100%)';
+        }
+        
+        // Status clearing is now handled automatically by the status check itself
+        
+        // Small delay to show 100% before switching to complete screen
+        setTimeout(() => {
+            document.getElementById('loadingIndicator').style.display = 'none';
+            document.getElementById('errorDisplay').style.display = 'none';
+            
+            // Show success message with link to sheet
+            const sheetUrl = `https://docs.google.com/spreadsheets/d/11Y9nIYRdxPsQivpQGaK1B0Mc-tbnCR45A1I4-RaKvyk/edit?gid=588029694#gid=588029694`;
+            
+            document.getElementById('logData').innerHTML = `
+                <div style="text-align: center; padding: 2rem; background: var(--card-bg, #1e1e1e); border-radius: 8px;">
+                    <h2 style="color: var(--success-color, #28a745); margin-bottom: 1rem;">✅ RPB Analysis Complete!</h2>
+                    <p style="margin-bottom: 2rem; color: var(--text-secondary, #bbb);">
+                        Your detailed raid performance analysis is ready in the Google Sheet.
+                    </p>
+                    <a href="${sheetUrl}" target="_blank" class="btn btn-primary" style="margin-right: 1rem;">
+                        📊 View RPB Analysis
+                    </a>
+                    <button id="archiveRpbBtn" class="btn btn-success" style="margin-right: 1rem;">
+                        🗂️ Archive Results
+                    </button>
+                    <button onclick="location.reload()" class="btn btn-secondary">
+                        🔄 Analyze Another Log
+                    </button>
+                </div>
+            `;
+            document.getElementById('logData').style.display = 'block';
+            
+            // Add event listener for archive button
+            document.getElementById('archiveRpbBtn').addEventListener('click', () => {
+                this.archiveRPBResults();
+            });
+        }, 500);
+    }
+
+    async clearRPBStatus() {
+        try {
+            console.log('🧹 [FRONTEND] Clearing RPB completion status...');
+            
+            const response = await fetch(this.rpbApiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'clearStatus'
+                })
+            });
+
+            const result = await response.json();
+            
+            if (result.success) {
+                console.log('✅ [FRONTEND] RPB status cleared successfully');
+                console.log('📝 [FRONTEND] Previous status was:', result.previousStatus);
+            } else {
+                console.warn('⚠️ [FRONTEND] Failed to clear RPB status:', result.error);
+            }
+
+        } catch (error) {
+            console.error('❌ [FRONTEND] Error clearing RPB status:', error);
+        }
+    }
+
+    async archiveRPBResults() {
+        const archiveBtn = document.getElementById('archiveRpbBtn');
+        
+        // Disable button and show loading state
+        archiveBtn.disabled = true;
+        archiveBtn.innerHTML = '⏳ Archiving...';
+        
+        try {
+            const response = await fetch('/api/logs/rpb-archive', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // Show success with link to archived sheet
+                this.showArchiveSuccess(result);
+            } else {
+                throw new Error(result.error || 'Failed to archive results');
+            }
+
+        } catch (error) {
+            console.error('Archive failed:', error);
+            this.showArchiveError(error.message);
+        } finally {
+            // Re-enable button
+            archiveBtn.disabled = false;
+            archiveBtn.innerHTML = '🗂️ Archive Results';
+        }
+    }
+
+    showArchiveSuccess(result) {
+        // Update the completion message to include archive link
+        const logDataDiv = document.getElementById('logData');
+        const sheetUrl = `https://docs.google.com/spreadsheets/d/11Y9nIYRdxPsQivpQGaK1B0Mc-tbnCR45A1I4-RaKvyk/edit?gid=588029694#gid=588029694`;
+        
+        logDataDiv.innerHTML = `
+            <div style="text-align: center; padding: 2rem; background: var(--card-bg, #1e1e1e); border-radius: 8px;">
+                <h2 style="color: var(--success-color, #28a745); margin-bottom: 1rem;">✅ RPB Analysis Complete & Archived!</h2>
+                <p style="margin-bottom: 1rem; color: var(--text-secondary, #bbb);">
+                    Your detailed raid performance analysis is ready and has been archived.
+                </p>
+                <div style="background: var(--secondary-bg, #2a2a2a); padding: 1rem; border-radius: 4px; margin-bottom: 2rem;">
+                    <p style="margin: 0; color: var(--text-primary, #e0e0e0); font-weight: bold;">
+                        📁 Archived as: ${result.fileName}
+                    </p>
+                </div>
+                <a href="${sheetUrl}" target="_blank" class="btn btn-primary" style="margin-right: 1rem;">
+                    📊 View Master Sheet
+                </a>
+                <a href="${result.sheetUrl}" target="_blank" class="btn btn-success" style="margin-right: 1rem;">
+                    🗂️ View Archived Copy
+                </a>
+                <button onclick="location.reload()" class="btn btn-secondary">
+                    🔄 Analyze Another Log
+                </button>
+            </div>
+        `;
+    }
+
+    showArchiveError(errorMessage) {
+        // Show error message but keep the original success state
+        const logDataDiv = document.getElementById('logData');
+        const currentContent = logDataDiv.innerHTML;
+        
+        // Add error message above existing content
+        logDataDiv.innerHTML = `
+            <div style="background: rgba(220, 53, 69, 0.1); border: 1px solid rgba(220, 53, 69, 0.3); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                <h4 style="color: #dc3545; margin: 0 0 0.5rem 0;">Archive Failed</h4>
+                <p style="color: var(--text-primary, #e0e0e0); margin: 0;">${errorMessage}</p>
+            </div>
+            ${currentContent}
+        `;
     }
 }
 

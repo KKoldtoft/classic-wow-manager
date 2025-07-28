@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guild Members - Classic WoW Manager</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .guild-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .guild-header h1 {
+            margin: 0 0 10px 0;
+            font-size: 2.5em;
+        }
+        
+        .guild-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #3498db;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        
+        .search-filter {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .filter-row {
+            display: grid;
+            grid-template-columns: 1fr 200px 200px auto;
+            gap: 15px;
+            align-items: center;
+        }
+        
+        .search-input {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        
+        .filter-select {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: white;
+        }
+        
+        .clear-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        .members-table {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .table-container {
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ecf0f1;
+        }
+        
+        th {
+            background: #f8f9fa;
+            color: #2c3e50;
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        th:hover {
+            background: #e9ecef;
+        }
+        
+        tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .class-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: 500;
+            text-transform: capitalize;
+        }
+        
+        .rank-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: 500;
+        }
+        
+        .discord-status {
+            text-align: center;
+        }
+        
+        .discord-linked {
+            color: #27ae60;
+        }
+        
+        .discord-unlinked {
+            color: #e74c3c;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        
+        /* Class colors */
+        .warrior { background: #C79C6E; color: white; }
+        .paladin { background: #F58CBA; color: white; }
+        .hunter { background: #ABD473; color: white; }
+        .rogue { background: #FFF569; color: black; }
+        .priest { background: #FFFFFF; color: black; }
+        .shaman { background: #0070DE; color: white; }
+        .mage { background: #69CCF0; color: white; }
+        .warlock { background: #9482C9; color: white; }
+        .druid { background: #FF7D0A; color: white; }
+        
+        /* Rank colors */
+        .guild-master { background: #e74c3c; color: white; }
+        .management { background: #f39c12; color: white; }
+        .gdkp-regular, .gdkp-enjoyer { background: #3498db; color: white; }
+        .srlink { background: #27ae60; color: white; }
+        
+        @media (max-width: 768px) {
+            .filter-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .guild-stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            th, td {
+                padding: 8px 10px;
+                font-size: 0.9em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Universal Top Bar -->
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <div class="app-title">Classic WoW Manager</div>
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Home</a>
+                <div class="top-nav-dropdown">
+                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+                        Upcoming Raids <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="upcoming-raids-menu">
+                        <div class="dropdown-loading">Loading raids...</div>
+                    </div>
+                </div>
+                <a href="/guild-members" class="top-nav-link active">Guild Members</a>
+                <a href="/logs" class="top-nav-link">Logs</a>
+            </nav>
+        </div>
+        <div id="auth-container">
+            <!-- Auth content is now loaded by top-bar.js -->
+        </div>
+    </div>
+
+    <!-- Active Raid Bar (shown when raid is selected) -->
+    <div class="raid-bar" id="raid-bar" style="display: none;">
+        <div class="raid-bar-left">
+            <div class="raid-title" id="raid-title">Loading raid...</div>
+        </div>
+        <div class="raid-bar-right">
+            <nav class="raid-nav">
+                <a href="#" class="raid-nav-link" id="raid-roster-link">Roster</a>
+                <a href="#" class="raid-nav-link" id="raid-assignments-link">Assignments</a>
+                <a href="/logs" class="raid-nav-link" id="raid-logs-link">Logs</a>
+                <a href="#" class="raid-nav-link" id="raid-goldpot-link">Gold Pot</a>
+            </nav>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="guild-header">
+            <h1><i class="fas fa-shield-alt"></i> Guild Members</h1>
+            <p>View all current guild members and their information</p>
+        </div>
+
+        <div id="loading" class="loading">
+            <i class="fas fa-spinner fa-spin"></i> Loading guild members...
+        </div>
+
+        <div id="error" class="error" style="display: none;">
+            <h4>Error Loading Guild Members</h4>
+            <p id="error-message">Unable to load guild member data.</p>
+            <button onclick="loadGuildMembers()" class="clear-btn">
+                <i class="fas fa-sync"></i> Retry
+            </button>
+        </div>
+
+        <div id="guild-content" style="display: none;">
+            <div class="guild-stats">
+                <div class="stat-card">
+                    <div class="stat-number" id="total-members">0</div>
+                    <div class="stat-label">Total Members</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="linked-members">0</div>
+                    <div class="stat-label">Discord Linked</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="management-count">0</div>
+                    <div class="stat-label">Management</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="avg-level">60</div>
+                    <div class="stat-label">Average Level</div>
+                </div>
+            </div>
+
+            <div class="search-filter">
+                <div class="filter-row">
+                    <input type="text" id="search-input" class="search-input" placeholder="Search by name...">
+                    <select id="class-filter" class="filter-select">
+                        <option value="">All Classes</option>
+                    </select>
+                    <select id="rank-filter" class="filter-select">
+                        <option value="">All Ranks</option>
+                    </select>
+                    <button onclick="clearFilters()" class="clear-btn">
+                        <i class="fas fa-times"></i> Clear
+                    </button>
+                </div>
+            </div>
+
+            <div class="members-table">
+                <div class="table-container">
+                    <table id="members-table">
+                        <thead>
+                            <tr>
+                                <th onclick="sortTable('character_name')">
+                                    Name <i class="fas fa-sort"></i>
+                                </th>
+                                <th onclick="sortTable('class')">
+                                    Class <i class="fas fa-sort"></i>
+                                </th>
+                                <th onclick="sortTable('level')">
+                                    Level <i class="fas fa-sort"></i>
+                                </th>
+                                <th onclick="sortTable('rank_name')">
+                                    Rank <i class="fas fa-sort"></i>
+                                </th>
+                                <th onclick="sortTable('race')">
+                                    Race <i class="fas fa-sort"></i>
+                                </th>
+                                <th onclick="sortTable('last_online_days')">
+                                    Last Online <i class="fas fa-sort"></i>
+                                </th>
+                                <th onclick="sortTable('has_discord_link')">
+                                    Discord <i class="fas fa-sort"></i>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="members-tbody">
+                            <!-- Members will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="top-bar.js"></script>
+    <script>
+        let allMembers = [];
+        let filteredMembers = [];
+        let currentSort = { column: 'character_name', direction: 'asc' };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadGuildMembers();
+            
+            // Add search filter
+            document.getElementById('search-input').addEventListener('input', applyFilters);
+            document.getElementById('class-filter').addEventListener('change', applyFilters);
+            document.getElementById('rank-filter').addEventListener('change', applyFilters);
+        });
+
+        async function loadGuildMembers() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const content = document.getElementById('guild-content');
+            
+            loading.style.display = 'block';
+            error.style.display = 'none';
+            content.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/guild-members');
+                const data = await response.json();
+
+                if (data.success) {
+                    allMembers = data.members;
+                    filteredMembers = [...allMembers];
+                    
+                    populateFilters();
+                    updateStats();
+                    renderTable();
+                    
+                    loading.style.display = 'none';
+                    content.style.display = 'block';
+                } else {
+                    throw new Error(data.message || 'Failed to load guild members');
+                }
+            } catch (err) {
+                console.error('Error loading guild members:', err);
+                document.getElementById('error-message').textContent = err.message;
+                loading.style.display = 'none';
+                error.style.display = 'block';
+            }
+        }
+
+        function populateFilters() {
+            const classFilter = document.getElementById('class-filter');
+            const rankFilter = document.getElementById('rank-filter');
+            
+            // Get unique classes
+            const classes = [...new Set(allMembers.map(m => m.class))].sort();
+            classFilter.innerHTML = '<option value="">All Classes</option>';
+            classes.forEach(cls => {
+                classFilter.innerHTML += `<option value="${cls}">${cls}</option>`;
+            });
+            
+            // Get unique ranks
+            const ranks = [...new Set(allMembers.map(m => m.rank_name))].sort();
+            rankFilter.innerHTML = '<option value="">All Ranks</option>';
+            ranks.forEach(rank => {
+                rankFilter.innerHTML += `<option value="${rank}">${rank}</option>`;
+            });
+        }
+
+        function updateStats() {
+            const totalMembers = allMembers.length;
+            const linkedMembers = allMembers.filter(m => m.has_discord_link).length;
+            const managementCount = allMembers.filter(m => 
+                m.rank_name && m.rank_name.toLowerCase().includes('management')
+            ).length;
+            const avgLevel = totalMembers > 0 ? 
+                Math.round(allMembers.reduce((sum, m) => sum + (m.level || 0), 0) / totalMembers) : 0;
+
+            document.getElementById('total-members').textContent = totalMembers;
+            document.getElementById('linked-members').textContent = linkedMembers;
+            document.getElementById('management-count').textContent = managementCount;
+            document.getElementById('avg-level').textContent = avgLevel;
+        }
+
+        function applyFilters() {
+            const searchTerm = document.getElementById('search-input').value.toLowerCase();
+            const classFilter = document.getElementById('class-filter').value;
+            const rankFilter = document.getElementById('rank-filter').value;
+
+            filteredMembers = allMembers.filter(member => {
+                const matchesSearch = !searchTerm || 
+                    member.character_name.toLowerCase().includes(searchTerm);
+                const matchesClass = !classFilter || member.class === classFilter;
+                const matchesRank = !rankFilter || member.rank_name === rankFilter;
+                
+                return matchesSearch && matchesClass && matchesRank;
+            });
+
+            renderTable();
+        }
+
+        function clearFilters() {
+            document.getElementById('search-input').value = '';
+            document.getElementById('class-filter').value = '';
+            document.getElementById('rank-filter').value = '';
+            filteredMembers = [...allMembers];
+            renderTable();
+        }
+
+        function sortTable(column) {
+            if (currentSort.column === column) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = column;
+                currentSort.direction = 'asc';
+            }
+
+            filteredMembers.sort((a, b) => {
+                let aVal = a[column];
+                let bVal = b[column];
+                
+                // Handle null/undefined values
+                if (aVal == null) aVal = '';
+                if (bVal == null) bVal = '';
+                
+                // Convert to string for comparison
+                aVal = aVal.toString().toLowerCase();
+                bVal = bVal.toString().toLowerCase();
+
+                if (currentSort.direction === 'asc') {
+                    return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+                } else {
+                    return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+                }
+            });
+
+            renderTable();
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('members-tbody');
+            
+            if (filteredMembers.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #7f8c8d;">No members found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filteredMembers.map(member => `
+                <tr>
+                    <td><strong>${member.character_name}</strong></td>
+                    <td>
+                        <span class="class-badge ${member.class.toLowerCase()}">
+                            ${member.class}
+                        </span>
+                    </td>
+                    <td><strong>${member.level}</strong></td>
+                    <td>
+                        <span class="rank-badge ${getRankClass(member.rank_name)}">
+                            ${member.rank_name || 'No Rank'}
+                        </span>
+                    </td>
+                    <td>${member.race}</td>
+                    <td>${formatLastOnline(member.last_online_days)}</td>
+                    <td class="discord-status">
+                        ${member.has_discord_link ? 
+                            '<i class="fas fa-check-circle discord-linked" title="Discord Linked"></i>' : 
+                            '<i class="fas fa-times-circle discord-unlinked" title="Not Linked"></i>'
+                        }
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function getRankClass(rankName) {
+            if (!rankName) return '';
+            const rank = rankName.toLowerCase();
+            if (rank.includes('guild master')) return 'guild-master';
+            if (rank.includes('management')) return 'management';
+            if (rank.includes('gdkp')) return 'gdkp-regular';
+            if (rank.includes('srlink')) return 'srlink';
+            return '';
+        }
+
+        function formatLastOnline(days) {
+            if (days == null) return 'Unknown';
+            if (days < 1) return 'Online';
+            if (days === 1) return '1 day ago';
+            return `${Math.floor(days)} days ago`;
+        }
+    </script>
+</body>
+</html> 

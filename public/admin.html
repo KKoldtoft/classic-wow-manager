@@ -194,6 +194,7 @@
                         <div class="dropdown-loading">Loading raids...</div>
                     </div>
                 </div>
+                <a href="/guild-members" class="top-nav-link">Guild Members</a>
                 <a href="/logs" class="top-nav-link">Logs</a>
             </nav>
         </div>
@@ -244,6 +245,40 @@
                 <button class="btn" onclick="loadRosterStats()">Load Roster Statistics</button>
                 <button class="btn danger" onclick="showManagementTools()">Management Tools</button>
                 <div id="management-data"></div>
+            </div>
+            
+            <!-- Guild Import section -->
+            <div id="guild-import-section" class="permission-card management-section" style="display: none;">
+                <h2>🏰 Guild Import</h2>
+                <p>Import guild member data from a semicolon-separated export. Only level 60 characters will be imported.</p>
+                
+                <div style="margin-bottom: 20px;">
+                    <label for="guild-import-data" style="display: block; margin-bottom: 10px; font-weight: 600;">
+                        Paste your guild export data here:
+                    </label>
+                    <textarea 
+                        id="guild-import-data" 
+                        placeholder="Name;Rank;Level;Class;Race;Sex;Last Online (Days);Main/Alt;Player Alts;Join Date;Promo Date;Rank History;Birthday;Public Note;Officer Note;Custom Note;Faction&#10;Aezra;GDKP Regular;60;Mage;Undead;Female;39;;;;;;;Tamatori;;;Horde"
+                        style="width: 100%; height: 200px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; font-size: 12px;"
+                    ></textarea>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <button class="btn" onclick="previewGuildImport()" id="preview-btn">
+                        <i class="fas fa-eye"></i> Preview Import
+                    </button>
+                    <button class="btn danger" onclick="executeGuildImport()" id="execute-btn" style="display: none;">
+                        <i class="fas fa-upload"></i> Execute Import
+                    </button>
+                </div>
+                
+                <div id="guild-import-preview" style="display: none;">
+                    <!-- Preview content will be loaded here -->
+                </div>
+                
+                <div id="guild-import-result" style="display: none;">
+                    <!-- Import result will be loaded here -->
+                </div>
             </div>
             
             <!-- Regular user section -->
@@ -305,6 +340,7 @@
             // Show management section if user has Management role
             if (user.hasManagementRole) {
                 document.getElementById('management-section').style.display = 'block';
+                document.getElementById('guild-import-section').style.display = 'block';
             }
         }
 
@@ -425,6 +461,244 @@
 
         function showManagementTools() {
             alert('This would show management tools like user management, roster management, event management, system settings, etc.');
+        }
+
+        async function previewGuildImport() {
+            const importData = document.getElementById('guild-import-data').value.trim();
+            const previewDiv = document.getElementById('guild-import-preview');
+            const executeBtn = document.getElementById('execute-btn');
+            const resultDiv = document.getElementById('guild-import-result');
+            
+            // Hide previous results
+            executeBtn.style.display = 'none';
+            resultDiv.style.display = 'none';
+            
+            if (!importData) {
+                previewDiv.innerHTML = '<div class="access-denied">Please paste guild export data first.</div>';
+                previewDiv.style.display = 'block';
+                return;
+            }
+
+            previewDiv.innerHTML = '<div class="loading">Analyzing import data...</div>';
+            previewDiv.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/management/guild-import-preview', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ importData })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    let previewHtml = `
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                            <h4 style="margin-bottom: 15px; color: #2c3e50;">📊 Import Summary</h4>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                                <div style="text-align: center; background: white; padding: 15px; border-radius: 6px;">
+                                    <div style="font-size: 24px; color: #3498db; font-weight: bold;">${data.summary.totalImported}</div>
+                                    <div style="color: #7f8c8d;">Total Level 60s</div>
+                                </div>
+                                <div style="text-align: center; background: white; padding: 15px; border-radius: 6px;">
+                                    <div style="font-size: 24px; color: #27ae60; font-weight: bold;">${data.summary.toAdd}</div>
+                                    <div style="color: #7f8c8d;">To Add</div>
+                                </div>
+                                <div style="text-align: center; background: white; padding: 15px; border-radius: 6px;">
+                                    <div style="font-size: 24px; color: #e74c3c; font-weight: bold;">${data.summary.toRemove}</div>
+                                    <div style="color: #7f8c8d;">To Remove</div>
+                                </div>
+                                <div style="text-align: center; background: white; padding: 15px; border-radius: 6px;">
+                                    <div style="font-size: 24px; color: #f39c12; font-weight: bold;">${data.summary.toUpdate}</div>
+                                    <div style="color: #7f8c8d;">To Update</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                            <h4 style="color: #856404; margin-bottom: 10px;">⚠️ Warning</h4>
+                            <p style="color: #856404; margin: 0;">
+                                This will completely replace your current guild roster. 
+                                <strong>${data.summary.toAdd} members will be added</strong>, 
+                                <strong>${data.summary.toRemove} members will be removed</strong>, and 
+                                <strong>${data.summary.toUpdate} members will be updated</strong>.
+                            </p>
+                        </div>
+                    `;
+
+                    // Show characters to be added
+                    if (data.changes.toAdd.length > 0) {
+                        previewHtml += `
+                            <div style="margin-bottom: 20px;">
+                                <h4 style="color: #27ae60;">✅ Members to be Added (${data.changes.toAdd.length})</h4>
+                                <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px;">
+                                    <table class="data-table" style="margin: 0;">
+                                        <thead>
+                                            <tr>
+                                                <th>Name</th>
+                                                <th>Class</th>
+                                                <th>Rank</th>
+                                                <th>Discord Link</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${data.changes.toAdd.map(char => `
+                                                <tr>
+                                                    <td>${char.character_name}</td>
+                                                    <td>${char.class}</td>
+                                                    <td>${char.rank_name}</td>
+                                                    <td>${char.discord_id ? '✅ Linked' : '❌ Not linked'}</td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    // Show characters to be removed
+                    if (data.changes.toRemove.length > 0) {
+                        previewHtml += `
+                            <div style="margin-bottom: 20px;">
+                                <h4 style="color: #e74c3c;">❌ Members to be Removed (${data.changes.toRemove.length})</h4>
+                                <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px;">
+                                    <table class="data-table" style="margin: 0;">
+                                        <thead>
+                                            <tr>
+                                                <th>Name</th>
+                                                <th>Class</th>
+                                                <th>Current Rank</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${data.changes.toRemove.map(char => `
+                                                <tr>
+                                                    <td>${char.character_name}</td>
+                                                    <td>${char.class}</td>
+                                                    <td>${char.rank_name}</td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    // Show characters to be updated
+                    if (data.changes.toUpdate.length > 0) {
+                        previewHtml += `
+                            <div style="margin-bottom: 20px;">
+                                <h4 style="color: #f39c12;">🔄 Members to be Updated (${data.changes.toUpdate.length})</h4>
+                                <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px;">
+                                    <table class="data-table" style="margin: 0;">
+                                        <thead>
+                                            <tr>
+                                                <th>Name</th>
+                                                <th>Class</th>
+                                                <th>Changes</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${data.changes.toUpdate.map(change => {
+                                                const changedFields = [];
+                                                const old = change.changes.old;
+                                                const newChar = change.changes.new;
+                                                
+                                                if (old.rank_name !== newChar.rank_name) changedFields.push(`Rank: ${old.rank_name} → ${newChar.rank_name}`);
+                                                if (old.last_online_days !== newChar.last_online_days) changedFields.push(`Last Online: ${old.last_online_days} → ${newChar.last_online_days} days`);
+                                                if (old.officer_note !== newChar.officer_note) changedFields.push(`Officer Note: "${old.officer_note}" → "${newChar.officer_note}"`);
+                                                if (old.discord_id !== newChar.discord_id) changedFields.push(`Discord: ${old.discord_id ? 'Linked' : 'Not linked'} → ${newChar.discord_id ? 'Linked' : 'Not linked'}`);
+                                                
+                                                return `
+                                                    <tr>
+                                                        <td>${change.character_name}</td>
+                                                        <td>${newChar.class}</td>
+                                                        <td style="font-size: 12px;">${changedFields.join('<br>')}</td>
+                                                    </tr>
+                                                `;
+                                            }).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    previewDiv.innerHTML = previewHtml;
+                    executeBtn.style.display = 'inline-flex';
+                    
+                } else {
+                    previewDiv.innerHTML = `<div class="access-denied">Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                console.error('Error previewing guild import:', error);
+                previewDiv.innerHTML = '<div class="access-denied">Error previewing guild import. Please try again.</div>';
+            }
+        }
+
+        async function executeGuildImport() {
+            const importData = document.getElementById('guild-import-data').value.trim();
+            const resultDiv = document.getElementById('guild-import-result');
+            const executeBtn = document.getElementById('execute-btn');
+            
+            if (!confirm('Are you sure you want to execute this guild import? This will replace all current guild data.')) {
+                return;
+            }
+
+            executeBtn.disabled = true;
+            executeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importing...';
+            
+            resultDiv.innerHTML = '<div class="loading">Executing guild import...</div>';
+            resultDiv.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/management/guild-import-execute', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ importData })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    resultDiv.innerHTML = `
+                        <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 8px; color: #155724;">
+                            <h4 style="color: #155724; margin-bottom: 10px;">✅ Import Successful!</h4>
+                            <p style="margin: 0;">${data.message}</p>
+                        </div>
+                    `;
+                    
+                    // Clear the form
+                    document.getElementById('guild-import-data').value = '';
+                    document.getElementById('guild-import-preview').style.display = 'none';
+                    executeBtn.style.display = 'none';
+                    
+                } else {
+                    resultDiv.innerHTML = `
+                        <div style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 20px; border-radius: 8px; color: #721c24;">
+                            <h4 style="color: #721c24; margin-bottom: 10px;">❌ Import Failed</h4>
+                            <p style="margin: 0;">Error: ${data.message}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error executing guild import:', error);
+                resultDiv.innerHTML = `
+                    <div style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 20px; border-radius: 8px; color: #721c24;">
+                        <h4 style="color: #721c24; margin-bottom: 10px;">❌ Import Failed</h4>
+                        <p style="margin: 0;">Network error occurred. Please try again.</p>
+                    </div>
+                `;
+            } finally {
+                executeBtn.disabled = false;
+                executeBtn.innerHTML = '<i class="fas fa-upload"></i> Execute Import';
+            }
         }
     </script>
     </div>
