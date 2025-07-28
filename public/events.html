@@ -11,13 +11,35 @@
         <div class="top-bar-left">
             <div class="app-title">Classic WoW Manager</div>
             <nav class="top-nav">
-                <a href="/" class="top-nav-link">Events</a>
-                <a href="/players" class="top-nav-link">Players</a>
+                <a href="/" class="top-nav-link">Home</a>
+                <div class="top-nav-dropdown">
+                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+                        Upcoming Raids <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="upcoming-raids-menu">
+                        <div class="dropdown-loading">Loading raids...</div>
+                    </div>
+                </div>
                 <a href="/logs" class="top-nav-link">Logs</a>
             </nav>
         </div>
         <div id="auth-container">
             <!-- Auth content is now loaded by top-bar.js -->
+        </div>
+    </div>
+
+    <!-- Active Raid Bar (shown when raid is selected) -->
+    <div class="raid-bar" id="raid-bar" style="display: none;">
+        <div class="raid-bar-left">
+            <div class="raid-title" id="raid-title">Loading raid...</div>
+        </div>
+        <div class="raid-bar-right">
+            <nav class="raid-nav">
+                <a href="#" class="raid-nav-link" id="raid-roster-link">Roster</a>
+                <a href="#" class="raid-nav-link" id="raid-assignments-link">Assignments</a>
+                <a href="/logs" class="raid-nav-link" id="raid-logs-link">Logs</a>
+                <a href="#" class="raid-nav-link" id="raid-goldpot-link">Gold Pot</a>
+            </nav>
         </div>
     </div>
 

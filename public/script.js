@@ -233,6 +233,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (eventId !== 'unknown') {
                         eventDiv.style.cursor = 'pointer';
                         eventDiv.addEventListener('click', () => {
+                            // Set active session in localStorage
+                            localStorage.setItem('activeEventSession', eventId);
+                            console.log('🎯 Set active event session from events page:', eventId);
+                            
+                            // Update raid bar if function is available
+                            if (typeof updateRaidBar === 'function') {
+                                updateRaidBar();
+                            }
+                            
                             window.location.href = `/event/${eventId}/roster`;
                         });
                     }
