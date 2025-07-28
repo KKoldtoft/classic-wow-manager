@@ -30,11 +30,286 @@ pool.connect()
     console.log('Connected to PostgreSQL database!');
     dbConnectionStatus = 'Connected';
     client.release();
+    
+    // Initialize events cache table
+    initializeEventsCacheTable();
   })
   .catch(err => {
     console.error('Error connecting to PostgreSQL database:', err.stack);
     dbConnectionStatus = 'Failed to Connect';
   });
+
+// Function to create events cache table if it doesn't exist
+async function initializeEventsCacheTable() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS events_cache (
+        id SERIAL PRIMARY KEY,
+        cache_key VARCHAR(100) UNIQUE NOT NULL,
+        events_data JSONB NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL
+      )
+    `);
+    console.log('✅ Events cache table initialized');
+  } catch (error) {
+    console.error('❌ Error creating events cache table:', error);
+  }
+}
+
+// Events cache helper functions
+const EVENTS_CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
+const EVENTS_CACHE_KEY = 'raid_helper_events';
+
+async function getCachedEvents() {
+  try {
+    const result = await pool.query(
+      'SELECT events_data, expires_at FROM events_cache WHERE cache_key = $1 AND expires_at > NOW()',
+      [EVENTS_CACHE_KEY]
+    );
+    
+    if (result.rows.length > 0) {
+      console.log('💾 Using cached events data');
+      return result.rows[0].events_data;
+    }
+    
+    console.log('🔄 No valid cached events found');
+    return null;
+  } catch (error) {
+    console.error('❌ Error retrieving cached events:', error);
+    return null;
+  }
+}
+
+async function setCachedEvents(eventsData) {
+  try {
+    const expiresAt = new Date(Date.now() + EVENTS_CACHE_TTL);
+    
+    await pool.query(`
+      INSERT INTO events_cache (cache_key, events_data, expires_at)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (cache_key) 
+      DO UPDATE SET 
+        events_data = EXCLUDED.events_data,
+        created_at = CURRENT_TIMESTAMP,
+        expires_at = EXCLUDED.expires_at
+    `, [EVENTS_CACHE_KEY, JSON.stringify(eventsData), expiresAt]);
+    
+    console.log('💾 Events cached successfully, expires at:', expiresAt.toISOString());
+  } catch (error) {
+    console.error('❌ Error caching events:', error);
+  }
+}
+
+async function fetchEventsFromAPI() {
+  const raidHelperApiKey = process.env.RAID_HELPER_API_KEY;
+  if (!raidHelperApiKey) {
+    throw new Error('RAID_HELPER_API_KEY is not set in environment variables.');
+  }
+
+  const discordGuildId = '777268886939893821';
+  const nowUnixTimestamp = Math.floor(Date.now() / 1000);
+  const oneYearInSeconds = 365 * 24 * 60 * 60;
+  const futureUnixTimestamp = nowUnixTimestamp + oneYearInSeconds;
+
+  console.log('🌐 Fetching fresh events from Raid-Helper API...');
+
+  const response = await axios.get(
+    `https://raid-helper.dev/api/v3/servers/${discordGuildId}/events`,
+    {
+      headers: {
+        'Authorization': `${raidHelperApiKey}`,
+        'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+      },
+      params: {
+        StartTimeFilter: nowUnixTimestamp,
+        EndTimeFilter: futureUnixTimestamp,
+      }
+    }
+  );
+
+  return response.data.postedEvents || [];
+}
+
+async function enrichEventsWithChannelNames(events) {
+  // Use global cache for channel names (10 minute TTL)
+  if (!global.channelNameCache) {
+    global.channelNameCache = new Map();
+  }
+  const channelNameCache = global.channelNameCache;
+  const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+  
+  // CRITICAL: Filter and sort events exactly like the frontend does
+  const today = new Date();
+  const upcomingEvents = events.filter(event => {
+    if (!event.startTime) return false;
+    const eventStartDate = new Date(parseInt(event.startTime) * 1000);
+    return eventStartDate >= today;
+  }).sort((a, b) => parseInt(a.startTime) - parseInt(b.startTime));
+  
+  // OPTIMIZATION: Only enrich the first 10 upcoming events to avoid rate limits
+  const eventsToEnrich = upcomingEvents.slice(0, 10);
+  const remainingEvents = upcomingEvents.slice(10);
+  
+  console.log(`📊 Filtered to ${upcomingEvents.length} upcoming events, processing ${eventsToEnrich.length} for channel names, skipping ${remainingEvents.length}`);
+  
+  // Helper function to fetch channel name with retry and rate limit handling
+  const fetchChannelNameWithRetry = async (eventId, maxRetries = 3) => {
+    const cacheKey = `channel_${eventId}`;
+    const cached = channelNameCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+      console.log(`💾 Using cached channelName for event ${eventId}: "${cached.channelName}"`);
+      return cached.channelName;
+    }
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔄 Fetching channelName for event ${eventId} (attempt ${attempt}/${maxRetries})`);
+        
+        const eventDetailResponse = await axios.get(
+          `https://raid-helper.dev/api/v2/events/${eventId}`,
+          {
+            headers: {
+              'Authorization': `${process.env.RAID_HELPER_API_KEY}`,
+              'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+            },
+            timeout: 8000
+          }
+        );
+        
+        const channelName = eventDetailResponse.data.channelName;
+        console.log(`📡 API Response for event ${eventId}: channelName="${channelName}"`);
+        
+        if (channelName && 
+            channelName.trim() && 
+            channelName !== eventId &&
+            !channelName.match(/^\d+$/)) {
+          console.log(`✅ Valid channelName found: "${channelName}"`);
+          
+          channelNameCache.set(cacheKey, {
+            channelName: channelName,
+            timestamp: Date.now()
+          });
+          
+          return channelName;
+        }
+        
+        console.log(`⚠️ Invalid or empty channelName: "${channelName}"`);
+        
+        channelNameCache.set(cacheKey, {
+          channelName: null,
+          timestamp: Date.now()
+        });
+        
+        return null;
+        
+      } catch (error) {
+        console.log(`❌ Attempt ${attempt} failed for event ${eventId}:`, error.message);
+        
+        if (error.response && error.response.status === 429) {
+          const rateLimitDelay = attempt * 2000;
+          console.log(`🚦 Rate limit hit, waiting ${rateLimitDelay}ms before retry...`);
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, rateLimitDelay));
+            continue;
+          }
+        }
+        
+        if (attempt === maxRetries) {
+          console.log(`💥 All ${maxRetries} attempts failed for event ${eventId}`);
+          
+          channelNameCache.set(cacheKey, {
+            channelName: null,
+            timestamp: Date.now()
+          });
+          
+          return null;
+        }
+        
+        const delay = attempt * 1500;
+        console.log(`⏳ Waiting ${delay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    return null;
+  };
+  
+  // Enrich events with channel names
+  const enrichedEvents = [];
+  const startTime = Date.now();
+  const TOTAL_TIMEOUT = 30000; // 30 second total timeout
+  
+  for (let i = 0; i < eventsToEnrich.length; i++) {
+    const event = eventsToEnrich[i];
+    
+    if (Date.now() - startTime > TOTAL_TIMEOUT) {
+      console.log(`⏰ Timeout reached, skipping remaining ${eventsToEnrich.length - i} events`);
+      for (let j = i; j < eventsToEnrich.length; j++) {
+        enrichedEvents.push({
+          ...eventsToEnrich[j],
+          channelName: null
+        });
+      }
+      break;
+    }
+    
+    try {
+      const channelName = await fetchChannelNameWithRetry(event.id);
+      console.log(`📋 Final result for event ${event.id}: channelName = "${channelName}"`);
+      
+      enrichedEvents.push({
+        ...event,
+        channelName: channelName
+      });
+      
+      if (i < eventsToEnrich.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 750));
+      }
+      
+    } catch (error) {
+      console.log(`💀 Critical error processing event ${event.id}:`, error);
+      enrichedEvents.push({
+        ...event,
+        channelName: null
+      });
+    }
+  }
+  
+  // Add remaining upcoming events without channel names
+  remainingEvents.forEach(event => {
+    enrichedEvents.push({
+      ...event,
+      channelName: null
+    });
+  });
+  
+  // Add all past events without channel names
+  const pastEvents = events.filter(event => {
+    if (!event.startTime) return true;
+    const eventStartDate = new Date(parseInt(event.startTime) * 1000);
+    return eventStartDate < today;
+  });
+  
+  pastEvents.forEach(event => {
+    enrichedEvents.push({
+      ...event,
+      channelName: null
+    });
+  });
+  
+  const processingTime = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`⏱️ Channel name processing completed in ${processingTime}s`);
+  
+  const totalEvents = enrichedEvents.length;
+  const totalUpcomingEvents = upcomingEvents.length;
+  const processedEvents = eventsToEnrich.length;
+  const eventsWithChannelNames = enrichedEvents.filter(e => e.channelName).length;
+  const successRate = processedEvents > 0 ? ((eventsWithChannelNames / processedEvents) * 100).toFixed(1) : 0;
+  
+  console.log(`📈 Channel name fetch summary: ${eventsWithChannelNames}/${processedEvents} processed upcoming events (${successRate}% success rate), ${totalUpcomingEvents} total upcoming, ${totalEvents} total returned`);
+  
+  return enrichedEvents;
+}
 
 // --- Session Configuration ---
 app.use(session({
@@ -585,244 +860,34 @@ app.get('/api/registered-character/:discordUserId', async (req, res) => {
     }
 });
 
-// UPDATED: Endpoint to fetch upcoming Raid-Helper events using /events endpoint with filters
+// UPDATED: Cached endpoint to fetch upcoming Raid-Helper events
 app.get('/api/events', async (req, res) => {
   if (!req.isAuthenticated()) {
     return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
   }
 
-  const raidHelperApiKey = process.env.RAID_HELPER_API_KEY;
-  if (!raidHelperApiKey) {
-      console.error('RAID_HELPER_API_KEY is not set in environment variables.');
-      return res.status(500).json({ message: 'Server configuration error: API key missing.' });
-  }
-
-  const discordGuildId = '777268886939893821';
-
-  // Calculate Unix timestamps for filtering
-  const nowUnixTimestamp = Math.floor(Date.now() / 1000); // Current time in seconds
-  const oneYearInSeconds = 365 * 24 * 60 * 60;
-  const futureUnixTimestamp = nowUnixTimestamp + oneYearInSeconds;
-
-  // NEW: Log the timestamp values for debugging
-      // Time filters set (debug logs removed)
-
-
   try {
-    const response = await axios.get(
-      `https://raid-helper.dev/api/v3/servers/${discordGuildId}/events`, // Changed from /scheduledevents to /events
-      {
-        headers: {
-          'Authorization': `${raidHelperApiKey}`,
-          'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
-        },
-        params: {
-            StartTimeFilter: nowUnixTimestamp,
-            EndTimeFilter: futureUnixTimestamp,
-        }
-      }
-    );
-
-    // API response data logged (debug removed for cleaner logs)
-
-    // FIX: The actual event data is in response.data.postedEvents.
-    const events = response.data.postedEvents || [];
+    // Try to get cached events first
+    const cachedEvents = await getCachedEvents();
     
-    // Use global cache for channel names (10 minute TTL)
-    if (!global.channelNameCache) {
-      global.channelNameCache = new Map();
-    }
-    const channelNameCache = global.channelNameCache;
-    const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
-    
-    // CRITICAL: Filter and sort events exactly like the frontend does
-    // to ensure we process the same events that will actually be displayed
-    const today = new Date();
-    const upcomingEvents = events.filter(event => {
-      if (!event.startTime) return false;
-      const eventStartDate = new Date(parseInt(event.startTime) * 1000);
-      return eventStartDate >= today;
-    }).sort((a, b) => parseInt(a.startTime) - parseInt(b.startTime));
-    
-    // OPTIMIZATION: Only enrich the first 10 upcoming events to avoid rate limits
-    const eventsToEnrich = upcomingEvents.slice(0, 10);
-    const remainingEvents = upcomingEvents.slice(10);
-    
-    console.log(`📊 Filtered to ${upcomingEvents.length} upcoming events, processing ${eventsToEnrich.length} for channel names, skipping ${remainingEvents.length}`);
-    
-    // Enrich only the visible events with channelName from individual event API 
-    const enrichedEvents = [];
-    
-    // Helper function to fetch channel name with retry and rate limit handling
-    const fetchChannelNameWithRetry = async (eventId, maxRetries = 3) => {
-      // Check cache first
-      const cacheKey = `channel_${eventId}`;
-      const cached = channelNameCache.get(cacheKey);
-      if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
-        console.log(`💾 Using cached channelName for event ${eventId}: "${cached.channelName}"`);
-        return cached.channelName;
-      }
-      
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          console.log(`🔄 Fetching channelName for event ${eventId} (attempt ${attempt}/${maxRetries})`);
-          
-          const eventDetailResponse = await axios.get(
-            `https://raid-helper.dev/api/v2/events/${eventId}`,
-            {
-              headers: {
-                'Authorization': `${raidHelperApiKey}`,
-                'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
-              },
-              timeout: 8000 // 8 second timeout
-            }
-          );
-          
-          const channelName = eventDetailResponse.data.channelName;
-          console.log(`📡 API Response for event ${eventId}: channelName="${channelName}"`);
-          
-          // Validate that we got a real channel name, not just an ID
-          if (channelName && 
-              channelName.trim() && 
-              channelName !== eventId &&
-              !channelName.match(/^\d+$/)) { // Not just a number
-            console.log(`✅ Valid channelName found: "${channelName}"`);
-            
-            // Cache the successful result
-            channelNameCache.set(cacheKey, {
-              channelName: channelName,
-              timestamp: Date.now()
-            });
-            
-            return channelName;
-          }
-          
-          console.log(`⚠️ Invalid or empty channelName: "${channelName}"`);
-          
-          // Cache the invalid result  
-          channelNameCache.set(cacheKey, {
-            channelName: null,
-            timestamp: Date.now()
-          });
-          
-          return null; // Invalid or missing channel name
-          
-        } catch (error) {
-          console.log(`❌ Attempt ${attempt} failed for event ${eventId}:`, error.message);
-          
-          // Special handling for rate limits
-          if (error.response && error.response.status === 429) {
-            const rateLimitDelay = attempt * 2000; // 2s, 4s, 6s for rate limits
-            console.log(`🚦 Rate limit hit, waiting ${rateLimitDelay}ms before retry...`);
-            if (attempt < maxRetries) {
-              await new Promise(resolve => setTimeout(resolve, rateLimitDelay));
-              continue;
-            }
-          }
-          
-          if (attempt === maxRetries) {
-            console.log(`💥 All ${maxRetries} attempts failed for event ${eventId}`);
-            
-            // Cache the failed result 
-            channelNameCache.set(cacheKey, {
-              channelName: null,
-              timestamp: Date.now()
-            });
-            
-            return null;
-          }
-          
-          // Wait before retry with standard delays
-          const delay = attempt * 1500; // 1.5s, 3s
-          console.log(`⏳ Waiting ${delay}ms before retry...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
-      return null;
-    };
-    
-    // Process only the first 10 events with a total timeout
-    const startTime = Date.now();
-    const TOTAL_TIMEOUT = 30000; // 30 second total timeout
-    
-    for (let i = 0; i < eventsToEnrich.length; i++) {
-      const event = eventsToEnrich[i];
-      
-      // Check if we're running out of time
-      if (Date.now() - startTime > TOTAL_TIMEOUT) {
-        console.log(`⏰ Timeout reached, skipping remaining ${eventsToEnrich.length - i} events`);
-        // Add remaining events without channel names
-        for (let j = i; j < eventsToEnrich.length; j++) {
-          enrichedEvents.push({
-            ...eventsToEnrich[j],
-            channelName: null
-          });
-        }
-        break;
-      }
-      
-      try {
-        const channelName = await fetchChannelNameWithRetry(event.id);
-        console.log(`📋 Final result for event ${event.id}: channelName = "${channelName}"`);
-        
-        enrichedEvents.push({
-          ...event,
-          channelName: channelName
-        });
-        
-        // Longer delay between requests to respect rate limits (skip delay for last item)
-        if (i < eventsToEnrich.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 750)); // 750ms delay
-        }
-        
-      } catch (error) {
-        console.log(`💀 Critical error processing event ${event.id}:`, error);
-        // Add event without channelName if something goes very wrong
-        enrichedEvents.push({
-          ...event,
-          channelName: null
-        });
-      }
+    if (cachedEvents) {
+      // Return cached data
+      res.json({ scheduledEvents: cachedEvents });
+      return;
     }
     
-    // Add remaining upcoming events without channel names
-    remainingEvents.forEach(event => {
-      enrichedEvents.push({
-        ...event,
-        channelName: null
-      });
-    });
+    // No cached data, fetch fresh data
+    console.log('🔄 Cache miss - fetching fresh events data');
+    const events = await fetchEventsFromAPI();
+    const enrichedEvents = await enrichEventsWithChannelNames(events);
     
-    // Add all past events without channel names (frontend may filter these out anyway)
-    const pastEvents = events.filter(event => {
-      if (!event.startTime) return true; // Include events without startTime
-      const eventStartDate = new Date(parseInt(event.startTime) * 1000);
-      return eventStartDate < today;
-    });
+    // Cache the enriched events
+    await setCachedEvents(enrichedEvents);
     
-    pastEvents.forEach(event => {
-      enrichedEvents.push({
-        ...event,
-        channelName: null
-      });
-    });
-    
-    const processingTime = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`⏱️ Channel name processing completed in ${processingTime}s`);
-    
-    // Summary logging
-    const totalEvents = enrichedEvents.length;
-    const totalUpcomingEvents = upcomingEvents.length;
-    const processedEvents = eventsToEnrich.length;
-    const eventsWithChannelNames = enrichedEvents.filter(e => e.channelName).length;
-    const successRate = processedEvents > 0 ? ((eventsWithChannelNames / processedEvents) * 100).toFixed(1) : 0;
-    
-    console.log(`📈 Channel name fetch summary: ${eventsWithChannelNames}/${processedEvents} processed upcoming events (${successRate}% success rate), ${totalUpcomingEvents} total upcoming, ${totalEvents} total returned`);
-    
-    // We will send this back to the frontend under the expected 'scheduledEvents' key.
     res.json({ scheduledEvents: enrichedEvents });
+    
   } catch (error) {
-    console.error('Error fetching Raid-Helper events:', error.response ? error.response.data : error.message);
+    console.error('Error in /api/events:', error.response ? error.response.data : error.message);
     if (error.response) {
       console.error('Raid-Helper API Error Response Details (Non-200):', {
           status: error.response.status,
@@ -832,6 +897,38 @@ app.get('/api/events', async (req, res) => {
     }
     res.status(error.response ? error.response.status : 500).json({
       message: 'Failed to fetch events from Raid-Helper.',
+      error: error.response ? (error.response.data || error.message) : error.message
+    });
+  }
+});
+
+// Manual refresh endpoint for events cache
+app.post('/api/events/refresh', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
+  }
+
+  try {
+    console.log('🔄 Manual refresh requested - fetching fresh events data');
+    
+    // Fetch fresh data from API
+    const events = await fetchEventsFromAPI();
+    const enrichedEvents = await enrichEventsWithChannelNames(events);
+    
+    // Update the cache with fresh data
+    await setCachedEvents(enrichedEvents);
+    
+    console.log('✅ Events cache refreshed successfully');
+    
+    res.json({ 
+      message: 'Events refreshed successfully',
+      scheduledEvents: enrichedEvents 
+    });
+    
+  } catch (error) {
+    console.error('Error refreshing events cache:', error.response ? error.response.data : error.message);
+    res.status(error.response ? error.response.status : 500).json({
+      message: 'Failed to refresh events.',
       error: error.response ? (error.response.data || error.message) : error.message
     });
   }

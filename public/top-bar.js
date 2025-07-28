@@ -77,10 +77,51 @@ function highlightActiveNav() {
     });
 }
 
+// Scroll behavior for sticky header
+let lastScrollTop = 0;
+let scrollTimeout = null;
+
+function handleScroll() {
+    const currentScrollTop = window.pageYOffset || document.documentElement.scrollTop;
+    const topBar = document.querySelector('.top-bar');
+    
+    if (!topBar) return;
+    
+    // Clear any existing timeout
+    if (scrollTimeout) {
+        clearTimeout(scrollTimeout);
+    }
+    
+    // Only hide/show after user stops scrolling rapidly
+    scrollTimeout = setTimeout(() => {
+        if (currentScrollTop > lastScrollTop && currentScrollTop > 60) {
+            // Scrolling down - hide the bar
+            topBar.classList.add('hidden');
+        } else {
+            // Scrolling up - show the bar
+            topBar.classList.remove('hidden');
+        }
+        
+        // Handle opacity based on scroll position
+        if (currentScrollTop > 0) {
+            // Not at top - reduce opacity
+            topBar.classList.add('scrolled');
+        } else {
+            // At top - full opacity
+            topBar.classList.remove('scrolled');
+        }
+        
+        lastScrollTop = currentScrollTop <= 0 ? 0 : currentScrollTop; // For Mobile or negative scrolling
+    }, 50); // Small delay to prevent excessive triggering
+}
+
 // Run the functions when the document is ready.
 document.addEventListener('DOMContentLoaded', () => {
     updateAuthUI();
     highlightActiveNav();
+
+    // Add scroll listener for sticky header behavior
+    window.addEventListener('scroll', handleScroll, { passive: true });
 
     // Global click listener to close the dropdown
     window.addEventListener('click', () => {
