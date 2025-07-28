@@ -564,6 +564,10 @@ app.get('/logs', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'logs.html'));
 });
 
+app.get('/gold', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'gold.html'));
+});
+
 
 // All API and authentication routes should come AFTER express.static AND specific HTML routes
 app.get('/auth/discord', passport.authenticate('discord'));
@@ -2665,6 +2669,18 @@ app.post('/api/admin/setup-database', async (req, res) => {
             )
         `);
         
+        // Create player_confirmed_logs table for storing confirmed raid participants
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS player_confirmed_logs (
+                raid_id VARCHAR(255),
+                discord_id VARCHAR(255),
+                character_name VARCHAR(255),
+                character_class VARCHAR(50),
+                confirmed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (raid_id, discord_id)
+            )
+        `);
+
         // Create guildies table for guild member data
         await client.query(`
             CREATE TABLE IF NOT EXISTS guildies (
@@ -2698,6 +2714,9 @@ app.post('/api/admin/setup-database', async (req, res) => {
         `);
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_roster_overrides_event_id ON roster_overrides (event_id)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_player_confirmed_logs_raid_id ON player_confirmed_logs (raid_id)
         `);
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_guildies_discord_id ON guildies (discord_id)
@@ -2895,6 +2914,468 @@ app.post('/api/admin/migrate-players', async (req, res) => {
         });
     } finally {
         if (client) client.release();
+    }
+});
+
+// === CONFIRMED LOGS API ENDPOINTS ===
+
+// Store confirmed player in logs
+app.post('/api/confirmed-logs/:raidId/player', async (req, res) => {
+    const { raidId } = req.params;
+    const { discordId, characterName, characterClass } = req.body;
+    
+    console.log(`📝 [CONFIRM LOGS] Storing player: raidId=${raidId}, discordId=${discordId}, name=${characterName}, class=${characterClass}`);
+    
+    if (!discordId || !characterName || !characterClass) {
+        console.error('❌ [CONFIRM LOGS] Missing required fields:', { raidId, discordId, characterName, characterClass });
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Missing required fields: discordId, characterName, characterClass' 
+        });
+    }
+    
+    let client;
+    try {
+        client = await pool.connect();
+        console.log('✅ [CONFIRM LOGS] Database connected');
+        
+        // First check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'player_confirmed_logs'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('🔧 [CONFIRM LOGS] Table does not exist, creating...');
+            await client.query(`
+                CREATE TABLE player_confirmed_logs (
+                    raid_id VARCHAR(255),
+                    discord_id VARCHAR(255),
+                    character_name VARCHAR(255),
+                    character_class VARCHAR(50),
+                    manually_matched BOOLEAN DEFAULT false,
+                    confirmed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (raid_id, discord_id)
+                )
+            `);
+            console.log('✅ [CONFIRM LOGS] Table created successfully');
+        } else {
+            // Check if manually_matched column exists, add it if not
+            const columnCheck = await client.query(`
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'player_confirmed_logs' 
+                AND column_name = 'manually_matched'
+            `);
+            
+            if (columnCheck.rows.length === 0) {
+                console.log('🔧 [CONFIRM LOGS] Adding manually_matched column...');
+                await client.query(`
+                    ALTER TABLE player_confirmed_logs 
+                    ADD COLUMN manually_matched BOOLEAN DEFAULT false
+                `);
+                console.log('✅ [CONFIRM LOGS] Column added successfully');
+            }
+        }
+        
+        // Insert or update the confirmed player (manual match)
+        const result = await client.query(`
+            INSERT INTO player_confirmed_logs (raid_id, discord_id, character_name, character_class, manually_matched)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (raid_id, discord_id) 
+            DO UPDATE SET 
+                character_name = EXCLUDED.character_name,
+                character_class = EXCLUDED.character_class,
+                manually_matched = EXCLUDED.manually_matched,
+                confirmed_at = CURRENT_TIMESTAMP
+            RETURNING *
+        `, [raidId, discordId, characterName, characterClass, true]);
+        
+        console.log('✅ [CONFIRM LOGS] Player stored successfully:', result.rows[0]);
+        res.json({ success: true, player: result.rows[0] });
+        
+    } catch (error) {
+        console.error('❌ [CONFIRM LOGS] Error storing confirmed player:', error);
+        console.error('❌ [CONFIRM LOGS] Error details:', {
+            message: error.message,
+            stack: error.stack,
+            code: error.code,
+            detail: error.detail
+        });
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error storing confirmed player',
+            error: error.message,
+            detail: error.detail || 'No additional details'
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get confirmed players for a raid
+app.get('/api/confirmed-logs/:raidId/players', async (req, res) => {
+    const { raidId } = req.params;
+    const { manually_matched } = req.query;
+    
+    console.log(`🔍 [CONFIRM LOGS] Getting confirmed players for raid: ${raidId}, manually_matched: ${manually_matched}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'player_confirmed_logs'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [CONFIRM LOGS] Table does not exist, returning empty array');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Build query based on manually_matched filter
+        let query = `SELECT * FROM player_confirmed_logs WHERE raid_id = $1`;
+        let params = [raidId];
+        
+        if (manually_matched === 'true') {
+            query += ` AND manually_matched = true`;
+        } else if (manually_matched === 'false') {
+            query += ` AND manually_matched = false`;
+        }
+        
+        query += ` ORDER BY confirmed_at DESC`;
+        
+        const result = await client.query(query, params);
+        
+        console.log(`✅ [CONFIRM LOGS] Found ${result.rows.length} confirmed players for raid ${raidId}`);
+        res.json({ success: true, data: result.rows });
+        
+    } catch (error) {
+        console.error('❌ [CONFIRM LOGS] Error fetching confirmed players:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error fetching confirmed players',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Bulk store automatically matched players
+app.post('/api/confirmed-logs/:raidId/players/bulk', async (req, res) => {
+    const { raidId } = req.params;
+    const { players } = req.body;
+    
+    console.log(`📝 [CONFIRM LOGS] Bulk storing ${players?.length || 0} auto-matched players for raid: ${raidId}`);
+    
+    if (!players || !Array.isArray(players) || players.length === 0) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Players array is required and must not be empty' 
+        });
+    }
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Ensure table exists (same logic as before)
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'player_confirmed_logs'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('🔧 [CONFIRM LOGS] Table does not exist, creating...');
+            await client.query(`
+                CREATE TABLE player_confirmed_logs (
+                    raid_id VARCHAR(255),
+                    discord_id VARCHAR(255),
+                    character_name VARCHAR(255),
+                    character_class VARCHAR(50),
+                    manually_matched BOOLEAN DEFAULT false,
+                    confirmed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (raid_id, discord_id)
+                )
+            `);
+            console.log('✅ [CONFIRM LOGS] Table created successfully');
+        } else {
+            // Check if manually_matched column exists
+            const columnCheck = await client.query(`
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'player_confirmed_logs' 
+                AND column_name = 'manually_matched'
+            `);
+            
+            if (columnCheck.rows.length === 0) {
+                console.log('🔧 [CONFIRM LOGS] Adding manually_matched column...');
+                await client.query(`
+                    ALTER TABLE player_confirmed_logs 
+                    ADD COLUMN manually_matched BOOLEAN DEFAULT false
+                `);
+                console.log('✅ [CONFIRM LOGS] Column added successfully');
+            }
+        }
+        
+        let insertedCount = 0;
+        let updatedCount = 0;
+        
+        // Insert each player (automatically matched = false for manually_matched)
+        for (const player of players) {
+            const { discordId, characterName, characterClass } = player;
+            
+            if (!discordId || !characterName || !characterClass) {
+                console.warn('⚠️ [CONFIRM LOGS] Skipping player with missing data:', player);
+                continue;
+            }
+            
+            const result = await client.query(`
+                INSERT INTO player_confirmed_logs (raid_id, discord_id, character_name, character_class, manually_matched)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (raid_id, discord_id) 
+                DO UPDATE SET 
+                    character_name = EXCLUDED.character_name,
+                    character_class = EXCLUDED.character_class,
+                    manually_matched = CASE 
+                        WHEN player_confirmed_logs.manually_matched = true THEN true 
+                        ELSE EXCLUDED.manually_matched 
+                    END,
+                    confirmed_at = CURRENT_TIMESTAMP
+                RETURNING *
+            `, [raidId, discordId, characterName, characterClass, false]);
+            
+            if (result.rows.length > 0) {
+                insertedCount++;
+            }
+        }
+        
+        console.log(`✅ [CONFIRM LOGS] Bulk operation completed: ${insertedCount} players processed`);
+        res.json({ 
+            success: true, 
+            message: `Processed ${insertedCount} automatically matched players`,
+            inserted: insertedCount
+        });
+        
+    } catch (error) {
+        console.error('❌ [CONFIRM LOGS] Error bulk storing players:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error bulk storing players',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Clear confirmed players for a raid (reset functionality)
+app.delete('/api/confirmed-logs/:raidId/players', async (req, res) => {
+    const { raidId } = req.params;
+    
+    console.log(`🗑️ [CONFIRM LOGS] Clearing confirmed players for raid: ${raidId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        const result = await client.query(
+            `DELETE FROM player_confirmed_logs WHERE raid_id = $1 RETURNING *`,
+            [raidId]
+        );
+        
+        console.log(`✅ [CONFIRM LOGS] Cleared ${result.rows.length} confirmed players for raid ${raidId}`);
+        res.json({ 
+            success: true, 
+            message: `Cleared ${result.rows.length} confirmed players`,
+            data: result.rows
+        });
+        
+    } catch (error) {
+        console.error('❌ [CONFIRM LOGS] Error clearing confirmed players:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error clearing confirmed players',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get all confirmed players for the gold pot page
+app.get('/api/confirmed-logs/:raidId/all-players', async (req, res) => {
+    const { raidId } = req.params;
+    
+    console.log(`🏆 [GOLD POT] Getting all confirmed players for raid: ${raidId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'player_confirmed_logs'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [GOLD POT] Table does not exist, returning empty array');
+            return res.json({ success: true, data: [] });
+        }
+        
+        const result = await client.query(
+            `SELECT discord_id, character_name, character_class, manually_matched, confirmed_at 
+             FROM player_confirmed_logs 
+             WHERE raid_id = $1 
+             ORDER BY character_class, character_name`,
+            [raidId]
+        );
+        
+        console.log(`✅ [GOLD POT] Found ${result.rows.length} confirmed players for gold pot`);
+        res.json({ success: true, data: result.rows });
+        
+    } catch (error) {
+        console.error('❌ [GOLD POT] Error fetching confirmed players:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error fetching confirmed players for gold pot',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Search players from database (similar to roster functionality)
+app.get('/api/search-players', async (req, res) => {
+    const { query } = req.query;
+    
+    if (!query || query.length < 2) {
+        return res.json([]);
+    }
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        const result = await client.query(`
+            SELECT DISTINCT discord_id, character_name, class
+            FROM players 
+            WHERE LOWER(character_name) LIKE LOWER($1)
+            ORDER BY character_name
+            LIMIT 20
+        `, [`%${query}%`]);
+        
+        res.json(result.rows);
+        
+    } catch (error) {
+        console.error('Error searching players:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error searching players',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Add new character to database (similar to roster functionality)
+app.post('/api/add-character', async (req, res) => {
+    const { discordId, characterName, characterClass } = req.body;
+    
+    if (!discordId || !characterName || !characterClass) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Missing required fields: discordId, characterName, characterClass' 
+        });
+    }
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if character already exists
+        const existingPlayer = await client.query(
+            'SELECT discord_id FROM players WHERE LOWER(character_name) = LOWER($1) AND LOWER(class) = LOWER($2)',
+            [characterName, characterClass]
+        );
+        
+        if (existingPlayer.rows.length > 0) {
+            return res.status(409).json({ 
+                success: false, 
+                message: 'Character already exists',
+                existingDiscordId: existingPlayer.rows[0].discord_id
+            });
+        }
+        
+        // Insert new character
+        await client.query(
+            'INSERT INTO players (discord_id, character_name, class) VALUES ($1, $2, $3)',
+            [discordId, characterName, characterClass]
+        );
+        
+        res.json({ success: true });
+        
+    } catch (error) {
+        console.error('Error adding character:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error adding character',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Raid-Helper API proxy endpoint for CORS
+app.get('/api/raid-helper/events/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    try {
+        console.log(`🔄 Proxying Raid-Helper request for event: ${eventId}`);
+        
+        const response = await axios.get(`https://raid-helper.dev/api/v2/events/${eventId}`, {
+            timeout: 10000,
+            headers: { 
+                'Authorization': process.env.RAID_HELPER_API_KEY,
+                'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+            }
+        });
+        
+        console.log(`✅ Raid-Helper data fetched successfully for event: ${eventId}`);
+        res.json(response.data);
+        
+    } catch (error) {
+        console.error(`❌ Failed to fetch Raid-Helper data for event ${eventId}:`, error.message);
+        
+        if (error.response) {
+            // API responded with error status
+            res.status(error.response.status).json({
+                error: 'Raid-Helper API error',
+                message: error.response.data?.message || error.message,
+                status: error.response.status
+            });
+        } else {
+            // Network or other error
+            res.status(500).json({
+                error: 'Failed to fetch Raid-Helper data',
+                message: error.message
+            });
+        }
     }
 });
 

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gold Pot - Classic WoW Manager</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="gold.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <div class="app-title">Classic WoW Manager</div>
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Home</a>
+                <div class="top-nav-dropdown">
+                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+                        Upcoming Raids <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="upcoming-raids-menu">
+                        <div class="dropdown-loading">Loading raids...</div>
+                    </div>
+                </div>
+                <a href="/logs" class="top-nav-link">Logs</a>
+            </nav>
+        </div>
+        <div id="auth-container">
+            <!-- Auth content is now loaded by top-bar.js -->
+        </div>
+    </div>
+
+    <!-- Active Raid Bar (shown when raid is selected) -->
+    <div class="raid-bar" id="raid-bar" style="display: none;">
+        <div class="raid-bar-left">
+            <div class="raid-title" id="raid-title">Loading raid...</div>
+        </div>
+        <div class="raid-bar-right">
+            <nav class="raid-nav">
+                <a href="#" class="raid-nav-link" id="raid-roster-link">Roster</a>
+                <a href="#" class="raid-nav-link" id="raid-assignments-link">Assignments</a>
+                <a href="/logs" class="raid-nav-link" id="raid-logs-link">Logs</a>
+                <a href="#" class="raid-nav-link" id="raid-goldpot-link">Gold Pot</a>
+            </nav>
+        </div>
+    </div>
+    
+    <div class="content">
+        <div class="back-button-wrapper">
+            <button onclick="history.back()" class="back-button">
+                <i class="fas fa-arrow-left"></i> Back
+            </button>
+        </div>
+
+        <div class="gold-container">
+
+            <div class="loading-indicator" id="loadingIndicator">
+                <div class="spinner"></div>
+                <p>Loading confirmed players...</p>
+            </div>
+
+            <div class="error-display" id="errorDisplay" style="display: none;">
+                <div class="error-content">
+                    <h3>⚠️ Error</h3>
+                    <p id="errorMessage"></p>
+                </div>
+            </div>
+
+            <div class="gold-content" id="goldContent" style="display: none;">
+                <div class="filters">
+                    <div class="filter-group">
+                        <label>Filter by class:</label>
+                        <select id="classFilter">
+                            <option value="">All Classes</option>
+                            <option value="Warrior">Warrior</option>
+                            <option value="Paladin">Paladin</option>
+                            <option value="Hunter">Hunter</option>
+                            <option value="Rogue">Rogue</option>
+                            <option value="Priest">Priest</option>
+                            <option value="Shaman">Shaman</option>
+                            <option value="Mage">Mage</option>
+                            <option value="Warlock">Warlock</option>
+                            <option value="Druid">Druid</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="players-grid" id="playersGrid">
+                    <!-- Players will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="top-bar.js"></script>
+    <script src="gold.js"></script>
+</body>
+</html> 

@@ -75,6 +75,32 @@ function highlightActiveNav() {
             link.classList.remove('active');
         }
     });
+    
+    // Also highlight raid navigation links
+    highlightActiveRaidNav();
+}
+
+// This function highlights the active raid navigation link based on the current page.
+function highlightActiveRaidNav() {
+    const currentPath = window.location.pathname;
+    const raidNavLinks = document.querySelectorAll('.raid-nav-link');
+    
+    raidNavLinks.forEach(link => {
+        const linkHref = link.getAttribute('href');
+        
+        // Special handling for different paths
+        if (currentPath === '/gold' && link.id === 'raid-goldpot-link') {
+            link.classList.add('active');
+        } else if (currentPath === '/logs' && link.id === 'raid-logs-link') {
+            link.classList.add('active');
+        } else if (currentPath.includes('/roster') && link.id === 'raid-roster-link') {
+            link.classList.add('active');
+        } else if (linkHref && linkHref === currentPath) {
+            link.classList.add('active');
+        } else {
+            link.classList.remove('active');
+        }
+    });
 }
 
 // Scroll behavior for sticky header
@@ -282,6 +308,9 @@ async function updateRaidBar() {
                     // Update navigation links
                     updateRaidNavigation(activeEventId);
                     
+                    // Highlight active navigation after links are updated
+                    setTimeout(() => highlightActiveRaidNav(), 100);
+                    
                     console.log('🎯 Raid bar updated for:', activeEvent.title);
                 } else {
                     // Event not found, clear the session
@@ -328,11 +357,9 @@ function updateRaidNavigation(eventId) {
     }
     
     if (goldpotLink) {
-        goldpotLink.href = '#';
-        goldpotLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            // TODO: Implement gold pot functionality
-        });
+        goldpotLink.href = '/gold';
+        // Remove any existing event listeners
+        goldpotLink.replaceWith(goldpotLink.cloneNode(true));
     }
     
     // Logs link stays as /logs - the logs page will use the localStorage session
@@ -347,6 +374,9 @@ document.addEventListener('DOMContentLoaded', () => {
     highlightActiveNav();
     setupUpcomingRaidsDropdown();
     updateRaidBar();
+    
+    // Ensure raid navigation highlighting is applied after everything loads
+    setTimeout(() => highlightActiveRaidNav(), 200);
 
     // Add scroll listener for sticky header behavior
     window.addEventListener('scroll', handleScroll, { passive: true });

@@ -112,6 +112,157 @@ class WoWLogsAnalyzer {
         }
     }
 
+    async fetchRaidHelperData() {
+        try {
+            const activeEventSession = localStorage.getItem('activeEventSession');
+            if (!activeEventSession) {
+                console.warn('No active event session found in localStorage');
+                return null;
+            }
+
+            console.log('Fetching Raid-Helper data for event:', activeEventSession);
+            
+            const response = await fetch(`/api/raid-helper/events/${activeEventSession}`);
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(`Raid-Helper API error! status: ${response.status}, message: ${errorData.message || 'Unknown error'}`);
+            }
+
+            const data = await response.json();
+            console.log('Raid-Helper data fetched:', data);
+            return data;
+        } catch (error) {
+            console.error('Failed to fetch Raid-Helper data:', error);
+            return null;
+        }
+    }
+
+    parseRaidHelperRoles(raidHelperData) {
+        if (!raidHelperData || !raidHelperData.signUps) {
+            return {};
+        }
+
+        const roleMap = {};
+        
+        raidHelperData.signUps.forEach(signup => {
+            if (signup.status !== 'primary') return; // Only consider primary signups
+            
+            const userId = signup.userId;
+            const className = signup.className;
+            const roleName = signup.roleName;
+            
+            let role = 'dps'; // default
+            
+            if (roleName === 'Tanks') {
+                role = 'tank';
+            } else if (roleName === 'Healers') {
+                role = 'healer';
+            } else if (roleName === 'Melee' || roleName === 'Ranged') {
+                role = 'dps';
+            }
+            
+            // Map by Discord user ID instead of name
+            roleMap[userId] = {
+                role: role,
+                className: className,
+                roleName: roleName,
+                isConfirmed: true
+            };
+        });
+        
+        console.log('Parsed role map by Discord ID:', roleMap);
+        return roleMap;
+    }
+
+    inferRoleFromPerformance(playerName, playerData, roleMap, damageEntries, healingEntries, rosterPlayers) {
+        // First, try to find the Discord ID for this player via roster matching
+        const rosterPlayer = rosterPlayers.find(p => 
+            p.name && p.name.toLowerCase() === playerName.toLowerCase()
+        );
+        
+        if (rosterPlayer && rosterPlayer.discordId && roleMap[rosterPlayer.discordId]) {
+            // Found confirmed role via Discord ID match
+            console.log(`✅ Found confirmed role for ${playerName} via Discord ID ${rosterPlayer.discordId}:`, roleMap[rosterPlayer.discordId]);
+            return roleMap[rosterPlayer.discordId];
+        }
+        
+        // No confirmed role found, try to infer from performance
+        const damageEntry = damageEntries.find(entry => entry.name.toLowerCase() === playerName.toLowerCase());
+        const healingEntry = healingEntries.find(entry => entry.name.toLowerCase() === playerName.toLowerCase());
+        
+        const playerDamage = damageEntry ? damageEntry.total : 0;
+        const playerHealing = healingEntry ? healingEntry.total : 0;
+        
+        // Find confirmed DPS and healers for comparison using Discord ID matching
+        const confirmedDPS = damageEntries.filter(entry => {
+            const entryRosterPlayer = rosterPlayers.find(p => 
+                p.name && p.name.toLowerCase() === entry.name.toLowerCase()
+            );
+            if (entryRosterPlayer && entryRosterPlayer.discordId) {
+                const entryRole = roleMap[entryRosterPlayer.discordId];
+                return entryRole && entryRole.role === 'dps';
+            }
+            return false;
+        });
+        
+        const confirmedHealers = healingEntries.filter(entry => {
+            const entryRosterPlayer = rosterPlayers.find(p => 
+                p.name && p.name.toLowerCase() === entry.name.toLowerCase()
+            );
+            if (entryRosterPlayer && entryRosterPlayer.discordId) {
+                const entryRole = roleMap[entryRosterPlayer.discordId];
+                return entryRole && entryRole.role === 'healer';
+            }
+            return false;
+        });
+        
+        // Check if this player out-damaged a confirmed DPS
+        const lowestConfirmedDPSDamage = confirmedDPS.length > 0 ? 
+            Math.min(...confirmedDPS.map(entry => entry.total)) : Infinity;
+        
+        // Check if this player out-healed a confirmed healer
+        const lowestConfirmedHealerHealing = confirmedHealers.length > 0 ? 
+            Math.min(...confirmedHealers.map(entry => entry.total)) : Infinity;
+        
+        if (playerDamage > lowestConfirmedDPSDamage && confirmedDPS.length > 0) {
+            console.log(`🔍 Inferred DPS role for ${playerName} (damage: ${playerDamage} > lowest confirmed: ${lowestConfirmedDPSDamage})`);
+            return {
+                role: 'dps',
+                className: 'Unknown',
+                roleName: 'Inferred DPS',
+                isConfirmed: false
+            };
+        }
+        
+        if (playerHealing > lowestConfirmedHealerHealing && confirmedHealers.length > 0) {
+            console.log(`🔍 Inferred healer role for ${playerName} (healing: ${playerHealing} > lowest confirmed: ${lowestConfirmedHealerHealing})`);
+            return {
+                role: 'healer',
+                className: 'Unknown', 
+                roleName: 'Inferred Healer',
+                isConfirmed: false
+            };
+        }
+        
+        return null;
+    }
+
+    getRoleIcon(role, isConfirmed = true) {
+        const iconClass = isConfirmed ? 'role-icon' : 'role-icon inferred';
+        
+        switch (role) {
+            case 'tank':
+                return `<span class="${iconClass} tank" title="${isConfirmed ? 'Tank' : 'Inferred Tank'}">🛡️</span>`;
+            case 'dps':
+                return `<span class="${iconClass} dps" title="${isConfirmed ? 'DPS' : 'Inferred DPS'}">⚔️</span>`;
+            case 'healer':
+                return `<span class="${iconClass} healer" title="${isConfirmed ? 'Healer' : 'Inferred Healer'}">❤️</span>`;
+            default:
+                return '';
+        }
+    }
+
     async analyzeLog() {
         const input = document.getElementById('logInput').value;
         const logId = this.extractLogId(input);
@@ -302,18 +453,25 @@ class WoWLogsAnalyzer {
                 }
             }
 
+            // Fetch raid-helper data for role assignment
+            console.log('Fetching Raid-Helper data...');
+            const raidHelperData = await this.fetchRaidHelperData();
+            const roleMap = this.parseRaidHelperRoles(raidHelperData);
+
             // Store the data
             this.currentLogData = {
                 logId: logId,
                 fights: fightsData,
                 summaries: summaryDataArray,
                 damage: damageData,
-                healing: healingData
+                healing: healingData,
+                raidHelper: raidHelperData,
+                roleMap: roleMap
             };
 
             // Display the data
             this.showData();
-            this.displayLogData();
+            await this.displayLogData();
 
         } catch (error) {
             console.error('Analysis failed:', error);
@@ -321,15 +479,50 @@ class WoWLogsAnalyzer {
         }
     }
 
-    displayLogData() {
+    async displayLogData() {
         if (!this.currentLogData) return;
 
-        this.displayFightData();
-        this.displayCharactersData();
+        // Show Characters first (most important) - now async
+        await this.displayCharactersData();
+        
+        // Show damage and healing data
         this.displayDamageData();
         this.displayHealingData();
-        this.displaySummaryData();
+        
+        // Show raw data
         this.displayRawData();
+        
+        // Hide Fight Data and Raid Summary panels
+        this.hideFightDataPanel();
+        this.hideSummaryPanel();
+    }
+
+    hideFightDataPanel() {
+        const fightDataSection = document.querySelector('.data-section:has(#fightDataContent)');
+        if (fightDataSection) {
+            fightDataSection.style.display = 'none';
+        }
+        // Fallback method if :has() isn't supported
+        const sections = document.querySelectorAll('.data-section');
+        sections.forEach(section => {
+            if (section.querySelector('#fightDataContent')) {
+                section.style.display = 'none';
+            }
+        });
+    }
+
+    hideSummaryPanel() {
+        const summaryDataSection = document.querySelector('.data-section:has(#summaryDataContent)');
+        if (summaryDataSection) {
+            summaryDataSection.style.display = 'none';
+        }
+        // Fallback method if :has() isn't supported
+        const sections = document.querySelectorAll('.data-section');
+        sections.forEach(section => {
+            if (section.querySelector('#summaryDataContent')) {
+                section.style.display = 'none';
+            }
+        });
     }
 
     displayFightData() {
@@ -402,7 +595,7 @@ class WoWLogsAnalyzer {
         container.innerHTML = infoCards + fightsList;
     }
 
-    displayCharactersData() {
+    async displayCharactersData() {
         const data = this.currentLogData.fights;
         const container = document.getElementById('charactersDataContent');
 
@@ -430,41 +623,17 @@ class WoWLogsAnalyzer {
             });
         }
 
-        // Display characters with enriched data
-        let charactersHtml = '<div class="characters-list">';
+        // Sort characters by class order, then alphabetically
+        const sortedCharacters = this.sortCharactersByClassAndName(exportedCharacters, friendliesMap);
         
-        exportedCharacters.forEach(character => {
-            const name = character.name || 'Unknown';
-            
-            // Find matching data in friendlies
-            const friendlyData = friendliesMap[name];
-            
-            const characterClass = friendlyData?.type || 'Unknown';
-            const server = friendlyData?.server || '';
-            const spec = friendlyData?.icon || '';
-            
-            // Extract spec name from icon (e.g., "Warrior-Fury" -> "Fury")
-            const specName = spec.includes('-') ? spec.split('-')[1] : '';
-            
-            // Get class color CSS class
-            const classColorClass = this.getClassColorClass(characterClass);
-            
-            charactersHtml += `
-                <div class="character-item">
-                    <div class="character-main">
-                        <span class="character-name ${classColorClass}">${name}</span>
-                    </div>
-                    <div class="character-details">
-                        ${specName ? `<span class="character-spec">${specName}</span>` : ''}
-                        ${server ? `<span class="character-server">${server}</span>` : ''}
-                    </div>
-                </div>
-            `;
-        });
+        // Fetch roster data for comparison
+        const rosterData = await this.fetchRosterData();
         
-        charactersHtml += '</div>';
+        // Fetch previously confirmed players for this raid
+        const confirmedPlayers = await this.fetchConfirmedPlayers();
         
-        container.innerHTML = charactersHtml;
+        // Create comparison display
+        this.displayCharacterComparison(sortedCharacters, friendliesMap, rosterData, container, confirmedPlayers);
     }
 
     displayDamageData() {
@@ -499,6 +668,11 @@ class WoWLogsAnalyzer {
         // Sort by total damage done (descending)
         const sortedDamage = [...damageData.entries].sort((a, b) => b.total - a.total);
 
+        // Get role map, roster players, and healing data for role inference
+        const roleMap = this.currentLogData.roleMap || {};
+        const rosterPlayers = this.currentRosterPlayers || [];
+        const healingEntries = this.currentLogData.healing?.entries || [];
+
         let damageHtml = '<div class="damage-list">';
         
         sortedDamage.forEach((entry, index) => {
@@ -508,11 +682,19 @@ class WoWLogsAnalyzer {
             const characterClass = friendlyData?.type || 'Unknown';
             const classColorClass = this.getClassColorClass(characterClass);
             
+            // Determine role and get icon
+            let roleInfo = this.inferRoleFromPerformance(playerName, entry, roleMap, sortedDamage, healingEntries, rosterPlayers);
+            let roleIcon = '';
+            
+            if (roleInfo) {
+                roleIcon = this.getRoleIcon(roleInfo.role, roleInfo.isConfirmed);
+            }
+            
             damageHtml += `
                 <div class="damage-item">
                     <div class="damage-rank">#${index + 1}</div>
                     <div class="damage-player">
-                        <span class="damage-name ${classColorClass}">${playerName}</span>
+                        <span class="damage-name ${classColorClass}">${playerName}${roleIcon}</span>
                     </div>
                     <div class="damage-amount">${this.formatNumber(totalDamage)}</div>
                 </div>
@@ -556,6 +738,11 @@ class WoWLogsAnalyzer {
         // Sort by total healing done (descending)
         const sortedHealing = [...healingData.entries].sort((a, b) => b.total - a.total);
 
+        // Get role map, roster players, and damage data for role inference
+        const roleMap = this.currentLogData.roleMap || {};
+        const rosterPlayers = this.currentRosterPlayers || [];
+        const damageEntries = this.currentLogData.damage?.entries || [];
+
         let healingHtml = '<div class="healing-list">';
         
         sortedHealing.forEach((entry, index) => {
@@ -565,11 +752,19 @@ class WoWLogsAnalyzer {
             const characterClass = friendlyData?.type || 'Unknown';
             const classColorClass = this.getClassColorClass(characterClass);
             
+            // Determine role and get icon
+            let roleInfo = this.inferRoleFromPerformance(playerName, entry, roleMap, damageEntries, sortedHealing, rosterPlayers);
+            let roleIcon = '';
+            
+            if (roleInfo) {
+                roleIcon = this.getRoleIcon(roleInfo.role, roleInfo.isConfirmed);
+            }
+            
             healingHtml += `
                 <div class="healing-item">
                     <div class="healing-rank">#${index + 1}</div>
                     <div class="healing-player">
-                        <span class="healing-name ${classColorClass}">${playerName}</span>
+                        <span class="healing-name ${classColorClass}">${playerName}${roleIcon}</span>
                     </div>
                     <div class="healing-amount">${this.formatNumber(totalHealing)}</div>
                 </div>
@@ -618,6 +813,1302 @@ class WoWLogsAnalyzer {
             'Druid': 'class-druid'
         };
         return classColors[characterClass] || 'class-unknown';
+    }
+
+    getClassBackgroundClass(characterClass) {
+        const classBackgrounds = {
+            'Warrior': 'class-bg-warrior',
+            'Paladin': 'class-bg-paladin',
+            'Hunter': 'class-bg-hunter',
+            'Rogue': 'class-bg-rogue',
+            'Priest': 'class-bg-priest',
+            'Shaman': 'class-bg-shaman',
+            'Mage': 'class-bg-mage',
+            'Warlock': 'class-bg-warlock',
+            'Druid': 'class-bg-druid'
+        };
+        return classBackgrounds[characterClass] || 'class-bg-unknown';
+    }
+
+    getClassSortOrder(characterClass) {
+        const classOrder = {
+            'Warrior': 1,
+            'Rogue': 2,
+            'Hunter': 3,
+            'Mage': 4,
+            'Warlock': 5,
+            'Shaman': 6,
+            'Paladin': 7,
+            'Druid': 8,
+            'Priest': 9
+        };
+        return classOrder[characterClass] || 999; // Unknown classes go to the end
+    }
+
+    sortCharactersByClassAndName(characters, friendliesMap) {
+        return characters.slice().sort((a, b) => {
+            const nameA = a.name || 'Unknown';
+            const nameB = b.name || 'Unknown';
+            
+            // Get character classes
+            const classA = friendliesMap[nameA]?.type || 'Unknown';
+            const classB = friendliesMap[nameB]?.type || 'Unknown';
+            
+            // Get class sort orders
+            const orderA = this.getClassSortOrder(classA);
+            const orderB = this.getClassSortOrder(classB);
+            
+            // Sort by class order first
+            if (orderA !== orderB) {
+                return orderA - orderB;
+            }
+            
+            // If same class, sort alphabetically by name
+            return nameA.localeCompare(nameB);
+        });
+    }
+
+    async fetchRosterData() {
+        try {
+            // Get the active event session ID from localStorage
+            const activeEventSession = localStorage.getItem('activeEventSession');
+            
+            if (!activeEventSession) {
+                console.log('No activeEventSession found in localStorage');
+                return null;
+            }
+
+            console.log('Fetching roster for event:', activeEventSession);
+            
+            // Fetch roster data from the API (JSON endpoint)
+            const response = await fetch(`/api/roster/${activeEventSession}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch roster: ${response.status} ${response.statusText}`);
+            }
+            
+            const rosterData = await response.json();
+            console.log('Roster data fetched:', rosterData);
+            
+            return rosterData;
+            
+        } catch (error) {
+            console.error('Error fetching roster data:', error);
+            console.error('Response status:', error.status);
+            return null;
+        }
+    }
+
+    async fetchConfirmedPlayers() {
+        try {
+            const activeEventSession = localStorage.getItem('activeEventSession');
+            
+            if (!activeEventSession) {
+                console.log('No activeEventSession found for confirmed players lookup');
+                return [];
+            }
+
+            console.log('Fetching confirmed players for raid:', activeEventSession);
+            
+            const response = await fetch(`/api/confirmed-logs/${activeEventSession}/players?manually_matched=true`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch confirmed players: ${response.status} ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            console.log('Manually confirmed players fetched:', result.data);
+            
+            return result.data || [];
+            
+        } catch (error) {
+            console.error('Error fetching confirmed players:', error);
+            return [];
+        }
+    }
+
+    calculateStringSimilarity(str1, str2) {
+        // Convert to lowercase for comparison
+        const s1 = str1.toLowerCase();
+        const s2 = str2.toLowerCase();
+        
+        // Exact match
+        if (s1 === s2) return 1.0;
+        
+        // Levenshtein distance algorithm
+        const matrix = [];
+        const len1 = s1.length;
+        const len2 = s2.length;
+        
+        // Initialize matrix
+        for (let i = 0; i <= len1; i++) {
+            matrix[i] = [i];
+        }
+        for (let j = 0; j <= len2; j++) {
+            matrix[0][j] = j;
+        }
+        
+        // Fill matrix
+        for (let i = 1; i <= len1; i++) {
+            for (let j = 1; j <= len2; j++) {
+                const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j] + 1,        // deletion
+                    matrix[i][j - 1] + 1,        // insertion
+                    matrix[i - 1][j - 1] + cost  // substitution
+                );
+            }
+        }
+        
+        // Calculate similarity (0-1 scale)
+        const maxLen = Math.max(len1, len2);
+        if (maxLen === 0) return 1.0;
+        
+        return 1 - (matrix[len1][len2] / maxLen);
+    }
+
+    findBestMatch(targetName, rosterNames) {
+        if (!rosterNames || rosterNames.length === 0) {
+            return null;
+        }
+        
+        let bestMatch = null;
+        let bestSimilarity = 0;
+        
+        rosterNames.forEach(rosterName => {
+            const similarity = this.calculateStringSimilarity(targetName, rosterName);
+            if (similarity > bestSimilarity) {
+                bestSimilarity = similarity;
+                bestMatch = {
+                    name: rosterName,
+                    similarity: similarity
+                };
+            }
+        });
+        
+        return bestMatch;
+    }
+
+    displayCharacterComparison(sortedCharacters, friendliesMap, rosterData, container, confirmedPlayers = []) {
+        // Extract roster players with names and classes from raidDrop array
+        let rosterPlayers = [];
+        
+        if (rosterData) {
+            console.log('Roster data structure:', rosterData);
+            console.log('raidDrop array:', rosterData.raidDrop);
+            
+            if (rosterData.raidDrop && Array.isArray(rosterData.raidDrop)) {
+                rosterPlayers = rosterData.raidDrop
+                    .map(player => {
+                        if (!player) return null;
+                        // Prefer mainCharacterName (for managed rosters) or fall back to name
+                        const characterName = player.mainCharacterName || player.name;
+                        const characterClass = player.class || 'Unknown';
+                        const discordId = player.userid || null;
+                        console.log(`Player: ${JSON.stringify(player)} -> Name: ${characterName}, Class: ${characterClass}, Discord: ${discordId}`);
+                        return {
+                            name: characterName,
+                            class: characterClass,
+                            discordId: discordId
+                        };
+                    })
+                    .filter(player => player && player.name && player.name.trim()); // Remove empty/null names
+            } else {
+                console.warn('raidDrop is not an array or is missing:', rosterData.raidDrop);
+            }
+        } else {
+            console.warn('No roster data received');
+        }
+        
+        console.log('Extracted roster players:', rosterPlayers);
+        
+        // Store original data for reset functionality
+        this.originalRosterPlayers = JSON.parse(JSON.stringify(rosterPlayers));
+        this.originalSortedCharacters = JSON.parse(JSON.stringify(sortedCharacters));
+        this.originalFriendliesMap = JSON.parse(JSON.stringify(friendliesMap));
+        
+        // Apply confirmed players (modify the data before comparison)
+        const restoredPlayers = this.applyConfirmedPlayers(sortedCharacters, rosterPlayers, confirmedPlayers);
+        
+        // Store current data for later use in click handlers
+        this.currentRosterPlayers = rosterPlayers;
+        this.currentSortedCharacters = sortedCharacters;
+        this.currentFriendliesMap = friendliesMap;
+        
+        // Create name-only array for compatibility with existing matching logic
+        const rosterNames = rosterPlayers.map(player => player.name);
+        
+        const logsNames = sortedCharacters.map(char => char.name || 'Unknown');
+        
+        let comparisonHtml = '';
+        
+        // Calculate match statistics
+        const matchStats = this.calculateMatchStatistics(sortedCharacters, friendliesMap, rosterPlayers);
+        
+        // Header with detailed counts
+        comparisonHtml += this.generateValidationHeader(null, null, matchStats);
+        
+        // Add restoration message if players were restored
+        if (restoredPlayers.length > 0) {
+            comparisonHtml += this.generateRestorationMessage(restoredPlayers);
+        }
+        
+        comparisonHtml += '<div class="character-comparison-container">';
+        
+        // Track which roster names have been matched
+        const usedRosterNames = new Set();
+        const exactMatches = [];
+        
+        // Process each character from logs
+        sortedCharacters.forEach(character => {
+            const logsName = character.name || 'Unknown';
+            const friendlyData = friendliesMap[logsName];
+            const characterClass = friendlyData?.type || 'Unknown';
+            const classBackgroundClass = this.getClassBackgroundClass(characterClass);
+            
+            // Find exact match first
+            let matchInfo = { type: 'none', rosterName: null, similarity: 0 };
+            
+            const exactMatch = rosterNames.find(name => name.toLowerCase() === logsName.toLowerCase());
+            if (exactMatch) {
+                matchInfo = { type: 'exact', rosterName: exactMatch, similarity: 1.0 };
+                usedRosterNames.add(exactMatch);
+                
+                // Find roster player for this exact match to get Discord ID
+                const rosterPlayer = rosterPlayers.find(p => p.name === exactMatch);
+                if (rosterPlayer && rosterPlayer.discordId) {
+                    exactMatches.push({
+                        discordId: rosterPlayer.discordId,
+                        characterName: logsName,
+                        characterClass: characterClass
+                    });
+                }
+            } else {
+                // Find best approximate match from unused names
+                const availableNames = rosterNames.filter(name => !usedRosterNames.has(name));
+                const bestMatch = this.findBestMatch(logsName, availableNames);
+                
+                if (bestMatch && bestMatch.similarity > 0.5) { // Threshold for considering it a match
+                    matchInfo = { type: 'approximate', rosterName: bestMatch.name, similarity: bestMatch.similarity };
+                    usedRosterNames.add(bestMatch.name);
+                }
+            }
+            
+            // Find the roster player for class styling
+            const rosterPlayer = rosterPlayers.find(p => p.name === matchInfo.rosterName);
+            const rosterClassBackgroundClass = rosterPlayer ? this.getClassBackgroundClass(rosterPlayer.class) : '';
+            
+            // Create unique row ID for this comparison
+            const rowId = `comparison-row-${logsName.replace(/[^a-zA-Z0-9]/g, '')}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            
+            // Check if this is a confirmed player (pre-matched from database)
+            const confirmedPlayer = confirmedPlayers.find(confirmed => 
+                confirmed.character_name.toLowerCase() === logsName.toLowerCase()
+            );
+            
+            let finalMatchInfo = matchInfo;
+            let finalRosterClassBackgroundClass = rosterClassBackgroundClass;
+            
+            if (confirmedPlayer) {
+                // This is a confirmed player - mark as exact match
+                finalMatchInfo = { type: 'exact', rosterName: confirmedPlayer.character_name, similarity: 1.0 };
+                finalRosterClassBackgroundClass = this.getClassBackgroundClass(confirmedPlayer.character_class);
+            }
+            
+            // Determine if this roster entry should be clickable (non-exact matches or missing)
+            const isClickable = finalMatchInfo.type !== 'exact'; // Both approximate matches and "No match" should be clickable
+            const clickableClass = isClickable ? 'roster-name-clickable' : '';
+            const clickableAttributes = isClickable ? 
+                `data-row-id="${rowId}" data-logs-name="${logsName}" data-logs-class="${characterClass}"` : '';
+            
+            // Add discord-id attribute for confirmed players
+            const discordIdAttribute = confirmedPlayer ? `data-discord-id="${confirmedPlayer.discord_id}"` : '';
+            
+            comparisonHtml += `
+                <div class="character-comparison-row" id="${rowId}">
+                    <div class="logs-character ${classBackgroundClass}">
+                        <span class="character-name-black">${logsName}</span>
+                    </div>
+                    <div class="comparison-indicator">
+                        ${this.getComparisonIndicator(finalMatchInfo)}
+                    </div>
+                    <div class="roster-character ${finalRosterClassBackgroundClass}">
+                        ${finalMatchInfo.rosterName ? 
+                            `<span class="roster-name-black ${finalMatchInfo.type} ${clickableClass}" ${clickableAttributes} ${discordIdAttribute}>${finalMatchInfo.rosterName}</span>` : 
+                            `<span class="roster-name missing ${clickableClass}" ${clickableAttributes}>No match</span>`}
+                    </div>
+                </div>
+            `;
+        });
+        
+        // Show unmatched roster names
+        const unmatchedRosterPlayers = rosterPlayers.filter(player => !usedRosterNames.has(player.name));
+        if (unmatchedRosterPlayers.length > 0) {
+            comparisonHtml += '<div class="unmatched-section">';
+            comparisonHtml += '<h4>❌ Unmatched Roster Players:</h4>';
+            unmatchedRosterPlayers.forEach(player => {
+                const unmatchedClassBackgroundClass = this.getClassBackgroundClass(player.class);
+                comparisonHtml += `
+                    <div class="character-comparison-row unmatched">
+                        <div class="logs-character empty">
+                            <span class="character-name-black">-</span>
+                        </div>
+                        <div class="comparison-indicator">
+                            ❌
+                        </div>
+                        <div class="roster-character ${unmatchedClassBackgroundClass}">
+                            <span class="roster-name-black unmatched">${player.name}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            comparisonHtml += '</div>';
+        }
+        
+        comparisonHtml += '</div>';
+        
+        container.innerHTML = comparisonHtml;
+        
+        // Add event listeners to clickable roster names
+        this.attachRosterNameClickListeners();
+        
+        // Add event listener for reset button if it exists
+        this.attachResetButtonListener();
+        
+        // Store reference to container for real-time updates
+        this.currentComparisonContainer = container;
+        
+        // Store exact matches automatically
+        if (exactMatches.length > 0) {
+            this.storeExactMatches(exactMatches);
+        }
+        
+        // Update validation counts after DOM is rendered
+        setTimeout(() => this.updateRosterValidation(), 100);
+    }
+
+    getComparisonIndicator(matchInfo) {
+        switch (matchInfo.type) {
+            case 'exact':
+                return '✅';
+            case 'approximate':
+                const percentage = Math.round(matchInfo.similarity * 100);
+                return `🔶 ${percentage}%`;
+            case 'none':
+            default:
+                return '❌';
+        }
+    }
+
+    calculateMatchStatistics(sortedCharacters, friendliesMap, rosterPlayers) {
+        // Count logs players (simple - from the data we have)
+        const logsCount = sortedCharacters.length;
+        
+        // Count from UI what we actually see
+        let rosterCount = 0;
+        let noMatches = 0;
+        let partialMatches = 0;
+        
+        // Get all comparison rows (excluding the unmatched section at bottom)
+        const comparisonRows = document.querySelectorAll('.character-comparison-row:not(.unmatched)');
+        
+        comparisonRows.forEach(row => {
+            const indicator = row.querySelector('.comparison-indicator');
+            const rosterCell = row.querySelector('.roster-character .roster-name-black, .roster-character .roster-name');
+            
+            if (indicator && rosterCell) {
+                const indicatorText = indicator.textContent.trim();
+                const rosterText = rosterCell.textContent.trim();
+                
+                // Count roster names (anything that's not "No match" or empty)
+                if (rosterText && rosterText !== 'No match' && rosterText !== '-') {
+                    rosterCount++;
+                }
+                
+                // Count match types based on indicator
+                if (indicatorText.includes('🔶') && indicatorText.includes('%')) {
+                    partialMatches++;
+                } else if (indicatorText === '❌') {
+                    noMatches++;
+                }
+            }
+        });
+        
+        return {
+            logsCount,
+            rosterCount,
+            noMatches,
+            partialMatches
+        };
+    }
+
+    generateValidationHeader(logsCount, rosterCount, matchStats) {
+        // Check if counts match
+        const countsMatch = matchStats.logsCount === matchStats.rosterCount;
+        
+        // Check if problems are resolved
+        const noProblems = matchStats.noMatches === 0 && matchStats.partialMatches === 0;
+        
+        // Perfect when both conditions are met
+        const isPerfect = countsMatch && noProblems;
+        
+        const headerClass = isPerfect ? 'comparison-header perfect' : 'comparison-header';
+        
+        return `
+            <div class="${headerClass}">
+                <div class="comparison-title">
+                    <h3>📋 Roster Validation ${isPerfect ? '✅' : ''}</h3>
+                    <div class="validation-counts">
+                        <div class="count-group">
+                            <span class="count-label">Names in wow logs</span>
+                            <span class="count-number ${countsMatch ? 'green' : ''}">${matchStats.logsCount}</span>
+                        </div>
+                        <div class="count-group">
+                            <span class="count-label">Names in roster</span>
+                            <span class="count-number ${countsMatch ? 'green' : ''}">${matchStats.rosterCount}</span>
+                        </div>
+                        <div class="count-group">
+                            <span class="count-label">No match</span>
+                            <span class="count-number ${matchStats.noMatches === 0 ? 'green' : 'red'}">${matchStats.noMatches}</span>
+                        </div>
+                        <div class="count-group">
+                            <span class="count-label">Partial match</span>
+                            <span class="count-number ${matchStats.partialMatches === 0 ? 'green' : 'orange'}">${matchStats.partialMatches}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    updateRosterValidation() {
+        if (!this.currentComparisonContainer || !this.currentSortedCharacters || !this.currentRosterPlayers) {
+            return;
+        }
+        
+        // Recalculate statistics
+        const matchStats = this.calculateMatchStatistics(
+            this.currentSortedCharacters, 
+            this.currentFriendliesMap, 
+            this.currentRosterPlayers
+        );
+        
+        // Update header
+        const newHeader = this.generateValidationHeader(null, null, matchStats);
+        
+        // Find and replace the current header
+        const currentHeader = this.currentComparisonContainer.querySelector('.comparison-header');
+        if (currentHeader) {
+            currentHeader.outerHTML = newHeader;
+        }
+        
+        console.log('📊 Roster validation updated:', matchStats);
+    }
+
+    applyConfirmedPlayers(sortedCharacters, rosterPlayers, confirmedPlayers) {
+        if (!confirmedPlayers || confirmedPlayers.length === 0) {
+            return [];
+        }
+
+        console.log('🔄 Applying confirmed players:', confirmedPlayers);
+        const restoredPlayers = [];
+
+        confirmedPlayers.forEach(confirmed => {
+            // Find the character in logs that matches this confirmed player
+            const logsCharacter = sortedCharacters.find(char => 
+                char.name && char.name.toLowerCase() === confirmed.character_name.toLowerCase()
+            );
+
+            if (logsCharacter) {
+                // Find if there's a roster player with this Discord ID
+                const rosterPlayerIndex = rosterPlayers.findIndex(roster => 
+                    roster.discordId === confirmed.discord_id
+                );
+
+                if (rosterPlayerIndex !== -1) {
+                    // Update the roster player to match the logs character
+                    rosterPlayers[rosterPlayerIndex] = {
+                        ...rosterPlayers[rosterPlayerIndex],
+                        name: confirmed.character_name,
+                        class: confirmed.character_class
+                    };
+
+                    restoredPlayers.push({
+                        originalName: rosterPlayers[rosterPlayerIndex].name,
+                        logsName: confirmed.character_name,
+                        characterClass: confirmed.character_class,
+                        discordId: confirmed.discord_id
+                    });
+                } else {
+                    // Add new roster player for this confirmed match
+                    rosterPlayers.push({
+                        name: confirmed.character_name,
+                        class: confirmed.character_class,
+                        discordId: confirmed.discord_id
+                    });
+
+                    restoredPlayers.push({
+                        originalName: null,
+                        logsName: confirmed.character_name,
+                        characterClass: confirmed.character_class,
+                        discordId: confirmed.discord_id
+                    });
+                }
+            }
+        });
+
+        console.log('✅ Restored players:', restoredPlayers);
+        return restoredPlayers;
+    }
+
+    generateRestorationMessage(restoredPlayers) {
+        const playerList = restoredPlayers.map(player => 
+            `<span class="restored-player ${this.getClassBackgroundClass(player.characterClass)}">
+                <span class="character-name-black">${player.logsName}</span>
+            </span>`
+        ).join('');
+
+        return `
+            <div class="restoration-message">
+                <div class="restoration-header">
+                    <h4>🔄 Previously Confirmed Players Restored</h4>
+                    <button id="resetRosterBtn" class="btn-reset">Reset to Original</button>
+                </div>
+                <div class="restoration-content">
+                    <p>The following ${restoredPlayers.length} player(s) were automatically matched from previous confirmations:</p>
+                    <div class="restored-players-list">
+                        ${playerList}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    async resetRosterToOriginal() {
+        try {
+            // Get active event session
+            const activeEventSession = localStorage.getItem('activeEventSession');
+            
+            if (!activeEventSession) {
+                alert('No active event session found');
+                return;
+            }
+
+            // Clear confirmed players from database
+            const response = await fetch(`/api/confirmed-logs/${activeEventSession}/players`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to clear confirmed players');
+            }
+
+            const result = await response.json();
+            console.log('✅ Cleared confirmed players:', result);
+
+            // Restore original data
+            this.currentRosterPlayers = JSON.parse(JSON.stringify(this.originalRosterPlayers));
+            this.currentSortedCharacters = JSON.parse(JSON.stringify(this.originalSortedCharacters));
+            this.currentFriendliesMap = JSON.parse(JSON.stringify(this.originalFriendliesMap));
+
+            // Re-render the comparison without confirmed players
+            this.displayCharacterComparison(
+                this.currentSortedCharacters, 
+                this.currentFriendliesMap, 
+                { raidDrop: this.originalRosterPlayers }, 
+                this.currentComparisonContainer, 
+                []
+            );
+
+            console.log('✅ Roster reset to original state');
+
+        } catch (error) {
+            console.error('❌ Error resetting roster:', error);
+            alert('Failed to reset roster: ' + error.message);
+        }
+    }
+
+    attachRosterNameClickListeners() {
+        // Find all clickable roster names
+        const clickableNames = document.querySelectorAll('.roster-name-clickable');
+        
+        clickableNames.forEach(nameElement => {
+            nameElement.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.showRosterEditDropdown(nameElement);
+            });
+        });
+        
+        // Close dropdown when clicking elsewhere
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.roster-edit-dropdown')) {
+                this.closeRosterEditDropdown();
+            }
+        });
+    }
+
+    attachResetButtonListener() {
+        const resetBtn = document.getElementById('resetRosterBtn');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (confirm('Are you sure you want to reset the roster to its original state? This will clear all confirmed matches.')) {
+                    this.resetRosterToOriginal();
+                }
+            });
+        }
+    }
+
+    showRosterEditDropdown(nameElement) {
+        // Close any existing dropdown first
+        this.closeRosterEditDropdown();
+        
+        const rowId = nameElement.dataset.rowId;
+        const logsName = nameElement.dataset.logsName;
+        const logsClass = nameElement.dataset.logsClass;
+        
+        // Get current roster player data if any
+        const currentRosterName = nameElement.textContent.trim();
+        const isNoMatch = currentRosterName === 'No match';
+        
+        // Check if there are unmatched players available
+        const hasUnmatchedPlayers = this.checkForUnmatchedPlayers();
+        
+        // Create dropdown menu with appropriate options
+        let dropdownOptions = '';
+        
+        // Only show "Match with logs name" if there's an actual roster name (not "No match")
+        if (!isNoMatch) {
+            dropdownOptions += `
+                <div class="dropdown-option" data-action="match-logs" data-row-id="${rowId}" data-logs-name="${logsName}" data-logs-class="${logsClass}">
+                    <i class="fas fa-check"></i> Match with logs name
+                </div>
+            `;
+        }
+        
+        // Show "Insert unmatched" only if there are unmatched players available
+        if (hasUnmatchedPlayers) {
+            dropdownOptions += `
+                <div class="dropdown-option" data-action="insert-unmatched" data-row-id="${rowId}" data-logs-name="${logsName}" data-logs-class="${logsClass}">
+                    <i class="fas fa-user-plus"></i> Insert unmatched
+                    <i class="fas fa-chevron-right dropdown-arrow"></i>
+                </div>
+            `;
+        }
+        
+        // Always show "Insert from database" and "Add new character"
+        dropdownOptions += `
+            <div class="dropdown-option" data-action="search-database" data-row-id="${rowId}" data-logs-name="${logsName}" data-logs-class="${logsClass}">
+                <i class="fas fa-search"></i> Insert from database
+            </div>
+            <div class="dropdown-option" data-action="add-character" data-row-id="${rowId}" data-logs-name="${logsName}" data-logs-class="${logsClass}">
+                <i class="fas fa-user-plus"></i> Add new character
+            </div>
+        `;
+        
+        const dropdown = document.createElement('div');
+        dropdown.className = 'roster-edit-dropdown';
+        dropdown.innerHTML = `<div class="roster-edit-options">${dropdownOptions}</div>`;
+        
+        // Position dropdown relative to the clicked element
+        const rect = nameElement.getBoundingClientRect();
+        dropdown.style.position = 'absolute';
+        dropdown.style.top = `${rect.bottom + window.scrollY + 5}px`;
+        dropdown.style.left = `${rect.left + window.scrollX}px`;
+        dropdown.style.zIndex = '1000';
+        
+        document.body.appendChild(dropdown);
+        this.currentDropdown = dropdown;
+        
+        // Add event listeners to dropdown options
+        this.attachDropdownOptionListeners(dropdown);
+    }
+
+    closeRosterEditDropdown() {
+        if (this.currentDropdown) {
+            document.body.removeChild(this.currentDropdown);
+            this.currentDropdown = null;
+        }
+        
+        // Also close any submenu that might be open
+        this.closeUnmatchedSubmenu();
+    }
+
+    attachDropdownOptionListeners(dropdown) {
+        const options = dropdown.querySelectorAll('.dropdown-option');
+        
+        options.forEach(option => {
+            option.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const action = option.dataset.action;
+                const rowId = option.dataset.rowId;
+                const logsName = option.dataset.logsName;
+                const logsClass = option.dataset.logsClass;
+                
+                switch (action) {
+                    case 'match-logs':
+                        this.handleMatchWithLogs(rowId, logsName, logsClass);
+                        break;
+                    case 'insert-unmatched':
+                        this.showUnmatchedSubmenu(option, rowId, logsName, logsClass);
+                        break;
+                    case 'search-database':
+                        this.showPlayerSearchModal(rowId, logsName, logsClass);
+                        break;
+                    case 'add-character':
+                        this.showAddCharacterModal(rowId, logsName, logsClass);
+                        break;
+                }
+            });
+        });
+    }
+
+    async handleMatchWithLogs(rowId, logsName, logsClass) {
+        try {
+            // Find the current roster player in this row
+            const row = document.getElementById(rowId);
+            const rosterNameElement = row.querySelector('.roster-name-black, .roster-name');
+            const currentRosterName = rosterNameElement.textContent.trim();
+            
+            // Find the roster player data
+            const rosterPlayer = this.currentRosterPlayers.find(p => p.name === currentRosterName);
+            
+            if (!rosterPlayer || !rosterPlayer.discordId) {
+                alert('Cannot match: No Discord ID found for this roster player.');
+                this.closeRosterEditDropdown();
+                return;
+            }
+            
+            // Store the confirmed player
+            await this.storeConfirmedPlayer(rosterPlayer.discordId, logsName, logsClass);
+            
+            // Update the UI to show the match
+            this.updateRowToMatched(rowId, logsName, logsClass, rosterPlayer.discordId);
+            
+            this.closeRosterEditDropdown();
+            
+        } catch (error) {
+            console.error('Error matching with logs name:', error);
+            alert('Failed to match with logs name. Please try again.');
+            this.closeRosterEditDropdown();
+        }
+    }
+
+    showUnmatchedSubmenu(parentOption, rowId, logsName, logsClass) {
+        // Close any existing submenu
+        this.closeUnmatchedSubmenu();
+        
+        // Get the logs character names to compare against
+        const logsCharacterNames = new Set(this.currentSortedCharacters.map(char => char.name || 'Unknown'));
+        
+        // Get players already assigned/matched in the UI
+        const alreadyAssignedDiscordIds = new Set();
+        document.querySelectorAll('[data-discord-id]').forEach(el => {
+            const discordId = el.dataset.discordId;
+            if (discordId) {
+                alreadyAssignedDiscordIds.add(discordId);
+            }
+        });
+        
+        // Find truly unmatched players: in roster but NOT in logs AND not already assigned
+        const unmatchedPlayers = this.currentRosterPlayers.filter(player => {
+            if (!player.discordId) return false; // Skip players without Discord ID
+            if (alreadyAssignedDiscordIds.has(player.discordId)) return false; // Skip already assigned
+            
+            // Check if this roster player appears in the logs data
+            const playerInLogs = logsCharacterNames.has(player.name);
+            return !playerInLogs; // Only include if NOT in logs (truly unmatched)
+        });
+        
+        if (unmatchedPlayers.length === 0) {
+            alert('No unmatched roster players available. All roster players either appear in the logs or have been assigned.');
+            return;
+        }
+        
+        // Create submenu
+        const submenu = document.createElement('div');
+        submenu.className = 'unmatched-submenu';
+        
+        let submenuHtml = '<div class="submenu-header">Select unmatched player:</div>';
+        unmatchedPlayers.forEach(player => {
+            const classBackgroundClass = this.getClassBackgroundClass(player.class);
+            submenuHtml += `
+                <div class="submenu-option ${classBackgroundClass}" 
+                     data-discord-id="${player.discordId}" 
+                     data-original-name="${player.name}" 
+                     data-original-class="${player.class}"
+                     data-target-name="${logsName}"
+                     data-target-class="${logsClass}"
+                     data-row-id="${rowId}">
+                    <span class="character-name-black">${player.name}</span>
+                </div>
+            `;
+        });
+        
+        submenu.innerHTML = submenuHtml;
+        
+        // Position submenu next to parent option
+        const rect = parentOption.getBoundingClientRect();
+        submenu.style.position = 'absolute';
+        submenu.style.top = `${rect.top + window.scrollY}px`;
+        submenu.style.left = `${rect.right + window.scrollX + 5}px`;
+        submenu.style.zIndex = '1001';
+        
+        document.body.appendChild(submenu);
+        this.currentSubmenu = submenu;
+        
+        // Add click listeners to submenu options
+        submenu.querySelectorAll('.submenu-option').forEach(option => {
+            option.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await this.handleInsertUnmatched(option);
+            });
+        });
+    }
+
+    closeUnmatchedSubmenu() {
+        if (this.currentSubmenu) {
+            document.body.removeChild(this.currentSubmenu);
+            this.currentSubmenu = null;
+        }
+    }
+
+    checkForUnmatchedPlayers() {
+        if (!this.currentRosterPlayers || !this.currentSortedCharacters) {
+            return false;
+        }
+        
+        // Get the logs character names to compare against
+        const logsCharacterNames = new Set(this.currentSortedCharacters.map(char => char.name || 'Unknown'));
+        
+        // Get players already assigned/matched in the UI
+        const alreadyAssignedDiscordIds = new Set();
+        document.querySelectorAll('[data-discord-id]').forEach(el => {
+            const discordId = el.dataset.discordId;
+            if (discordId) {
+                alreadyAssignedDiscordIds.add(discordId);
+            }
+        });
+        
+        // Check if there are any truly unmatched players
+        const unmatchedPlayers = this.currentRosterPlayers.filter(player => {
+            if (!player.discordId) return false; // Skip players without Discord ID
+            if (alreadyAssignedDiscordIds.has(player.discordId)) return false; // Skip already assigned
+            
+            // Check if this roster player appears in the logs data
+            const playerInLogs = logsCharacterNames.has(player.name);
+            return !playerInLogs; // Only include if NOT in logs (truly unmatched)
+        });
+        
+        return unmatchedPlayers.length > 0;
+    }
+
+    async handleInsertUnmatched(option) {
+        try {
+            const discordId = option.dataset.discordId;
+            const targetName = option.dataset.targetName;
+            const targetClass = option.dataset.targetClass;
+            const rowId = option.dataset.rowId;
+            
+            // Store the confirmed player with the logs name and class
+            await this.storeConfirmedPlayer(discordId, targetName, targetClass);
+            
+            // Update the UI
+            this.updateRowToMatched(rowId, targetName, targetClass, discordId);
+            
+            this.closeRosterEditDropdown();
+            
+        } catch (error) {
+            console.error('Error inserting unmatched player:', error);
+            alert('Failed to insert unmatched player. Please try again.');
+            this.closeRosterEditDropdown();
+        }
+    }
+
+    async storeConfirmedPlayer(discordId, characterName, characterClass) {
+        const activeEventSession = localStorage.getItem('activeEventSession');
+        
+        if (!activeEventSession) {
+            throw new Error('No active event session found');
+        }
+        
+        const response = await fetch(`/api/confirmed-logs/${activeEventSession}/player`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                discordId: discordId,
+                characterName: characterName,
+                characterClass: characterClass
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Failed to store confirmed player');
+        }
+        
+        console.log(`✅ Stored confirmed player: ${characterName} (${characterClass}) - Discord: ${discordId}`);
+    }
+
+    async storeExactMatches(exactMatches) {
+        try {
+            const activeEventSession = localStorage.getItem('activeEventSession');
+            
+            if (!activeEventSession) {
+                console.warn('No active event session found for storing exact matches');
+                return;
+            }
+            
+            console.log(`📝 Storing ${exactMatches.length} exact matches automatically...`);
+            
+            const response = await fetch(`/api/confirmed-logs/${activeEventSession}/players/bulk`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    players: exactMatches
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to store exact matches: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            console.log(`✅ Automatically stored ${result.inserted} exact matches`);
+            
+        } catch (error) {
+            console.error('❌ Error storing exact matches:', error);
+            // Don't throw - this is a background operation that shouldn't break the UI
+        }
+    }
+
+    updateRowToMatched(rowId, characterName, characterClass, discordId) {
+        const row = document.getElementById(rowId);
+        if (!row) return;
+        
+        // Update the roster character cell
+        const rosterCharacterDiv = row.querySelector('.roster-character');
+        const classBackgroundClass = this.getClassBackgroundClass(characterClass);
+        
+        rosterCharacterDiv.className = `roster-character ${classBackgroundClass}`;
+        rosterCharacterDiv.innerHTML = `
+            <span class="roster-name-black exact" data-discord-id="${discordId}">
+                ${characterName}
+            </span>
+        `;
+        
+        // Update the comparison indicator
+        const indicatorDiv = row.querySelector('.comparison-indicator');
+        indicatorDiv.innerHTML = '✅';
+        
+        // Remove the row from unmatched class if it has it
+        row.classList.remove('unmatched');
+        
+        console.log(`✅ Updated row ${rowId} to show confirmed match: ${characterName}`);
+        
+        // Update roster validation in real-time
+        setTimeout(() => this.updateRosterValidation(), 100);
+    }
+
+    showPlayerSearchModal(rowId, logsName, logsClass) {
+        this.closeRosterEditDropdown();
+        
+        // Store current context for later use
+        this.currentSearchContext = { rowId, logsName, logsClass };
+        
+        // Create player search modal overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'logs-player-search-overlay';
+        overlay.innerHTML = `
+            <div class="logs-player-search-modal">
+                <div class="logs-player-search-header">
+                    <h3>Search for Player</h3>
+                    <button class="logs-player-search-close">&times;</button>
+                </div>
+                <input type="text" id="logs-player-search-input" class="logs-player-search-input" 
+                       placeholder="Type player name (min 2 characters)..." autocomplete="off">
+                <div id="logs-player-search-results" class="logs-player-search-results">
+                    <div class="logs-player-search-no-results">Type at least 2 characters to search</div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(overlay);
+        this.currentSearchModal = overlay;
+        
+        // Focus the input
+        const input = overlay.querySelector('#logs-player-search-input');
+        setTimeout(() => input.focus(), 100);
+        
+        // Add event listeners
+        this.setupSearchModalListeners(overlay);
+    }
+
+    setupSearchModalListeners(overlay) {
+        const closeBtn = overlay.querySelector('.logs-player-search-close');
+        const input = overlay.querySelector('#logs-player-search-input');
+        
+        // Close modal events
+        closeBtn.addEventListener('click', () => this.closePlayerSearchModal());
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) this.closePlayerSearchModal();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.currentSearchModal) this.closePlayerSearchModal();
+        });
+        
+        // Search on input with debouncing
+        let searchTimeout;
+        input.addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                this.searchPlayersInDatabase(e.target.value.trim());
+            }, 300);
+        });
+    }
+
+    closePlayerSearchModal() {
+        if (this.currentSearchModal) {
+            document.body.removeChild(this.currentSearchModal);
+            this.currentSearchModal = null;
+            this.currentSearchContext = null;
+        }
+    }
+
+    async searchPlayersInDatabase(query) {
+        const resultsContainer = document.getElementById('logs-player-search-results');
+        
+        if (query.length < 2) {
+            resultsContainer.innerHTML = '<div class="logs-player-search-no-results">Type at least 2 characters to search</div>';
+            return;
+        }
+        
+        try {
+            resultsContainer.innerHTML = '<div class="logs-player-search-no-results">Searching...</div>';
+            
+            const response = await fetch(`/api/search-players?query=${encodeURIComponent(query)}`);
+            if (!response.ok) {
+                throw new Error(`Search failed: ${response.status}`);
+            }
+            
+            const players = await response.json();
+            
+            if (players.length === 0) {
+                resultsContainer.innerHTML = '<div class="logs-player-search-no-results">No players found</div>';
+                return;
+            }
+            
+            // Display search results with class colors
+            let resultsHtml = '';
+            players.forEach(player => {
+                const classBackgroundClass = this.getClassBackgroundClass(player.class);
+                resultsHtml += `
+                    <div class="logs-player-search-item ${classBackgroundClass}" 
+                         data-discord-id="${player.discord_id}" 
+                         data-character-name="${player.character_name}" 
+                         data-class="${player.class}">
+                        <div class="logs-player-search-item-name character-name-black">${player.character_name}</div>
+                        <div class="logs-player-search-item-class character-name-black">${player.class}</div>
+                    </div>
+                `;
+            });
+            
+            resultsContainer.innerHTML = resultsHtml;
+            
+            // Add click listeners to results
+            resultsContainer.querySelectorAll('.logs-player-search-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    this.selectPlayerFromDatabase(
+                        item.dataset.discordId,
+                        item.dataset.characterName,
+                        item.dataset.class
+                    );
+                });
+            });
+            
+        } catch (error) {
+            console.error('Error searching players:', error);
+            resultsContainer.innerHTML = '<div class="logs-player-search-no-results">Error searching players</div>';
+        }
+    }
+
+    async selectPlayerFromDatabase(discordId, characterName, characterClass) {
+        if (!this.currentSearchContext) return;
+        
+        const { rowId, logsName, logsClass } = this.currentSearchContext;
+        
+        try {
+            // Close the modal
+            this.closePlayerSearchModal();
+            
+            // Store the confirmed player with the logs name and class (not the database character data)
+            await this.storeConfirmedPlayer(discordId, logsName, logsClass);
+            
+            // Update the UI to show the confirmed match
+            this.updateRowToMatched(rowId, logsName, logsClass, discordId);
+            
+        } catch (error) {
+            console.error('Error selecting player from database:', error);
+            alert('Failed to select player. Please try again.');
+        }
+    }
+
+    showAddCharacterModal(rowId, logsName, logsClass) {
+        this.closeRosterEditDropdown();
+        
+        // Store current context for later use
+        this.currentAddCharacterContext = { rowId, logsName, logsClass };
+        
+        // Create add character modal overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'logs-add-character-overlay';
+        overlay.innerHTML = `
+            <div class="logs-add-character-modal">
+                <div class="logs-add-character-header">
+                    <h3>Add New Character</h3>
+                    <button class="logs-add-character-close">&times;</button>
+                </div>
+                <div class="logs-add-character-content">
+                    <div class="logs-form-group">
+                        <label for="logs-discord-id">Discord ID</label>
+                        <input type="text" id="logs-discord-id" class="logs-form-input" 
+                               placeholder="Enter Discord ID (required)" required>
+                    </div>
+                    <div class="logs-form-group">
+                        <label for="logs-character-name">Character Name</label>
+                        <input type="text" id="logs-character-name" class="logs-form-input" 
+                               value="${logsName}" placeholder="Character name">
+                    </div>
+                    <div class="logs-form-group">
+                        <label for="logs-character-class">Character Class</label>
+                        <select id="logs-character-class" class="logs-form-input">
+                            <option value="Warrior" ${logsClass === 'Warrior' ? 'selected' : ''}>Warrior</option>
+                            <option value="Paladin" ${logsClass === 'Paladin' ? 'selected' : ''}>Paladin</option>
+                            <option value="Hunter" ${logsClass === 'Hunter' ? 'selected' : ''}>Hunter</option>
+                            <option value="Rogue" ${logsClass === 'Rogue' ? 'selected' : ''}>Rogue</option>
+                            <option value="Priest" ${logsClass === 'Priest' ? 'selected' : ''}>Priest</option>
+                            <option value="Shaman" ${logsClass === 'Shaman' ? 'selected' : ''}>Shaman</option>
+                            <option value="Mage" ${logsClass === 'Mage' ? 'selected' : ''}>Mage</option>
+                            <option value="Warlock" ${logsClass === 'Warlock' ? 'selected' : ''}>Warlock</option>
+                            <option value="Druid" ${logsClass === 'Druid' ? 'selected' : ''}>Druid</option>
+                        </select>
+                    </div>
+                    <div class="logs-form-buttons">
+                        <button id="logs-add-character-cancel" class="logs-btn logs-btn-secondary">Cancel</button>
+                        <button id="logs-add-character-submit" class="logs-btn logs-btn-primary">Add Character</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(overlay);
+        this.currentAddCharacterModal = overlay;
+        
+        // Focus the Discord ID input
+        const discordInput = overlay.querySelector('#logs-discord-id');
+        setTimeout(() => discordInput.focus(), 100);
+        
+        // Add event listeners
+        this.setupAddCharacterModalListeners(overlay);
+    }
+
+    setupAddCharacterModalListeners(overlay) {
+        const closeBtn = overlay.querySelector('.logs-add-character-close');
+        const cancelBtn = overlay.querySelector('#logs-add-character-cancel');
+        const submitBtn = overlay.querySelector('#logs-add-character-submit');
+        
+        // Close modal events
+        closeBtn.addEventListener('click', () => this.closeAddCharacterModal());
+        cancelBtn.addEventListener('click', () => this.closeAddCharacterModal());
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) this.closeAddCharacterModal();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.currentAddCharacterModal) this.closeAddCharacterModal();
+        });
+        
+        // Submit form
+        submitBtn.addEventListener('click', () => this.handleAddCharacterSubmit());
+        
+        // Submit on Enter key in any input
+        overlay.querySelectorAll('input, select').forEach(input => {
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') this.handleAddCharacterSubmit();
+            });
+        });
+    }
+
+    closeAddCharacterModal() {
+        if (this.currentAddCharacterModal) {
+            document.body.removeChild(this.currentAddCharacterModal);
+            this.currentAddCharacterModal = null;
+            this.currentAddCharacterContext = null;
+        }
+    }
+
+    async handleAddCharacterSubmit() {
+        if (!this.currentAddCharacterContext) return;
+        
+        const { rowId, logsName, logsClass } = this.currentAddCharacterContext;
+        
+        // Get form values
+        const discordId = document.getElementById('logs-discord-id').value.trim();
+        const characterName = document.getElementById('logs-character-name').value.trim();
+        const characterClass = document.getElementById('logs-character-class').value;
+        
+        // Validate inputs
+        if (!discordId) {
+            alert('Discord ID is required');
+            return;
+        }
+        
+        if (!characterName) {
+            alert('Character name is required');
+            return;
+        }
+        
+        try {
+            // First, add the character to the database
+            const response = await fetch('/api/add-character', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    discordId: discordId,
+                    characterName: characterName,
+                    characterClass: characterClass
+                })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                if (response.status === 409) {
+                    // Character already exists
+                    const proceed = confirm(`Character "${characterName}" (${characterClass}) already exists in the database. Do you want to proceed with confirming this player for the logs?`);
+                    if (!proceed) return;
+                } else {
+                    throw new Error(error.message || 'Failed to add character');
+                }
+            }
+            
+            // Close the modal
+            this.closeAddCharacterModal();
+            
+            // Store the confirmed player (use the logs name/class as the confirmed data)
+            await this.storeConfirmedPlayer(discordId, logsName, logsClass);
+            
+            // Update the UI to show the confirmed match
+            this.updateRowToMatched(rowId, logsName, logsClass, discordId);
+            
+        } catch (error) {
+            console.error('Error adding character:', error);
+            alert('Failed to add character. Please try again.');
+        }
     }
 
     displaySummaryData() {
