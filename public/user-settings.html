@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>User Settings - Classic WoW Manager</title>
-    <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="roster.css">
-    <link rel="stylesheet" href="add-character.css">
-    <link rel="stylesheet" href="user-settings.css">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/roster.css">
+    <link rel="stylesheet" href="/add-character.css">
+    <link rel="stylesheet" href="/user-settings.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -21,6 +21,7 @@
             <nav class="top-nav">
                 <a href="/" class="top-nav-link">Events</a>
                 <a href="/players" class="top-nav-link">Players</a>
+                <a href="/logs" class="top-nav-link">Logs</a>
             </nav>
         </div>
         <div id="auth-container">
@@ -36,6 +37,13 @@
 
         <div class="settings-container">
             <div class="settings-section">
+                <h2><i class="fas fa-info-circle"></i> Account Information</h2>
+                <div id="account-info" class="account-info">
+                    <p>Loading account information...</p>
+                </div>
+            </div>
+
+            <div class="settings-section">
                 <h2><i class="fas fa-users"></i> My Characters</h2>
                 <div id="user-characters-list" class="characters-container">
                     <p>Loading your characters...</p>
@@ -45,13 +53,6 @@
                     <a href="/roster" class="btn btn-primary">
                         <i class="fas fa-plus"></i> Add New Character
                     </a>
-                </div>
-            </div>
-
-            <div class="settings-section">
-                <h2><i class="fas fa-info-circle"></i> Account Information</h2>
-                <div id="account-info" class="account-info">
-                    <p>Loading account information...</p>
                 </div>
             </div>
         </div>

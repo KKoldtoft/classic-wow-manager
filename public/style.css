@@ -294,16 +294,7 @@ body {
 }
 
 /* --- Class Colors --- */
-.class-warrior { background-color: #C69B6D; }
-.class-paladin { background-color: #F48CBA; }
-.class-hunter { background-color: #AAD372; }
-.class-rogue { background-color: #FFF468; }
-.class-priest { background-color: #FFFFFF; border: 1px solid #ddd; }
-.class-shaman { background-color: #0070DD; }
-.class-mage { background-color: #3FC7EB; }
-.class-warlock { background-color: #8788EE; }
-.class-druid { background-color: #FF7C0A; }
-.class-tank { background-color: #C69B6D; } /* Alias for warrior */
+/* Background colors removed - using text colors only in logs.css */
 
 /* Ensure all text inside colored items is black */
 .character-item .char-name, .character-item .char-class {

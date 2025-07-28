@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WoW Logs Analysis - Classic WoW Manager</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/logs.css">
+</head>
+<body>
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <div class="app-title">Classic WoW Manager</div>
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Events</a>
+                <a href="/players" class="top-nav-link">Players</a>
+                <a href="/logs" class="top-nav-link active">Logs</a>
+            </nav>
+        </div>
+        <div id="auth-container">
+            <!-- Auth content is now loaded by top-bar.js -->
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>WoW Logs Analysis</h1>
+            <p>Analyze Warcraft Logs reports for your raids</p>
+        </div>
+
+        <div class="logs-input-section">
+            <div class="input-container">
+                <input type="text" id="logInput" placeholder="Enter wowlogs link">
+                <button id="analyzeBtn" class="run-btn">Run</button>
+            </div>
+        </div>
+
+        <div id="loadingIndicator" class="loading-indicator" style="display: none;">
+            <div class="spinner"></div>
+            <p>Fetching log data...</p>
+        </div>
+
+        <div id="errorDisplay" class="error-display" style="display: none;">
+            <div class="error-content">
+                <h3>Error</h3>
+                <p id="errorMessage"></p>
+            </div>
+        </div>
+
+        <div id="logData" class="log-data-container" style="display: none;">
+            <!-- Fight Data Section -->
+            <div class="data-section">
+                <h2>📊 Fight Data</h2>
+                <div id="fightDataContent" class="data-content">
+                    <!-- Fight data will be populated here -->
+                </div>
+            </div>
+
+            <!-- Characters Section -->
+            <div class="data-section">
+                <h2>👥 Characters</h2>
+                <div id="charactersDataContent" class="data-content">
+                    <!-- Characters data will be populated here -->
+                </div>
+            </div>
+
+            <!-- Damage Data Section -->
+            <div class="data-section">
+                <h2>⚔️ Damage Done by Source</h2>
+                <div id="damageDataContent" class="data-content">
+                    <!-- Damage data will be populated here -->
+                </div>
+            </div>
+
+            <!-- Healing Data Section -->
+            <div class="data-section">
+                <h2>💚 Healing Done by Source</h2>
+                <div id="healingDataContent" class="data-content">
+                    <!-- Healing data will be populated here -->
+                </div>
+            </div>
+
+            <!-- Summary Data Section -->
+            <div class="data-section">
+                <h2>📊 Raid Summary</h2>
+                <div id="summaryDataContent" class="data-content">
+                    <!-- Summary data will be populated here -->
+                </div>
+            </div>
+
+            <!-- Raw Data Section (collapsible) -->
+            <div class="data-section">
+                <h2>🔧 Raw API Data <button id="toggleRawData" class="btn btn-secondary btn-small">Show</button></h2>
+                <div id="rawDataContent" class="data-content raw-data" style="display: none;">
+                    <div class="raw-data-tabs">
+                        <button class="tab-btn active" data-tab="fights">Fights Data</button>
+                        <button class="tab-btn" data-tab="summary">Summary Data</button>
+                        <button class="tab-btn" data-tab="damage">Damage Data</button>
+                        <button class="tab-btn" data-tab="healing">Healing Data</button>
+                    </div>
+                    <div class="tab-content">
+                        <div id="rawFightsData" class="tab-pane active">
+                            <pre id="rawFightsJson"></pre>
+                        </div>
+                        <div id="rawSummaryData" class="tab-pane">
+                            <pre id="rawSummaryJson"></pre>
+                        </div>
+                        <div id="rawDamageData" class="tab-pane">
+                            <pre id="rawDamageJson"></pre>
+                        </div>
+                        <div id="rawHealingData" class="tab-pane">
+                            <pre id="rawHealingJson"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/top-bar.js"></script>
+    <script src="/logs.js"></script>
+</body>
+</html> 

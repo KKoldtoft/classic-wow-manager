@@ -281,6 +281,10 @@ app.get('/user-settings', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'user-settings.html'));
 });
 
+app.get('/logs', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'logs.html'));
+});
+
 
 // All API and authentication routes should come AFTER express.static AND specific HTML routes
 app.get('/auth/discord', passport.authenticate('discord'));
