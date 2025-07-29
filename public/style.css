@@ -42,6 +42,18 @@ body.has-raid-bar {
     gap: 20px;
 }
 
+.app-logo {
+    display: block;
+    max-width: 160px;
+    height: auto;
+    filter: brightness(1);
+    transition: filter 0.2s ease;
+}
+
+.app-logo:hover {
+    filter: brightness(1.1);
+}
+
 .top-nav {
     display: flex;
     gap: 15px;
@@ -579,7 +591,8 @@ body.has-raid-bar {
         flex-direction: column;
         padding: 10px;
     }
-    .app-title {
+    .app-logo {
         margin-bottom: 10px;
+        max-width: 140px;
     }
 }

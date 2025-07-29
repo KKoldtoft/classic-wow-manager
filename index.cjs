@@ -590,6 +590,10 @@ app.get('/logs', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'logs.html'));
 });
 
+app.get('/raidlogs', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'raidlogs.html'));
+});
+
 app.get('/gold', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'gold.html'));
 });
@@ -2703,6 +2707,34 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 PRIMARY KEY (character_name, class)
             )
         `);
+
+        // Create sheet_imports table for tracking Google Sheet imports
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS sheet_imports (
+                id SERIAL PRIMARY KEY,
+                event_id VARCHAR(255) NOT NULL,
+                sheet_url TEXT NOT NULL,
+                sheet_title VARCHAR(500),
+                imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(event_id, sheet_url)
+            )
+        `);
+
+        // Create sheet_player_abilities table for storing player ability data from sheets
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS sheet_player_abilities (
+                id SERIAL PRIMARY KEY,
+                sheet_import_id INTEGER REFERENCES sheet_imports(id) ON DELETE CASCADE,
+                event_id VARCHAR(255) NOT NULL,
+                character_name VARCHAR(255) NOT NULL,
+                character_class VARCHAR(50) NOT NULL,
+                ability_name TEXT NOT NULL,
+                ability_value TEXT NOT NULL,
+                row_number INTEGER,
+                column_number INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
         
         // Create indexes
         await client.query(`
@@ -2722,6 +2754,15 @@ app.post('/api/admin/setup-database', async (req, res) => {
         `);
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_guildies_class_name ON guildies (class, character_name)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_sheet_imports_event_id ON sheet_imports (event_id)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_sheet_player_abilities_event_id ON sheet_player_abilities (event_id)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_sheet_player_abilities_character ON sheet_player_abilities (character_name, character_class)
         `);
         
         // Fix column size for spec emotes (Discord IDs can be 17-19 chars)
@@ -3592,6 +3633,481 @@ app.get('/api/rpb-tracking/:eventId', async (req, res) => {
     console.error('❌ [RPB TRACKING] Error getting RPB status:', error);
     res.status(500).json({
       success: false,
+      error: error.message
+    });
+  }
+});
+
+// --- Google Sheet Import Endpoints ---
+
+// Import data from Google Sheet
+app.post('/api/import-sheet', async (req, res) => {
+  try {
+    const { sheetUrl, eventId } = req.body;
+    
+    if (!sheetUrl || !eventId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Sheet URL and Event ID are required'
+      });
+    }
+
+    console.log(`📊 [SHEET IMPORT] Starting import for event ${eventId} from ${sheetUrl}`);
+
+    // Extract sheet ID from URL
+    const sheetIdMatch = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (!sheetIdMatch) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid Google Sheets URL format'
+      });
+    }
+
+    const sheetId = sheetIdMatch[1];
+    
+    // Try multiple CSV export methods
+    const csvUrls = [
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`,
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=0`,
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&single=true&gid=0`
+    ];
+
+    let csvResponse = null;
+    let successfulUrl = null;
+
+    for (const csvUrl of csvUrls) {
+      try {
+        console.log(`📊 [SHEET IMPORT] Trying CSV URL: ${csvUrl}`);
+        
+        csvResponse = await axios.get(csvUrl, {
+          timeout: 30000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          },
+          validateStatus: function (status) {
+            return status >= 200 && status < 300;
+          }
+        });
+        
+        // Check if response is actually CSV (not HTML error page)
+        const contentType = csvResponse.headers['content-type'] || '';
+        if (contentType.includes('text/csv') || contentType.includes('text/plain') || 
+            !csvResponse.data.includes('<!DOCTYPE html>')) {
+          successfulUrl = csvUrl;
+          console.log(`✅ [SHEET IMPORT] Successfully fetched CSV from: ${csvUrl}`);
+          break;
+        } else {
+          console.log(`❌ [SHEET IMPORT] Response was HTML, not CSV from: ${csvUrl}`);
+          csvResponse = null;
+        }
+      } catch (error) {
+        console.log(`❌ [SHEET IMPORT] Failed to fetch from ${csvUrl}: ${error.message}`);
+        continue;
+      }
+    }
+
+    if (!csvResponse) {
+      throw new Error('Unable to fetch CSV data from any of the attempted URLs. Please ensure the sheet is publicly accessible.');
+    }
+
+    const csvData = csvResponse.data;
+    console.log(`📊 [SHEET IMPORT] Received CSV data, length: ${csvData.length} characters`);
+    console.log(`📊 [SHEET IMPORT] First 500 characters of CSV data:`, csvData.substring(0, 500));
+    console.log(`📊 [SHEET IMPORT] Lines 5-10 of CSV data:`, csvData.split('\n').slice(4, 10));
+
+    // Parse CSV data
+    const parsedData = parseGoogleSheetCSV(csvData, eventId);
+    
+    if (!parsedData.success) {
+      return res.status(400).json(parsedData);
+    }
+
+    // Store data in database
+    const dbResult = await storeSheetDataInDB(parsedData.data, eventId, sheetUrl, parsedData.sheetTitle);
+
+    const actionMessage = dbResult.wasReplacement ? 'replaced' : 'imported';
+    console.log(`📊 [SHEET IMPORT] Successfully ${actionMessage} ${dbResult.playerCount} players with ${dbResult.abilitiesCount} abilities`);
+
+    // Fetch the stored data to return
+    const storedData = await getStoredSheetData(eventId);
+
+    res.json({
+      success: true,
+      message: dbResult.wasReplacement 
+        ? `Successfully replaced existing data with ${dbResult.playerCount} players and ${dbResult.abilitiesCount} abilities`
+        : `Successfully imported ${dbResult.playerCount} players with ${dbResult.abilitiesCount} abilities`,
+      eventId: eventId,
+      sheetTitle: parsedData.sheetTitle,
+      playerCount: dbResult.playerCount,
+      abilitiesCount: dbResult.abilitiesCount,
+      playerData: storedData,
+      wasReplacement: dbResult.wasReplacement
+    });
+
+  } catch (error) {
+    console.error('❌ [SHEET IMPORT] Error importing sheet:', error);
+    
+    let errorMessage = 'Failed to import sheet data';
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      errorMessage = 'Unable to connect to Google Sheets. Please check the URL and try again.';
+    } else if (error.response && error.response.status === 404) {
+      errorMessage = 'Sheet not found or not publicly accessible. Please make sure the sheet is shared publicly.';
+    } else if (error.response && error.response.status === 403) {
+      errorMessage = 'Access denied to the sheet. Please make sure the sheet is shared publicly.';
+    }
+
+    res.status(500).json({
+      success: false,
+      message: errorMessage,
+      error: error.message
+    });
+  }
+});
+
+// Debug endpoint to see raw CSV data
+app.post('/api/debug-csv', async (req, res) => {
+  try {
+    const { sheetUrl } = req.body;
+    const sheetIdMatch = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (!sheetIdMatch) {
+      return res.status(400).json({ error: 'Invalid URL' });
+    }
+
+    const sheetId = sheetIdMatch[1];
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+    
+    const csvResponse = await axios.get(csvUrl, {
+      timeout: 30000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+
+    const csvData = csvResponse.data;
+    const lines = csvData.split('\n');
+    
+    res.json({
+      success: true,
+      totalLines: lines.length,
+      first10Lines: lines.slice(0, 10),
+      row7: lines[6] || 'Row 7 not found',
+      row8: lines[7] || 'Row 8 not found',
+      row9: lines[8] || 'Row 9 not found'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper function to parse Google Sheet CSV data
+function parseGoogleSheetCSV(csvData, eventId) {
+  try {
+    console.log(`📊 [SHEET PARSER] Starting CSV parsing for event ${eventId}`);
+    
+    // Split CSV into rows
+    const rows = csvData.split('\n').map(row => {
+      // Simple CSV parser - handles basic quoted fields
+      const cells = [];
+      let currentCell = '';
+      let inQuotes = false;
+      
+      for (let i = 0; i < row.length; i++) {
+        const char = row[i];
+        if (char === '"' && (i === 0 || row[i-1] === ',')) {
+          inQuotes = true;
+        } else if (char === '"' && inQuotes && (i === row.length - 1 || row[i+1] === ',')) {
+          inQuotes = false;
+        } else if (char === ',' && !inQuotes) {
+          cells.push(currentCell.trim());
+          currentCell = '';
+        } else {
+          currentCell += char;
+        }
+      }
+      cells.push(currentCell.trim());
+      return cells;
+    });
+
+    console.log(`📊 [SHEET PARSER] Parsed ${rows.length} rows`);
+
+    // Get sheet title from first row if available
+    let sheetTitle = 'Unknown Sheet';
+    if (rows.length > 0 && rows[0].length > 0) {
+      sheetTitle = rows[0][0] || 'Unknown Sheet';
+    }
+
+    // Find row 8 (index 7) which contains character names and classes  
+    if (rows.length < 8) {
+      throw new Error('Sheet does not have enough rows. Expected at least 8 rows.');
+    }
+
+    const characterRow = rows[7]; // Row 8 (0-indexed)
+    console.log(`📊 [SHEET PARSER] Character row (row 8): ${characterRow.length} columns`);
+
+    // Parse character names and their classes
+    const characters = parseCharacterRow(characterRow);
+    console.log(`📊 [SHEET PARSER] Found ${characters.length} characters`);
+
+    // Parse ability data starting from row 10 (index 9)
+    const abilityData = [];
+    for (let rowIndex = 9; rowIndex < rows.length; rowIndex++) {
+      const row = rows[rowIndex];
+      if (row.length === 0 || row[0] === '') continue; // Skip empty rows
+
+      // Skip rows that don't have any data for our characters
+      let hasData = false;
+      for (const char of characters) {
+        if (char.columnIndex < row.length && row[char.columnIndex] && row[char.columnIndex].trim() !== '') {
+          hasData = true;
+          break;
+        }
+      }
+      if (!hasData) continue;
+
+      // Process each character's value for this ability
+      characters.forEach(char => {
+        if (char.columnIndex < row.length) {
+          const value = row[char.columnIndex];
+          if (value && value.trim() !== '') {
+            // Get ability name specific to this character's class
+            const characterAbilityName = getAbilityNameForCharacter(row, char, rowIndex + 1);
+            if (characterAbilityName) {
+              abilityData.push({
+                character_name: char.name,
+                character_class: char.class,
+                ability_name: characterAbilityName,
+                ability_value: value.trim(),
+                row_number: rowIndex + 1,
+                column_number: char.columnIndex + 1
+              });
+            }
+          }
+        }
+      });
+    }
+
+    console.log(`📊 [SHEET PARSER] Parsed ${abilityData.length} ability entries`);
+
+    return {
+      success: true,
+      data: abilityData,
+      sheetTitle: sheetTitle
+    };
+
+  } catch (error) {
+    console.error('❌ [SHEET PARSER] Error parsing CSV:', error);
+    return {
+      success: false,
+      message: `Failed to parse sheet data: ${error.message}`
+    };
+  }
+}
+
+// Helper function to parse character row and identify classes
+function parseCharacterRow(row) {
+  const characters = [];
+  const classLabels = ['Druids', 'Hunters', 'Mages', 'Priests', 'Rogues', 'Shamans', 'Paladins', 'Warlocks', 'Warriors'];
+  
+  let currentClass = null;
+  let currentClassColumn = -1;
+
+  for (let i = 0; i < row.length; i++) {
+    const cell = row[i];
+    
+    if (classLabels.includes(cell)) {
+      // Found a class label
+      currentClass = cell.replace('s', ''); // Remove 's' to get singular form
+      currentClassColumn = i;
+      console.log(`📊 [SHEET PARSER] Found class ${currentClass} at column ${i + 1}`);
+    } else if (currentClass && cell && cell.trim() !== '') {
+      // Found a character name under current class
+      characters.push({
+        name: cell.trim(),
+        class: currentClass,
+        columnIndex: i,
+        classColumnIndex: currentClassColumn
+      });
+      console.log(`📊 [SHEET PARSER] Found character ${cell.trim()} (${currentClass}) at column ${i + 1}`);
+    }
+  }
+
+  return characters;
+}
+
+// Helper function to get ability name for a specific character
+function getAbilityNameForCharacter(row, character, rowNumber) {
+  // First, try to find ability name in this character's class column
+  if (character.classColumnIndex >= 0 && character.classColumnIndex < row.length) {
+    const abilityName = row[character.classColumnIndex];
+    if (abilityName && abilityName.trim() !== '') {
+      return abilityName.trim();
+    }
+  }
+
+  // If no class-specific ability found, check column B (index 1) for general abilities
+  if (row.length > 1 && row[1] && row[1].trim() !== '') {
+    return row[1].trim();
+  }
+
+  return null;
+}
+
+// Helper function to store sheet data in database
+async function storeSheetDataInDB(abilityData, eventId, sheetUrl, sheetTitle) {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Check if there are existing entries for this event ID
+    const existingCheck = await client.query(`
+      SELECT COUNT(*) as count FROM sheet_imports WHERE event_id = $1
+    `, [eventId]);
+
+    const hasExistingData = parseInt(existingCheck.rows[0].count) > 0;
+
+    if (hasExistingData) {
+      console.log(`🗑️ [SHEET DB] Found existing data for event ${eventId}, deleting old entries...`);
+      
+      // Delete existing player abilities for this event (cascade will handle this, but let's be explicit)
+      await client.query(`
+        DELETE FROM sheet_player_abilities WHERE event_id = $1
+      `, [eventId]);
+      
+      // Delete existing sheet imports for this event
+      await client.query(`
+        DELETE FROM sheet_imports WHERE event_id = $1
+      `, [eventId]);
+      
+      console.log(`✅ [SHEET DB] Successfully deleted old data for event ${eventId}`);
+    }
+
+    // Insert new sheet import record
+    const importResult = await client.query(`
+      INSERT INTO sheet_imports (event_id, sheet_url, sheet_title)
+      VALUES ($1, $2, $3)
+      RETURNING id
+    `, [eventId, sheetUrl, sheetTitle]);
+
+    const sheetImportId = importResult.rows[0].id;
+
+    // Insert new ability data
+    let abilitiesCount = 0;
+    const playerCounts = new Set();
+
+    for (const ability of abilityData) {
+      await client.query(`
+        INSERT INTO sheet_player_abilities 
+        (sheet_import_id, event_id, character_name, character_class, ability_name, ability_value, row_number, column_number)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [
+        sheetImportId,
+        eventId,
+        ability.character_name,
+        ability.character_class,
+        ability.ability_name,
+        ability.ability_value,
+        ability.row_number,
+        ability.column_number
+      ]);
+      
+      abilitiesCount++;
+      playerCounts.add(ability.character_name);
+    }
+
+    await client.query('COMMIT');
+    console.log(`📊 [SHEET DB] Stored ${abilitiesCount} abilities for ${playerCounts.size} players`);
+
+    return {
+      playerCount: playerCounts.size,
+      abilitiesCount: abilitiesCount,
+      wasReplacement: hasExistingData
+    };
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Helper function to get stored sheet data
+async function getStoredSheetData(eventId) {
+  const result = await pool.query(`
+    SELECT character_name, character_class, ability_name, ability_value, row_number, column_number
+    FROM sheet_player_abilities 
+    WHERE event_id = $1 
+    ORDER BY character_name, ability_name
+    LIMIT 5000
+  `, [eventId]);
+
+  return result.rows;
+}
+
+// Debug endpoint to check database data
+app.get('/api/debug-db/:eventId', async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    
+    // Check sheet_imports table
+    const importsResult = await pool.query(`
+      SELECT id, event_id, sheet_url, sheet_title, imported_at 
+      FROM sheet_imports 
+      WHERE event_id = $1 
+      ORDER BY imported_at DESC
+    `, [eventId]);
+    
+    // Check sheet_player_abilities table - get summary
+    const abilitiesCountResult = await pool.query(`
+      SELECT 
+        character_name, 
+        character_class, 
+        COUNT(*) as ability_count
+      FROM sheet_player_abilities 
+      WHERE event_id = $1 
+      GROUP BY character_name, character_class 
+      ORDER BY character_name
+    `, [eventId]);
+    
+    // Get sample abilities for Ariela to verify the parsing fix
+    const arielaSampleResult = await pool.query(`
+      SELECT 
+        character_name, 
+        character_class, 
+        ability_name, 
+        ability_value, 
+        row_number, 
+        column_number
+      FROM sheet_player_abilities 
+      WHERE event_id = $1 AND character_name = 'Ariela'
+      ORDER BY ability_name
+      LIMIT 10
+    `, [eventId]);
+    
+    // Get total counts
+    const totalResult = await pool.query(`
+      SELECT 
+        COUNT(DISTINCT character_name) as total_players,
+        COUNT(*) as total_abilities
+      FROM sheet_player_abilities 
+      WHERE event_id = $1
+    `, [eventId]);
+    
+    res.json({
+      success: true,
+      eventId,
+      imports: importsResult.rows,
+      playerCounts: abilitiesCountResult.rows,
+      arielaSample: arielaSampleResult.rows,
+      totals: totalResult.rows[0]
+    });
+    
+  } catch (error) {
+    console.error('Database debug error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Database query failed',
       error: error.message
     });
   }
