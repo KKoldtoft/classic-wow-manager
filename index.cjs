@@ -590,8 +590,8 @@ app.get('/logs', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'logs.html'));
 });
 
-app.get('/raidlogs', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'raidlogs.html'));
+app.get('/rpb_import', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'rpb_import.html'));
 });
 
 app.get('/gold', (req, res) => {
@@ -1356,23 +1356,38 @@ app.get('/api/events', async (req, res) => {
 
   try {
     // Try to get cached events first
-    const cachedEvents = await getCachedEvents();
+    let cachedEvents = await getCachedEvents();
     
-    if (cachedEvents) {
-      // Return cached data
-      res.json({ scheduledEvents: cachedEvents });
-      return;
+    if (!cachedEvents) {
+      // No cached data, fetch fresh data
+      console.log('🔄 Cache miss - fetching fresh events data');
+      const events = await fetchEventsFromAPI();
+      const enrichedEvents = await enrichEventsWithChannelNames(events);
+      
+      // Cache the enriched events
+      await setCachedEvents(enrichedEvents);
+      cachedEvents = enrichedEvents;
     }
     
-    // No cached data, fetch fresh data
-    console.log('🔄 Cache miss - fetching fresh events data');
-    const events = await fetchEventsFromAPI();
-    const enrichedEvents = await enrichEventsWithChannelNames(events);
+    // Apply channel filters to the events
+    const channelFilters = await getChannelFilterSettings();
     
-    // Cache the enriched events
-    await setCachedEvents(enrichedEvents);
+    // Filter out events from hidden channels
+    const filteredEvents = cachedEvents.filter(event => {
+      // If no channel ID, show the event (default)
+      if (!event.channelId) return true;
+      
+      // If channel has filter setting, use it; otherwise default to visible (true)
+      const isVisible = channelFilters.has(event.channelId) 
+        ? channelFilters.get(event.channelId) 
+        : true;
+      
+      return isVisible;
+    });
     
-    res.json({ scheduledEvents: enrichedEvents });
+    console.log(`📡 Filtered events: ${cachedEvents.length} total → ${filteredEvents.length} visible`);
+    
+    res.json({ scheduledEvents: filteredEvents });
     
   } catch (error) {
     console.error('Error in /api/events:', error.response ? error.response.data : error.message);
@@ -2775,6 +2790,48 @@ app.post('/api/admin/setup-database', async (req, res) => {
         await client.query(`
             ALTER TABLE roster_overrides 
             ADD COLUMN IF NOT EXISTS in_raid BOOLEAN DEFAULT FALSE
+        `);
+        
+        // Create channel_filters table for Discord channel filtering
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS channel_filters (
+                channel_id TEXT PRIMARY KEY,
+                channel_name TEXT,
+                is_visible BOOLEAN DEFAULT true,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        
+        // Add index for channel_filters
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_channel_filters_visible ON channel_filters (is_visible)
+        `);
+        
+        // Create events_cache table for caching Raid-Helper API responses
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS events_cache (
+                cache_key VARCHAR(100) PRIMARY KEY,
+                events_data JSONB NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL
+            )
+        `);
+        
+        // Create RPB tracking table
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS rpb_tracking (
+                id SERIAL PRIMARY KEY,
+                event_id VARCHAR(100) NOT NULL,
+                log_url TEXT NOT NULL,
+                rpb_status VARCHAR(20) DEFAULT 'pending',
+                rpb_completed_at TIMESTAMP,
+                archive_url TEXT,
+                archive_name VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(event_id, log_url)
+            )
         `);
         
         res.json({ 
@@ -4185,6 +4242,171 @@ app.post('/api/rpb-tracking/:eventId', async (req, res) => {
   }
 });
 
+// ====================================
+// CHANNEL FILTER API ENDPOINTS
+// ====================================
+
+// Get channel filter settings for admin
+app.get('/api/admin/channel-filters', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+
+  // Check if user has management role
+  const hasRole = await hasManagementRole(req.user.accessToken);
+  if (!hasRole) {
+    return res.status(403).json({ success: false, message: 'Management role required' });
+  }
+
+  try {
+    // First, get all current events to find channels with raids
+    const events = await fetchEventsFromAPI();
+    const enrichedEvents = await enrichEventsWithChannelNames(events);
+    
+    // Filter to upcoming events only
+    const today = new Date();
+    const upcomingEvents = enrichedEvents.filter(event => {
+      if (!event.startTime) return false;
+      const eventStartDate = new Date(parseInt(event.startTime) * 1000);
+      return eventStartDate >= today;
+    });
+
+    // Extract unique channels from upcoming events
+    const channelMap = new Map();
+    upcomingEvents.forEach(event => {
+      if (event.channelId) {
+        const channelName = event.channelName || `Channel ${event.channelId}`;
+        if (channelMap.has(event.channelId)) {
+          channelMap.get(event.channelId).raid_count++;
+        } else {
+          channelMap.set(event.channelId, {
+            channel_id: event.channelId,
+            channel_name: channelName,
+            raid_count: 1,
+            is_visible: true // Default to visible
+          });
+        }
+      }
+    });
+
+    // Get existing filter settings from database
+    const filterResult = await pool.query('SELECT channel_id, is_visible FROM channel_filters');
+    const existingFilters = new Map();
+    filterResult.rows.forEach(row => {
+      existingFilters.set(row.channel_id, row.is_visible);
+    });
+
+    // Merge current channels with existing filter settings
+    const channels = Array.from(channelMap.values()).map(channel => ({
+      ...channel,
+      is_visible: existingFilters.has(channel.channel_id) 
+        ? existingFilters.get(channel.channel_id)
+        : true // Default to visible for new channels
+    }));
+
+    // Sort by channel name
+    channels.sort((a, b) => (a.channel_name || '').localeCompare(b.channel_name || ''));
+
+    res.json({
+      success: true,
+      channels: channels
+    });
+
+  } catch (error) {
+    console.error('Error fetching channel filters:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching channel filter data'
+    });
+  }
+});
+
+// Save channel filter settings
+app.post('/api/admin/channel-filters', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+
+  // Check if user has management role
+  const hasRole = await hasManagementRole(req.user.accessToken);
+  if (!hasRole) {
+    return res.status(403).json({ success: false, message: 'Management role required' });
+  }
+
+  const { filters } = req.body;
+
+  if (!Array.isArray(filters)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid filters data - expected array'
+    });
+  }
+
+  try {
+    // Create channel_filters table if it doesn't exist
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS channel_filters (
+        channel_id TEXT PRIMARY KEY,
+        channel_name TEXT,
+        is_visible BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Clear events cache so changes take effect immediately
+    await pool.query('DELETE FROM events_cache WHERE cache_key = $1', [EVENTS_CACHE_KEY]);
+    console.log('🗑️ Cleared events cache due to channel filter update');
+
+    // Update each filter setting
+    for (const filter of filters) {
+      const { channel_id, is_visible } = filter;
+      
+      if (!channel_id || typeof is_visible !== 'boolean') {
+        continue; // Skip invalid entries
+      }
+
+      await pool.query(`
+        INSERT INTO channel_filters (channel_id, is_visible, updated_at)
+        VALUES ($1, $2, CURRENT_TIMESTAMP)
+        ON CONFLICT (channel_id)
+        DO UPDATE SET 
+          is_visible = EXCLUDED.is_visible,
+          updated_at = CURRENT_TIMESTAMP
+      `, [channel_id, is_visible]);
+    }
+
+    console.log(`📡 Updated channel filters for ${filters.length} channels`);
+
+    res.json({
+      success: true,
+      message: `Successfully updated ${filters.length} channel filter settings`
+    });
+
+  } catch (error) {
+    console.error('Error saving channel filters:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error saving channel filter settings'
+    });
+  }
+});
+
+// Function to get channel filter settings (for internal use)
+async function getChannelFilterSettings() {
+  try {
+    const result = await pool.query('SELECT channel_id, is_visible FROM channel_filters');
+    const filters = new Map();
+    result.rows.forEach(row => {
+      filters.set(row.channel_id, row.is_visible);
+    });
+    return filters;
+  } catch (error) {
+    console.error('Error fetching channel filters:', error);
+    return new Map(); // Return empty map as fallback
+  }
+}
+
 // This route will handle both the root path ('/') AND any other unmatched paths,
 // serving events.html. It MUST be the LAST route definition in your application.
 // BUT exclude API routes to avoid interfering with API endpoints.
@@ -4195,7 +4417,6 @@ app.get('*', (req, res) => {
   }
   res.sendFile(path.join(__dirname, 'public', 'events.html')); // Corrected path to events.html
 });
-
 
 // --- Server Start ---
 app.listen(PORT, () => {

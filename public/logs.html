@@ -10,7 +10,7 @@
 <body>
     <div class="top-bar">
         <div class="top-bar-left">
-            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="160" height="35">
+            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
             <nav class="top-nav">
                 <a href="/" class="top-nav-link">Home</a>
                 <div class="top-nav-dropdown">
@@ -37,7 +37,6 @@
             <nav class="raid-nav">
                 <a href="#" class="raid-nav-link" id="raid-roster-link">Roster</a>
                 <a href="#" class="raid-nav-link" id="raid-assignments-link">Assignments</a>
-                <a href="/raidlogs" class="raid-nav-link" id="raid-raidlogs-link">Raid Logs</a>
                 <a href="#" class="raid-nav-link" id="raid-goldpot-link">Gold Pot</a>
             </nav>
         </div>
@@ -52,6 +51,58 @@
                 <input type="text" id="logInput" placeholder="Enter wowlogs link">
                 <button id="analyzeBtn" class="run-btn">Step 1 - Confirm logs</button>
                 <button id="runRpbBtn" class="run-btn rpb-btn">Step 2 - Run RPB</button>
+            </div>
+        </div>
+
+        <!-- Unified Workflow Section -->
+        <div class="unified-workflow-section">
+            <div class="workflow-separator">
+                <span>OR</span>
+            </div>
+            <div class="workflow-container">
+                <h3>🚀 Complete Workflow</h3>
+                <p>Run all steps automatically: RPB Analysis → Archive → Import Data</p>
+                <div class="workflow-input-container">
+                    <input type="text" id="workflowLogInput" placeholder="Enter wowlogs link for complete workflow">
+                    <button id="runCompleteWorkflowBtn" class="workflow-btn">Run Complete Workflow</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Workflow Progress Indicator -->
+        <div id="workflowProgress" class="workflow-progress" style="display: none;">
+            <div class="progress-header">
+                <h3>Workflow Progress</h3>
+            </div>
+            <div class="progress-steps">
+                <div class="progress-step" id="step1Progress">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <div class="step-title">RPB Analysis</div>
+                        <div class="step-status" id="step1Status">Waiting...</div>
+                    </div>
+                    <div class="step-indicator" id="step1Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step2Progress">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <div class="step-title">Archive Results</div>
+                        <div class="step-status" id="step2Status">Waiting...</div>
+                    </div>
+                    <div class="step-indicator" id="step2Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step3Progress">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <div class="step-title">Import Data</div>
+                        <div class="step-status" id="step3Status">Waiting...</div>
+                    </div>
+                    <div class="step-indicator" id="step3Indicator">⏳</div>
+                </div>
+            </div>
+            <div class="progress-actions" id="workflowActions" style="display: none;">
+                <button id="retryWorkflowBtn" class="btn btn-secondary">Retry Failed Step</button>
+                <button id="resetWorkflowBtn" class="btn btn-secondary">Start Over</button>
             </div>
         </div>
 

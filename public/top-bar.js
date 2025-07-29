@@ -27,8 +27,9 @@ async function updateAuthUI() {
         // Build dropdown menu items based on user permissions
         let dropdownItems = `<a href="/user-settings" class="dropdown-item">User settings</a>`;
         
-        // Add Admin settings option only for management users
+        // Add management-only options for users with Management role
         if (user.hasManagementRole) {
+            dropdownItems += `<a href="/logs" class="dropdown-item">Logs</a>`;
             dropdownItems += `<a href="/admin" class="dropdown-item">Admin settings</a>`;
         }
         

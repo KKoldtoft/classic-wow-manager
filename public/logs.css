@@ -1610,7 +1610,7 @@
     vertical-align: middle;
 }
 
-/* Replacement notice styling for raidlogs page */
+/* Replacement notice styling for rpb_import page */
 .replacement-notice {
     background: rgba(255, 193, 7, 0.1);
     border: 1px solid #ffc107;
@@ -1624,4 +1624,271 @@
 .replacement-notice i {
     margin-right: 5px;
     color: #ffc107;
+}
+
+/* Unified Workflow Styles */
+.unified-workflow-section {
+    margin: 2rem auto;
+    max-width: 800px;
+}
+
+.workflow-separator {
+    text-align: center;
+    margin: 1.5rem 0;
+    position: relative;
+}
+
+.workflow-separator::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--border-color, #333);
+}
+
+.workflow-separator span {
+    background: var(--bg-color, #0d1117);
+    padding: 0 1rem;
+    color: var(--text-secondary, #bbb);
+    font-weight: 500;
+}
+
+.workflow-container {
+    background: var(--card-bg, #1e1e1e);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 8px;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.workflow-container h3 {
+    color: var(--primary-color, #4a9eff);
+    margin: 0 0 0.5rem 0;
+    font-size: 1.3rem;
+}
+
+.workflow-container p {
+    color: var(--text-secondary, #bbb);
+    margin: 0 0 1.5rem 0;
+    font-size: 0.95rem;
+}
+
+.workflow-input-container {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    justify-content: center;
+}
+
+.workflow-input-container input {
+    flex: 1;
+    max-width: 400px;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color, #333);
+    border-radius: 4px;
+    background: var(--input-bg, #2d3748);
+    color: var(--text-color, #fff);
+    font-size: 0.95rem;
+}
+
+.workflow-input-container input:focus {
+    outline: none;
+    border-color: var(--primary-color, #4a9eff);
+    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.2);
+}
+
+.workflow-btn {
+    background: linear-gradient(135deg, #4a9eff 0%, #357abd 100%);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 4px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.workflow-btn:hover {
+    background: linear-gradient(135deg, #357abd 0%, #2563eb 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(74, 158, 255, 0.3);
+}
+
+.workflow-btn:disabled {
+    background: #555;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+/* Workflow Progress Styles */
+.workflow-progress {
+    background: var(--card-bg, #1e1e1e);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 2rem auto;
+    max-width: 800px;
+}
+
+.progress-header {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+.progress-header h3 {
+    color: var(--primary-color, #4a9eff);
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+.progress-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.progress-step {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--input-bg, #2d3748);
+    border-radius: 6px;
+    border-left: 4px solid var(--border-color, #555);
+    transition: all 0.3s ease;
+}
+
+.progress-step.active {
+    border-left-color: var(--primary-color, #4a9eff);
+    background: rgba(74, 158, 255, 0.1);
+}
+
+.progress-step.completed {
+    border-left-color: var(--success-color, #28a745);
+    background: rgba(40, 167, 69, 0.1);
+}
+
+.progress-step.error {
+    border-left-color: var(--error-color, #dc3545);
+    background: rgba(220, 53, 69, 0.1);
+}
+
+.step-number {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: var(--border-color, #555);
+    color: var(--text-color, #fff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+.progress-step.active .step-number {
+    background: var(--primary-color, #4a9eff);
+}
+
+.progress-step.completed .step-number {
+    background: var(--success-color, #28a745);
+}
+
+.progress-step.error .step-number {
+    background: var(--error-color, #dc3545);
+}
+
+.step-content {
+    flex: 1;
+}
+
+.step-title {
+    font-weight: 600;
+    color: var(--text-color, #fff);
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+.step-status {
+    color: var(--text-secondary, #bbb);
+    font-size: 0.9rem;
+}
+
+.progress-step.active .step-status {
+    color: var(--primary-color, #4a9eff);
+}
+
+.progress-step.completed .step-status {
+    color: var(--success-color, #28a745);
+}
+
+.progress-step.error .step-status {
+    color: var(--error-color, #dc3545);
+}
+
+.step-indicator {
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+.progress-actions {
+    margin-top: 1.5rem;
+    text-align: center;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color, #333);
+}
+
+.progress-actions .btn {
+    margin: 0 0.5rem;
+}
+
+/* Responsive Design for Workflow */
+@media (max-width: 768px) {
+    .unified-workflow-section {
+        margin: 1.5rem 1rem;
+    }
+    
+    .workflow-input-container {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    
+    .workflow-input-container input {
+        max-width: none;
+        width: 100%;
+    }
+    
+    .workflow-progress {
+        margin: 1.5rem 1rem;
+        padding: 1rem;
+    }
+    
+    .progress-step {
+        padding: 0.75rem;
+    }
+    
+    .step-number {
+        width: 1.75rem;
+        height: 1.75rem;
+        font-size: 0.8rem;
+    }
+    
+    .step-title {
+        font-size: 0.95rem;
+    }
+    
+    .step-status {
+        font-size: 0.85rem;
+    }
+    
+    .progress-actions .btn {
+        margin: 0.25rem;
+        font-size: 0.9rem;
+    }
 } 

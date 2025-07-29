@@ -412,6 +412,32 @@ class WoWLogsAnalyzer {
                 this.switchTab(e.target.dataset.tab);
             });
         });
+
+        // ====================================
+        // UNIFIED WORKFLOW EVENT LISTENERS
+        // ====================================
+
+        // Complete workflow button click
+        document.getElementById('runCompleteWorkflowBtn').addEventListener('click', () => {
+            this.runCompleteWorkflow();
+        });
+
+        // Enter key in workflow input field
+        document.getElementById('workflowLogInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.runCompleteWorkflow();
+            }
+        });
+
+        // Retry workflow button
+        document.getElementById('retryWorkflowBtn').addEventListener('click', () => {
+            this.retryWorkflowFromFailedStep();
+        });
+
+        // Reset workflow button
+        document.getElementById('resetWorkflowBtn').addEventListener('click', () => {
+            this.resetWorkflow();
+        });
     }
 
     extractLogId(input) {
@@ -3282,6 +3308,430 @@ class WoWLogsAnalyzer {
             </div>
             ${currentContent}
         `;
+    }
+
+    // ==============================================
+    // UNIFIED WORKFLOW FUNCTIONS
+    // ==============================================
+
+    async runCompleteWorkflow() {
+        const input = document.getElementById('workflowLogInput').value;
+        const logId = this.extractLogId(input);
+
+        if (!logId) {
+            this.showError('Invalid log URL or ID. Please check the format and try again.');
+            return;
+        }
+
+        // Get active event session for import step
+        const activeEventSession = localStorage.getItem('activeEventSession');
+        if (!activeEventSession) {
+            this.showError('No active event session found. Please select an event first.');
+            return;
+        }
+
+        console.log('🚀 [WORKFLOW] Starting complete workflow for log:', input);
+        
+        // Initialize workflow state
+        this.workflowState = {
+            currentStep: 0,
+            failedStep: null,
+            logUrl: input,
+            eventId: activeEventSession
+        };
+        
+        // Show progress UI and hide other elements
+        this.showWorkflowProgress();
+        this.hideOtherElements();
+        
+        // Disable workflow button
+        const workflowBtn = document.getElementById('runCompleteWorkflowBtn');
+        if (workflowBtn) {
+            workflowBtn.disabled = true;
+            workflowBtn.textContent = 'Running Workflow...';
+        }
+
+        try {
+            // Step 1: Run RPB Analysis
+            this.workflowState.currentStep = 1;
+            await this.runWorkflowStep1(input);
+            
+            // Step 2: Archive Results
+            this.workflowState.currentStep = 2;
+            await this.runWorkflowStep2(input);
+            
+            // Step 3: Import Data
+            this.workflowState.currentStep = 3;
+            await this.runWorkflowStep3(activeEventSession);
+            
+            // Show completion
+            this.showWorkflowComplete();
+            
+        } catch (error) {
+            console.error('❌ [WORKFLOW] Workflow failed:', error);
+            this.workflowState.failedStep = this.workflowState.currentStep;
+            this.showWorkflowError(error.message);
+        } finally {
+            // Re-enable workflow button
+            if (workflowBtn) {
+                workflowBtn.disabled = false;
+                workflowBtn.textContent = 'Run Complete Workflow';
+            }
+        }
+    }
+
+    async runWorkflowStep1(logUrl) {
+        console.log('📊 [WORKFLOW] Step 1: Starting RPB Analysis...');
+        this.updateWorkflowStep(1, 'active', 'Starting RPB analysis...', '🔄');
+        
+        try {
+            // Set the main log input for existing RPB functions to use
+            const mainLogInput = document.getElementById('logInput');
+            if (mainLogInput) {
+                mainLogInput.value = logUrl;
+            }
+
+            // Update RPB status to 'processing'
+            await this.updateRPBStatus(logUrl.trim(), 'processing');
+
+            // Start the two-phase RPB execution
+            await this.twoPhaseRPBExecution(logUrl.trim());
+            
+            // Wait for RPB completion by polling status
+            await this.waitForRPBCompletion();
+            
+            this.updateWorkflowStep(1, 'completed', 'RPB analysis completed successfully', '✅');
+            console.log('✅ [WORKFLOW] Step 1 completed');
+            
+        } catch (error) {
+            this.updateWorkflowStep(1, 'error', `RPB analysis failed: ${error.message}`, '❌');
+            throw error;
+        }
+    }
+
+    async runWorkflowStep2(logUrl) {
+        console.log('📁 [WORKFLOW] Step 2: Archiving results...');
+        this.updateWorkflowStep(2, 'active', 'Creating archive backup...', '🔄');
+        
+        try {
+            // Call the existing archive function
+            await this.callArchiveFunction();
+            
+            this.updateWorkflowStep(2, 'completed', 'Archive created successfully', '✅');
+            console.log('✅ [WORKFLOW] Step 2 completed');
+            
+        } catch (error) {
+            this.updateWorkflowStep(2, 'error', `Archive failed: ${error.message}`, '❌');
+            throw error;
+        }
+    }
+
+    async runWorkflowStep3(eventId) {
+        console.log('📥 [WORKFLOW] Step 3: Importing data...');
+        this.updateWorkflowStep(3, 'active', 'Importing data to database...', '🔄');
+        
+        try {
+            // Get the archive URL from RPB tracking
+            const archiveUrl = await this.getArchiveUrlFromTracking(eventId);
+            if (!archiveUrl) {
+                throw new Error('No archive URL found from previous steps');
+            }
+
+            // Call the import function
+            await this.callImportFunction(archiveUrl, eventId);
+            
+            this.updateWorkflowStep(3, 'completed', 'Data imported successfully', '✅');
+            console.log('✅ [WORKFLOW] Step 3 completed');
+            
+        } catch (error) {
+            this.updateWorkflowStep(3, 'error', `Import failed: ${error.message}`, '❌');
+            throw error;
+        }
+    }
+
+    // Helper function to wait for RPB completion
+    async waitForRPBCompletion() {
+        return new Promise((resolve, reject) => {
+            const maxWaitTime = 7 * 60 * 1000; // 7 minutes
+            const checkInterval = 3000; // 3 seconds
+            const startTime = Date.now();
+            
+            const checkCompletion = async () => {
+                try {
+                    const response = await fetch(this.rpbApiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'checkStatus' })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.status === 'COMPLETE' || (result.status && result.status.toString().startsWith('COMPLETE'))) {
+                        resolve();
+                        return;
+                    }
+                    
+                    if (result.status && result.status.toString().startsWith('ERROR')) {
+                        reject(new Error(result.status));
+                        return;
+                    }
+                    
+                    // Update progress status
+                    const elapsed = Date.now() - startTime;
+                    const progressPercent = Math.min((elapsed / maxWaitTime) * 100, 95);
+                    this.updateWorkflowStep(1, 'active', `RPB analysis in progress... ${Math.round(progressPercent)}%`, '🔄');
+                    
+                    // Continue checking if not timed out
+                    if (elapsed < maxWaitTime) {
+                        setTimeout(checkCompletion, checkInterval);
+                    } else {
+                        reject(new Error('RPB analysis timed out after 7 minutes'));
+                    }
+                    
+                } catch (error) {
+                    console.warn('Status check failed, retrying...', error);
+                    setTimeout(checkCompletion, checkInterval);
+                }
+            };
+            
+            checkCompletion();
+        });
+    }
+
+    // Helper function to call archive function
+    async callArchiveFunction() {
+        return new Promise((resolve, reject) => {
+            // Store original handlers
+            const originalShowArchiveSuccess = this.showArchiveSuccess.bind(this);
+            const originalShowArchiveError = this.showArchiveError.bind(this);
+            
+            // Override handlers for workflow
+            this.showArchiveSuccess = (result) => {
+                // Restore original handlers
+                this.showArchiveSuccess = originalShowArchiveSuccess;
+                this.showArchiveError = originalShowArchiveError;
+                resolve(result);
+            };
+            
+            this.showArchiveError = (errorMessage) => {
+                // Restore original handlers
+                this.showArchiveSuccess = originalShowArchiveSuccess;
+                this.showArchiveError = originalShowArchiveError;
+                reject(new Error(errorMessage));
+            };
+            
+            // Call the existing archive function
+            this.archiveRPBResults();
+        });
+    }
+
+    // Helper function to get archive URL from tracking
+    async getArchiveUrlFromTracking(eventId) {
+        try {
+            const response = await fetch(`/api/rpb-tracking/${eventId}`);
+            if (response.ok) {
+                const data = await response.json();
+                return data.success ? data.archiveUrl : null;
+            }
+            return null;
+        } catch (error) {
+            console.error('Failed to get archive URL:', error);
+            return null;
+        }
+    }
+
+    // Helper function to call import function (replicating rpb_import.js logic)
+    async callImportFunction(sheetUrl, eventId) {
+        const response = await fetch('/api/import-sheet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sheetUrl, eventId })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || 'Import failed');
+        }
+
+        return result;
+    }
+
+    // Progress UI functions
+    showWorkflowProgress() {
+        const progressDiv = document.getElementById('workflowProgress');
+        if (progressDiv) {
+            progressDiv.style.display = 'block';
+            // Reset all steps to waiting state
+            for (let i = 1; i <= 3; i++) {
+                this.updateWorkflowStep(i, 'waiting', 'Waiting...', '⏳');
+            }
+        }
+    }
+
+    hideOtherElements() {
+        // Hide existing elements that might interfere
+        const elementsToHide = ['loadingIndicator', 'errorDisplay', 'logData'];
+        elementsToHide.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) element.style.display = 'none';
+        });
+    }
+
+    updateWorkflowStep(stepNumber, state, statusText, indicator) {
+        const stepDiv = document.getElementById(`step${stepNumber}Progress`);
+        const statusDiv = document.getElementById(`step${stepNumber}Status`);
+        const indicatorDiv = document.getElementById(`step${stepNumber}Indicator`);
+        
+        if (stepDiv && statusDiv && indicatorDiv) {
+            // Remove all state classes
+            stepDiv.classList.remove('active', 'completed', 'error', 'waiting');
+            
+            // Add new state class
+            if (state !== 'waiting') {
+                stepDiv.classList.add(state);
+            }
+            
+            statusDiv.textContent = statusText;
+            indicatorDiv.textContent = indicator;
+        }
+    }
+
+    showWorkflowComplete() {
+        const progressDiv = document.getElementById('workflowProgress');
+        if (progressDiv) {
+            // Add completion message
+            const completionMessage = document.createElement('div');
+            completionMessage.style.cssText = `
+                text-align: center;
+                margin-top: 1.5rem;
+                padding: 1rem;
+                background: rgba(40, 167, 69, 0.1);
+                border: 1px solid var(--success-color, #28a745);
+                border-radius: 6px;
+                color: var(--success-color, #28a745);
+            `;
+            completionMessage.innerHTML = `
+                <h4 style="margin: 0 0 0.5rem 0;">🎉 Workflow Complete!</h4>
+                <p style="margin: 0;">All steps completed successfully. Data has been imported to the database.</p>
+            `;
+            
+            progressDiv.appendChild(completionMessage);
+            
+            // Show reset button
+            const actionsDiv = document.getElementById('workflowActions');
+            if (actionsDiv) {
+                actionsDiv.style.display = 'block';
+                document.getElementById('retryWorkflowBtn').style.display = 'none';
+            }
+        }
+    }
+
+    showWorkflowError(errorMessage) {
+        const progressDiv = document.getElementById('workflowProgress');
+        if (progressDiv) {
+            // Add error message
+            const errorMessageDiv = document.createElement('div');
+            errorMessageDiv.style.cssText = `
+                text-align: center;
+                margin-top: 1.5rem;
+                padding: 1rem;
+                background: rgba(220, 53, 69, 0.1);
+                border: 1px solid var(--error-color, #dc3545);
+                border-radius: 6px;
+                color: var(--error-color, #dc3545);
+            `;
+            errorMessageDiv.innerHTML = `
+                <h4 style="margin: 0 0 0.5rem 0;">❌ Workflow Failed</h4>
+                <p style="margin: 0;">${errorMessage}</p>
+            `;
+            
+            progressDiv.appendChild(errorMessageDiv);
+            
+            // Show action buttons
+            const actionsDiv = document.getElementById('workflowActions');
+            if (actionsDiv) {
+                actionsDiv.style.display = 'block';
+            }
+        }
+    }
+
+    resetWorkflow() {
+        // Hide progress
+        const progressDiv = document.getElementById('workflowProgress');
+        if (progressDiv) {
+            progressDiv.style.display = 'none';
+            // Remove any completion/error messages
+            const messages = progressDiv.querySelectorAll('div[style*="margin-top: 1.5rem"]');
+            messages.forEach(msg => msg.remove());
+        }
+        
+        // Clear workflow input
+        const workflowInput = document.getElementById('workflowLogInput');
+        if (workflowInput) {
+            workflowInput.value = '';
+        }
+        
+        // Reset button text
+        const workflowBtn = document.getElementById('runCompleteWorkflowBtn');
+        if (workflowBtn) {
+            workflowBtn.disabled = false;
+            workflowBtn.textContent = 'Run Complete Workflow';
+        }
+        
+        // Hide actions
+        const actionsDiv = document.getElementById('workflowActions');
+        if (actionsDiv) {
+            actionsDiv.style.display = 'none';
+        }
+
+        // Reset workflow state
+        this.workflowState = {
+            currentStep: 0,
+            failedStep: null,
+            logUrl: null,
+            eventId: null
+        };
+    }
+
+    // Enhanced retry mechanism that can continue from failed step
+    async retryWorkflowFromFailedStep() {
+        if (!this.workflowState || !this.workflowState.failedStep) {
+            // If no failed step info, restart from beginning
+            this.runCompleteWorkflow();
+            return;
+        }
+
+        const { failedStep, logUrl, eventId } = this.workflowState;
+        
+        console.log(`🔄 [WORKFLOW] Retrying from step ${failedStep}...`);
+        
+        // Show progress UI
+        this.showWorkflowProgress();
+        
+        // Set completed status for previous steps
+        for (let i = 1; i < failedStep; i++) {
+            this.updateWorkflowStep(i, 'completed', 'Previously completed', '✅');
+        }
+
+        try {
+            if (failedStep === 1) {
+                await this.runWorkflowStep1(logUrl);
+                await this.runWorkflowStep2(logUrl);
+                await this.runWorkflowStep3(eventId);
+            } else if (failedStep === 2) {
+                await this.runWorkflowStep2(logUrl);
+                await this.runWorkflowStep3(eventId);
+            } else if (failedStep === 3) {
+                await this.runWorkflowStep3(eventId);
+            }
+            
+            this.showWorkflowComplete();
+            
+        } catch (error) {
+            console.error(`❌ [WORKFLOW] Retry failed at step ${failedStep}:`, error);
+            this.showWorkflowError(error.message);
+        }
     }
 }
 

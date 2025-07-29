@@ -1,4 +1,4 @@
-// raidlogs.js - Google Sheet Import functionality
+// rpb_import.js - Google Sheet Import functionality
 
 document.addEventListener('DOMContentLoaded', function() {
     const importForm = document.getElementById('import-form');
@@ -168,11 +168,11 @@ async function prefillFromActiveEvent() {
         const activeEventSession = localStorage.getItem('activeEventSession');
         
         if (!activeEventSession) {
-            console.log('📋 [RAIDLOGS] No active event session found');
+            console.log('📋 [RPB_IMPORT] No active event session found');
             return;
         }
 
-        console.log(`📋 [RAIDLOGS] Found active event session: ${activeEventSession}`);
+        console.log(`📋 [RPB_IMPORT] Found active event session: ${activeEventSession}`);
         
         let fieldsPreFilled = false;
         
@@ -183,7 +183,7 @@ async function prefillFromActiveEvent() {
             eventIdField.style.backgroundColor = '#e8f5e8';
             eventIdField.title = 'Auto-filled from active event session';
             fieldsPreFilled = true;
-            console.log(`📋 [RAIDLOGS] Pre-filled event ID: ${activeEventSession}`);
+            console.log(`📋 [RPB_IMPORT] Pre-filled event ID: ${activeEventSession}`);
             
             // Clear visual indicator when user starts typing
             eventIdField.addEventListener('input', function() {
@@ -197,7 +197,7 @@ async function prefillFromActiveEvent() {
         
         if (response.ok) {
             const data = await response.json();
-            console.log('📋 [RAIDLOGS] RPB tracking data:', data);
+            console.log('📋 [RPB_IMPORT] RPB tracking data:', data);
             
             if (data.success && data.archiveUrl) {
                 const sheetUrlField = document.getElementById('sheet-url');
@@ -206,7 +206,7 @@ async function prefillFromActiveEvent() {
                     sheetUrlField.style.backgroundColor = '#e8f5e8';
                     sheetUrlField.title = 'Auto-filled from RPB archive URL';
                     fieldsPreFilled = true;
-                    console.log(`📋 [RAIDLOGS] Pre-filled sheet URL: ${data.archiveUrl}`);
+                    console.log(`📋 [RPB_IMPORT] Pre-filled sheet URL: ${data.archiveUrl}`);
                     
                     // Clear visual indicator when user starts typing
                     sheetUrlField.addEventListener('input', function() {
@@ -215,10 +215,10 @@ async function prefillFromActiveEvent() {
                     });
                 }
             } else {
-                console.log('📋 [RAIDLOGS] No archive URL found for this event');
+                console.log('📋 [RPB_IMPORT] No archive URL found for this event');
             }
         } else {
-            console.log('📋 [RAIDLOGS] No RPB tracking found for this event');
+            console.log('📋 [RPB_IMPORT] No RPB tracking found for this event');
         }
         
         // Show notification if any fields were pre-filled
@@ -226,7 +226,7 @@ async function prefillFromActiveEvent() {
             showNotification('Fields auto-filled from active event session', 'info');
         }
     } catch (error) {
-        console.error('📋 [RAIDLOGS] Error pre-filling from active event:', error);
+        console.error('📋 [RPB_IMPORT] Error pre-filling from active event:', error);
     }
 }
 

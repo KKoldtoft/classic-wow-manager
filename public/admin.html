@@ -183,7 +183,7 @@
     <!-- Universal Top Bar -->
     <div class="top-bar">
         <div class="top-bar-left">
-            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="160" height="35">
+            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
             <nav class="top-nav">
                 <a href="/" class="top-nav-link">Home</a>
                 <div class="top-nav-dropdown">
@@ -211,7 +211,6 @@
             <nav class="raid-nav">
                 <a href="#" class="raid-nav-link" id="raid-roster-link">Roster</a>
                 <a href="#" class="raid-nav-link" id="raid-assignments-link">Assignments</a>
-                <a href="/raidlogs" class="raid-nav-link" id="raid-raidlogs-link">Raid Logs</a>
                 <a href="#" class="raid-nav-link" id="raid-goldpot-link">Gold Pot</a>
             </nav>
         </div>
@@ -281,6 +280,25 @@
                 </div>
             </div>
             
+            <!-- Channel Filter section -->
+            <div id="channel-filter-section" class="permission-card management-section" style="display: none;">
+                <h2>📡 Filter Raids by Discord Channel</h2>
+                <p>Control which Discord channels should show raids in the upcoming raids list and events page.</p>
+                
+                <div style="margin-bottom: 20px;">
+                    <button class="btn" onclick="loadChannelFilters()" id="load-channels-btn">
+                        <i class="fas fa-refresh"></i> Load Current Channels
+                    </button>
+                    <button class="btn" onclick="saveChannelFilters()" id="save-filters-btn" style="display: none;">
+                        <i class="fas fa-save"></i> Save Changes
+                    </button>
+                </div>
+                
+                <div id="channel-filters-content">
+                    <!-- Channel filters will be loaded here -->
+                </div>
+            </div>
+
             <!-- Regular user section -->
             <div id="user-section" class="permission-card">
                 <h2>👤 User Features</h2>
@@ -341,6 +359,7 @@
             if (user.hasManagementRole) {
                 document.getElementById('management-section').style.display = 'block';
                 document.getElementById('guild-import-section').style.display = 'block';
+                document.getElementById('channel-filter-section').style.display = 'block';
             }
         }
 
@@ -485,7 +504,11 @@
                                 <li>Player confirmed logs table created/updated</li>
                                 <li><strong>Log data table created/updated</strong> ✨</li>
                                 <li>Guildies table created/updated</li>
+                                <li>Sheet imports table created/updated</li>
+                                <li>Sheet player abilities table created/updated</li>
                                 <li>Events cache table created/updated</li>
+                                <li>RPB tracking table created/updated</li>
+                                <li><strong>Channel filters table created/updated</strong> 📡</li>
                                 <li>All indexes created/updated</li>
                             </ul>
                         </div>
@@ -748,6 +771,243 @@
             } finally {
                 executeBtn.disabled = false;
                 executeBtn.innerHTML = '<i class="fas fa-upload"></i> Execute Import';
+            }
+        }
+
+        // ====================================
+        // CHANNEL FILTER FUNCTIONS
+        // ====================================
+
+        async function loadChannelFilters() {
+            const contentDiv = document.getElementById('channel-filters-content');
+            const loadBtn = document.getElementById('load-channels-btn');
+            const saveBtn = document.getElementById('save-filters-btn');
+            
+            loadBtn.disabled = true;
+            loadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+            
+            contentDiv.innerHTML = '<div class="loading">Loading current channels and filter settings...</div>';
+
+            try {
+                const response = await fetch('/api/admin/channel-filters');
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    renderChannelFilters(data.channels);
+                    saveBtn.style.display = 'inline-flex';
+                } else {
+                    contentDiv.innerHTML = `<div class="access-denied">Error loading channels: ${data.message}</div>`;
+                }
+            } catch (error) {
+                console.error('Error loading channel filters:', error);
+                contentDiv.innerHTML = '<div class="access-denied">Network error occurred while loading channels.</div>';
+            } finally {
+                loadBtn.disabled = false;
+                loadBtn.innerHTML = '<i class="fas fa-refresh"></i> Load Current Channels';
+            }
+        }
+
+        function renderChannelFilters(channels) {
+            const contentDiv = document.getElementById('channel-filters-content');
+            
+            if (!channels || channels.length === 0) {
+                contentDiv.innerHTML = `
+                    <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 20px; border-radius: 8px; color: #856404;">
+                        <h4 style="color: #856404; margin-bottom: 10px;">📭 No Channels Found</h4>
+                        <p style="margin: 0;">No upcoming raids with Discord channels were found. Please ensure there are events in the system.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let filtersHTML = `
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <h4 style="margin-bottom: 15px; color: #2c3e50;">📊 Channel Filter Settings</h4>
+                    <p style="color: #7f8c8d; margin-bottom: 15px;">
+                        Toggle channels below to show or hide raids from those channels. 
+                        Hidden channels will not appear in the upcoming raids dropdown or events page.
+                        <br><strong>Note:</strong> Changes affect all users globally.
+                    </p>
+                </div>
+                
+                <div style="display: grid; gap: 15px;">
+            `;
+
+            channels.forEach(channel => {
+                const isVisible = channel.is_visible !== false; // Default to true if not set
+                const toggleClass = isVisible ? 'toggle-on' : 'toggle-off';
+                const statusText = isVisible ? 'Shown' : 'Hidden';
+                const statusColor = isVisible ? '#28a745' : '#dc3545';
+
+                filtersHTML += `
+                    <div class="channel-filter-item" data-channel-id="${channel.channel_id}">
+                        <div style="display: flex; align-items: center; justify-content: space-between; padding: 15px; background: white; border-radius: 8px; border: 1px solid #dee2e6;">
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600; color: #2c3e50; margin-bottom: 5px;">
+                                    <i class="fas fa-hashtag" style="color: #7289da; margin-right: 5px;"></i>
+                                    ${channel.channel_name || `Channel ${channel.channel_id}`}
+                                </div>
+                                <div style="font-size: 12px; color: #6c757d;">
+                                    ID: ${channel.channel_id} • ${channel.raid_count} raid(s)
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <span style="color: ${statusColor}; font-weight: 500; min-width: 60px;">
+                                    ${statusText}
+                                </span>
+                                <div class="channel-toggle ${toggleClass}" data-channel-id="${channel.channel_id}" onclick="toggleChannel('${channel.channel_id}')">
+                                    <div class="toggle-slider"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            filtersHTML += `</div>`;
+
+            contentDiv.innerHTML = filtersHTML;
+
+            // Add CSS for toggles if not already added
+            if (!document.getElementById('channel-toggle-styles')) {
+                const style = document.createElement('style');
+                style.id = 'channel-toggle-styles';
+                style.textContent = `
+                    .channel-toggle {
+                        width: 50px;
+                        height: 25px;
+                        background: #ccc;
+                        border-radius: 25px;
+                        position: relative;
+                        cursor: pointer;
+                        transition: background 0.3s;
+                    }
+                    
+                    .channel-toggle.toggle-on {
+                        background: #28a745;
+                    }
+                    
+                    .channel-toggle.toggle-off {
+                        background: #dc3545;
+                    }
+                    
+                    .toggle-slider {
+                        width: 21px;
+                        height: 21px;
+                        background: white;
+                        border-radius: 50%;
+                        position: absolute;
+                        top: 2px;
+                        transition: transform 0.3s;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                    }
+                    
+                    .toggle-on .toggle-slider {
+                        transform: translateX(25px);
+                    }
+                    
+                    .toggle-off .toggle-slider {
+                        transform: translateX(2px);
+                    }
+                    
+                    .channel-filter-item:hover {
+                        transform: translateY(-1px);
+                        transition: transform 0.2s;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+        }
+
+        function toggleChannel(channelId) {
+            const toggle = document.querySelector(`.channel-toggle[data-channel-id="${channelId}"]`);
+            const statusSpan = toggle.closest('.channel-filter-item').querySelector('span[style*="color:"]');
+            
+            if (toggle.classList.contains('toggle-on')) {
+                // Turn off
+                toggle.classList.remove('toggle-on');
+                toggle.classList.add('toggle-off');
+                statusSpan.textContent = 'Hidden';
+                statusSpan.style.color = '#dc3545';
+            } else {
+                // Turn on
+                toggle.classList.remove('toggle-off');
+                toggle.classList.add('toggle-on');
+                statusSpan.textContent = 'Shown';
+                statusSpan.style.color = '#28a745';
+            }
+            
+            // Show save button to indicate changes need saving
+            document.getElementById('save-filters-btn').style.display = 'inline-flex';
+        }
+
+        async function saveChannelFilters() {
+            const saveBtn = document.getElementById('save-filters-btn');
+            const toggles = document.querySelectorAll('.channel-toggle');
+            
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+            // Collect filter settings
+            const filterSettings = [];
+            toggles.forEach(toggle => {
+                const channelId = toggle.dataset.channelId;
+                const isVisible = toggle.classList.contains('toggle-on');
+                filterSettings.push({
+                    channel_id: channelId,
+                    is_visible: isVisible
+                });
+            });
+
+            try {
+                const response = await fetch('/api/admin/channel-filters', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        filters: filterSettings
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    // Show success message
+                    const contentDiv = document.getElementById('channel-filters-content');
+                    const successMsg = document.createElement('div');
+                    successMsg.style.cssText = `
+                        background: #d4edda;
+                        border: 1px solid #c3e6cb;
+                        color: #155724;
+                        padding: 15px;
+                        border-radius: 8px;
+                        margin-bottom: 20px;
+                        animation: slideIn 0.3s ease;
+                    `;
+                    successMsg.innerHTML = `
+                        <h4 style="color: #155724; margin: 0 0 5px 0;">✅ Settings Saved!</h4>
+                        <p style="margin: 0;">Channel filter settings have been updated successfully. Changes will take effect immediately.</p>
+                    `;
+                    contentDiv.insertBefore(successMsg, contentDiv.firstChild);
+
+                    // Remove success message after 3 seconds
+                    setTimeout(() => {
+                        if (successMsg.parentNode) {
+                            successMsg.parentNode.removeChild(successMsg);
+                        }
+                    }, 3000);
+
+                    saveBtn.style.display = 'none';
+                } else {
+                    alert(`Error saving filters: ${data.message}`);
+                }
+            } catch (error) {
+                console.error('Error saving channel filters:', error);
+                alert('Network error occurred while saving filters.');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
             }
         }
     </script>
