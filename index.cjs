@@ -32,7 +32,10 @@ pool.connect()
     client.release();
     
     // Initialize events cache table
-    initializeEventsCacheTable();
+initializeEventsCacheTable();
+
+// Initialize RPB tracking table
+initializeRPBTrackingTable();
   })
   .catch(err => {
     console.error('Error connecting to PostgreSQL database:', err.stack);
@@ -54,6 +57,29 @@ async function initializeEventsCacheTable() {
     console.log('✅ Events cache table initialized');
   } catch (error) {
     console.error('❌ Error creating events cache table:', error);
+  }
+}
+
+// Function to create RPB tracking table if it doesn't exist
+async function initializeRPBTrackingTable() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS rpb_tracking (
+        id SERIAL PRIMARY KEY,
+        event_id VARCHAR(100) NOT NULL,
+        log_url TEXT NOT NULL,
+        rpb_status VARCHAR(20) DEFAULT 'pending',
+        rpb_completed_at TIMESTAMP,
+        archive_url TEXT,
+        archive_name VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(event_id, log_url)
+      )
+    `);
+    console.log('✅ RPB tracking table initialized');
+  } catch (error) {
+    console.error('❌ Error creating RPB tracking table:', error);
   }
 }
 
@@ -1405,7 +1431,7 @@ app.post('/api/logs/rpb', async (req, res) => {
     }
 
     // Google Apps Script Web App URL
-    const rpbWebAppUrl = 'https://script.google.com/macros/s/AKfycbwO9wfxxFryGtcgP-ETD1IFtS9HtHAihzjR7fp51tHRGDWcYXHMX_PcuMyUZDSt77l1/exec';
+    const rpbWebAppUrl = 'https://script.google.com/macros/s/AKfycbyilOtCQnVteduqKoRPSE0VNAne9tVPkQezaePajGMUiAiMNKmpn0flIdNBgL8tx5Eo/exec';
     
     // Prepare request data
     const requestData = { action };
@@ -1466,55 +1492,7 @@ app.post('/api/logs/rpb', async (req, res) => {
   }
 });
 
-// RPB Archive Endpoint
-app.post('/api/logs/rpb-archive', async (req, res) => {
-  try {
-    // Use the same RPB web app URL since archive functions are now merged into RPB.gs
-    const rpbWebAppUrl = 'https://script.google.com/macros/s/AKfycbwyCWlXk_oJuK0DGTCMO0e41Yp9-Ne4jR6X-yQibFc6xHp2BJmxmCLfZ9yzh4d0ZUOP/exec';
-    
-    console.log('🗂️ Starting RPB archive process...');
 
-    // Make request to RPB Google Apps Script (now includes archive functionality)
-    const response = await axios({
-      method: 'POST',
-      url: rpbWebAppUrl,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      data: { action: 'archiveRPB' },
-      timeout: 60000, // 1 minute timeout for archive creation
-    });
-
-    console.log('✅ RPB archive response:', response.data);
-
-    // Return the response from Archive Google Apps Script
-    res.json(response.data);
-
-  } catch (error) {
-    console.error('❌ RPB archive error:', error);
-    
-    if (error.code === 'ECONNABORTED') {
-      return res.status(408).json({
-        success: false,
-        error: 'Archive creation timed out. Please try again.'
-      });
-    }
-
-    if (error.response) {
-      // Archive Google Apps Script returned an error
-      return res.status(error.response.status).json({
-        success: false,
-        error: error.response.data || 'Archive service error'
-      });
-    }
-
-    // Network or other error
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to communicate with archive service'
-    });
-  }
-});
 
 // A helper function to normalize class names to their canonical form
 const CLASS_COLORS = {
@@ -2681,6 +2659,24 @@ app.post('/api/admin/setup-database', async (req, res) => {
             )
         `);
 
+        // Create log_data table for storing damage and healing data from WoW logs
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS log_data (
+                event_id VARCHAR(255),
+                character_name VARCHAR(255),
+                character_class VARCHAR(50),
+                discord_id VARCHAR(255),
+                role_detected VARCHAR(50),
+                role_source VARCHAR(50),
+                spec_name VARCHAR(50),
+                damage_amount BIGINT DEFAULT 0,
+                healing_amount BIGINT DEFAULT 0,
+                log_id VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (event_id, character_name)
+            )
+        `);
+
         // Create guildies table for guild member data
         await client.query(`
             CREATE TABLE IF NOT EXISTS guildies (
@@ -2717,6 +2713,9 @@ app.post('/api/admin/setup-database', async (req, res) => {
         `);
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_player_confirmed_logs_raid_id ON player_confirmed_logs (raid_id)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_log_data_event_id ON log_data (event_id)
         `);
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_guildies_discord_id ON guildies (discord_id)
@@ -3258,6 +3257,133 @@ app.get('/api/confirmed-logs/:raidId/all-players', async (req, res) => {
     }
 });
 
+// Store log data (damage and healing) for an event
+app.post('/api/log-data/:eventId/store', async (req, res) => {
+    const { eventId } = req.params;
+    const { logData } = req.body;
+    
+    console.log(`💾 [LOG DATA] Storing log data for event: ${eventId}`);
+    console.log(`💾 [LOG DATA] Received ${logData?.length || 0} player records`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // First, clear existing data for this event
+        await client.query('DELETE FROM log_data WHERE event_id = $1', [eventId]);
+        console.log(`🗑️ [LOG DATA] Cleared existing data for event: ${eventId}`);
+        
+        if (!logData || logData.length === 0) {
+            return res.json({ success: true, message: 'No data to store' });
+        }
+        
+        // Insert new data
+        for (const player of logData) {
+            await client.query(`
+                INSERT INTO log_data (
+                    event_id, character_name, character_class, discord_id, 
+                    role_detected, role_source, spec_name, damage_amount, 
+                    healing_amount, log_id
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                ON CONFLICT (event_id, character_name) 
+                DO UPDATE SET
+                    character_class = EXCLUDED.character_class,
+                    discord_id = EXCLUDED.discord_id,
+                    role_detected = EXCLUDED.role_detected,
+                    role_source = EXCLUDED.role_source,
+                    spec_name = EXCLUDED.spec_name,
+                    damage_amount = EXCLUDED.damage_amount,
+                    healing_amount = EXCLUDED.healing_amount,
+                    log_id = EXCLUDED.log_id,
+                    created_at = CURRENT_TIMESTAMP
+            `, [
+                eventId,
+                player.characterName,
+                player.characterClass,
+                player.discordId,
+                player.roleDetected,
+                player.roleSource,
+                player.specName,
+                player.damageAmount || 0,
+                player.healingAmount || 0,
+                player.logId
+            ]);
+        }
+        
+        console.log(`✅ [LOG DATA] Successfully stored ${logData.length} player records`);
+        res.json({ 
+            success: true, 
+            message: `Stored log data for ${logData.length} players`,
+            eventId: eventId
+        });
+        
+    } catch (error) {
+        console.error('❌ [LOG DATA] Error storing log data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error storing log data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Retrieve stored log data for an event
+app.get('/api/log-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`📖 [LOG DATA] Retrieving log data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'log_data'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [LOG DATA] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [], hasData: false });
+        }
+        
+        const result = await client.query(`
+            SELECT 
+                character_name, character_class, discord_id, role_detected, 
+                role_source, spec_name, damage_amount, healing_amount, 
+                log_id, created_at
+            FROM log_data 
+            WHERE event_id = $1 
+            ORDER BY damage_amount DESC, healing_amount DESC
+        `, [eventId]);
+        
+        const hasData = result.rows.length > 0;
+        console.log(`📊 [LOG DATA] Found ${result.rows.length} player records for event: ${eventId}`);
+        
+        res.json({ 
+            success: true, 
+            data: result.rows,
+            hasData: hasData,
+            eventId: eventId
+        });
+        
+    } catch (error) {
+        console.error('❌ [LOG DATA] Error retrieving log data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving log data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // Search players from database (similar to roster functionality)
 app.get('/api/search-players', async (req, res) => {
     const { query } = req.query;
@@ -3377,6 +3503,170 @@ app.get('/api/raid-helper/events/:eventId', async (req, res) => {
             });
         }
     }
+});
+
+// Google Apps Script proxy endpoint for RPB archiving
+app.post('/api/logs/rpb-archive', async (req, res) => {
+    console.log('📁 [RPB ARCHIVE] Starting Google Apps Script proxy request');
+    
+    try {
+        // Get the Google Apps Script URL from environment variables
+        const scriptUrl = process.env.GOOGLE_APPS_SCRIPT_URL;
+        
+        if (!scriptUrl) {
+            console.error('❌ [RPB ARCHIVE] GOOGLE_APPS_SCRIPT_URL not configured in environment');
+            return res.status(500).json({
+                success: false,
+                error: 'Google Apps Script URL not configured'
+            });
+        }
+        
+        console.log('🔄 [RPB ARCHIVE] Calling Google Apps Script:', scriptUrl);
+        
+        // Make the request to Google Apps Script
+        const response = await fetch(scriptUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                action: 'createRpbBackup'
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Google Apps Script request failed: ${response.status} ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.log('✅ [RPB ARCHIVE] Google Apps Script response:', result);
+        
+        // Return the result from Google Apps Script
+        res.json(result);
+        
+    } catch (error) {
+        console.error('❌ [RPB ARCHIVE] Error calling Google Apps Script:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to create RPB backup'
+        });
+    }
+});
+
+// --- RPB Tracking Endpoints ---
+
+// Get RPB status for an event
+app.get('/api/rpb-tracking/:eventId', async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    console.log(`📊 [RPB TRACKING] Getting RPB status for event: ${eventId}`);
+    
+    const result = await pool.query(
+      'SELECT * FROM rpb_tracking WHERE event_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [eventId]
+    );
+    
+    if (result.rows.length === 0) {
+      console.log(`📊 [RPB TRACKING] No RPB tracking found for event: ${eventId}`);
+      return res.json({
+        success: true,
+        hasRPB: false,
+        status: null
+      });
+    }
+    
+    const tracking = result.rows[0];
+    console.log(`📊 [RPB TRACKING] Found RPB tracking for event ${eventId}: ${tracking.rpb_status}`);
+    
+    res.json({
+      success: true,
+      hasRPB: true,
+      status: tracking.rpb_status,
+      logUrl: tracking.log_url,
+      completedAt: tracking.rpb_completed_at,
+      archiveUrl: tracking.archive_url,
+      archiveName: tracking.archive_name
+    });
+    
+  } catch (error) {
+    console.error('❌ [RPB TRACKING] Error getting RPB status:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Update RPB status for an event
+app.post('/api/rpb-tracking/:eventId', async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { logUrl, status, archiveUrl, archiveName } = req.body;
+    
+    console.log(`📊 [RPB TRACKING] Updating RPB status for event ${eventId}: ${status}`);
+    
+    // First, try to insert a new record
+    try {
+      const insertResult = await pool.query(
+        `INSERT INTO rpb_tracking (event_id, log_url, rpb_status, rpb_completed_at, archive_url, archive_name)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [
+          eventId, 
+          logUrl, 
+          status, 
+          status === 'completed' ? new Date() : null,
+          archiveUrl || null,
+          archiveName || null
+        ]
+      );
+      
+      console.log(`✅ [RPB TRACKING] Created new RPB tracking for event ${eventId}`);
+      return res.json({
+        success: true,
+        tracking: insertResult.rows[0]
+      });
+      
+    } catch (insertError) {
+      // If insert fails due to unique constraint, update instead
+      if (insertError.code === '23505') { // unique_violation
+        console.log(`📊 [RPB TRACKING] Record exists, updating RPB tracking for event ${eventId}`);
+        
+        const updateResult = await pool.query(
+          `UPDATE rpb_tracking 
+           SET rpb_status = $3, 
+               rpb_completed_at = $4,
+               archive_url = COALESCE($5, archive_url),
+               archive_name = COALESCE($6, archive_name),
+               updated_at = CURRENT_TIMESTAMP
+           WHERE event_id = $1 AND log_url = $2
+           RETURNING *`,
+          [
+            eventId, 
+            logUrl, 
+            status, 
+            status === 'completed' ? new Date() : null,
+            archiveUrl,
+            archiveName
+          ]
+        );
+        
+        console.log(`✅ [RPB TRACKING] Updated RPB tracking for event ${eventId}`);
+        return res.json({
+          success: true,
+          tracking: updateResult.rows[0]
+        });
+      } else {
+        throw insertError;
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ [RPB TRACKING] Error updating RPB status:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 // This route will handle both the root path ('/') AND any other unmatched paths,

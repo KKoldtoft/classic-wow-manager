@@ -3822,62 +3822,17 @@ function generateAllSheet() {
 }
 
 // Web App Endpoint Functions for external integration
-function doPost(e) {
-  try {
-    console.log('📨 [WEB APP] Received POST request');
-    console.log('📨 [WEB APP] Request timestamp:', new Date().toISOString());
-    
-    if (!e || !e.postData || !e.postData.contents) {
-      console.error('❌ [WEB APP] Invalid request: missing postData');
-      throw new Error('Invalid request: missing postData');
-    }
-    
-    console.log('📨 [WEB APP] Raw POST data:', e.postData.contents);
-    
-    const data = JSON.parse(e.postData.contents);
-    console.log('📨 [WEB APP] Parsed data:', data);
-    
-    const action = data.action;
-    const logUrl = data.logUrl;
-    
-    console.log('🎯 [WEB APP] Action requested:', action);
-    console.log('🔗 [WEB APP] Log URL provided:', logUrl);
-    
-    if (action === 'startRPB') {
-      console.log('🚀 [WEB APP] Routing to startRPBProcessing');
-      return startRPBProcessing(logUrl);
-    } else if (action === 'checkStatus') {
-      console.log('🔍 [WEB APP] Routing to checkRPBStatus');
-      return checkRPBStatus();
-    } else if (action === 'clearStatus') {
-      console.log('🧹 [WEB APP] Routing to clearRPBStatus');
-      return clearRPBStatus();
-    } else if (action === 'clearF11') {
-      console.log('🧹 [WEB APP] Routing to clearF11Only');
-      return clearF11Only();
-    } else if (action === 'archiveRPB') {
-      console.log('🗂️ [WEB APP] Routing to archiveRPBResults');
-      return archiveRPBResults();
-    }
-    
-    console.error('❌ [WEB APP] Unknown action requested:', action);
-    return ContentService
-      .createTextOutput(JSON.stringify({success: false, error: 'Unknown action: ' + action}))
-      .setMimeType(ContentService.MimeType.JSON);
-      
-  } catch (error) {
-    console.error('❌ [WEB APP] doPost failed:', error.toString());
-    console.error('❌ [WEB APP] doPost error stack:', error.stack);
-    console.error('❌ [WEB APP] Request details:', e);
-    
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        success: false, 
-        error: error.toString(),
-        timestamp: new Date().toISOString()
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+// NOTE: doPost function moved to CreateRpbBackup.gs to avoid conflicts
+// This function is disabled - all web app routing now handled by merged doPost
+function doPostRPB_DISABLED(e) {
+  // This function has been disabled to avoid conflicts with the merged doPost in CreateRpbBackup.gs
+  // All RPB actions are now routed through the merged doPost function
+  return ContentService
+    .createTextOutput(JSON.stringify({
+      success: false, 
+      error: 'This doPost function is disabled. Use the merged doPost in CreateRpbBackup.gs instead.'
+    }))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 function startRPBProcessing(logUrl) {
@@ -4111,6 +4066,53 @@ function checkRPBStatus() {
   } catch (error) {
     console.error('❌ [STATUS CHECK] Failed to check status:', error.toString());
     console.error('❌ [STATUS CHECK] Error stack:', error.stack);
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: false,
+        error: error.toString(),
+        timestamp: new Date().toISOString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function clearRPBStatus() {
+  try {
+    var clearTime = new Date();
+    console.log('🧹 [CLEAR STATUS] Clearing RPB completion status...');
+    console.log('🕐 [CLEAR STATUS] Clear time:', clearTime.toISOString());
+    
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    console.log('📊 [CLEAR STATUS] Got spreadsheet:', ss.getName());
+    
+    var instructionsSheet = ss.getSheetByName("Instructions");
+    if (!instructionsSheet) {
+      throw new Error('Instructions sheet not found');
+    }
+    console.log('📋 [CLEAR STATUS] Found Instructions sheet');
+    
+    var statusCell = instructionsSheet.getRange("F11");
+    var currentStatus = statusCell.getValue();
+    console.log('📍 [CLEAR STATUS] Current F11 status:', currentStatus);
+    
+    // Clear the status cell
+    statusCell.setValue("");
+    SpreadsheetApp.flush();
+    console.log('✅ [CLEAR STATUS] F11 status cleared successfully');
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: true,
+        message: "Status cleared successfully",
+        previousStatus: currentStatus,
+        timestamp: new Date().toISOString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (error) {
+    console.error('❌ [CLEAR STATUS] Failed to clear status:', error.toString());
+    console.error('❌ [CLEAR STATUS] Error stack:', error.stack);
     
     return ContentService
       .createTextOutput(JSON.stringify({

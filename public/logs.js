@@ -9,7 +9,378 @@ class WoWLogsAnalyzer {
         // Use our backend proxy endpoint instead of direct Google Apps Script call
         this.rpbApiUrl = '/api/logs/rpb';
         
+
+        
         this.initializeEventListeners();
+        
+        // Check for stored log data on page load
+        this.checkForStoredLogData();
+    }
+
+    async checkForStoredLogData() {
+        const activeEventSession = localStorage.getItem('activeEventSession');
+        if (!activeEventSession) {
+            console.log('📄 [STORED DATA] No active event session, skipping stored data check');
+            return;
+        }
+
+        console.log(`📄 [STORED DATA] Checking for stored log data for event: ${activeEventSession}`);
+        
+        try {
+            const response = await fetch(`/api/log-data/${activeEventSession}`);
+            const result = await response.json();
+            
+            if (result.success && result.hasData && result.data.length > 0) {
+                console.log(`✅ [STORED DATA] Found stored data for ${result.data.length} players`);
+                try {
+                    await this.displayStoredLogData(result.data);
+                    // Also check RPB status after displaying stored data
+                    await this.checkRPBStatus();
+                } catch (displayError) {
+                    console.error('❌ [STORED DATA] Error displaying stored data:', displayError);
+                    console.log('📄 [STORED DATA] Falling back to blank page');
+                }
+            } else {
+                console.log('📄 [STORED DATA] No stored data found, showing blank page');
+                // Still check RPB status even if no stored data
+                await this.checkRPBStatus();
+            }
+        } catch (error) {
+            console.error('❌ [STORED DATA] Error checking for stored data:', error);
+        }
+    }
+
+    async checkRPBStatus() {
+        const activeEventSession = localStorage.getItem('activeEventSession');
+        if (!activeEventSession) {
+            console.log('📊 [RPB STATUS] No active event session, skipping RPB status check');
+            return;
+        }
+
+        try {
+            console.log(`📊 [RPB STATUS] Checking RPB status for event: ${activeEventSession}`);
+            const response = await fetch(`/api/rpb-tracking/${activeEventSession}`);
+            const result = await response.json();
+            
+            if (result.success && result.hasRPB) {
+                console.log(`📊 [RPB STATUS] Found RPB status: ${result.status}`);
+                this.displayRPBStatus(result);
+            } else {
+                console.log('📊 [RPB STATUS] No RPB tracking found for this event');
+            }
+        } catch (error) {
+            console.error('❌ [RPB STATUS] Error checking RPB status:', error);
+        }
+    }
+
+    displayRPBStatus(rpbData) {
+        const inputSection = document.querySelector('.logs-input-section');
+        const rpbBtn = document.getElementById('runRpbBtn');
+        
+        // Create or update RPB status display
+        let statusDiv = document.getElementById('rpbStatusDisplay');
+        if (!statusDiv) {
+            statusDiv = document.createElement('div');
+            statusDiv.id = 'rpbStatusDisplay';
+            statusDiv.className = 'rpb-status-display';
+            inputSection.appendChild(statusDiv);
+        }
+
+        let statusHTML = '';
+
+        if (rpbData.status === 'completed') {
+            // RPB is completed
+            statusHTML = `
+                <div class="rpb-status-completed">
+                    <div class="status-header">
+                        <h3>✅ RPB Analysis Completed</h3>
+                        <p>Analysis was completed on ${new Date(rpbData.completedAt).toLocaleString()}</p>
+                    </div>
+                    <div class="status-actions">
+                        ${rpbData.archiveUrl ? `
+                            <a href="${rpbData.archiveUrl}" target="_blank" class="btn btn-success">
+                                🗂️ View Archived Copy (${rpbData.archiveName})
+                            </a>
+                        ` : `
+                            <button onclick="wowLogsAnalyzer.archiveRPBResults()" class="btn btn-success">
+                                📁 Create Archive
+                            </button>
+                        `}
+                    </div>
+                </div>
+            `;
+            
+        } else if (rpbData.status === 'processing') {
+            // RPB is currently processing
+            statusHTML = `
+                <div class="rpb-status-processing">
+                    <div class="status-header">
+                        <h3>⏳ RPB Analysis In Progress</h3>
+                        <p>Please wait while the analysis is being processed...</p>
+                    </div>
+                    <div class="processing-spinner">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+            `;
+            
+            // Poll for status updates
+            setTimeout(() => this.checkRPBStatus(), 5000);
+            
+        } else if (rpbData.status === 'error') {
+            // RPB failed
+            statusHTML = `
+                <div class="rpb-status-error">
+                    <div class="status-header">
+                        <h3>❌ RPB Analysis Failed</h3>
+                        <p>There was an error processing the analysis. You can try running it again.</p>
+                    </div>
+                    <div class="status-actions">
+                        <button onclick="wowLogsAnalyzer.runNewRPBAnalysis()" class="btn btn-primary">
+                            🔄 Try Again
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            // Show the original RPB button as backup
+            if (rpbBtn) rpbBtn.style.display = 'inline-block';
+        }
+
+        statusDiv.innerHTML = statusHTML;
+    }
+
+    async displayStoredLogData(storedData) {
+        console.log(`🎨 [STORED DATA] Displaying stored log data for ${storedData.length} players`);
+        
+        // Fetch roster data for proper role detection
+        try {
+            const rosterDataForSpecs = await this.fetchRosterData();
+            this.currentRosterPlayers = rosterDataForSpecs?.raidDrop || [];
+            console.log(`📋 [STORED DATA] Loaded ${this.currentRosterPlayers.length} roster players for role detection`);
+        } catch (error) {
+            console.warn('⚠️ [STORED DATA] Could not fetch roster data:', error);
+            this.currentRosterPlayers = [];
+        }
+        
+        // Convert stored data to expected format
+        const damageEntries = storedData
+            .filter(player => player.damage_amount > 0)
+            .map(player => ({
+                name: player.character_name,
+                total: parseInt(player.damage_amount),
+                type: player.character_class,
+                icon: player.character_class
+            }))
+            .sort((a, b) => b.total - a.total);
+
+        const healingEntries = storedData
+            .filter(player => player.healing_amount > 0)
+            .map(player => ({
+                name: player.character_name,
+                total: parseInt(player.healing_amount),
+                type: player.character_class,
+                icon: player.character_class
+            }))
+            .sort((a, b) => b.total - a.total);
+
+        // Create role map from stored data
+        const roleMap = {};
+        storedData.forEach(player => {
+            if (player.discord_id && player.role_detected) {
+                roleMap[player.discord_id] = {
+                    role: player.role_detected,
+                    source: player.role_source || 'unknown',
+                    specName: player.spec_name || 'Unknown',
+                    isConfirmed: true
+                };
+            }
+        });
+
+        // Simulate the current data structure
+        this.currentLogData = {
+            logId: storedData[0]?.log_id || 'stored',
+            damage: { entries: damageEntries },
+            healing: { entries: healingEntries },
+            roleMap: roleMap
+        };
+        
+        console.log(`📊 [STORED DATA] Created data structure:`);
+        console.log(`   └─ Damage entries: ${damageEntries.length}`);
+        console.log(`   └─ Healing entries: ${healingEntries.length}`);
+        console.log(`   └─ Role mappings: ${Object.keys(roleMap).length}`);
+
+        // Show the data sections
+        console.log('🎯 [STORED DATA] Calling showData()');
+        this.showData();
+        
+        // Display characters, damage and healing data (adapted for stored data)
+        console.log('🎯 [STORED DATA] Calling displayCharactersData()');
+        try {
+            await this.displayCharactersData();
+            console.log('✅ [STORED DATA] Characters displayed successfully');
+        } catch (error) {
+            console.error('❌ [STORED DATA] Error displaying characters:', error);
+        }
+        
+        console.log('🎯 [STORED DATA] Calling displayDamageData()');
+        console.log('🔍 [DEBUG] Current data structure:', this.currentLogData);
+        console.log('🔍 [DEBUG] Role map keys:', Object.keys(this.currentLogData.roleMap));
+        try {
+            this.displayDamageData();
+            console.log('✅ [STORED DATA] Damage data displayed successfully');
+        } catch (error) {
+            console.error('❌ [STORED DATA] Error displaying damage data:', error);
+            console.error('❌ [STORED DATA] Error stack:', error.stack);
+        }
+        
+        console.log('🎯 [STORED DATA] Calling displayHealingData()');
+        try {
+            this.displayHealingData();
+            console.log('✅ [STORED DATA] Healing data displayed successfully');
+        } catch (error) {
+            console.error('❌ [STORED DATA] Error displaying healing data:', error);
+            console.error('❌ [STORED DATA] Error stack:', error.stack);
+        }
+        
+        // Hide unwanted sections
+        console.log('🎯 [STORED DATA] Hiding Fight Data and Raid Summary panels');
+        this.hideFightDataPanel();
+        this.hideSummaryPanel();
+        
+        console.log('✅ [STORED DATA] Successfully displayed stored data');
+    }
+
+    showStoredDataNotification() {
+        const playerCount = (this.currentLogData.damage?.entries?.length || 0) + 
+                           (this.currentLogData.healing?.entries?.length || 0);
+        const uniquePlayers = new Set([
+            ...(this.currentLogData.damage?.entries?.map(e => e.name) || []),
+            ...(this.currentLogData.healing?.entries?.map(e => e.name) || [])
+        ]).size;
+        
+        const notification = document.createElement('div');
+        notification.className = 'stored-data-notification';
+        notification.innerHTML = `
+            <div class="notification-content">
+                <span class="notification-icon">💾</span>
+                <span class="notification-text">
+                    Loaded stored log data for this event (${uniquePlayers} players) - 
+                    Damage & Healing sections with role detection
+                </span>
+                <button class="btn-refresh-data" onclick="this.parentElement.parentElement.remove()">×</button>
+            </div>
+        `;
+        
+        // Insert at the top of the log data container
+        const container = document.querySelector('.log-data-container');
+        if (container) {
+            container.insertBefore(notification, container.firstChild);
+        }
+    }
+
+    async storeLogDataToDatabase(logId, roleMap) {
+        const activeEventSession = localStorage.getItem('activeEventSession');
+        if (!activeEventSession) {
+            console.log('💾 [STORE DATA] No active event session, skipping storage');
+            return;
+        }
+
+        console.log(`💾 [STORE DATA] Storing log data for event: ${activeEventSession}`);
+
+        try {
+            // Prepare data for storage
+            const logData = [];
+            
+            // Get all players from damage and healing data
+            const allPlayers = new Map();
+            
+            // Add damage data
+            if (this.currentLogData.damage?.entries) {
+                this.currentLogData.damage.entries.forEach(entry => {
+                    allPlayers.set(entry.name, {
+                        characterName: entry.name,
+                        characterClass: entry.type || 'Unknown',
+                        damageAmount: entry.total || 0,
+                        healingAmount: 0
+                    });
+                });
+            }
+            
+            // Add healing data
+            if (this.currentLogData.healing?.entries) {
+                this.currentLogData.healing.entries.forEach(entry => {
+                    if (allPlayers.has(entry.name)) {
+                        allPlayers.get(entry.name).healingAmount = entry.total || 0;
+                    } else {
+                        allPlayers.set(entry.name, {
+                            characterName: entry.name,
+                            characterClass: entry.type || 'Unknown',
+                            damageAmount: 0,
+                            healingAmount: entry.total || 0
+                        });
+                    }
+                });
+            }
+            
+            // Get roster players for Discord ID mapping
+            const rosterPlayers = this.currentRosterPlayers || [];
+            
+            // Convert to storage format
+            allPlayers.forEach((playerData, playerName) => {
+                // Find Discord ID via roster matching
+                const rosterPlayer = rosterPlayers.find(p => 
+                    p.name && p.name.toLowerCase() === playerName.toLowerCase()
+                );
+                
+                // Get role information
+                let roleDetected = null;
+                let roleSource = null;
+                let specName = null;
+                let discordId = rosterPlayer?.discordId || null;
+                
+                if (discordId && roleMap[discordId]) {
+                    const roleInfo = roleMap[discordId];
+                    roleDetected = roleInfo.role;
+                    roleSource = roleInfo.source;
+                    specName = roleInfo.specName;
+                }
+                
+                logData.push({
+                    characterName: playerData.characterName,
+                    characterClass: playerData.characterClass,
+                    discordId: discordId,
+                    roleDetected: roleDetected,
+                    roleSource: roleSource,
+                    specName: specName,
+                    damageAmount: playerData.damageAmount,
+                    healingAmount: playerData.healingAmount,
+                    logId: logId
+                });
+            });
+            
+            console.log(`💾 [STORE DATA] Prepared ${logData.length} player records for storage`);
+            
+            // Send to backend
+            const response = await fetch(`/api/log-data/${activeEventSession}/store`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ logData })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                console.log(`✅ [STORE DATA] Successfully stored log data: ${result.message}`);
+            } else {
+                console.error('❌ [STORE DATA] Failed to store log data:', result.message);
+            }
+            
+        } catch (error) {
+            console.error('❌ [STORE DATA] Error storing log data:', error);
+        }
     }
 
     initializeEventListeners() {
@@ -112,6 +483,46 @@ class WoWLogsAnalyzer {
         }
     }
 
+    // Spec-to-role mapping for accurate role detection
+    static HEALING_SPECS = [
+        'Holy', 'Discipline',           // Priest
+        'Restoration', 'Restoration1',  // Shaman & Druid
+        'Holy1'                         // Paladin
+    ];
+
+    static TANK_SPECS = [
+        'Protection', 'Protection1',    // Warrior & Paladin
+        'Guardian', 'Bear'              // Druid
+    ];
+
+    // Everything else is considered DPS
+
+    determineRoleFromSpec(specName, className, roleName) {
+        // Primary: Use spec-based detection
+        if (specName) {
+            if (this.constructor.HEALING_SPECS.includes(specName)) {
+                return 'healer';
+            }
+            if (this.constructor.TANK_SPECS.includes(specName)) {
+                return 'tank';
+            }
+            // If spec exists but isn't healing or tank, it's DPS
+            return 'dps';
+        }
+
+        // Fallback: Use roleName from Raid-Helper
+        if (roleName === 'Tanks') {
+            return 'tank';
+        } else if (roleName === 'Healers') {
+            return 'healer';
+        } else if (roleName === 'Melee' || roleName === 'Ranged') {
+            return 'dps';
+        }
+
+        // Final fallback: Assume DPS
+        return 'dps';
+    }
+
     async fetchRaidHelperData() {
         try {
             const activeEventSession = localStorage.getItem('activeEventSession');
@@ -138,44 +549,93 @@ class WoWLogsAnalyzer {
         }
     }
 
-    parseRaidHelperRoles(raidHelperData) {
+    async fetchRosterData() {
+        try {
+            const activeEventSession = localStorage.getItem('activeEventSession');
+            if (!activeEventSession) {
+                console.warn('No active event session found for roster data');
+                return null;
+            }
+
+            console.log('Fetching roster data for managed roster spec overrides:', activeEventSession);
+            
+            const response = await fetch(`/api/roster/${activeEventSession}`);
+
+            if (!response.ok) {
+                console.warn('Failed to fetch roster data, continuing without spec overrides');
+                return null;
+            }
+
+            const data = await response.json();
+            console.log('Roster data fetched for spec overrides:', data);
+            return data;
+        } catch (error) {
+            console.error('Failed to fetch roster data for spec overrides:', error);
+            return null;
+        }
+    }
+
+    parseRaidHelperRoles(raidHelperData, rosterData = null) {
         if (!raidHelperData || !raidHelperData.signUps) {
             return {};
         }
 
+        console.log('🔍 Parsing roles with spec-based detection...');
         const roleMap = {};
+        
+        // Create a map for roster spec overrides if available
+        const specOverrides = {};
+        if (rosterData && rosterData.isManaged && rosterData.raidDrop) {
+            console.log('📋 Processing managed roster spec overrides...');
+            rosterData.raidDrop.forEach(player => {
+                if (player && player.userid && player.spec) {
+                    specOverrides[player.userid] = {
+                        spec: player.spec,
+                        className: player.class
+                    };
+                }
+            });
+            console.log('📋 Found spec overrides for', Object.keys(specOverrides).length, 'players');
+        }
         
         raidHelperData.signUps.forEach(signup => {
             if (signup.status !== 'primary') return; // Only consider primary signups
             
             const userId = signup.userId;
-            const className = signup.className;
+            let specName = signup.specName;
+            let className = signup.className;
             const roleName = signup.roleName;
             
-            let role = 'dps'; // default
-            
-            if (roleName === 'Tanks') {
-                role = 'tank';
-            } else if (roleName === 'Healers') {
-                role = 'healer';
-            } else if (roleName === 'Melee' || roleName === 'Ranged') {
-                role = 'dps';
+            // Check for managed roster spec overrides
+            if (specOverrides[userId]) {
+                specName = specOverrides[userId].spec;
+                className = specOverrides[userId].className;
+                console.log(`🔄 Using spec override for ${signup.name}: ${specName} (${className})`);
             }
             
-            // Map by Discord user ID instead of name
+            // Determine role using spec-based detection
+            const role = this.determineRoleFromSpec(specName, className, roleName);
+            
+            // Map by Discord user ID
             roleMap[userId] = {
                 role: role,
+                specName: specName,
                 className: className,
                 roleName: roleName,
-                isConfirmed: true
+                isConfirmed: true,
+                source: specOverrides[userId] ? 'spec_override' : (specName ? 'spec_based' : 'role_based')
             };
+            
+            console.log(`✅ ${signup.name}: ${role} (${specName || 'no spec'} ${className}) - Source: ${roleMap[userId].source}`);
         });
         
-        console.log('Parsed role map by Discord ID:', roleMap);
+        console.log('🎯 Final role map by Discord ID:', Object.keys(roleMap).length, 'players processed');
         return roleMap;
     }
 
     inferRoleFromPerformance(playerName, playerData, roleMap, damageEntries, healingEntries, rosterPlayers) {
+        console.log(`🔍 [ROLE DETECTION] Analyzing role for player: ${playerName}`);
+        
         // First, try to find the Discord ID for this player via roster matching
         const rosterPlayer = rosterPlayers.find(p => 
             p.name && p.name.toLowerCase() === playerName.toLowerCase()
@@ -183,8 +643,13 @@ class WoWLogsAnalyzer {
         
         if (rosterPlayer && rosterPlayer.discordId && roleMap[rosterPlayer.discordId]) {
             // Found confirmed role via Discord ID match
-            console.log(`✅ Found confirmed role for ${playerName} via Discord ID ${rosterPlayer.discordId}:`, roleMap[rosterPlayer.discordId]);
-            return roleMap[rosterPlayer.discordId];
+            const roleData = roleMap[rosterPlayer.discordId];
+            console.log(`✅ [ROLE DETECTION] ${playerName}: Found confirmed role via Discord ID ${rosterPlayer.discordId}`);
+            console.log(`   └─ Role: ${roleData.role ? roleData.role.toUpperCase() : 'UNKNOWN'}`);
+            console.log(`   └─ Spec: ${roleData.specName || 'N/A'}`);
+            console.log(`   └─ Source: ${roleData.source || 'unknown'}`);
+            console.log(`   └─ Method: Discord ID Match`);
+            return roleData;
         }
         
         // No confirmed role found, try to infer from performance
@@ -226,7 +691,10 @@ class WoWLogsAnalyzer {
             Math.min(...confirmedHealers.map(entry => entry.total)) : Infinity;
         
         if (playerDamage > lowestConfirmedDPSDamage && confirmedDPS.length > 0) {
-            console.log(`🔍 Inferred DPS role for ${playerName} (damage: ${playerDamage} > lowest confirmed: ${lowestConfirmedDPSDamage})`);
+            console.log(`⚔️ [ROLE DETECTION] ${playerName}: Inferred as DPS based on performance`);
+            console.log(`   └─ Player damage: ${playerDamage.toLocaleString()}`);
+            console.log(`   └─ Lowest confirmed DPS: ${lowestConfirmedDPSDamage.toLocaleString()}`);
+            console.log(`   └─ Method: Performance Inference`);
             return {
                 role: 'dps',
                 className: 'Unknown',
@@ -236,7 +704,10 @@ class WoWLogsAnalyzer {
         }
         
         if (playerHealing > lowestConfirmedHealerHealing && confirmedHealers.length > 0) {
-            console.log(`🔍 Inferred healer role for ${playerName} (healing: ${playerHealing} > lowest confirmed: ${lowestConfirmedHealerHealing})`);
+            console.log(`❤️ [ROLE DETECTION] ${playerName}: Inferred as HEALER based on performance`);
+            console.log(`   └─ Player healing: ${playerHealing.toLocaleString()}`);
+            console.log(`   └─ Lowest confirmed healer: ${lowestConfirmedHealerHealing.toLocaleString()}`);
+            console.log(`   └─ Method: Performance Inference`);
             return {
                 role: 'healer',
                 className: 'Unknown', 
@@ -245,19 +716,84 @@ class WoWLogsAnalyzer {
             };
         }
         
+        console.log(`❌ [ROLE DETECTION] ${playerName}: No role could be determined`);
+        console.log(`   └─ Player damage: ${playerDamage.toLocaleString()}`);
+        console.log(`   └─ Player healing: ${playerHealing.toLocaleString()}`);
+        console.log(`   └─ Roster match: ${rosterPlayer ? 'Found' : 'Not found'}`);
+        console.log(`   └─ Discord ID: ${rosterPlayer?.discordId || 'N/A'}`);
+        
         return null;
     }
 
-    getRoleIcon(role, isConfirmed = true) {
+    createRoleSourceLegend() {
+        return `
+            <div class="role-source-legend">
+                <h4>Role Detection Sources:</h4>
+                <div class="legend-item">
+                    <span class="legend-dot" style="background-color: #28a745;"></span>
+                    Roster Override (Managed rosters with custom specs)
+                </div>
+                <div class="legend-item">
+                    <span class="legend-dot" style="background-color: #007bff;"></span>
+                    Spec-based (Determined from player's talent specialization)
+                </div>
+                <div class="legend-item">
+                    <span class="legend-dot" style="background-color: #ffc107;"></span>
+                    Role-based (Fallback using Raid-Helper role assignment)
+                </div>
+                <div class="legend-item">
+                    <span style="opacity: 0.7;">🔍</span>
+                    Performance Inference (No dot - inferred from damage/healing output)
+                </div>
+            </div>
+        `;
+    }
+
+    getRoleIcon(roleData, isConfirmed = true) {
+        if (!roleData) return '';
+        
+        // Handle both old format (string) and new format (object)
+        const role = typeof roleData === 'string' ? roleData : roleData.role;
+        const specName = typeof roleData === 'object' ? roleData.specName : null;
+        const source = typeof roleData === 'object' ? roleData.source : null;
+        
         const iconClass = isConfirmed ? 'role-icon' : 'role-icon inferred';
+        
+        // Build enhanced tooltip with spec information
+        let title = '';
+        if (isConfirmed) {
+            title = role.charAt(0).toUpperCase() + role.slice(1);
+            if (specName) {
+                title += ` (${specName})`;
+            }
+            if (source) {
+                const sourceText = source === 'spec_override' ? 'Roster Override' : 
+                                 source === 'spec_based' ? 'Spec-based' : 'Role-based';
+                title += ` - ${sourceText}`;
+            }
+        } else {
+            title = `Inferred ${role.charAt(0).toUpperCase() + role.slice(1)}`;
+        }
+        
+        // Add source indicator dot
+        let sourceIndicator = '';
+        if (source && isConfirmed) {
+            const sourceColors = {
+                'spec_override': '#28a745',    // Green for roster override
+                'spec_based': '#007bff',       // Blue for spec-based  
+                'role_based': '#ffc107'        // Yellow for role fallback
+            };
+            const sourceColor = sourceColors[source] || '#6c757d';
+            sourceIndicator = `<span class="source-dot" style="background-color: ${sourceColor};"></span>`;
+        }
         
         switch (role) {
             case 'tank':
-                return `<span class="${iconClass} tank" title="${isConfirmed ? 'Tank' : 'Inferred Tank'}">🛡️</span>`;
+                return `<span class="${iconClass} tank" title="${title}">🛡️${sourceIndicator}</span>`;
             case 'dps':
-                return `<span class="${iconClass} dps" title="${isConfirmed ? 'DPS' : 'Inferred DPS'}">⚔️</span>`;
+                return `<span class="${iconClass} dps" title="${title}">⚔️${sourceIndicator}</span>`;
             case 'healer':
-                return `<span class="${iconClass} healer" title="${isConfirmed ? 'Healer' : 'Inferred Healer'}">❤️</span>`;
+                return `<span class="${iconClass} healer" title="${title}">❤️${sourceIndicator}</span>`;
             default:
                 return '';
         }
@@ -456,7 +992,12 @@ class WoWLogsAnalyzer {
             // Fetch raid-helper data for role assignment
             console.log('Fetching Raid-Helper data...');
             const raidHelperData = await this.fetchRaidHelperData();
-            const roleMap = this.parseRaidHelperRoles(raidHelperData);
+            
+            // Fetch roster data for managed roster spec overrides
+            console.log('Fetching roster data for spec overrides...');
+            const rosterDataForSpecs = await this.fetchRosterData();
+            
+            const roleMap = this.parseRaidHelperRoles(raidHelperData, rosterDataForSpecs);
 
             // Store the data
             this.currentLogData = {
@@ -469,9 +1010,17 @@ class WoWLogsAnalyzer {
                 roleMap: roleMap
             };
 
-            // Display the data
-            this.showData();
-            await this.displayLogData();
+                    // Display the data
+        this.showData();
+        await this.displayLogData();
+        
+        // Hide unwanted sections for live data too
+        console.log('🎯 [LIVE DATA] Hiding Fight Data and Raid Summary panels');
+        this.hideFightDataPanel();
+        this.hideSummaryPanel();
+
+            // Store the data to database
+            await this.storeLogDataToDatabase(logId, roleMap);
 
         } catch (error) {
             console.error('Analysis failed:', error);
@@ -491,10 +1040,6 @@ class WoWLogsAnalyzer {
         
         // Show raw data
         this.displayRawData();
-        
-        // Hide Fight Data and Raid Summary panels
-        this.hideFightDataPanel();
-        this.hideSummaryPanel();
     }
 
     hideFightDataPanel() {
@@ -596,7 +1141,6 @@ class WoWLogsAnalyzer {
     }
 
     async displayCharactersData() {
-        const data = this.currentLogData.fights;
         const container = document.getElementById('charactersDataContent');
 
         if (!container) {
@@ -604,9 +1148,39 @@ class WoWLogsAnalyzer {
             return;
         }
 
-        // Get characters from exportedCharacters (contains all 40 players)
-        const exportedCharacters = data.exportedCharacters;
-        const friendlies = data.friendlies;
+        // Check if we have live API data or stored data
+        const data = this.currentLogData.fights;
+        let exportedCharacters;
+        let friendlies;
+
+        if (data && data.exportedCharacters) {
+            // Live API data
+            exportedCharacters = data.exportedCharacters;
+            friendlies = data.friendlies;
+        } else {
+            // Stored data - create exportedCharacters from damage/healing entries
+            console.log('🔄 [CHARACTERS] Creating character list from stored damage/healing data');
+            const characterMap = new Map();
+            
+            // Collect all unique characters from damage and healing data
+            const damageEntries = this.currentLogData.damage?.entries || [];
+            const healingEntries = this.currentLogData.healing?.entries || [];
+            
+            [...damageEntries, ...healingEntries].forEach(entry => {
+                if (entry.name && !characterMap.has(entry.name)) {
+                    characterMap.set(entry.name, {
+                        name: entry.name,
+                        id: entry.id || 0,
+                        guid: entry.guid || 0,
+                        type: entry.type || 'Unknown',
+                        icon: entry.icon || entry.type || 'Unknown'
+                    });
+                }
+            });
+            
+            exportedCharacters = Array.from(characterMap.values());
+            friendlies = exportedCharacters; // Use the same data for friendlies
+        }
 
         if (!exportedCharacters || exportedCharacters.length === 0) {
             container.innerHTML = '<p>No character data available in this log.</p>';
@@ -637,15 +1211,17 @@ class WoWLogsAnalyzer {
     }
 
     displayDamageData() {
+        console.log('🎯 [DAMAGE] Starting displayDamageData()');
         const damageData = this.currentLogData.damage;
         const container = document.getElementById('damageDataContent');
 
         if (!container) {
-            console.error('damageDataContent element not found');
+            console.error('❌ [DAMAGE] damageDataContent element not found');
             return;
         }
 
-        console.log('Displaying damage data:', damageData);
+        console.log('📊 [DAMAGE] Damage data structure:', damageData);
+        console.log('📊 [DAMAGE] Entries count:', damageData?.entries?.length || 0);
 
         if (!damageData) {
             container.innerHTML = '<p>No damage data fetched.</p>';
@@ -673,7 +1249,7 @@ class WoWLogsAnalyzer {
         const rosterPlayers = this.currentRosterPlayers || [];
         const healingEntries = this.currentLogData.healing?.entries || [];
 
-        let damageHtml = '<div class="damage-list">';
+        let damageHtml = this.createRoleSourceLegend() + '<div class="damage-list">';
         
         sortedDamage.forEach((entry, index) => {
             const playerName = entry.name || 'Unknown';
@@ -687,7 +1263,7 @@ class WoWLogsAnalyzer {
             let roleIcon = '';
             
             if (roleInfo) {
-                roleIcon = this.getRoleIcon(roleInfo.role, roleInfo.isConfirmed);
+                roleIcon = this.getRoleIcon(roleInfo, roleInfo.isConfirmed);
             }
             
             damageHtml += `
@@ -707,13 +1283,17 @@ class WoWLogsAnalyzer {
     }
 
     displayHealingData() {
+        console.log('🎯 [HEALING] Starting displayHealingData()');
         const healingData = this.currentLogData.healing;
         const container = document.getElementById('healingDataContent');
 
         if (!container) {
-            console.error('healingDataContent element not found');
+            console.error('❌ [HEALING] healingDataContent element not found');
             return;
         }
+
+        console.log('📊 [HEALING] Healing data structure:', healingData);
+        console.log('📊 [HEALING] Entries count:', healingData?.entries?.length || 0);
 
         console.log('Displaying healing data:', healingData);
 
@@ -743,7 +1323,7 @@ class WoWLogsAnalyzer {
         const rosterPlayers = this.currentRosterPlayers || [];
         const damageEntries = this.currentLogData.damage?.entries || [];
 
-        let healingHtml = '<div class="healing-list">';
+        let healingHtml = this.createRoleSourceLegend() + '<div class="healing-list">';
         
         sortedHealing.forEach((entry, index) => {
             const playerName = entry.name || 'Unknown';
@@ -757,7 +1337,7 @@ class WoWLogsAnalyzer {
             let roleIcon = '';
             
             if (roleInfo) {
-                roleIcon = this.getRoleIcon(roleInfo.role, roleInfo.isConfirmed);
+                roleIcon = this.getRoleIcon(roleInfo, roleInfo.isConfirmed);
             }
             
             healingHtml += `
@@ -778,14 +1358,36 @@ class WoWLogsAnalyzer {
 
     getFriendliesMap() {
         const friendliesMap = {};
-        const friendlies = this.currentLogData.fights.friendlies;
+        
+        // Check if we have live API data with fights.friendlies
+        const friendlies = this.currentLogData?.fights?.friendlies;
         if (friendlies) {
             friendlies.forEach(friendly => {
                 if (friendly.name) {
                     friendliesMap[friendly.name] = friendly;
                 }
             });
+        } else {
+            // For stored data, create friendlies map from damage/healing entries
+            console.log('🔄 [FRIENDLIES] Using stored data, creating friendlies map from entries');
+            const allEntries = [
+                ...(this.currentLogData?.damage?.entries || []),
+                ...(this.currentLogData?.healing?.entries || [])
+            ];
+            
+            allEntries.forEach(entry => {
+                if (entry.name && !friendliesMap[entry.name]) {
+                    friendliesMap[entry.name] = {
+                        name: entry.name,
+                        type: entry.type || 'Unknown',
+                        id: entry.id || 0,
+                        guid: entry.guid || 0,
+                        icon: entry.icon || entry.type || 'Unknown'
+                    };
+                }
+            });
         }
+        
         return friendliesMap;
     }
 
@@ -866,37 +1468,6 @@ class WoWLogsAnalyzer {
             // If same class, sort alphabetically by name
             return nameA.localeCompare(nameB);
         });
-    }
-
-    async fetchRosterData() {
-        try {
-            // Get the active event session ID from localStorage
-            const activeEventSession = localStorage.getItem('activeEventSession');
-            
-            if (!activeEventSession) {
-                console.log('No activeEventSession found in localStorage');
-                return null;
-            }
-
-            console.log('Fetching roster for event:', activeEventSession);
-            
-            // Fetch roster data from the API (JSON endpoint)
-            const response = await fetch(`/api/roster/${activeEventSession}`);
-            
-            if (!response.ok) {
-                throw new Error(`Failed to fetch roster: ${response.status} ${response.statusText}`);
-            }
-            
-            const rosterData = await response.json();
-            console.log('Roster data fetched:', rosterData);
-            
-            return rosterData;
-            
-        } catch (error) {
-            console.error('Error fetching roster data:', error);
-            console.error('Response status:', error.status);
-            return null;
-        }
     }
 
     async fetchConfirmedPlayers() {
@@ -1053,6 +1624,7 @@ class WoWLogsAnalyzer {
             comparisonHtml += this.generateRestorationMessage(restoredPlayers);
         }
         
+        comparisonHtml += '<div class="character-validation-wrapper">';
         comparisonHtml += '<div class="character-comparison-container">';
         
         // Track which roster names have been matched
@@ -1141,6 +1713,8 @@ class WoWLogsAnalyzer {
             `;
         });
         
+        comparisonHtml += '</div>'; // Close character-comparison-container
+        
         // Show unmatched roster names
         const unmatchedRosterPlayers = rosterPlayers.filter(player => !usedRosterNames.has(player.name));
         if (unmatchedRosterPlayers.length > 0) {
@@ -1150,22 +1724,16 @@ class WoWLogsAnalyzer {
                 const unmatchedClassBackgroundClass = this.getClassBackgroundClass(player.class);
                 comparisonHtml += `
                     <div class="character-comparison-row unmatched">
-                        <div class="logs-character empty">
-                            <span class="character-name-black">-</span>
-                        </div>
-                        <div class="comparison-indicator">
-                            ❌
-                        </div>
                         <div class="roster-character ${unmatchedClassBackgroundClass}">
                             <span class="roster-name-black unmatched">${player.name}</span>
                         </div>
                     </div>
                 `;
             });
-            comparisonHtml += '</div>';
+            comparisonHtml += '</div>'; // Close unmatched-section
         }
         
-        comparisonHtml += '</div>';
+        comparisonHtml += '</div>'; // Close character-validation-wrapper
         
         container.innerHTML = comparisonHtml;
         
@@ -2296,6 +2864,9 @@ class WoWLogsAnalyzer {
             return;
         }
 
+        // Update RPB status to 'processing'
+        await this.updateRPBStatus(input.trim(), 'processing');
+
         // Show loading state
         this.showRPBLoading();
 
@@ -2305,7 +2876,61 @@ class WoWLogsAnalyzer {
 
         } catch (error) {
             console.error('RPB Analysis failed:', error);
+            // Update status to 'error'
+            await this.updateRPBStatus(input.trim(), 'error');
             this.showError(`Failed to run RPB analysis: ${error.message}`);
+        }
+    }
+
+    runNewRPBAnalysis() {
+        // Clear the RPB status display
+        const statusDiv = document.getElementById('rpbStatusDisplay');
+        if (statusDiv) {
+            statusDiv.remove();
+        }
+        
+        // Show the original RPB button
+        const rpbBtn = document.getElementById('runRpbBtn');
+        if (rpbBtn) rpbBtn.style.display = 'inline-block';
+        
+        // Clear any existing log data display
+        const logDataDiv = document.getElementById('logData');
+        if (logDataDiv) {
+            logDataDiv.style.display = 'none';
+        }
+    }
+
+    async updateRPBStatus(logUrl, status, archiveUrl = null, archiveName = null) {
+        const activeEventSession = localStorage.getItem('activeEventSession');
+        if (!activeEventSession) {
+            console.log('📊 [RPB STATUS] No active event session for status update');
+            return;
+        }
+
+        try {
+            console.log(`📊 [RPB STATUS] Updating status to: ${status}`);
+            
+            const response = await fetch(`/api/rpb-tracking/${activeEventSession}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    logUrl,
+                    status,
+                    archiveUrl,
+                    archiveName
+                })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                console.log(`✅ [RPB STATUS] Successfully updated status to: ${status}`);
+            } else {
+                console.error('❌ [RPB STATUS] Failed to update status:', result.error);
+            }
+        } catch (error) {
+            console.error('❌ [RPB STATUS] Error updating status:', error);
         }
     }
 
@@ -2490,7 +3115,9 @@ class WoWLogsAnalyzer {
             progressText.textContent = 'Complete! (100%)';
         }
         
-        // Status clearing is now handled automatically by the status check itself
+        // Update RPB status to 'completed' in the database
+        const logInput = document.getElementById('logInput').value;
+        this.updateRPBStatus(logInput.trim(), 'completed');
         
         // Small delay to show 100% before switching to complete screen
         setTimeout(() => {
@@ -2510,7 +3137,7 @@ class WoWLogsAnalyzer {
                         📊 View RPB Analysis
                     </a>
                     <button id="archiveRpbBtn" class="btn btn-success" style="margin-right: 1rem;">
-                        🗂️ Archive Results
+                        📁 Archive and Import RPB
                     </button>
                     <button onclick="location.reload()" class="btn btn-secondary">
                         🔄 Analyze Another Log
@@ -2523,6 +3150,9 @@ class WoWLogsAnalyzer {
             document.getElementById('archiveRpbBtn').addEventListener('click', () => {
                 this.archiveRPBResults();
             });
+            
+            // Also refresh the RPB status display
+            this.checkRPBStatus();
         }, 500);
     }
 
@@ -2557,11 +3187,16 @@ class WoWLogsAnalyzer {
     async archiveRPBResults() {
         const archiveBtn = document.getElementById('archiveRpbBtn');
         
-        // Disable button and show loading state
-        archiveBtn.disabled = true;
-        archiveBtn.innerHTML = '⏳ Archiving...';
+        // Disable button and show loading state (if button exists)
+        if (archiveBtn) {
+            archiveBtn.disabled = true;
+            archiveBtn.innerHTML = '⏳ Creating Archive...';
+        }
         
         try {
+            console.log('📁 [ARCHIVE] Starting RPB backup creation...');
+            
+            // Call backend proxy to create the backup via Google Apps Script
             const response = await fetch('/api/logs/rpb-archive', {
                 method: 'POST',
                 headers: {
@@ -2569,29 +3204,46 @@ class WoWLogsAnalyzer {
                 }
             });
 
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
             const result = await response.json();
+            console.log('📁 [ARCHIVE] Backend proxy response:', result);
 
             if (result.success) {
+                // Update RPB tracking with archive URL
+                const logInput = document.getElementById('logInput').value;
+                await this.updateRPBStatus(
+                    logInput.trim(), 
+                    'completed', 
+                    result.url, 
+                    result.sheetName
+                );
+                
                 // Show success with link to archived sheet
                 this.showArchiveSuccess(result);
+                console.log('✅ [ARCHIVE] RPB backup created successfully:', result.url);
             } else {
-                throw new Error(result.error || 'Failed to archive results');
+                throw new Error(result.error || 'Failed to create RPB backup');
             }
 
         } catch (error) {
-            console.error('Archive failed:', error);
+            console.error('❌ [ARCHIVE] Archive failed:', error);
             this.showArchiveError(error.message);
         } finally {
-            // Re-enable button
-            archiveBtn.disabled = false;
-            archiveBtn.innerHTML = '🗂️ Archive Results';
+            // Re-enable button (if button exists)
+            if (archiveBtn) {
+                archiveBtn.disabled = false;
+                archiveBtn.innerHTML = '📁 Archive and Import RPB';
+            }
         }
     }
 
     showArchiveSuccess(result) {
         // Update the completion message to include archive link
         const logDataDiv = document.getElementById('logData');
-        const sheetUrl = `https://docs.google.com/spreadsheets/d/11Y9nIYRdxPsQivpQGaK1B0Mc-tbnCR45A1I4-RaKvyk/edit?gid=588029694#gid=588029694`;
+        const masterSheetUrl = `https://docs.google.com/spreadsheets/d/11Y9nIYRdxPsQivpQGaK1B0Mc-tbnCR45A1I4-RaKvyk/edit?gid=588029694#gid=588029694`;
         
         logDataDiv.innerHTML = `
             <div style="text-align: center; padding: 2rem; background: var(--card-bg, #1e1e1e); border-radius: 8px;">
@@ -2601,13 +3253,13 @@ class WoWLogsAnalyzer {
                 </p>
                 <div style="background: var(--secondary-bg, #2a2a2a); padding: 1rem; border-radius: 4px; margin-bottom: 2rem;">
                     <p style="margin: 0; color: var(--text-primary, #e0e0e0); font-weight: bold;">
-                        📁 Archived as: ${result.fileName}
+                        📁 Archived as: ${result.sheetName}
+                    </p>
+                    <p style="margin: 0.5rem 0 0 0; color: var(--text-secondary, #bbb); font-size: 0.9rem;">
+                        Created: ${result.createdAt || 'Now'}
                     </p>
                 </div>
-                <a href="${sheetUrl}" target="_blank" class="btn btn-primary" style="margin-right: 1rem;">
-                    📊 View Master Sheet
-                </a>
-                <a href="${result.sheetUrl}" target="_blank" class="btn btn-success" style="margin-right: 1rem;">
+                <a href="${result.url}" target="_blank" class="btn btn-success" style="margin-right: 1rem;">
                     🗂️ View Archived Copy
                 </a>
                 <button onclick="location.reload()" class="btn btn-secondary">
@@ -2634,6 +3286,7 @@ class WoWLogsAnalyzer {
 }
 
 // Initialize the analyzer when the page loads
+let wowLogsAnalyzer;
 document.addEventListener('DOMContentLoaded', () => {
-    new WoWLogsAnalyzer();
+    wowLogsAnalyzer = new WoWLogsAnalyzer();
 }); 

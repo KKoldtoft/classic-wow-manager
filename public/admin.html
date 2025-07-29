@@ -243,6 +243,7 @@
                 <p>You have Management role access. These features are only available to users with the "Management" role.</p>
                 <button class="btn" onclick="loadAllUsers()">Load All Users</button>
                 <button class="btn" onclick="loadRosterStats()">Load Roster Statistics</button>
+                <button class="btn danger" onclick="setupDatabase()">Setup Database</button>
                 <button class="btn danger" onclick="showManagementTools()">Management Tools</button>
                 <div id="management-data"></div>
             </div>
@@ -456,6 +457,56 @@
             } catch (error) {
                 console.error('Error loading characters:', error);
                 document.getElementById('user-data').innerHTML = '<p>Error loading characters.</p>';
+            }
+        }
+
+        async function setupDatabase() {
+            if (!confirm('This will create/update all database tables including the new log_data table. Continue?')) {
+                return;
+            }
+            
+            const managementData = document.getElementById('management-data');
+            managementData.innerHTML = '<div class="loading">Setting up database tables...</div>';
+            
+            try {
+                const response = await fetch('/api/admin/setup-database', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    managementData.innerHTML = `
+                        <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 8px; color: #155724; margin-top: 15px;">
+                            <h4 style="color: #155724; margin-bottom: 10px;">✅ Database Setup Successful!</h4>
+                            <p style="margin: 0;">${data.message}</p>
+                            <ul style="margin-top: 10px;">
+                                <li>Players table created/updated</li>
+                                <li>Roster overrides table created/updated</li>
+                                <li>Player confirmed logs table created/updated</li>
+                                <li><strong>Log data table created/updated</strong> ✨</li>
+                                <li>Guildies table created/updated</li>
+                                <li>Events cache table created/updated</li>
+                                <li>All indexes created/updated</li>
+                            </ul>
+                        </div>
+                    `;
+                } else {
+                    managementData.innerHTML = `
+                        <div style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 20px; border-radius: 8px; color: #721c24; margin-top: 15px;">
+                            <h4 style="color: #721c24; margin-bottom: 10px;">❌ Database Setup Failed</h4>
+                            <p style="margin: 0;">Error: ${data.message || 'Unknown error occurred'}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error setting up database:', error);
+                managementData.innerHTML = `
+                    <div style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 20px; border-radius: 8px; color: #721c24; margin-top: 15px;">
+                        <h4 style="color: #721c24; margin-bottom: 10px;">❌ Database Setup Failed</h4>
+                        <p style="margin: 0;">Network error occurred. Please try again.</p>
+                    </div>
+                `;
             }
         }
 
