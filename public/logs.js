@@ -3830,6 +3830,14 @@ class WoWLogsAnalyzer {
 
         } catch (error) {
             console.error('❌ [ARCHIVE] Archive failed:', error);
+            
+            // Enhanced error logging for debugging
+            console.log('🔍 [ARCHIVE] Error details:', {
+                name: error.name,
+                message: error.message,
+                status: error.status || 'unknown'
+            });
+            
             this.showArchiveError(error.message);
         } finally {
             // Re-enable button (if button exists)
@@ -4043,8 +4051,17 @@ class WoWLogsAnalyzer {
             console.log('✅ [WORKFLOW] Step 3 completed');
             
         } catch (error) {
-            this.updateWorkflowStep(3, 'error', `Archive failed: ${error.message}`, '❌');
-            throw error;
+            console.error('❌ [WORKFLOW] Step 3 failed:', error);
+            this.updateWorkflowStep(3, 'error', 'Archive failed - continuing anyway', '⚠️');
+            
+            // Add a skip option and continue instead of failing the entire workflow
+            console.log('⚠️ [WORKFLOW] Archive failed, but continuing to import step...');
+            
+            // Show a warning notification
+            this.addWorkflowNotification('warning', 
+                `Archive step failed: ${error.message}. Continuing with data import anyway.`);
+            
+            // Don't throw the error - let the workflow continue
         }
     }
 

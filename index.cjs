@@ -5166,6 +5166,7 @@ app.get('/api/raid-helper/events/:eventId', async (req, res) => {
 // Google Apps Script proxy endpoint for RPB archiving
 app.post('/api/logs/rpb-archive', async (req, res) => {
     console.log('📁 [RPB ARCHIVE] Starting Google Apps Script proxy request');
+    console.log('🔍 [RPB ARCHIVE] Environment check - NODE_ENV:', process.env.NODE_ENV);
     
     try {
         // Get the Google Apps Script URL from environment variables
@@ -5173,15 +5174,20 @@ app.post('/api/logs/rpb-archive', async (req, res) => {
         
         if (!scriptUrl) {
             console.error('❌ [RPB ARCHIVE] GOOGLE_APPS_SCRIPT_URL not configured in environment');
+            console.log('🔍 [RPB ARCHIVE] Available env vars starting with GOOGLE_:', 
+                Object.keys(process.env).filter(key => key.startsWith('GOOGLE_')));
             return res.status(500).json({
                 success: false,
-                error: 'Google Apps Script URL not configured'
+                error: 'Google Apps Script URL not configured. Please check Heroku environment variables.'
             });
         }
         
-        console.log('🔄 [RPB ARCHIVE] Calling Google Apps Script:', scriptUrl);
+        console.log('🔄 [RPB ARCHIVE] Calling Google Apps Script:', scriptUrl.substring(0, 50) + '...');
         
-        // Make the request to Google Apps Script
+        // Make the request to Google Apps Script with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
         const response = await fetch(scriptUrl, {
             method: 'POST',
             headers: {
@@ -5189,11 +5195,19 @@ app.post('/api/logs/rpb-archive', async (req, res) => {
             },
             body: JSON.stringify({
                 action: 'createRpbBackup'
-            })
+            }),
+            signal: controller.signal
         });
         
+        clearTimeout(timeoutId);
+        
+        console.log('📊 [RPB ARCHIVE] Response status:', response.status, response.statusText);
+        console.log('📊 [RPB ARCHIVE] Response headers:', Object.fromEntries(response.headers.entries()));
+        
         if (!response.ok) {
-            throw new Error(`Google Apps Script request failed: ${response.status} ${response.statusText}`);
+            const errorText = await response.text();
+            console.error('❌ [RPB ARCHIVE] Google Apps Script error response:', errorText);
+            throw new Error(`Google Apps Script request failed: ${response.status} ${response.statusText}. Response: ${errorText}`);
         }
         
         const result = await response.json();
@@ -5204,11 +5218,44 @@ app.post('/api/logs/rpb-archive', async (req, res) => {
         
     } catch (error) {
         console.error('❌ [RPB ARCHIVE] Error calling Google Apps Script:', error);
+        
+        // Enhanced error reporting
+        let errorMessage = error.message || 'Failed to create RPB backup';
+        if (error.name === 'AbortError') {
+            errorMessage = 'Google Apps Script request timed out after 30 seconds';
+        } else if (error.code === 'ENOTFOUND') {
+            errorMessage = 'Could not connect to Google Apps Script. Check network connectivity.';
+        } else if (error.code === 'ECONNRESET') {
+            errorMessage = 'Connection to Google Apps Script was reset. Try again.';
+        }
+        
+        console.log('🔍 [RPB ARCHIVE] Full error details:', {
+            name: error.name,
+            code: error.code,
+            message: error.message,
+            stack: error.stack
+        });
+        
         res.status(500).json({
             success: false,
-            error: error.message || 'Failed to create RPB backup'
+            error: errorMessage,
+            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
+});
+
+// Debug endpoint for checking environment variables on Heroku (remove after debugging)
+app.get('/api/debug/env', (req, res) => {
+    const googleVars = Object.keys(process.env).filter(key => key.startsWith('GOOGLE_'));
+    
+    res.json({
+        NODE_ENV: process.env.NODE_ENV,
+        hasGoogleAppsScriptUrl: !!process.env.GOOGLE_APPS_SCRIPT_URL,
+        googleVarsCount: googleVars.length,
+        googleVars: googleVars,
+        scriptUrlLength: process.env.GOOGLE_APPS_SCRIPT_URL ? process.env.GOOGLE_APPS_SCRIPT_URL.length : 0,
+        scriptUrlStart: process.env.GOOGLE_APPS_SCRIPT_URL ? process.env.GOOGLE_APPS_SCRIPT_URL.substring(0, 50) + '...' : 'NOT SET'
+    });
 });
 
 // --- RPB Tracking Endpoints ---
