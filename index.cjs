@@ -1005,6 +1005,11 @@ app.use(express.json());
 // Critical: Place express.static as the FIRST middleware to handle static files.
 app.use(express.static('public'));
 
+// Serve the migration helper page
+app.get('/fix-rewards', (req, res) => {
+    res.sendFile(path.join(__dirname, 'fix_heroku_rewards.html'));
+});
+
 // Route to serve the Roster page for specific event IDs - HIGH PRIORITY
 app.get('/event/:eventId/roster', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'roster.html'));
@@ -3379,7 +3384,18 @@ app.post('/api/admin/setup-database', async (req, res) => {
             INSERT INTO reward_settings (setting_type, setting_name, setting_value, description)
             VALUES 
                 ('abilities', 'calculation_divisor', 10, 'Divisor used in abilities points calculation: (total used × avg targets) ÷ divisor'),
-                ('abilities', 'max_points', 20, 'Maximum points that can be earned from abilities (sappers, dynamite, holy water)')
+                ('abilities', 'max_points', 20, 'Maximum points that can be earned from abilities (sappers, dynamite, holy water)'),
+                ('mana_potions', 'threshold', 10, 'Minimum potions needed before earning points'),
+                ('mana_potions', 'points_per_potion', 3, 'Points earned per potion above threshold'),
+                ('mana_potions', 'max_points', 10, 'Maximum points that can be earned from mana potions'),
+                ('runes', 'usage_divisor', 2, 'Number of runes needed per point'),
+                ('runes', 'points_per_division', 1, 'Points earned per rune threshold reached'),
+                ('interrupts', 'points_per_interrupt', 1, 'Points earned per interrupt'),
+                ('interrupts', 'interrupts_needed', 1, 'Number of interrupts needed per point'),
+                ('interrupts', 'max_points', 5, 'Maximum points that can be earned from interrupts'),
+                ('disarms', 'points_per_disarm', 1, 'Points earned per disarm'),
+                ('disarms', 'disarms_needed', 1, 'Number of disarms needed per point'),
+                ('disarms', 'max_points', 5, 'Maximum points that can be earned from disarms')
             ON CONFLICT (setting_type, setting_name) DO NOTHING
         `);
 
@@ -5256,6 +5272,69 @@ app.get('/api/debug/env', (req, res) => {
         scriptUrlLength: process.env.GOOGLE_APPS_SCRIPT_URL ? process.env.GOOGLE_APPS_SCRIPT_URL.length : 0,
         scriptUrlStart: process.env.GOOGLE_APPS_SCRIPT_URL ? process.env.GOOGLE_APPS_SCRIPT_URL.substring(0, 50) + '...' : 'NOT SET'
     });
+});
+
+// Migration endpoint to add missing reward settings
+app.post('/api/admin/migrate-reward-settings', async (req, res) => {
+    let client;
+    try {
+        console.log('🔧 [MIGRATION] Starting reward settings migration...');
+        client = await pool.connect();
+        
+        // Check current reward settings
+        const currentSettings = await client.query(`
+            SELECT setting_type, setting_name 
+            FROM reward_settings 
+            ORDER BY setting_type, setting_name
+        `);
+        
+        console.log('📊 [MIGRATION] Current settings:', currentSettings.rows.map(r => `${r.setting_type}.${r.setting_name}`));
+        
+        // Insert missing reward settings
+        const result = await client.query(`
+            INSERT INTO reward_settings (setting_type, setting_name, setting_value, description)
+            VALUES 
+                ('mana_potions', 'threshold', 10, 'Minimum potions needed before earning points'),
+                ('mana_potions', 'points_per_potion', 3, 'Points earned per potion above threshold'),
+                ('mana_potions', 'max_points', 10, 'Maximum points that can be earned from mana potions'),
+                ('runes', 'usage_divisor', 2, 'Number of runes needed per point'),
+                ('runes', 'points_per_division', 1, 'Points earned per rune threshold reached'),
+                ('interrupts', 'points_per_interrupt', 1, 'Points earned per interrupt'),
+                ('interrupts', 'interrupts_needed', 1, 'Number of interrupts needed per point'),
+                ('interrupts', 'max_points', 5, 'Maximum points that can be earned from interrupts'),
+                ('disarms', 'points_per_disarm', 1, 'Points earned per disarm'),
+                ('disarms', 'disarms_needed', 1, 'Number of disarms needed per point'),
+                ('disarms', 'max_points', 5, 'Maximum points that can be earned from disarms')
+            ON CONFLICT (setting_type, setting_name) DO NOTHING
+            RETURNING setting_type, setting_name
+        `);
+        
+        console.log(`✅ [MIGRATION] Added ${result.rows.length} new reward settings:`, result.rows);
+        
+        // Get final count
+        const finalSettings = await client.query(`
+            SELECT setting_type, COUNT(*) as count
+            FROM reward_settings 
+            GROUP BY setting_type
+            ORDER BY setting_type
+        `);
+        
+        res.json({
+            success: true,
+            message: `Migration completed. Added ${result.rows.length} new settings.`,
+            addedSettings: result.rows,
+            finalCounts: finalSettings.rows
+        });
+        
+    } catch (error) {
+        console.error('❌ [MIGRATION] Migration failed:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    } finally {
+        if (client) client.release();
+    }
 });
 
 // --- RPB Tracking Endpoints ---
