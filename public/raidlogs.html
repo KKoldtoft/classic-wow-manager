@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raid Logs - Classic WoW Manager</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/raidlogs.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Home</a>
+                <div class="top-nav-dropdown">
+                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+                        Upcoming Raids <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="upcoming-raids-menu">
+                        <div class="dropdown-loading">Loading raids...</div>
+                    </div>
+                </div>
+            </nav>
+        </div>
+        <div id="auth-container">
+            <!-- Auth content is now loaded by top-bar.js -->
+        </div>
+    </div>
+
+    <!-- Active Raid Bar (shown when raid is selected) -->
+    <div class="raid-bar" id="raid-bar" style="display: none;">
+        <div class="raid-bar-left">
+            <div class="raid-title" id="raid-title">Loading raid...</div>
+        </div>
+        <div class="raid-bar-right">
+            <nav class="raid-nav">
+                <a href="#" class="raid-nav-link" id="raid-roster-link">Roster</a>
+                <a href="#" class="raid-nav-link" id="raid-assignments-link">Assignments</a>
+                <a href="/raidlogs" class="raid-nav-link active" id="raid-logs-link">Raid Logs</a>
+                <a href="#" class="raid-nav-link" id="raid-goldpot-link">Gold Pot</a>
+                <a href="/loot" class="raid-nav-link" id="raid-loot-link">Loot</a>
+            </nav>
+        </div>
+    </div>
+
+    <div class="container">
+
+
+        <!-- Loading indicator -->
+        <div class="loading-indicator" id="loading-indicator" style="display: none;">
+            <div class="spinner"></div>
+            <p>Loading raid logs data...</p>
+        </div>
+
+        <!-- No data message -->
+        <div class="no-data-message" id="no-data-message" style="display: none;">
+            <div class="no-data-content">
+                <i class="fas fa-chart-line"></i>
+                <h3>No Raid Logs Available</h3>
+                <p>No log data has been recorded for this event yet.</p>
+                <p>Log data is typically available after running WoW log analysis.</p>
+                <p><strong>Tip:</strong> Try switching to a different event that has completed raids with log data.</p>
+            </div>
+        </div>
+
+        <!-- Raid logs content -->
+        <div class="raid-logs-container" id="raid-logs-container" style="display: none;">
+            
+            <!-- Stats Section -->
+            <div class="stats-section">
+                <div class="stats-dashboard" id="stats-dashboard">
+                        <!-- Raid Duration -->
+                        <div class="stat-card raid-duration">
+                            <i class="fas fa-clock stat-icon"></i>
+                            <div class="stat-label">Raid Duration</div>
+                            <div class="stat-value" id="raid-duration-value">--</div>
+                            <div class="stat-detail">Minutes</div>
+                        </div>
+
+                        <!-- Bosses Killed -->
+                        <div class="stat-card bosses-killed">
+                            <i class="fas fa-skull stat-icon"></i>
+                            <div class="stat-label">Bosses Killed</div>
+                            <div class="stat-value" id="bosses-killed-value">--</div>
+                            <div class="stat-detail">Boss encounters</div>
+                        </div>
+
+                        <!-- Last Boss Killed -->
+                        <div class="stat-card last-boss">
+                            <i class="fas fa-trophy stat-icon"></i>
+                            <div class="stat-label">Last Boss</div>
+                            <div class="stat-value" id="last-boss-value">--</div>
+                            <div class="stat-detail" id="last-boss-detail">Loading...</div>
+                        </div>
+
+                        <!-- WoW Logs Link -->
+                        <div class="stat-card wow-logs">
+                            <i class="fas fa-chart-line stat-icon"></i>
+                            <div class="stat-label">WoW Logs</div>
+                            <div class="stat-value">
+                                <button class="wow-logs-button" id="wow-logs-button" disabled>
+                                    View Logs
+                                </button>
+                            </div>
+                            <div class="stat-detail" id="wow-logs-detail">Loading...</div>
+                        </div>
+
+                        <!-- RPB Archive Button -->
+                        <div class="stat-card rpb-archive" id="rpb-archive-card">
+                            <i class="fas fa-external-link-alt stat-icon"></i>
+                            <div class="stat-label">RPB Archive</div>
+                            <div class="stat-value">
+                                <button class="rpb-button" id="rpb-archive-button" disabled>
+                                    View RPB
+                                </button>
+                            </div>
+                            <div class="stat-detail" id="rpb-archive-detail">Loading...</div>
+                        </div>
+                    </div>
+            </div>
+
+            <div class="rankings-container">
+                <!-- Damage Dealers Section -->
+                <div class="rankings-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-sword"></i> Damage Dealers</h2>
+                        <p>Ranked by total damage output</p>
+                    </div>
+                    <div class="rankings-list" id="damage-dealers-list">
+                        <!-- Damage dealers will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Healers Section -->
+                <div class="rankings-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-heart"></i> Healers</h2>
+                        <p>Ranked by total healing output</p>
+                    </div>
+                    <div class="rankings-list" id="healers-list">
+                        <!-- Healers will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rewards Section (Engineering, Mana Potions, and Runes) -->
+            <div class="rankings-container rewards-container">
+                <div class="rankings-section abilities-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/inv_misc_bomb_06.jpg" alt="Explosives" style="width: 24px; height: 24px; margin-right: 8px;"> Engineering & Holywater</h2>
+                        <p>Ranked by calculated points (abilities used × avg targets ÷ 10, max 20)</p>
+                    </div>
+                    <div class="rankings-list" id="abilities-list">
+                        <!-- Abilities rankings will be populated here -->
+                    </div>
+                </div>
+
+                <div class="rankings-section mana-potions-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/inv_potion_76.jpg" alt="Major Mana Potion" style="width: 24px; height: 24px; margin-right: 8px;"> Major Mana Potions</h2>
+                        <p>Ranked by points (3 pts per potion above 10, max 10)</p>
+                    </div>
+                    <div class="rankings-list" id="mana-potions-list">
+                        <!-- Mana potions rankings will be populated here -->
+                    </div>
+                </div>
+
+                <div class="rankings-section runes-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_sealofkings.jpg" alt="Dark/Demonic Runes" style="width: 24px; height: 24px; margin-right: 8px;"> Dark or Demonic runes</h2>
+                        <p>Ranked by points (1 pt per 2 runes)</p>
+                    </div>
+                    <div class="rankings-list" id="runes-list">
+                        <!-- Runes rankings will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Combat Actions Section (Interrupts and Disarms) -->
+            <div class="rankings-container combat-container">
+                <div class="rankings-section interrupts-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/ability_kick.jpg" alt="Interrupted spells" style="width: 24px; height: 24px; margin-right: 8px;"> Interrupted spells</h2>
+                        <p>Ranked by points (1 pt per 1 interrupt, max 5)</p>
+                    </div>
+                    <div class="rankings-list" id="interrupts-list">
+                        <!-- Interrupts rankings will be populated here -->
+                    </div>
+                </div>
+
+                <div class="rankings-section disarms-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_disarm.jpg" alt="Disarmed enemies" style="width: 24px; height: 24px; margin-right: 8px;"> Disarmed enemies</h2>
+                        <p>Ranked by points (1 pt per 1 disarm, max 5)</p>
+                    </div>
+                    <div class="rankings-list" id="disarms-list">
+                        <!-- Disarms rankings will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Error display -->
+        <div class="error-display" id="error-display" style="display: none;">
+            <div class="error-content">
+                <h3>Error Loading Raid Logs</h3>
+                <p id="error-message">An error occurred while loading the raid logs data.</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/top-bar.js"></script>
+    <script src="/raidlogs.js"></script>
+</body>
+</html> 

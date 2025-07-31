@@ -1048,6 +1048,16 @@ class WoWLogsAnalyzer {
             // Store the data to database
             await this.storeLogDataToDatabase(logId, roleMap);
 
+            // Automatically run automatch after all data has been loaded and displayed
+            console.log('🤖 [AUTO-MATCH] Running automatic player matching...');
+            try {
+                await this.runAutomatch();
+                console.log('✅ [AUTO-MATCH] Automatic matching completed successfully');
+            } catch (automatchError) {
+                console.warn('⚠️ [AUTO-MATCH] Automatic matching failed, but analysis succeeded:', automatchError);
+                // Don't throw the error - we don't want to fail the entire analysis if automatch fails
+            }
+
         } catch (error) {
             console.error('Analysis failed:', error);
             this.showError(`Failed to analyze log: ${error.message}`);
@@ -1230,7 +1240,9 @@ class WoWLogsAnalyzer {
         const rosterData = await this.fetchRosterData();
         
         // Fetch previously confirmed players for this raid
+        console.log('🔍 [CHARACTER DISPLAY] About to fetch confirmed players...');
         const confirmedPlayers = await this.fetchConfirmedPlayers();
+        console.log('✅ [CHARACTER DISPLAY] Confirmed players received:', confirmedPlayers);
         
         // Create comparison display
         this.displayCharacterComparison(sortedCharacters, friendliesMap, rosterData, container, confirmedPlayers);
@@ -1453,8 +1465,14 @@ class WoWLogsAnalyzer {
             'Shaman': 'class-bg-shaman',
             'Mage': 'class-bg-mage',
             'Warlock': 'class-bg-warlock',
-            'Druid': 'class-bg-druid'
+            'Druid': 'class-bg-druid',
+            // Handle role-based class names from roster data
+            'Tank': 'class-bg-warrior',  // Most tanks in Classic are Warriors
+            'DPS': 'class-bg-unknown',   // DPS could be any class, use unknown
+            'Healer': 'class-bg-unknown'  // Healers can be Priest/Druid/Shaman/Paladin, use unknown
         };
+        
+        console.log(`🎨 [CLASS BG DEBUG] Input: "${characterClass}" -> Output: "${classBackgrounds[characterClass] || 'class-bg-unknown'}"`);
         return classBackgrounds[characterClass] || 'class-bg-unknown';
     }
 
@@ -1505,16 +1523,18 @@ class WoWLogsAnalyzer {
                 return [];
             }
 
-            console.log('Fetching confirmed players for raid:', activeEventSession);
-            
-            const response = await fetch(`/api/confirmed-logs/${activeEventSession}/players?manually_matched=true`);
-            
+            console.log('🔍 [FETCH ALL] Fetching ALL confirmed players for raid:', activeEventSession);
+        
+            // Fetch ALL confirmed players (both manually and automatically matched)
+            const response = await fetch(`/api/confirmed-logs/${activeEventSession}/players`);
+        
             if (!response.ok) {
+                console.error('❌ [FETCH ALL] Failed to fetch confirmed players:', response.status, response.statusText);
                 throw new Error(`Failed to fetch confirmed players: ${response.status} ${response.statusText}`);
             }
-            
+        
             const result = await response.json();
-            console.log('Manually confirmed players fetched:', result.data);
+            console.log('✅ [FETCH ALL] ALL confirmed players fetched:', result.data);
             
             return result.data || [];
             
@@ -1625,7 +1645,10 @@ class WoWLogsAnalyzer {
         this.originalFriendliesMap = JSON.parse(JSON.stringify(friendliesMap));
         
         // Apply confirmed players (modify the data before comparison)
+        console.log('🔄 [APPLY START] About to apply confirmed players to comparison');
+        console.log('🔄 [APPLY START] Confirmed players from DB:', confirmedPlayers);
         const restoredPlayers = this.applyConfirmedPlayers(sortedCharacters, rosterPlayers, confirmedPlayers);
+        console.log('🔄 [APPLY END] Restoration completed, restored players:', restoredPlayers);
         
         // Store current data for later use in click handlers
         this.currentRosterPlayers = rosterPlayers;
@@ -1664,6 +1687,11 @@ class WoWLogsAnalyzer {
             const characterClass = friendlyData?.type || 'Unknown';
             const classBackgroundClass = this.getClassBackgroundClass(characterClass);
             
+            // Check if this is already a confirmed player (to avoid re-storing as exact match)
+            const isAlreadyConfirmed = confirmedPlayers.find(confirmed => 
+                confirmed.character_name.toLowerCase() === logsName.toLowerCase()
+            );
+            
             // Find exact match first
             let matchInfo = { type: 'none', rosterName: null, similarity: 0 };
             
@@ -1672,14 +1700,17 @@ class WoWLogsAnalyzer {
                 matchInfo = { type: 'exact', rosterName: exactMatch, similarity: 1.0 };
                 usedRosterNames.add(exactMatch);
                 
-                // Find roster player for this exact match to get Discord ID
-                const rosterPlayer = rosterPlayers.find(p => p.name === exactMatch);
-                if (rosterPlayer && rosterPlayer.discordId) {
-                    exactMatches.push({
-                        discordId: rosterPlayer.discordId,
-                        characterName: logsName,
-                        characterClass: characterClass
-                    });
+                // Only store as automatic exact match if it's NOT already confirmed manually
+                if (!isAlreadyConfirmed) {
+                    // Find roster player for this exact match to get Discord ID
+                    const rosterPlayer = rosterPlayers.find(p => p.name === exactMatch);
+                    if (rosterPlayer && rosterPlayer.discordId) {
+                        exactMatches.push({
+                            discordId: rosterPlayer.discordId,
+                            characterName: logsName,
+                            characterClass: characterClass
+                        });
+                    }
                 }
             } else {
                 // Find best approximate match from unused names
@@ -1722,17 +1753,42 @@ class WoWLogsAnalyzer {
             // Add discord-id attribute for confirmed players
             const discordIdAttribute = confirmedPlayer ? `data-discord-id="${confirmedPlayer.discord_id}"` : '';
             
+            // Get Discord IDs for display
+            let logsDiscordId = null;
+            let rosterDiscordId = null;
+            
+            // For logs side - check confirmed players first, then exact matches
+            if (confirmedPlayer && confirmedPlayer.discord_id) {
+                logsDiscordId = confirmedPlayer.discord_id;
+            } else if (rosterPlayer && rosterPlayer.discordId && finalMatchInfo.type === 'exact') {
+                logsDiscordId = rosterPlayer.discordId;
+            }
+            
+            // For roster side - get from rosterPlayer if available
+            if (rosterPlayer && rosterPlayer.discordId) {
+                rosterDiscordId = rosterPlayer.discordId;
+            }
+            
+            // Format Discord ID display (last 4 digits)
+            const formatDiscordId = (discordId) => {
+                if (!discordId) return '';
+                const last4 = discordId.slice(-4);
+                return `<div style="font-size: 0.8em; color: black; margin-top: 2px;">...${last4}</div>`;
+            };
+            
             comparisonHtml += `
                 <div class="character-comparison-row" id="${rowId}">
                     <div class="logs-character ${classBackgroundClass}">
                         <span class="character-name-black">${logsName}</span>
+                        ${formatDiscordId(logsDiscordId)}
                     </div>
                     <div class="comparison-indicator">
                         ${this.getComparisonIndicator(finalMatchInfo)}
                     </div>
                     <div class="roster-character ${finalRosterClassBackgroundClass}">
                         ${finalMatchInfo.rosterName ? 
-                            `<span class="roster-name-black ${finalMatchInfo.type} ${clickableClass}" ${clickableAttributes} ${discordIdAttribute}>${finalMatchInfo.rosterName}</span>` : 
+                            `<span class="roster-name-black ${finalMatchInfo.type} ${clickableClass}" ${clickableAttributes} ${discordIdAttribute}>${finalMatchInfo.rosterName}</span>
+                             ${formatDiscordId(rosterDiscordId)}` : 
                             `<span class="roster-name missing ${clickableClass}" ${clickableAttributes}>No match</span>`}
                     </div>
                 </div>
@@ -1746,20 +1802,43 @@ class WoWLogsAnalyzer {
         if (unmatchedRosterPlayers.length > 0) {
             comparisonHtml += '<div class="unmatched-section">';
             comparisonHtml += '<h4>❌ Unmatched Roster Players:</h4>';
-            unmatchedRosterPlayers.forEach(player => {
+            
+            // Process each unmatched player and their additional characters
+            for (const player of unmatchedRosterPlayers) {
                 const unmatchedClassBackgroundClass = this.getClassBackgroundClass(player.class);
+                const formatDiscordId = (discordId) => {
+                    if (!discordId) return '';
+                    const last4 = discordId.slice(-4);
+                    return `<div style="font-size: 0.8em; color: black; margin-top: 2px;">...${last4}</div>`;
+                };
+                
+                // Main roster player
                 comparisonHtml += `
                     <div class="character-comparison-row unmatched">
                         <div class="roster-character ${unmatchedClassBackgroundClass}">
                             <span class="roster-name-black unmatched">${player.name}</span>
+                            ${formatDiscordId(player.discordId)}
                         </div>
                     </div>
                 `;
-            });
+                
+                // Add placeholder for additional characters (will be populated via AJAX)
+                if (player.discordId) {
+                    comparisonHtml += `<div id="additional-chars-${player.discordId}" class="additional-characters-container"></div>`;
+                }
+            }
+            
             comparisonHtml += '</div>'; // Close unmatched-section
         }
         
         comparisonHtml += '</div>'; // Close character-validation-wrapper
+        
+        // Add automatch results display (automatch now runs automatically with Step 1)
+        comparisonHtml += `
+            <div style="margin: 20px 0; text-align: center;">
+                <div id="automatchResults" style="font-size: 0.9em; color: #666;"></div>
+            </div>
+        `;
         
         container.innerHTML = comparisonHtml;
         
@@ -1772,13 +1851,81 @@ class WoWLogsAnalyzer {
         // Store reference to container for real-time updates
         this.currentComparisonContainer = container;
         
+        // Fetch and display additional characters for unmatched roster players
+        this.loadAdditionalCharactersForUnmatchedPlayers(unmatchedRosterPlayers);
+        
         // Store exact matches automatically
         if (exactMatches.length > 0) {
+            console.log(`📝 Storing ${exactMatches.length} exact matches (excluding already confirmed players)`);
             this.storeExactMatches(exactMatches);
+        } else {
+            console.log('📝 No new exact matches to store (all matches were already confirmed manually)');
         }
         
         // Update validation counts after DOM is rendered
         setTimeout(() => this.updateRosterValidation(), 100);
+    }
+
+    async loadAdditionalCharactersForUnmatchedPlayers(unmatchedRosterPlayers) {
+        // Process each unmatched player to fetch their additional characters
+        for (const player of unmatchedRosterPlayers) {
+            if (player.discordId) {
+                try {
+                    await this.fetchAndDisplayAdditionalCharacters(player.discordId, player.name);
+                } catch (error) {
+                    console.error(`Error fetching additional characters for ${player.name} (${player.discordId}):`, error);
+                }
+            }
+        }
+    }
+
+    async fetchAndDisplayAdditionalCharacters(discordId, primaryPlayerName) {
+        try {
+            const response = await fetch(`/api/players/by-discord-id/${discordId}`);
+            const result = await response.json();
+            
+            if (result.success && result.characters && result.characters.length > 0) {
+                // Filter out the primary character (already displayed) and get additional ones
+                const additionalCharacters = result.characters.filter(char => 
+                    char.character_name.toLowerCase() !== primaryPlayerName.toLowerCase()
+                );
+                
+                if (additionalCharacters.length > 0) {
+                    this.displayAdditionalCharacters(discordId, additionalCharacters, primaryPlayerName);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching additional characters:', error);
+        }
+    }
+
+    displayAdditionalCharacters(discordId, additionalCharacters, primaryPlayerName) {
+        const container = document.getElementById(`additional-chars-${discordId}`);
+        if (!container) return;
+        
+        const formatDiscordId = (discordId) => {
+            if (!discordId) return '';
+            const last4 = discordId.slice(-4);
+            return `<div style="font-size: 0.8em; color: black; margin-top: 2px;">...${last4}</div>`;
+        };
+        
+        let additionalHtml = '';
+        additionalCharacters.forEach(char => {
+            const characterClassBackgroundClass = this.getClassBackgroundClass(char.class);
+            console.log(`🎨 [CLASS DEBUG] Additional character: ${char.character_name}, Class: "${char.class}", CSS Class: "${characterClassBackgroundClass}"`);
+            additionalHtml += `
+                <div class="character-comparison-row unmatched additional-character">
+                    <div class="roster-character ${characterClassBackgroundClass}" style="margin-left: 20px; opacity: 0.8;">
+                        <span class="roster-name-black unmatched" style="font-style: italic; font-size: 0.9em;">
+                            ↳ ${char.character_name}
+                        </span>
+                        ${formatDiscordId(discordId)}
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = additionalHtml;
     }
 
     getComparisonIndicator(matchInfo) {
@@ -1905,6 +2052,7 @@ class WoWLogsAnalyzer {
         }
 
         console.log('🔄 Applying confirmed players:', confirmedPlayers);
+        console.log('🔄 Original roster players before applying confirmed:', rosterPlayers.map(p => ({name: p.name, discordId: p.discordId})));
         const restoredPlayers = [];
 
         confirmedPlayers.forEach(confirmed => {
@@ -1952,6 +2100,7 @@ class WoWLogsAnalyzer {
         });
 
         console.log('✅ Restored players:', restoredPlayers);
+        console.log('🔄 Roster players after applying confirmed:', rosterPlayers.map(p => ({name: p.name, discordId: p.discordId})));
         return restoredPlayers;
     }
 
@@ -2051,6 +2200,392 @@ class WoWLogsAnalyzer {
                 }
             });
         }
+    }
+
+
+
+    async runAutomatch() {
+        const resultsDiv = document.getElementById('automatchResults');
+        
+        if (!resultsDiv) return;
+        
+        // Clear previous results
+        resultsDiv.innerHTML = '';
+        
+        try {
+            console.log('🤖 [AUTOMATCH] Starting automatch process...');
+            
+            // Get all "No match" and partial match entries
+            const noMatchEntries = this.findNoMatchEntries();
+            console.log(`🤖 [AUTOMATCH] Found ${noMatchEntries.length} entries to process (no-match + partial-match)`);
+            
+            if (noMatchEntries.length === 0) {
+                resultsDiv.innerHTML = '<div style="color: #28a745;">✅ No unmatched or partial match players found!</div>';
+                return;
+            }
+            
+            // Phase 1: Match with unmatched roster players
+            const phase1Results = await this.automatchWithUnmatchedRoster(noMatchEntries);
+            console.log(`🤖 [AUTOMATCH] Phase 1 completed: ${phase1Results.matches.length} matches`);
+            
+            // Phase 2: Match remaining with Players table
+            const remainingNoMatch = this.findNoMatchEntries(); // Re-check after Phase 1
+            const phase2Results = await this.automatchWithPlayersTable(remainingNoMatch);
+            console.log(`🤖 [AUTOMATCH] Phase 2 completed: ${phase2Results.matches.length} matches`);
+            
+            // Display results
+            this.displayAutomatchResults(phase1Results, phase2Results, resultsDiv);
+            
+            // Update validation counts
+            setTimeout(() => this.updateRosterValidation(), 100);
+            
+        } catch (error) {
+            console.error('❌ [AUTOMATCH] Error during automatch:', error);
+            resultsDiv.innerHTML = '<div style="color: #dc3545;">❌ Error during automatch process</div>';
+        }
+    }
+
+    findNoMatchEntries() {
+        const noMatchEntries = [];
+        const comparisonRows = document.querySelectorAll('.character-comparison-row:not(.unmatched)');
+        
+        comparisonRows.forEach(row => {
+            const rosterCell = row.querySelector('.roster-character .roster-name, .roster-character .roster-name-black');
+            const indicator = row.querySelector('.comparison-indicator');
+            
+            let shouldInclude = false;
+            let matchType = 'unknown';
+            
+            // Check for "No match" entries
+            if (rosterCell && rosterCell.textContent.trim() === 'No match') {
+                shouldInclude = true;
+                matchType = 'no-match';
+            }
+            
+            // Check for partial matches (percentage indicators like "🔶 75%")
+            if (indicator && indicator.textContent.includes('🔶') && indicator.textContent.includes('%')) {
+                shouldInclude = true;
+                matchType = 'partial-match';
+            }
+            
+            if (shouldInclude) {
+                const logsCell = row.querySelector('.logs-character .character-name-black');
+                if (logsCell) {
+                    const logsName = logsCell.textContent.trim();
+                    const logsClass = this.getCharacterClassFromLogsCell(row);
+                    noMatchEntries.push({
+                        rowId: row.id,
+                        logsName: logsName,
+                        logsClass: logsClass,
+                        rowElement: row,
+                        matchType: matchType,
+                        currentRosterName: rosterCell ? rosterCell.textContent.trim() : 'No match'
+                    });
+                }
+            }
+        });
+        
+        console.log(`🤖 [FIND ENTRIES] Found ${noMatchEntries.length} entries to auto-match:`, 
+            noMatchEntries.map(e => `${e.logsName} (${e.matchType})`));
+        
+        return noMatchEntries;
+    }
+
+    getCharacterClassFromLogsCell(rowElement) {
+        // Extract class from the logs character cell background class
+        const logsCell = rowElement.querySelector('.logs-character');
+        if (logsCell) {
+            const classList = Array.from(logsCell.classList);
+            const classMatch = classList.find(cls => cls.startsWith('class-bg-'));
+            if (classMatch) {
+                const className = classMatch.replace('class-bg-', '');
+                // Convert CSS class back to proper class name
+                const classMap = {
+                    'warrior': 'Warrior',
+                    'paladin': 'Paladin', 
+                    'hunter': 'Hunter',
+                    'rogue': 'Rogue',
+                    'priest': 'Priest',
+                    'shaman': 'Shaman',
+                    'mage': 'Mage',
+                    'warlock': 'Warlock',
+                    'druid': 'Druid'
+                };
+                return classMap[className] || 'Unknown';
+            }
+        }
+        return 'Unknown';
+    }
+
+    async automatchWithUnmatchedRoster(noMatchEntries) {
+        const matches = [];
+        
+        // Get unmatched roster players from the actual "Unmatched Roster Players" section
+        const unmatchedSection = document.querySelector('.unmatched-section');
+        const unmatchedCandidates = [];
+        
+        if (unmatchedSection) {
+            // Get main unmatched roster players
+            const mainUnmatchedRows = unmatchedSection.querySelectorAll('.character-comparison-row.unmatched:not(.additional-character)');
+            mainUnmatchedRows.forEach(row => {
+                const nameElement = row.querySelector('.roster-name-black.unmatched');
+                const discordIdElement = row.querySelector('[style*="..."]'); // Discord ID display
+                
+                if (nameElement) {
+                    const name = nameElement.textContent.trim();
+                    const classBackground = Array.from(row.querySelector('.roster-character').classList)
+                        .find(cls => cls.startsWith('class-bg-'));
+                    const characterClass = this.getClassFromBackgroundClass(classBackground);
+                    
+                    // Extract Discord ID from the display
+                    let discordId = null;
+                    if (discordIdElement) {
+                        const discordText = discordIdElement.textContent.trim();
+                        const match = discordText.match(/\.\.\.(\d+)/);
+                        if (match) {
+                            // Find full Discord ID from currentRosterPlayers
+                            const fullPlayer = this.currentRosterPlayers.find(p => 
+                                p.discordId && p.discordId.endsWith(match[1])
+                            );
+                            if (fullPlayer) {
+                                discordId = fullPlayer.discordId;
+                            }
+                        }
+                    }
+                    
+                    console.log(`🤖 [PHASE 1] Main unmatched: ${name} (${characterClass}) - Discord: ${discordId}`);
+                    unmatchedCandidates.push({
+                        name: name,
+                        class: characterClass,
+                        discordId: discordId,
+                        type: 'main'
+                    });
+                }
+            });
+            
+            // Get additional characters (alts) from the additional-characters containers
+            const additionalContainers = unmatchedSection.querySelectorAll('.additional-characters-container');
+            additionalContainers.forEach(container => {
+                const discordId = container.id.replace('additional-chars-', '');
+                const additionalRows = container.querySelectorAll('.additional-character');
+                
+                additionalRows.forEach(row => {
+                    const nameElement = row.querySelector('.roster-name-black.unmatched');
+                    if (nameElement) {
+                        const fullName = nameElement.textContent.trim();
+                        const name = fullName.replace('↳ ', ''); // Remove the arrow prefix
+                        const classBackground = Array.from(row.querySelector('.roster-character').classList)
+                            .find(cls => cls.startsWith('class-bg-'));
+                        const characterClass = this.getClassFromBackgroundClass(classBackground);
+                        
+                        console.log(`🤖 [PHASE 1] Alt character: ${name} (${characterClass}) - Discord: ${discordId}`);
+                        unmatchedCandidates.push({
+                            name: name,
+                            class: characterClass,
+                            discordId: discordId,
+                            type: 'alt'
+                        });
+                    }
+                });
+            });
+        }
+        
+        console.log(`🤖 [PHASE 1] Checking ${noMatchEntries.length} no-match entries against ${unmatchedCandidates.length} unmatched candidates (main + alts)`);
+        
+        for (const noMatchEntry of noMatchEntries) {
+            console.log(`🤖 [PHASE 1] Looking for match for: ${noMatchEntry.logsName} (${noMatchEntry.logsClass})`);
+            
+            const matchingCandidate = unmatchedCandidates.find(candidate => {
+                const nameMatch = candidate.name.toLowerCase() === noMatchEntry.logsName.toLowerCase();
+                const classMatch = this.isClassMatch(candidate.class, noMatchEntry.logsClass);
+                
+                console.log(`🤖 [PHASE 1]   Checking ${candidate.name} (${candidate.class}): name=${nameMatch}, class=${classMatch}`);
+                return nameMatch && classMatch && candidate.discordId;
+            });
+            
+            if (matchingCandidate) {
+                const improvementType = noMatchEntry.matchType === 'no-match' ? 'No match → Exact match' : 
+                                      `Partial match (${noMatchEntry.currentRosterName}) → Exact match`;
+                console.log(`🤖 [PHASE 1] ✅ Found match: ${noMatchEntry.logsName} (${noMatchEntry.logsClass}) -> ${matchingCandidate.name} (Discord: ${matchingCandidate.discordId}) [${matchingCandidate.type}] (${improvementType})`);
+                
+                try {
+                    // Store the confirmed player
+                    await this.storeConfirmedPlayer(matchingCandidate.discordId, noMatchEntry.logsName, noMatchEntry.logsClass);
+                    
+                    // Update the UI
+                    this.updateRowToMatched(noMatchEntry.rowId, noMatchEntry.logsName, noMatchEntry.logsClass, matchingCandidate.discordId);
+                    
+                    matches.push({
+                        logsName: noMatchEntry.logsName,
+                        logsClass: noMatchEntry.logsClass,
+                        rosterName: matchingCandidate.name,
+                        discordId: matchingCandidate.discordId,
+                        type: matchingCandidate.type,
+                        improvementType: improvementType,
+                        originalMatchType: noMatchEntry.matchType
+                    });
+                    
+                    // Remove from candidates to prevent duplicate matches
+                    const index = unmatchedCandidates.indexOf(matchingCandidate);
+                    if (index > -1) {
+                        unmatchedCandidates.splice(index, 1);
+                    }
+                    
+                } catch (error) {
+                    console.error(`❌ [PHASE 1] Error storing match for ${noMatchEntry.logsName}:`, error);
+                }
+            } else {
+                console.log(`🤖 [PHASE 1] ❌ No match found for: ${noMatchEntry.logsName} (${noMatchEntry.logsClass}) [${noMatchEntry.matchType}]`);
+            }
+        }
+        
+        return { matches };
+    }
+
+    getClassFromBackgroundClass(classBackground) {
+        if (!classBackground) return 'Unknown';
+        
+        const classMap = {
+            'class-bg-warrior': 'Warrior',
+            'class-bg-paladin': 'Paladin',
+            'class-bg-hunter': 'Hunter',
+            'class-bg-rogue': 'Rogue',
+            'class-bg-priest': 'Priest',
+            'class-bg-shaman': 'Shaman',
+            'class-bg-mage': 'Mage',
+            'class-bg-warlock': 'Warlock',
+            'class-bg-druid': 'Druid',
+            'class-bg-unknown': 'Unknown'
+        };
+        
+        return classMap[classBackground] || 'Unknown';
+    }
+
+    isClassMatch(rosterClass, logsClass) {
+        // Direct match
+        if (rosterClass === logsClass) return true;
+        
+        // Role-based matching
+        if (rosterClass === 'Tank' && logsClass === 'Warrior') return true;
+        if (rosterClass === 'Healer' && ['Priest', 'Druid', 'Shaman', 'Paladin'].includes(logsClass)) return true;
+        if (rosterClass === 'DPS' && ['Warrior', 'Rogue', 'Hunter', 'Mage', 'Warlock'].includes(logsClass)) return true;
+        
+        return false;
+    }
+
+    async automatchWithPlayersTable(noMatchEntries) {
+        const matches = [];
+        
+        console.log(`🤖 [PHASE 2] Searching Players table for ${noMatchEntries.length} remaining no-match entries`);
+        
+        for (const noMatchEntry of noMatchEntries) {
+            try {
+                // Search for exact match in Players table
+                const response = await fetch(`/api/search-players?query=${encodeURIComponent(noMatchEntry.logsName)}`);
+                const searchResults = await response.json();
+                
+                // Find exact name and class match
+                const exactMatch = searchResults.find(player => 
+                    player.character_name.toLowerCase() === noMatchEntry.logsName.toLowerCase() &&
+                    player.class === noMatchEntry.logsClass &&
+                    player.discord_id
+                );
+                
+                if (exactMatch) {
+                    const improvementType = noMatchEntry.matchType === 'no-match' ? 'No match → Exact match' : 
+                                          `Partial match (${noMatchEntry.currentRosterName}) → Exact match`;
+                    console.log(`🤖 [PHASE 2] Found match in Players table: ${noMatchEntry.logsName} (${noMatchEntry.logsClass}) -> Discord: ${exactMatch.discord_id} (${improvementType})`);
+                    
+                    // Store the confirmed player
+                    await this.storeConfirmedPlayer(exactMatch.discord_id, noMatchEntry.logsName, noMatchEntry.logsClass);
+                    
+                    // Update the UI
+                    this.updateRowToMatched(noMatchEntry.rowId, noMatchEntry.logsName, noMatchEntry.logsClass, exactMatch.discord_id);
+                    
+                    matches.push({
+                        logsName: noMatchEntry.logsName,
+                        logsClass: noMatchEntry.logsClass,
+                        discordId: exactMatch.discord_id,
+                        improvementType: improvementType,
+                        originalMatchType: noMatchEntry.matchType
+                    });
+                }
+                
+            } catch (error) {
+                console.error(`❌ [PHASE 2] Error searching for ${noMatchEntry.logsName}:`, error);
+            }
+        }
+        
+        return { matches };
+    }
+
+    displayAutomatchResults(phase1Results, phase2Results, resultsDiv) {
+        let resultHtml = '';
+        
+        // Phase 1 results
+        if (phase1Results.matches.length > 0) {
+            const noMatchCount = phase1Results.matches.filter(m => m.originalMatchType === 'no-match').length;
+            const partialMatchCount = phase1Results.matches.filter(m => m.originalMatchType === 'partial-match').length;
+            
+            resultHtml += `<div style="color: #28a745; margin-bottom: 8px;">
+                <div style="font-weight: bold;">✅ ${phase1Results.matches.length} players matched from Unmatched Roster:</div>`;
+            
+            if (noMatchCount > 0) {
+                const noMatchNames = phase1Results.matches
+                    .filter(m => m.originalMatchType === 'no-match')
+                    .map(m => m.logsName).join(', ');
+                resultHtml += `<div style="margin-left: 15px; color: #155724;">
+                    🆕 ${noMatchCount} new matches: ${noMatchNames}
+                </div>`;
+            }
+            
+            if (partialMatchCount > 0) {
+                const partialMatchNames = phase1Results.matches
+                    .filter(m => m.originalMatchType === 'partial-match')
+                    .map(m => m.logsName).join(', ');
+                resultHtml += `<div style="margin-left: 15px; color: #0c5460;">
+                    📈 ${partialMatchCount} improved matches: ${partialMatchNames}
+                </div>`;
+            }
+            
+            resultHtml += `</div>`;
+        }
+        
+        // Phase 2 results  
+        if (phase2Results.matches.length > 0) {
+            const noMatchCount = phase2Results.matches.filter(m => m.originalMatchType === 'no-match').length;
+            const partialMatchCount = phase2Results.matches.filter(m => m.originalMatchType === 'partial-match').length;
+            
+            resultHtml += `<div style="color: #28a745; margin-bottom: 8px;">
+                <div style="font-weight: bold;">✅ ${phase2Results.matches.length} players matched from Players table:</div>`;
+                
+            if (noMatchCount > 0) {
+                const noMatchNames = phase2Results.matches
+                    .filter(m => m.originalMatchType === 'no-match')
+                    .map(m => m.logsName).join(', ');
+                resultHtml += `<div style="margin-left: 15px; color: #155724;">
+                    🆕 ${noMatchCount} new matches: ${noMatchNames}
+                </div>`;
+            }
+            
+            if (partialMatchCount > 0) {
+                const partialMatchNames = phase2Results.matches
+                    .filter(m => m.originalMatchType === 'partial-match')
+                    .map(m => m.logsName).join(', ');
+                resultHtml += `<div style="margin-left: 15px; color: #0c5460;">
+                    📈 ${partialMatchCount} improved matches: ${partialMatchNames}
+                </div>`;
+            }
+            
+            resultHtml += `</div>`;
+        }
+        
+        // No matches found
+        if (phase1Results.matches.length === 0 && phase2Results.matches.length === 0) {
+            resultHtml = '<div style="color: #ffc107;">⚠️ No automatic matches found</div>';
+        }
+        
+        resultsDiv.innerHTML = resultHtml;
     }
 
     showRosterEditDropdown(nameElement) {
@@ -2174,6 +2709,12 @@ class WoWLogsAnalyzer {
             }
             
             // Store the confirmed player
+            console.log('🔧 [MANUAL MATCH] About to store manual match with:', {
+                discordId: rosterPlayer.discordId,
+                characterName: logsName,
+                characterClass: logsClass,
+                rosterPlayerData: rosterPlayer
+            });
             await this.storeConfirmedPlayer(rosterPlayer.discordId, logsName, logsClass);
             
             // Update the UI to show the match
@@ -2326,6 +2867,14 @@ class WoWLogsAnalyzer {
             throw new Error('No active event session found');
         }
         
+        console.log(`🔧 [STORE MANUAL] Storing manual match:`, {
+            raidId: activeEventSession,
+            discordId: discordId,
+            characterName: characterName,
+            characterClass: characterClass,
+            timestamp: new Date().toISOString()
+        });
+        
         const response = await fetch(`/api/confirmed-logs/${activeEventSession}/player`, {
             method: 'POST',
             headers: {
@@ -2343,7 +2892,32 @@ class WoWLogsAnalyzer {
             throw new Error(error.message || 'Failed to store confirmed player');
         }
         
-        console.log(`✅ Stored confirmed player: ${characterName} (${characterClass}) - Discord: ${discordId}`);
+        const responseData = await response.json();
+        console.log(`✅ [STORE MANUAL] Stored confirmed player: ${characterName} (${characterClass}) - Discord: ${discordId}`);
+        console.log(`✅ [STORE MANUAL] Server response:`, responseData);
+        
+        // Immediately verify the storage by fetching it back
+        setTimeout(async () => {
+            try {
+                const verifyResponse = await fetch(`/api/confirmed-logs/${activeEventSession}/players`);
+                if (verifyResponse.ok) {
+                    const verifyResult = await verifyResponse.json();
+                    const foundPlayer = verifyResult.data?.find(p => 
+                        p.discord_id === discordId && 
+                        p.character_name.toLowerCase() === characterName.toLowerCase()
+                    );
+                    if (foundPlayer) {
+                        console.log(`✅ [VERIFY MANUAL] Manual match successfully verified in database:`, foundPlayer);
+                    } else {
+                        console.error(`❌ [VERIFY MANUAL] Manual match NOT found in database after storage!`);
+                        console.error(`❌ [VERIFY MANUAL] Looking for: discordId=${discordId}, name=${characterName}`);
+                        console.error(`❌ [VERIFY MANUAL] Available players:`, verifyResult.data);
+                    }
+                }
+            } catch (error) {
+                console.error('❌ [VERIFY MANUAL] Error verifying manual match:', error);
+            }
+        }, 500); // Wait 500ms to let the database transaction complete
     }
 
     async storeExactMatches(exactMatches) {
@@ -3352,17 +3926,21 @@ class WoWLogsAnalyzer {
         }
 
         try {
-            // Step 1: Run RPB Analysis
+            // Step 1: Confirm Logs
             this.workflowState.currentStep = 1;
             await this.runWorkflowStep1(input);
             
-            // Step 2: Archive Results
+            // Step 2: Run RPB Analysis
             this.workflowState.currentStep = 2;
             await this.runWorkflowStep2(input);
             
-            // Step 3: Import Data
+            // Step 3: Archive Results
             this.workflowState.currentStep = 3;
-            await this.runWorkflowStep3(activeEventSession);
+            await this.runWorkflowStep3(input);
+            
+            // Step 4: Import Data
+            this.workflowState.currentStep = 4;
+            await this.runWorkflowStep4(activeEventSession);
             
             // Show completion
             this.showWorkflowComplete();
@@ -3381,8 +3959,52 @@ class WoWLogsAnalyzer {
     }
 
     async runWorkflowStep1(logUrl) {
-        console.log('📊 [WORKFLOW] Step 1: Starting RPB Analysis...');
-        this.updateWorkflowStep(1, 'active', 'Starting RPB analysis...', '🔄');
+        console.log('📋 [WORKFLOW] Step 1: Confirming logs...');
+        this.updateWorkflowStep(1, 'active', 'Analyzing logs and matching players...', '🔄');
+        
+        try {
+            // Set the main log input for the analyze function to use
+            const mainLogInput = document.getElementById('logInput');
+            if (mainLogInput) {
+                mainLogInput.value = logUrl;
+            }
+
+            // Run the existing analyzeLog function (which now includes automatch)
+            await this.analyzeLog();
+            
+            // Check for unmatched players after automatch
+            const unmatchedCount = this.countUnmatchedPlayers();
+            
+            if (unmatchedCount > 0) {
+                // Get list of unmatched player names for display
+                const unmatchedPlayers = this.getUnmatchedPlayersList();
+                const playerList = unmatchedPlayers.slice(0, 3).join(', ') + (unmatchedPlayers.length > 3 ? `, and ${unmatchedPlayers.length - 3} more` : '');
+                
+                // Show warning but mark step as completed
+                this.updateWorkflowStep(1, 'completed', `⚠️ ${unmatchedCount} players not matched: ${playerList}`, '⚠️');
+                
+                // Add a styled notification to the progress UI
+                this.addWorkflowNotification(
+                    'warning',
+                    `${unmatchedCount} players were not matched to a Discord ID: ${playerList}. ` +
+                    'You need to match them manually, or they will not be saved to the Players database.'
+                );
+                
+                console.log(`⚠️ [WORKFLOW] Step 1 completed with ${unmatchedCount} unmatched players`);
+            } else {
+                this.updateWorkflowStep(1, 'completed', 'All players matched successfully', '✅');
+                console.log('✅ [WORKFLOW] Step 1 completed - all players matched');
+            }
+            
+        } catch (error) {
+            this.updateWorkflowStep(1, 'error', `Log analysis failed: ${error.message}`, '❌');
+            throw error;
+        }
+    }
+
+    async runWorkflowStep2(logUrl) {
+        console.log('📊 [WORKFLOW] Step 2: Starting RPB Analysis...');
+        this.updateWorkflowStep(2, 'active', 'Starting RPB analysis...', '🔄');
         
         try {
             // Set the main log input for existing RPB functions to use
@@ -3400,35 +4022,35 @@ class WoWLogsAnalyzer {
             // Wait for RPB completion by polling status
             await this.waitForRPBCompletion();
             
-            this.updateWorkflowStep(1, 'completed', 'RPB analysis completed successfully', '✅');
-            console.log('✅ [WORKFLOW] Step 1 completed');
+            this.updateWorkflowStep(2, 'completed', 'RPB analysis completed successfully', '✅');
+            console.log('✅ [WORKFLOW] Step 2 completed');
             
         } catch (error) {
-            this.updateWorkflowStep(1, 'error', `RPB analysis failed: ${error.message}`, '❌');
+            this.updateWorkflowStep(2, 'error', `RPB analysis failed: ${error.message}`, '❌');
             throw error;
         }
     }
 
-    async runWorkflowStep2(logUrl) {
-        console.log('📁 [WORKFLOW] Step 2: Archiving results...');
-        this.updateWorkflowStep(2, 'active', 'Creating archive backup...', '🔄');
+    async runWorkflowStep3(logUrl) {
+        console.log('📁 [WORKFLOW] Step 3: Archiving results...');
+        this.updateWorkflowStep(3, 'active', 'Creating archive backup...', '🔄');
         
         try {
             // Call the existing archive function
             await this.callArchiveFunction();
             
-            this.updateWorkflowStep(2, 'completed', 'Archive created successfully', '✅');
-            console.log('✅ [WORKFLOW] Step 2 completed');
+            this.updateWorkflowStep(3, 'completed', 'Archive created successfully', '✅');
+            console.log('✅ [WORKFLOW] Step 3 completed');
             
         } catch (error) {
-            this.updateWorkflowStep(2, 'error', `Archive failed: ${error.message}`, '❌');
+            this.updateWorkflowStep(3, 'error', `Archive failed: ${error.message}`, '❌');
             throw error;
         }
     }
 
-    async runWorkflowStep3(eventId) {
-        console.log('📥 [WORKFLOW] Step 3: Importing data...');
-        this.updateWorkflowStep(3, 'active', 'Importing data to database...', '🔄');
+    async runWorkflowStep4(eventId) {
+        console.log('📥 [WORKFLOW] Step 4: Importing data...');
+        this.updateWorkflowStep(4, 'active', 'Importing data to database...', '🔄');
         
         try {
             // Get the archive URL from RPB tracking
@@ -3440,11 +4062,11 @@ class WoWLogsAnalyzer {
             // Call the import function
             await this.callImportFunction(archiveUrl, eventId);
             
-            this.updateWorkflowStep(3, 'completed', 'Data imported successfully', '✅');
-            console.log('✅ [WORKFLOW] Step 3 completed');
+            this.updateWorkflowStep(4, 'completed', 'Data imported successfully', '✅');
+            console.log('✅ [WORKFLOW] Step 4 completed');
             
         } catch (error) {
-            this.updateWorkflowStep(3, 'error', `Import failed: ${error.message}`, '❌');
+            this.updateWorkflowStep(4, 'error', `Import failed: ${error.message}`, '❌');
             throw error;
         }
     }
@@ -3479,7 +4101,7 @@ class WoWLogsAnalyzer {
                     // Update progress status
                     const elapsed = Date.now() - startTime;
                     const progressPercent = Math.min((elapsed / maxWaitTime) * 100, 95);
-                    this.updateWorkflowStep(1, 'active', `RPB analysis in progress... ${Math.round(progressPercent)}%`, '🔄');
+                    this.updateWorkflowStep(2, 'active', `RPB analysis in progress... ${Math.round(progressPercent)}%`, '🔄');
                     
                     // Continue checking if not timed out
                     if (elapsed < maxWaitTime) {
@@ -3563,7 +4185,7 @@ class WoWLogsAnalyzer {
         if (progressDiv) {
             progressDiv.style.display = 'block';
             // Reset all steps to waiting state
-            for (let i = 1; i <= 3; i++) {
+            for (let i = 1; i <= 4; i++) {
                 this.updateWorkflowStep(i, 'waiting', 'Waiting...', '⏳');
             }
         }
@@ -3594,6 +4216,108 @@ class WoWLogsAnalyzer {
             
             statusDiv.textContent = statusText;
             indicatorDiv.textContent = indicator;
+        }
+    }
+
+    countUnmatchedPlayers() {
+        const comparisonRows = document.querySelectorAll('.character-comparison-row:not(.unmatched)');
+        let unmatchedCount = 0;
+        
+        comparisonRows.forEach(row => {
+            const rosterCell = row.querySelector('.roster-character .roster-name, .roster-character .roster-name-black');
+            const indicator = row.querySelector('.comparison-indicator');
+            
+            // Count "No match" entries
+            if (rosterCell && rosterCell.textContent.trim() === 'No match') {
+                unmatchedCount++;
+            }
+            
+            // Count partial matches (🔶 percentage)
+            if (indicator && indicator.textContent.includes('🔶') && indicator.textContent.includes('%')) {
+                unmatchedCount++;
+            }
+        });
+        
+        return unmatchedCount;
+    }
+
+    getUnmatchedPlayersList() {
+        const comparisonRows = document.querySelectorAll('.character-comparison-row:not(.unmatched)');
+        const unmatchedPlayers = [];
+        
+        comparisonRows.forEach(row => {
+            const logsCell = row.querySelector('.logs-character .character-name-black');
+            const rosterCell = row.querySelector('.roster-character .roster-name, .roster-character .roster-name-black');
+            const indicator = row.querySelector('.comparison-indicator');
+            
+            if (logsCell) {
+                const playerName = logsCell.textContent.trim();
+                
+                // Check for "No match" or partial match
+                const isNoMatch = rosterCell && rosterCell.textContent.trim() === 'No match';
+                const isPartialMatch = indicator && indicator.textContent.includes('🔶') && indicator.textContent.includes('%');
+                
+                if (isNoMatch || isPartialMatch) {
+                    unmatchedPlayers.push(playerName);
+                }
+            }
+        });
+        
+        return unmatchedPlayers;
+    }
+
+    addWorkflowNotification(type, message) {
+        const progressDiv = document.getElementById('workflowProgress');
+        if (!progressDiv) return;
+        
+        // Remove any existing notifications
+        const existingNotification = progressDiv.querySelector('.workflow-notification');
+        if (existingNotification) {
+            existingNotification.remove();
+        }
+        
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = 'workflow-notification';
+        
+        // Set styling based on type
+        const colors = {
+            warning: {
+                bg: 'rgba(255, 193, 7, 0.1)',
+                border: '#ffc107',
+                text: '#856404'
+            },
+            error: {
+                bg: 'rgba(220, 53, 69, 0.1)',
+                border: '#dc3545',
+                text: '#721c24'
+            },
+            info: {
+                bg: 'rgba(13, 202, 240, 0.1)',
+                border: '#0dcaf0',
+                text: '#055160'
+            }
+        };
+        
+        const color = colors[type] || colors.info;
+        
+        notification.style.cssText = `
+            margin: 1rem 0;
+            padding: 0.75rem 1rem;
+            background: ${color.bg};
+            border: 1px solid ${color.border};
+            border-radius: 6px;
+            color: ${color.text};
+            font-size: 0.9rem;
+            line-height: 1.4;
+        `;
+        
+        notification.textContent = message;
+        
+        // Insert after the progress steps
+        const progressSteps = progressDiv.querySelector('.progress-steps');
+        if (progressSteps) {
+            progressSteps.insertAdjacentElement('afterend', notification);
         }
     }
 
@@ -3718,12 +4442,17 @@ class WoWLogsAnalyzer {
             if (failedStep === 1) {
                 await this.runWorkflowStep1(logUrl);
                 await this.runWorkflowStep2(logUrl);
-                await this.runWorkflowStep3(eventId);
+                await this.runWorkflowStep3(logUrl);
+                await this.runWorkflowStep4(eventId);
             } else if (failedStep === 2) {
                 await this.runWorkflowStep2(logUrl);
-                await this.runWorkflowStep3(eventId);
+                await this.runWorkflowStep3(logUrl);
+                await this.runWorkflowStep4(eventId);
             } else if (failedStep === 3) {
-                await this.runWorkflowStep3(eventId);
+                await this.runWorkflowStep3(logUrl);
+                await this.runWorkflowStep4(eventId);
+            } else if (failedStep === 4) {
+                await this.runWorkflowStep4(eventId);
             }
             
             this.showWorkflowComplete();

@@ -92,7 +92,7 @@ function highlightActiveRaidNav() {
         // Special handling for different paths
         if (currentPath === '/gold' && link.id === 'raid-goldpot-link') {
             link.classList.add('active');
-        } else if (currentPath === '/logs' && link.id === 'raid-logs-link') {
+        } else if (currentPath === '/raidlogs' && link.id === 'raid-logs-link') {
             link.classList.add('active');
         } else if (currentPath.includes('/roster') && link.id === 'raid-roster-link') {
             link.classList.add('active');
@@ -363,9 +363,9 @@ function updateRaidNavigation(eventId) {
         goldpotLink.replaceWith(goldpotLink.cloneNode(true));
     }
     
-    // Logs link stays as /logs - the logs page will use the localStorage session
+    // Raid Logs link stays as /raidlogs - the raid logs page will use the localStorage session
     if (logsLink) {
-        logsLink.href = '/logs';
+        logsLink.href = '/raidlogs';
     }
 }
 

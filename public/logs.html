@@ -37,7 +37,9 @@
             <nav class="raid-nav">
                 <a href="#" class="raid-nav-link" id="raid-roster-link">Roster</a>
                 <a href="#" class="raid-nav-link" id="raid-assignments-link">Assignments</a>
+                <a href="/raidlogs" class="raid-nav-link" id="raid-logs-link">Raid Logs</a>
                 <a href="#" class="raid-nav-link" id="raid-goldpot-link">Gold Pot</a>
+                <a href="/loot" class="raid-nav-link" id="raid-loot-link">Loot</a>
             </nav>
         </div>
     </div>
@@ -46,19 +48,8 @@
         <div class="page-header">
         </div>
 
-        <div class="logs-input-section">
-            <div class="input-container">
-                <input type="text" id="logInput" placeholder="Enter wowlogs link">
-                <button id="analyzeBtn" class="run-btn">Step 1 - Confirm logs</button>
-                <button id="runRpbBtn" class="run-btn rpb-btn">Step 2 - Run RPB</button>
-            </div>
-        </div>
-
-        <!-- Unified Workflow Section -->
+        <!-- Complete Workflow Section - Now at top -->
         <div class="unified-workflow-section">
-            <div class="workflow-separator">
-                <span>OR</span>
-            </div>
             <div class="workflow-container">
                 <h3>🚀 Complete Workflow</h3>
                 <p>Run all steps automatically: RPB Analysis → Archive → Import Data</p>
@@ -66,6 +57,15 @@
                     <input type="text" id="workflowLogInput" placeholder="Enter wowlogs link for complete workflow">
                     <button id="runCompleteWorkflowBtn" class="workflow-btn">Run Complete Workflow</button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Hidden logs input section (kept for JavaScript compatibility) -->
+        <div class="logs-input-section" style="display: none;">
+            <div class="input-container">
+                <input type="text" id="logInput" placeholder="Enter wowlogs link">
+                <button id="analyzeBtn" class="run-btn">Step 1 - Confirm logs</button>
+                <button id="runRpbBtn" class="run-btn rpb-btn">Step 2 - Run RPB</button>
             </div>
         </div>
 
@@ -78,7 +78,7 @@
                 <div class="progress-step" id="step1Progress">
                     <div class="step-number">1</div>
                     <div class="step-content">
-                        <div class="step-title">RPB Analysis</div>
+                        <div class="step-title">Confirm Logs</div>
                         <div class="step-status" id="step1Status">Waiting...</div>
                     </div>
                     <div class="step-indicator" id="step1Indicator">⏳</div>
@@ -86,7 +86,7 @@
                 <div class="progress-step" id="step2Progress">
                     <div class="step-number">2</div>
                     <div class="step-content">
-                        <div class="step-title">Archive Results</div>
+                        <div class="step-title">RPB Analysis</div>
                         <div class="step-status" id="step2Status">Waiting...</div>
                     </div>
                     <div class="step-indicator" id="step2Indicator">⏳</div>
@@ -94,10 +94,18 @@
                 <div class="progress-step" id="step3Progress">
                     <div class="step-number">3</div>
                     <div class="step-content">
-                        <div class="step-title">Import Data</div>
+                        <div class="step-title">Archive Results</div>
                         <div class="step-status" id="step3Status">Waiting...</div>
                     </div>
                     <div class="step-indicator" id="step3Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step4Progress">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <div class="step-title">Import Data</div>
+                        <div class="step-status" id="step4Status">Waiting...</div>
+                    </div>
+                    <div class="step-indicator" id="step4Indicator">⏳</div>
                 </div>
             </div>
             <div class="progress-actions" id="workflowActions" style="display: none;">

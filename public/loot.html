@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loot</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/loot.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Home</a>
+                <div class="top-nav-dropdown">
+                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+                        Upcoming Raids <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="upcoming-raids-menu">
+                        <div class="dropdown-loading">Loading raids...</div>
+                    </div>
+                </div>
+            </nav>
+        </div>
+        <div id="auth-container">
+            <!-- Auth content is now loaded by top-bar.js -->
+        </div>
+    </div>
+
+    <!-- Active Raid Bar (shown when raid is selected) -->
+    <div class="raid-bar" id="raid-bar" style="display: none;">
+        <div class="raid-bar-left">
+            <div class="raid-title" id="raid-title">Loading raid...</div>
+        </div>
+        <div class="raid-bar-right">
+            <nav class="raid-nav">
+                <a href="#" class="raid-nav-link" id="raid-roster-link">Roster</a>
+                <a href="#" class="raid-nav-link" id="raid-assignments-link">Assignments</a>
+                <a href="/raidlogs" class="raid-nav-link" id="raid-logs-link">Raid Logs</a>
+                <a href="#" class="raid-nav-link" id="raid-goldpot-link">Gold Pot</a>
+                <a href="/loot" class="raid-nav-link active" id="raid-loot-link">Loot</a>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Main content -->
+    <div class="main-content">
+        <h2>Loot Management</h2>
+        
+        <!-- Import section (Management only) -->
+        <div id="import-section" class="import-section" style="display: none;">
+            <h3>Import Gargul Loot Data</h3>
+            <p>Import loot data from Gargul string format. Data will be associated with the current active event.</p>
+            
+            <div class="import-container">
+                <div class="import-options">
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="expandExisting" />
+                        <span class="checkmark"></span>
+                        Expand existing list of items (instead of replacing)
+                    </label>
+                </div>
+                
+                <div class="import-input-container">
+                    <textarea 
+                        id="gargulInput" 
+                        placeholder="Paste your Gargul loot string here...&#10;&#10;Example:&#10;Item,Player,Gold,Wowheadlink&#10;Splinter of Atiesh;Chatgpt;2200;https://classic.wowhead.com/item=22726;https://wow.zamimg.com/images/wow/icons/large/inv_qiraj_jewelblessed.jpg"
+                        rows="8"
+                    ></textarea>
+                </div>
+                
+                <div class="import-actions">
+                    <button id="importButton" class="import-btn">
+                        <i class="fas fa-download"></i>
+                        Import Loot Data
+                    </button>
+                    <button id="clearButton" class="clear-btn">
+                        <i class="fas fa-trash"></i>
+                        Clear Input
+                    </button>
+                </div>
+            </div>
+            
+            <div id="importStatus" class="import-status"></div>
+        </div>
+
+        <!-- Loot display section -->
+        <div id="loot-section" class="loot-section">
+            <h3>Loot Overview</h3>
+            
+            <!-- Statistics Dashboard -->
+            <div id="statsDashboard" class="stats-dashboard">
+                <div class="stat-card total-items">
+                    <i class="fas fa-box-open stat-icon"></i>
+                    <div class="stat-label">Items Sold</div>
+                    <div class="stat-value" id="totalItemsCount">-</div>
+                </div>
+                
+                <div class="stat-card total-gold">
+                    <i class="fas fa-coins stat-icon"></i>
+                    <div class="stat-label">Total Revenue</div>
+                    <div class="stat-value" id="totalGoldAmount">-</div>
+                    <div class="stat-detail">gold earned</div>
+                </div>
+                
+                <div class="stat-card expensive-item">
+                    <i class="fas fa-crown stat-icon"></i>
+                    <div class="stat-label">Most Expensive</div>
+                    <div class="stat-value" id="expensiveItemName">-</div>
+                    <div class="stat-detail" id="expensiveItemGold">-</div>
+                </div>
+                
+                <div class="stat-card biggest-spender">
+                    <i class="fas fa-user-tie stat-icon"></i>
+                    <div class="stat-label">Top Spender</div>
+                    <div class="stat-value" id="biggestSpenderName">-</div>
+                    <div class="stat-detail" id="biggestSpenderAmount">-</div>
+                </div>
+            </div>
+
+            <h3>Item Details</h3>
+            <div id="lootList" class="loot-list">
+                <div class="loading-indicator" id="loadingIndicator">
+                    <div class="spinner"></div>
+                    <p>Loading loot data...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/top-bar.js"></script>
+    <script src="/loot.js"></script>
+</body>
+</html> 

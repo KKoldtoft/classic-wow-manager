@@ -36,6 +36,9 @@ initializeEventsCacheTable();
 
 // Initialize RPB tracking table
 initializeRPBTrackingTable();
+
+// Migrate player confirmed logs table
+migratePlayerConfirmedLogsTable();
   })
   .catch(err => {
     console.error('Error connecting to PostgreSQL database:', err.stack);
@@ -85,7 +88,9 @@ async function initializeRPBTrackingTable() {
 
 // Events cache helper functions
 const EVENTS_CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
+const HISTORIC_EVENTS_CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
 const EVENTS_CACHE_KEY = 'raid_helper_events';
+const HISTORIC_EVENTS_CACHE_KEY = 'raid_helper_historic_events';
 
 async function getCachedEvents() {
   try {
@@ -99,11 +104,78 @@ async function getCachedEvents() {
       return result.rows[0].events_data;
     }
     
-    console.log('🔄 No valid cached events found');
+    console.log('🔄 No valid cached events found - will fetch fresh data');
     return null;
   } catch (error) {
     console.error('❌ Error retrieving cached events:', error);
     return null;
+  }
+}
+
+// Function to migrate player_confirmed_logs table to support multiple characters per user
+async function migratePlayerConfirmedLogsTable() {
+  try {
+    console.log('🔧 Checking player_confirmed_logs table structure...');
+    
+    // Check if table exists
+    const tableExists = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'player_confirmed_logs'
+      );
+    `);
+    
+    if (!tableExists.rows[0].exists) {
+      console.log('📝 player_confirmed_logs table does not exist yet - will be created with correct structure');
+      return;
+    }
+    
+    // Check current primary key constraint
+    const currentPK = await pool.query(`
+      SELECT constraint_name, constraint_type 
+      FROM information_schema.table_constraints 
+      WHERE table_name = 'player_confirmed_logs' 
+      AND constraint_type = 'PRIMARY KEY';
+    `);
+    
+    if (currentPK.rows.length > 0) {
+      // Check if it's the old constraint (raid_id, discord_id) vs new (raid_id, discord_id, character_name)
+      const pkColumns = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.key_column_usage 
+        WHERE table_name = 'player_confirmed_logs' 
+        AND constraint_name = $1
+        ORDER BY ordinal_position;
+      `, [currentPK.rows[0].constraint_name]);
+      
+      const columnNames = pkColumns.rows.map(row => row.column_name);
+      console.log('🔍 Current primary key columns:', columnNames);
+      
+      if (columnNames.length === 2 && columnNames.includes('raid_id') && columnNames.includes('discord_id')) {
+        console.log('🔧 Migrating primary key to include character_name...');
+        
+        await pool.query('BEGIN');
+        try {
+          // Drop the old constraint
+          await pool.query(`ALTER TABLE player_confirmed_logs DROP CONSTRAINT ${currentPK.rows[0].constraint_name}`);
+          
+          // Add new primary key constraint
+          await pool.query(`ALTER TABLE player_confirmed_logs ADD PRIMARY KEY (raid_id, discord_id, character_name)`);
+          
+          await pool.query('COMMIT');
+          console.log('✅ Successfully migrated player_confirmed_logs primary key');
+        } catch (error) {
+          await pool.query('ROLLBACK');
+          console.error('❌ Failed to migrate primary key:', error);
+          console.log('⚠️ Continuing with error handling in place for old constraint');
+        }
+      } else {
+        console.log('✅ Primary key structure is already correct');
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Error checking player_confirmed_logs migration:', error);
   }
 }
 
@@ -124,6 +196,46 @@ async function setCachedEvents(eventsData) {
     console.log('💾 Events cached successfully, expires at:', expiresAt.toISOString());
   } catch (error) {
     console.error('❌ Error caching events:', error);
+  }
+}
+
+async function getCachedHistoricEvents() {
+  try {
+    const result = await pool.query(
+      'SELECT events_data, expires_at FROM events_cache WHERE cache_key = $1 AND expires_at > NOW()',
+      [HISTORIC_EVENTS_CACHE_KEY]
+    );
+    
+    if (result.rows.length > 0) {
+      console.log('💾 Using cached historic events data');
+      return result.rows[0].events_data;
+    }
+    
+    console.log('🔄 No valid cached historic events found - will fetch fresh data');
+    return null;
+  } catch (error) {
+    console.error('❌ Error retrieving cached historic events:', error);
+    return null;
+  }
+}
+
+async function setCachedHistoricEvents(eventsData) {
+  try {
+    const expiresAt = new Date(Date.now() + HISTORIC_EVENTS_CACHE_TTL);
+    
+    await pool.query(`
+      INSERT INTO events_cache (cache_key, events_data, expires_at)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (cache_key) 
+      DO UPDATE SET 
+        events_data = EXCLUDED.events_data,
+        created_at = CURRENT_TIMESTAMP,
+        expires_at = EXCLUDED.expires_at
+    `, [HISTORIC_EVENTS_CACHE_KEY, JSON.stringify(eventsData), expiresAt]);
+    
+    console.log('💾 Historic events cached successfully, expires at:', expiresAt.toISOString());
+  } catch (error) {
+    console.error('❌ Error caching historic events:', error);
   }
 }
 
@@ -150,6 +262,41 @@ async function fetchEventsFromAPI() {
       params: {
         StartTimeFilter: nowUnixTimestamp,
         EndTimeFilter: futureUnixTimestamp,
+      }
+    }
+  );
+
+  const events = response.data.postedEvents || [];
+  if (events.length > 0) {
+    console.log('📊 Sample event structure:', JSON.stringify(events[0], null, 2));
+  }
+  
+  return events;
+}
+
+async function fetchHistoricEventsFromAPI() {
+  const raidHelperApiKey = process.env.RAID_HELPER_API_KEY;
+  if (!raidHelperApiKey) {
+    throw new Error('RAID_HELPER_API_KEY is not set in environment variables.');
+  }
+
+  const discordGuildId = '777268886939893821';
+  const nowUnixTimestamp = Math.floor(Date.now() / 1000);
+  const thirtyDaysInSeconds = 30 * 24 * 60 * 60;
+  const pastUnixTimestamp = nowUnixTimestamp - thirtyDaysInSeconds;
+
+  console.log('🌐 Fetching historic events from Raid-Helper API (last 30 days)...');
+
+  const response = await axios.get(
+    `https://raid-helper.dev/api/v3/servers/${discordGuildId}/events`,
+    {
+      headers: {
+        'Authorization': `${raidHelperApiKey}`,
+        'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+      },
+      params: {
+        StartTimeFilter: pastUnixTimestamp,
+        EndTimeFilter: nowUnixTimestamp,
       }
     }
   );
@@ -335,6 +482,299 @@ async function enrichEventsWithChannelNames(events) {
   console.log(`📈 Channel name fetch summary: ${eventsWithChannelNames}/${processedEvents} processed upcoming events (${successRate}% success rate), ${totalUpcomingEvents} total upcoming, ${totalEvents} total returned`);
   
   return enrichedEvents;
+}
+
+/* OLD FUNCTION - REPLACED WITH Discord API approach for better reliability
+async function enrichHistoricEventsWithChannelNames(events) {
+  // Use global cache for channel names - SHARED with upcoming events but longer TTL for historic
+  if (!global.channelNameCache) {
+    global.channelNameCache = new Map();
+  }
+  const channelNameCache = global.channelNameCache;
+  const CACHE_TTL = 60 * 60 * 1000; // 1 hour for historic events (they don't change)
+  
+  // CRITICAL: Filter and sort historic events (past events, last 30 days)
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+  const historicEvents = events.filter(event => {
+    if (!event.startTime) return false;
+    const eventStartDate = new Date(parseInt(event.startTime) * 1000);
+    return eventStartDate < now && eventStartDate >= thirtyDaysAgo;
+  }).sort((a, b) => parseInt(b.startTime) - parseInt(a.startTime)); // Sort newest first
+  
+  // OPTIMIZATION: Only enrich the first 3 historic events to avoid rate limits
+  const eventsToEnrich = historicEvents.slice(0, 3);
+  const remainingEvents = historicEvents.slice(3);
+  
+  console.log(`📊 Filtered to ${historicEvents.length} historic events, processing ${eventsToEnrich.length} for channel names, skipping ${remainingEvents.length}`);
+  
+  // Helper function to fetch channel name with retry and rate limit handling (HISTORIC EVENTS VERSION - VERY CONSERVATIVE)
+  const fetchChannelNameWithRetry = async (eventId, maxRetries = 1) => { // Only 1 retry for historic
+    const cacheKey = `channel_${eventId}`;
+    const cached = channelNameCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+      console.log(`💾 Using cached channelName for historic event ${eventId}: "${cached.channelName}"`);
+      return cached.channelName;
+    }
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔄 Fetching channelName for historic event ${eventId} (attempt ${attempt}/${maxRetries})`);
+        
+        const eventDetailResponse = await axios.get(
+          `https://raid-helper.dev/api/v2/events/${eventId}`, // Use v2 API like upcoming events
+          {
+            headers: {
+              'Authorization': `${process.env.RAID_HELPER_API_KEY}`,
+              'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+            },
+            timeout: 15000 // Very long timeout for historic events
+          }
+        );
+        
+        const channelName = eventDetailResponse.data.channelName;
+        console.log(`📡 API Response for historic event ${eventId}: channelName="${channelName}"`);
+        
+        if (channelName && 
+            channelName.trim() && 
+            channelName !== eventId &&
+            !channelName.match(/^\d+$/)) {
+          console.log(`✅ Valid channelName found: "${channelName}"`);
+          
+          channelNameCache.set(cacheKey, {
+            channelName: channelName,
+            timestamp: Date.now()
+          });
+          
+          return channelName;
+        }
+        
+        console.log(`⚠️ Invalid or empty channelName: "${channelName}"`);
+        
+        channelNameCache.set(cacheKey, {
+          channelName: null,
+          timestamp: Date.now()
+        });
+        
+        return null;
+        
+      } catch (error) {
+        console.log(`❌ Attempt ${attempt} failed for historic event ${eventId}:`, error.message);
+        
+        if (error.response && error.response.status === 429) {
+          const rateLimitDelay = attempt * 8000; // Much longer delays for historic events
+          console.log(`🚦 Rate limit hit for historic event, waiting ${rateLimitDelay}ms before retry...`);
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, rateLimitDelay));
+            continue;
+          }
+        }
+        
+        if (attempt === maxRetries) {
+          console.log(`💥 All ${maxRetries} attempts failed for historic event ${eventId}`);
+          
+          channelNameCache.set(cacheKey, {
+            channelName: null,
+            timestamp: Date.now()
+          });
+          
+          return null;
+        }
+        
+        const delay = attempt * 5000; // Much longer delays for historic events
+        console.log(`⏳ Waiting ${delay}ms before retry for historic event...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    return null;
+  };
+  
+  // Enrich historic events with channel names
+  const enrichedEvents = [];
+  const startTime = Date.now();
+  const TOTAL_TIMEOUT = 20000; // 20 second total timeout (reduced for historic events)
+  
+  for (let i = 0; i < eventsToEnrich.length; i++) {
+    const event = eventsToEnrich[i];
+    
+    if (Date.now() - startTime > TOTAL_TIMEOUT) {
+      console.log(`⏰ Timeout reached, skipping remaining ${eventsToEnrich.length - i} historic events`);
+      for (let j = i; j < eventsToEnrich.length; j++) {
+        enrichedEvents.push({
+          ...eventsToEnrich[j],
+          channelName: null
+        });
+      }
+      break;
+    }
+    
+    try {
+      const channelName = await fetchChannelNameWithRetry(event.id);
+      console.log(`📋 Final result for historic event ${event.id}: channelName = "${channelName}"`);
+      
+      enrichedEvents.push({
+        ...event,
+        channelName: channelName
+      });
+      
+      if (i < eventsToEnrich.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Very long delay for historic events to avoid rate limits
+      }
+      
+    } catch (error) {
+      console.log(`💀 Critical error processing historic event ${event.id}:`, error);
+      enrichedEvents.push({
+        ...event,
+        channelName: null
+      });
+    }
+  }
+  
+  // Add remaining historic events without enrichment
+  remainingEvents.forEach(event => {
+    enrichedEvents.push({
+      ...event,
+      channelName: null
+    });
+  });
+  
+  const processingTime = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`⏱️ Historic channel name processing completed in ${processingTime}s`);
+  
+  return enrichedEvents;
+}
+*/
+
+// Discord channel name cache and fetching
+const DISCORD_CHANNEL_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+let discordChannelCache = new Map();
+let discordChannelCacheTime = 0;
+
+// Function to get Discord channel names directly from Discord API
+async function getDiscordChannelNames(guildId) {
+  const now = Date.now();
+  
+  // Check if we have valid cached data
+  if (discordChannelCache.size > 0 && (now - discordChannelCacheTime) < DISCORD_CHANNEL_CACHE_TTL) {
+    console.log('💾 Using cached Discord channel names');
+    return discordChannelCache;
+  }
+  
+  try {
+    console.log('🔄 Fetching fresh Discord channel names...');
+    console.log(`🤖 Bot token configured: ${process.env.DISCORD_BOT_TOKEN ? 'Yes' : 'No'}`);
+    
+    if (!process.env.DISCORD_BOT_TOKEN) {
+      console.log('⚠️ No bot token configured - cannot fetch channel names');
+      return new Map();
+    }
+    
+    const response = await axios.get(
+      `https://discord.com/api/v10/guilds/${guildId}/channels`,
+      {
+        headers: {
+          'Authorization': `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+          'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+        },
+        timeout: 10000
+      }
+    );
+    
+    console.log(`📊 Discord API response: ${response.data.length} channels returned`);
+    
+    // Build channel mapping
+    const newChannelCache = new Map();
+    response.data.forEach(channel => {
+      if (channel.type === 0) { // Text channels only
+        newChannelCache.set(channel.id, channel.name);
+        if (newChannelCache.size <= 5) {
+          console.log(`📍 Channel mapping: ${channel.id} → ${channel.name}`);
+        }
+      }
+    });
+    
+    // Update cache
+    discordChannelCache = newChannelCache;
+    discordChannelCacheTime = now;
+    
+    console.log(`✅ Cached ${discordChannelCache.size} Discord channel names`);
+    return discordChannelCache;
+    
+  } catch (error) {
+    console.error('❌ Error fetching Discord channel names:', error.message);
+    console.error('❌ Full error:', error.response ? error.response.data : error);
+    
+    // Return existing cache if available, even if expired
+    if (discordChannelCache.size > 0) {
+      console.log('⚠️ Using stale Discord channel cache due to API error');
+      return discordChannelCache;
+    }
+    
+    console.log('🚫 No Discord channel names available - will use fallback format');
+    return new Map();
+  }
+}
+
+// Function to enrich events with Discord channel names (MUCH MORE RELIABLE)
+async function enrichEventsWithDiscordChannelNames(events) {
+  const discordGuildId = '777268886939893821';
+  
+  console.log(`🔄 Starting Discord channel enrichment for ${events.length} events`);
+  
+  // Get channel names from Discord API
+  const channelNameMap = await getDiscordChannelNames(discordGuildId);
+  console.log(`📊 Discord API returned ${channelNameMap.size} channel mappings`);
+  
+  // Debug: Show first few channel mappings
+  const sampleChannels = Array.from(channelNameMap.entries()).slice(0, 3);
+  console.log('📍 Sample channel mappings:', sampleChannels);
+  
+  // Apply channel names to events
+  const enrichedEvents = events.map(event => {
+    const channelId = event.channelId || event.channelID || event.channel_id || event.discordChannelId;
+    
+    // Debug: Log channel ID detection for first few events
+    if (events.indexOf(event) < 3) {
+      console.log(`🔍 Event ${event.id}: channelId="${channelId}", has mapping: ${channelNameMap.has(channelId)}`);
+    }
+    
+    if (channelId && channelNameMap.has(channelId)) {
+      return {
+        ...event,
+        channelName: channelNameMap.get(channelId), // No # prefix here - frontend adds it
+        channelId: channelId
+      };
+    }
+    
+    // Fallback for unknown channels - no # prefix
+    return {
+      ...event,
+      channelName: channelId ? `channel-${channelId.slice(-4)}` : null,
+      channelId: channelId || null
+    };
+  });
+  
+  console.log(`🎯 Enriched ${enrichedEvents.length} events with Discord channel names`);
+  return enrichedEvents;
+}
+
+// Function to filter events to historic (last 30 days) and enrich with channel names
+async function enrichHistoricEventsWithDiscordChannelNames(events) {
+  console.log(`🔄 Starting historic events filtering and enrichment for ${events.length} events`);
+  
+  // CRITICAL: Filter to historic events (past events, last 30 days)
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+  const historicEvents = events.filter(event => {
+    if (!event.startTime) return false;
+    const eventStartDate = new Date(parseInt(event.startTime) * 1000);
+    return eventStartDate < now && eventStartDate >= thirtyDaysAgo;
+  }).sort((a, b) => parseInt(b.startTime) - parseInt(a.startTime)); // Sort newest first
+  
+  console.log(`📊 Filtered to ${historicEvents.length} historic events (last 30 days) from ${events.length} total`);
+  
+  // Now enrich with Discord channel names
+  return await enrichEventsWithDiscordChannelNames(historicEvents);
 }
 
 // --- Session Configuration ---
@@ -596,6 +1036,14 @@ app.get('/rpb_import', (req, res) => {
 
 app.get('/gold', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'gold.html'));
+});
+
+app.get('/loot', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'loot.html'));
+});
+
+app.get('/raidlogs', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'raidlogs.html'));
 });
 
 
@@ -1348,6 +1796,38 @@ app.get('/api/registered-character/:discordUserId', async (req, res) => {
     }
 });
 
+// Get all characters for a Discord user ID (for unmatched roster players display)
+app.get('/api/players/by-discord-id/:discordUserId', async (req, res) => {
+    const { discordUserId } = req.params;
+    let client;
+    
+    try {
+        client = await pool.connect();
+        
+        // Get all characters for this Discord user
+        const result = await client.query(
+            'SELECT character_name, class FROM players WHERE discord_id = $1 ORDER BY character_name',
+            [discordUserId]
+        );
+        
+        res.json({
+            success: true,
+            discordId: discordUserId,
+            characters: result.rows
+        });
+        
+    } catch (error) {
+        console.error('Error fetching characters by Discord ID:', error);
+        res.status(500).json({ 
+            success: false,
+            message: 'Error fetching characters',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // UPDATED: Cached endpoint to fetch upcoming Raid-Helper events
 app.get('/api/events', async (req, res) => {
   if (!req.isAuthenticated()) {
@@ -1360,13 +1840,17 @@ app.get('/api/events', async (req, res) => {
     
     if (!cachedEvents) {
       // No cached data, fetch fresh data
-      console.log('🔄 Cache miss - fetching fresh events data');
+      console.log('🔄 Cache miss - fetching fresh events data and enriching with channel names');
       const events = await fetchEventsFromAPI();
-      const enrichedEvents = await enrichEventsWithChannelNames(events);
+      console.log(`📡 Fetched ${events.length} raw events from API`);
+      const enrichedEvents = await enrichEventsWithDiscordChannelNames(events);
+      console.log(`✅ Enriched ${enrichedEvents.length} events with Discord channel names`);
       
       // Cache the enriched events
       await setCachedEvents(enrichedEvents);
       cachedEvents = enrichedEvents;
+    } else {
+      console.log('💾 Using cached events data - no enrichment needed');
     }
     
     // Apply channel filters to the events
@@ -1408,7 +1892,7 @@ app.get('/api/events', async (req, res) => {
 // Manual refresh endpoint for events cache
 app.post('/api/events/refresh', async (req, res) => {
   if (!req.isAuthenticated()) {
-    return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
+    return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord to refresh events.' });
   }
 
   try {
@@ -1416,7 +1900,7 @@ app.post('/api/events/refresh', async (req, res) => {
     
     // Fetch fresh data from API
     const events = await fetchEventsFromAPI();
-    const enrichedEvents = await enrichEventsWithChannelNames(events);
+    const enrichedEvents = await enrichEventsWithDiscordChannelNames(events);
     
     // Update the cache with fresh data
     await setCachedEvents(enrichedEvents);
@@ -1432,6 +1916,125 @@ app.post('/api/events/refresh', async (req, res) => {
     console.error('Error refreshing events cache:', error.response ? error.response.data : error.message);
     res.status(error.response ? error.response.status : 500).json({
       message: 'Failed to refresh events.',
+      error: error.response ? (error.response.data || error.message) : error.message
+    });
+  }
+});
+
+// COMPLETED EVENTS API ENDPOINTS  
+// Cached endpoint to fetch completed Raid-Helper events (last 30 days)
+app.get('/api/events/historic', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
+  }
+
+  try {
+    // Try to get cached historic events first
+    let cachedEvents = await getCachedHistoricEvents();
+    
+    if (!cachedEvents) {
+      // No cached data, fetch fresh data
+      console.log('🔄 Cache miss - fetching fresh historic events data and enriching with channel names');
+      const events = await fetchHistoricEventsFromAPI();
+      console.log(`📡 Fetched ${events.length} raw historic events from API`);
+      const enrichedEvents = await enrichHistoricEventsWithDiscordChannelNames(events);
+      console.log(`✅ Enriched ${enrichedEvents.length} historic events with Discord channel names`);
+      
+      // Cache the enriched events
+      await setCachedHistoricEvents(enrichedEvents);
+      cachedEvents = enrichedEvents;
+    } else {
+      console.log('💾 Using cached historic events data - no enrichment needed');
+    }
+    
+    // Apply channel filters to the historic events
+    const channelFilters = await getChannelFilterSettings();
+    
+    // Filter out events from hidden channels
+    const filteredEvents = cachedEvents.filter(event => {
+      // Get the channel ID - try multiple possible property names
+      const channelId = event.channelId || event.channelID || event.channel_id || event.discordChannelId;
+      
+      // If no channel ID, show the event (default)
+      if (!channelId) return true;
+      
+      // If channel has filter setting, use it; otherwise default to visible (true)
+      const isVisible = channelFilters.has(channelId) 
+        ? channelFilters.get(channelId) 
+        : true;
+      
+      return isVisible;
+    });
+    
+    console.log(`📡 Filtered historic events: ${cachedEvents.length} total → ${filteredEvents.length} visible`);
+    
+    // Channel filtering should now work with Discord API channel names
+    console.log(`🎯 Channel filtering: ${cachedEvents.length} total → ${filteredEvents.length} visible events`);
+    
+    res.json({ scheduledEvents: filteredEvents });
+    
+  } catch (error) {
+    console.error('Error in /api/events/historic:', error.response ? error.response.data : error.message);
+    if (error.response) {
+      console.error('Raid-Helper API Error Response Details (Non-200):', {
+          status: error.response.status,
+          headers: error.response.headers,
+          data: error.response.data
+      });
+    }
+    res.status(error.response ? error.response.status : 500).json({
+              message: 'Failed to fetch completed events from Raid-Helper.',
+      error: error.response ? (error.response.data || error.message) : error.message
+    });
+  }
+});
+
+// Manual refresh endpoint for completed events cache
+app.post('/api/events/historic/refresh', async (req, res) => {
+  if (!req.isAuthenticated()) {
+            return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord to refresh completed events.' });
+  }
+
+  try {
+    console.log('🔄 Manual refresh requested - fetching fresh historic events data');
+    
+    // Fetch fresh data from API
+    const events = await fetchHistoricEventsFromAPI();
+    const enrichedEvents = await enrichHistoricEventsWithDiscordChannelNames(events);
+    
+    // Update the cache with fresh data
+    await setCachedHistoricEvents(enrichedEvents);
+    
+    console.log('✅ Historic events cache refreshed successfully');
+    
+    // Apply channel filters to the refreshed historic events (same as GET endpoint)
+    const channelFilters = await getChannelFilterSettings();
+    const filteredEvents = enrichedEvents.filter(event => {
+      // Get the channel ID - try multiple possible property names
+      const channelId = event.channelId || event.channelID || event.channel_id || event.discordChannelId;
+      
+      // If no channel ID, show the event (default)
+      if (!channelId) return true;
+      
+      // If channel has filter setting, use it; otherwise default to visible (true)
+      const isVisible = channelFilters.has(channelId) 
+        ? channelFilters.get(channelId) 
+        : true;
+      
+      return isVisible;
+    });
+    
+    console.log(`📡 Filtered refreshed historic events: ${enrichedEvents.length} total → ${filteredEvents.length} visible`);
+    
+    res.json({ 
+              message: 'Completed events refreshed successfully',
+      scheduledEvents: filteredEvents 
+    });
+    
+  } catch (error) {
+    console.error('Error refreshing historic events cache:', error.response ? error.response.data : error.message);
+    res.status(error.response ? error.response.status : 500).json({
+      message: 'Failed to refresh historic events.',
       error: error.response ? (error.response.data || error.message) : error.message
     });
   }
@@ -2750,6 +3353,44 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
+
+        // Create reward_settings table for configurable rewards and deductions
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS reward_settings (
+                id SERIAL PRIMARY KEY,
+                setting_type VARCHAR(50) NOT NULL,
+                setting_name VARCHAR(100) NOT NULL,
+                setting_value DECIMAL(10,2) NOT NULL,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(setting_type, setting_name)
+            )
+        `);
+
+        // Add a JSON column for array values
+        await client.query(`
+            ALTER TABLE reward_settings 
+            ADD COLUMN IF NOT EXISTS setting_json JSONB
+        `);
+
+        // Insert default reward settings if they don't exist
+        await client.query(`
+            INSERT INTO reward_settings (setting_type, setting_name, setting_value, description)
+            VALUES 
+                ('abilities', 'calculation_divisor', 10, 'Divisor used in abilities points calculation: (total used × avg targets) ÷ divisor'),
+                ('abilities', 'max_points', 20, 'Maximum points that can be earned from abilities (sappers, dynamite, holy water)')
+            ON CONFLICT (setting_type, setting_name) DO NOTHING
+        `);
+
+        // Insert damage and healing point arrays
+        await client.query(`
+            INSERT INTO reward_settings (setting_type, setting_name, setting_json, description)
+            VALUES 
+                ('damage', 'points_array', '[80, 70, 55, 40, 35, 30, 25, 20, 15, 10, 8, 6, 5, 4, 3]', 'Points awarded for damage dealer rankings (positions 1-15)'),
+                ('healing', 'points_array', '[80, 65, 60, 55, 40, 35, 30, 20, 15, 10]', 'Points awarded for healer rankings (positions 1-10)')
+            ON CONFLICT (setting_type, setting_name) DO NOTHING
+        `);
         
         // Create indexes
         await client.query(`
@@ -2778,6 +3419,9 @@ app.post('/api/admin/setup-database', async (req, res) => {
         `);
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_sheet_player_abilities_character ON sheet_player_abilities (character_name, character_class)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_reward_settings_type ON reward_settings (setting_type)
         `);
         
         // Fix column size for spec emotes (Discord IDs can be 17-19 chars)
@@ -3054,7 +3698,7 @@ app.post('/api/confirmed-logs/:raidId/player', async (req, res) => {
                     character_class VARCHAR(50),
                     manually_matched BOOLEAN DEFAULT false,
                     confirmed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (raid_id, discord_id)
+                    PRIMARY KEY (raid_id, discord_id, character_name)
                 )
             `);
             console.log('✅ [CONFIRM LOGS] Table created successfully');
@@ -3078,17 +3722,51 @@ app.post('/api/confirmed-logs/:raidId/player', async (req, res) => {
         }
         
         // Insert or update the confirmed player (manual match)
-        const result = await client.query(`
-            INSERT INTO player_confirmed_logs (raid_id, discord_id, character_name, character_class, manually_matched)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (raid_id, discord_id) 
-            DO UPDATE SET 
-                character_name = EXCLUDED.character_name,
-                character_class = EXCLUDED.character_class,
-                manually_matched = EXCLUDED.manually_matched,
-                confirmed_at = CURRENT_TIMESTAMP
-            RETURNING *
-        `, [raidId, discordId, characterName, characterClass, true]);
+        console.log(`🔧 [DB MANUAL] About to insert/update manual match:`, {
+            raidId, discordId, characterName, characterClass, manually_matched: true
+        });
+        
+        // First check if this exact combination already exists
+        const existingPlayer = await client.query(`
+            SELECT * FROM player_confirmed_logs 
+            WHERE raid_id = $1 AND discord_id = $2 AND character_name = $3
+        `, [raidId, discordId, characterName]);
+        
+        let result;
+        if (existingPlayer.rows.length > 0) {
+            // Update existing record
+            console.log(`🔄 [DB MANUAL] Updating existing manual match for same character`);
+            result = await client.query(`
+                UPDATE player_confirmed_logs 
+                SET character_class = $4, manually_matched = $5, confirmed_at = CURRENT_TIMESTAMP
+                WHERE raid_id = $1 AND discord_id = $2 AND character_name = $3
+                RETURNING *
+            `, [raidId, discordId, characterName, characterClass, true]);
+        } else {
+            // Insert new record (allows multiple characters per Discord user)
+            console.log(`➕ [DB MANUAL] Inserting new manual match (multiple chars per user allowed)`);
+            try {
+                result = await client.query(`
+                    INSERT INTO player_confirmed_logs (raid_id, discord_id, character_name, character_class, manually_matched)
+                    VALUES ($1, $2, $3, $4, $5)
+                    RETURNING *
+                `, [raidId, discordId, characterName, characterClass, true]);
+            } catch (insertError) {
+                if (insertError.code === '23505') { // Unique violation
+                    console.log(`🔄 [DB MANUAL] Constraint conflict - falling back to update existing record`);
+                    result = await client.query(`
+                        UPDATE player_confirmed_logs 
+                        SET character_name = $3, character_class = $4, manually_matched = $5, confirmed_at = CURRENT_TIMESTAMP
+                        WHERE raid_id = $1 AND discord_id = $2
+                        RETURNING *
+                    `, [raidId, discordId, characterName, characterClass, true]);
+                } else {
+                    throw insertError;
+                }
+            }
+        }
+        
+        console.log(`✅ [DB MANUAL] Manual match stored/updated:`, result.rows[0]);
         
         console.log('✅ [CONFIRM LOGS] Player stored successfully:', result.rows[0]);
         res.json({ success: true, player: result.rows[0] });
@@ -3201,7 +3879,7 @@ app.post('/api/confirmed-logs/:raidId/players/bulk', async (req, res) => {
                     character_class VARCHAR(50),
                     manually_matched BOOLEAN DEFAULT false,
                     confirmed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (raid_id, discord_id)
+                    PRIMARY KEY (raid_id, discord_id, character_name)
                 )
             `);
             console.log('✅ [CONFIRM LOGS] Table created successfully');
@@ -3236,20 +3914,51 @@ app.post('/api/confirmed-logs/:raidId/players/bulk', async (req, res) => {
                 continue;
             }
             
-            const result = await client.query(`
-                INSERT INTO player_confirmed_logs (raid_id, discord_id, character_name, character_class, manually_matched)
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (raid_id, discord_id) 
-                DO UPDATE SET 
-                    character_name = EXCLUDED.character_name,
-                    character_class = EXCLUDED.character_class,
-                    manually_matched = CASE 
-                        WHEN player_confirmed_logs.manually_matched = true THEN true 
-                        ELSE EXCLUDED.manually_matched 
-                    END,
-                    confirmed_at = CURRENT_TIMESTAMP
-                RETURNING *
-            `, [raidId, discordId, characterName, characterClass, false]);
+            console.log(`🔧 [DB EXACT] About to insert/update exact match:`, {
+                raidId, discordId, characterName, characterClass, manually_matched: false
+            });
+            
+            // Check if this exact combination already exists
+            const existingExact = await client.query(`
+                SELECT * FROM player_confirmed_logs 
+                WHERE raid_id = $1 AND discord_id = $2 AND character_name = $3
+            `, [raidId, discordId, characterName]);
+            
+            let result;
+            if (existingExact.rows.length > 0) {
+                // Only update if it's not manually matched (preserve manual matches)
+                if (!existingExact.rows[0].manually_matched) {
+                    console.log(`🔄 [DB EXACT] Updating existing automatic match`);
+                    result = await client.query(`
+                        UPDATE player_confirmed_logs 
+                        SET character_class = $4, confirmed_at = CURRENT_TIMESTAMP
+                        WHERE raid_id = $1 AND discord_id = $2 AND character_name = $3 AND manually_matched = false
+                        RETURNING *
+                    `, [raidId, discordId, characterName, characterClass]);
+                } else {
+                    console.log(`⏭️ [DB EXACT] Skipping update - manual match takes precedence`);
+                    result = { rows: [existingExact.rows[0]] };
+                }
+            } else {
+                // Insert new automatic match
+                console.log(`➕ [DB EXACT] Inserting new automatic match`);
+                try {
+                    result = await client.query(`
+                        INSERT INTO player_confirmed_logs (raid_id, discord_id, character_name, character_class, manually_matched)
+                        VALUES ($1, $2, $3, $4, $5)
+                        RETURNING *
+                    `, [raidId, discordId, characterName, characterClass, false]);
+                } catch (insertError) {
+                    if (insertError.code === '23505') { // Unique violation - skip this exact match
+                        console.log(`⏭️ [DB EXACT] Skipping exact match due to constraint conflict (manual match likely exists)`);
+                        result = { rows: [] };
+                    } else {
+                        throw insertError;
+                    }
+                }
+            }
+            
+            console.log(`✅ [DB EXACT] Exact match result:`, result.rows[0]);
             
             if (result.rows.length > 0) {
                 insertedCount++;
@@ -3427,11 +4136,23 @@ app.post('/api/log-data/:eventId/store', async (req, res) => {
     }
 });
 
-// Retrieve stored log data for an event
+// Helper function to map spec to role (matches frontend logic)
+function mapSpecToRole(spec) {
+    if (!spec) return 'unknown';
+    
+    const healingSpecs = ['Holy', 'Discipline', 'Restoration', 'Restoration1', 'Holy1'];
+    const tankSpecs = ['Protection', 'Protection1', 'Guardian', 'Bear'];
+    
+    if (healingSpecs.includes(spec)) return 'healer';
+    if (tankSpecs.includes(spec)) return 'tank';
+    return 'dps';
+}
+
+// Retrieve stored log data for an event with roster override enhancements
 app.get('/api/log-data/:eventId', async (req, res) => {
     const { eventId } = req.params;
     
-    console.log(`📖 [LOG DATA] Retrieving log data for event: ${eventId}`);
+    console.log(`📖 [LOG DATA] Retrieving enhanced log data for event: ${eventId}`);
     
     let client;
     try {
@@ -3450,22 +4171,80 @@ app.get('/api/log-data/:eventId', async (req, res) => {
             return res.json({ success: true, data: [], hasData: false });
         }
         
+        // Enhanced query that joins with roster_overrides to get better role/spec data
         const result = await client.query(`
             SELECT 
-                character_name, character_class, discord_id, role_detected, 
-                role_source, spec_name, damage_amount, healing_amount, 
-                log_id, created_at
-            FROM log_data 
-            WHERE event_id = $1 
-            ORDER BY damage_amount DESC, healing_amount DESC
+                ld.character_name, 
+                ld.character_class, 
+                ld.discord_id, 
+                ld.role_detected as original_role_detected,
+                ld.role_source, 
+                ld.spec_name as original_spec_name,
+                ld.damage_amount, 
+                ld.healing_amount, 
+                ld.log_id, 
+                ld.created_at,
+                ro.assigned_char_spec as roster_spec,
+                ro.assigned_char_spec_emote as roster_spec_emote
+            FROM log_data ld
+            LEFT JOIN roster_overrides ro ON (
+                ld.event_id = ro.event_id AND 
+                ld.discord_id = ro.discord_user_id
+            )
+            WHERE ld.event_id = $1 
+            ORDER BY ld.damage_amount DESC, ld.healing_amount DESC
         `, [eventId]);
         
         const hasData = result.rows.length > 0;
         console.log(`📊 [LOG DATA] Found ${result.rows.length} player records for event: ${eventId}`);
         
+        // Enhance the data with proper role detection
+        const enhancedData = result.rows.map(row => {
+            let finalRole = row.original_role_detected;
+            let finalSpec = row.original_spec_name;
+            
+            // If we have roster override data, use that for role detection
+            if (row.roster_spec) {
+                finalRole = mapSpecToRole(row.roster_spec);
+                finalSpec = row.roster_spec;
+                console.log(`✅ [ROLE OVERRIDE] ${row.character_name}: ${row.roster_spec} → ${finalRole}`);
+            }
+            
+            // Apply performance inference for players without any role detected
+            if (!finalRole || finalRole === 'null' || finalRole === null) {
+                const damage = parseInt(row.damage_amount) || 0;
+                const healing = parseInt(row.healing_amount) || 0;
+                
+                // Simple threshold-based inference (can be refined later)
+                if (damage > 1000000) { // 1M+ damage = likely DPS
+                    finalRole = 'dps';
+                    console.log(`⚔️ [PERFORMANCE INFERENCE] ${row.character_name}: DPS (${damage} damage)`);
+                } else if (healing > 500000) { // 500K+ healing = likely healer
+                    finalRole = 'healer';
+                    console.log(`❤️ [PERFORMANCE INFERENCE] ${row.character_name}: Healer (${healing} healing)`);
+                }
+            }
+            
+            return {
+                character_name: row.character_name,
+                character_class: row.character_class,
+                discord_id: row.discord_id,
+                role_detected: finalRole,
+                role_source: row.roster_spec ? 'roster_override' : row.role_source,
+                spec_name: finalSpec,
+                damage_amount: row.damage_amount,
+                healing_amount: row.healing_amount,
+                log_id: row.log_id,
+                created_at: row.created_at,
+                roster_spec_emote: row.roster_spec_emote
+            };
+        });
+        
+        console.log(`🎯 [LOG DATA] Enhanced ${enhancedData.length} records with roster override data`);
+        
         res.json({ 
             success: true, 
-            data: result.rows,
+            data: enhancedData,
             hasData: hasData,
             eventId: eventId
         });
@@ -3475,6 +4254,787 @@ app.get('/api/log-data/:eventId', async (req, res) => {
         res.status(500).json({ 
             success: false, 
             message: 'Error retrieving log data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get abilities data for raid logs (Sappers, Dynamite, Holy Water)
+app.get('/api/abilities-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`💣 [ABILITIES] Retrieving abilities data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [ABILITIES] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Query for specific abilities: Dense Dynamite, Goblin Sapper Charge, Stratholme Holy Water
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_name,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND ability_name IN ('Dense Dynamite', 'Goblin Sapper Charge', 'Stratholme Holy Water')
+            ORDER BY character_name, ability_name
+        `, [eventId]);
+        
+        console.log(`💣 [ABILITIES] Found ${result.rows.length} ability records for event: ${eventId}`);
+        
+        // Debug: Log the raw data
+        console.log(`💣 [ABILITIES] Raw data sample:`, result.rows.slice(0, 3));
+        
+        // Group by character and calculate points
+        const characterData = {};
+        
+        result.rows.forEach(row => {
+            const { character_name, character_class, ability_name, ability_value } = row;
+            
+            if (!characterData[character_name]) {
+                characterData[character_name] = {
+                    character_name,
+                    character_class,
+                    dense_dynamite: 0,
+                    dense_dynamite_targets: 0,
+                    goblin_sapper_charge: 0,
+                    goblin_sapper_targets: 0,
+                    stratholme_holy_water: 0,
+                    stratholme_targets: 0,
+                    total_used: 0,
+                    total_targets_hit: 0,
+                    points: 0
+                };
+            }
+            
+            // Parse the value format: "count (⌀avg_targets)" or just "count"
+            const parseAbilityValue = (value) => {
+                if (!value) return { count: 0, avgTargets: 0 };
+                
+                // Try to match format: "9 (⌀5)" or "9 (avg5)" or "9"
+                const match = value.toString().match(/^(\d+)(?:\s*\(.*?(\d+).*?\))?/);
+                if (match) {
+                    const count = parseInt(match[1]) || 0;
+                    const avgTargets = parseInt(match[2]) || 0;
+                    return { count, avgTargets };
+                }
+                
+                // Fallback: try to extract just a number
+                const numMatch = value.toString().match(/(\d+)/);
+                return { count: numMatch ? parseInt(numMatch[1]) : 0, avgTargets: 0 };
+            };
+            
+            const parsed = parseAbilityValue(ability_value);
+            
+            // Map ability names to our data structure
+            switch (ability_name) {
+                case 'Dense Dynamite':
+                    characterData[character_name].dense_dynamite = parsed.count;
+                    characterData[character_name].dense_dynamite_targets = parsed.avgTargets;
+                    break;
+                case 'Goblin Sapper Charge':
+                    characterData[character_name].goblin_sapper_charge = parsed.count;
+                    characterData[character_name].goblin_sapper_targets = parsed.avgTargets;
+                    break;
+                case 'Stratholme Holy Water':
+                    characterData[character_name].stratholme_holy_water = parsed.count;
+                    characterData[character_name].stratholme_targets = parsed.avgTargets;
+                    break;
+            }
+        });
+        
+        // Get dynamic settings for all reward types
+        const settingsResult = await client.query(`
+            SELECT setting_type, setting_name, setting_value, setting_json
+            FROM reward_settings 
+            WHERE setting_type IN ('abilities', 'damage', 'healing', 'mana_potions', 'runes', 'interrupts', 'disarms')
+        `);
+        
+        const allSettings = {};
+        settingsResult.rows.forEach(row => {
+            if (!allSettings[row.setting_type]) {
+                allSettings[row.setting_type] = {};
+            }
+            
+            // Use JSON value if available, otherwise use numeric value
+            let value;
+            if (row.setting_json) {
+                value = row.setting_json; // Already parsed by pg
+            } else {
+                value = parseFloat(row.setting_value);
+            }
+            
+            allSettings[row.setting_type][row.setting_name] = value;
+        });
+        
+        // Abilities settings
+        const calculationDivisor = allSettings.abilities?.calculation_divisor || 10;
+        const maxPoints = allSettings.abilities?.max_points || 20;
+        
+        // Damage and healing settings
+        const damagePoints = allSettings.damage?.points_array || [80, 70, 55, 40, 35, 30, 25, 20, 15, 10, 8, 6, 5, 4, 3];
+        const healingPoints = allSettings.healing?.points_array || [80, 65, 60, 55, 40, 35, 30, 20, 15, 10];
+        
+        console.log(`💣 [ABILITIES] Using dynamic settings: divisor=${calculationDivisor}, max_points=${maxPoints}`);
+        console.log(`💥 [DAMAGE] Using dynamic points array (${damagePoints.length} positions):`, damagePoints);
+        console.log(`💚 [HEALING] Using dynamic points array (${healingPoints.length} positions):`, healingPoints);
+
+        // Calculate final stats and points for each character
+        const finalData = Object.values(characterData).map(char => {
+            const totalUsed = char.dense_dynamite + char.goblin_sapper_charge + char.stratholme_holy_water;
+            
+            // Calculate weighted average targets hit
+            let totalTargetsWeighted = 0;
+            let weightedCount = 0;
+            
+            if (char.dense_dynamite > 0) {
+                totalTargetsWeighted += char.dense_dynamite * char.dense_dynamite_targets;
+                weightedCount += char.dense_dynamite;
+            }
+            if (char.goblin_sapper_charge > 0) {
+                totalTargetsWeighted += char.goblin_sapper_charge * char.goblin_sapper_targets;
+                weightedCount += char.goblin_sapper_charge;
+            }
+            if (char.stratholme_holy_water > 0) {
+                totalTargetsWeighted += char.stratholme_holy_water * char.stratholme_targets;
+                weightedCount += char.stratholme_holy_water;
+            }
+            
+            const avgTargets = weightedCount > 0 ? totalTargetsWeighted / weightedCount : 0;
+            const points = Math.min(maxPoints, Math.floor((totalUsed * avgTargets) / calculationDivisor));
+            
+            return {
+                ...char,
+                total_used: totalUsed,
+                avg_targets_hit: avgTargets,
+                points: points
+            };
+        }).filter(char => char.total_used > 0) // Only include characters who used at least one ability
+          .sort((a, b) => b.points - a.points); // Sort by points descending
+        
+        console.log(`💣 [ABILITIES] Processed ${finalData.length} characters with abilities usage`);
+        console.log(`💣 [ABILITIES] Final data sample:`, finalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                calculation_divisor: calculationDivisor,
+                max_points: maxPoints
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [ABILITIES] Error retrieving abilities data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving abilities data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get reward settings
+app.get('/api/admin/reward-settings', async (req, res) => {
+    let client;
+    try {
+        client = await pool.connect();
+        
+        const result = await client.query(`
+            SELECT setting_type, setting_name, setting_value, setting_json, description
+            FROM reward_settings 
+            ORDER BY setting_type, setting_name
+        `);
+        
+        // Group settings by type
+        const settingsByType = {};
+        result.rows.forEach(row => {
+            if (!settingsByType[row.setting_type]) {
+                settingsByType[row.setting_type] = {};
+            }
+            
+            // Use JSON value if available, otherwise use numeric value
+            let value;
+            if (row.setting_json) {
+                value = row.setting_json; // This will be parsed automatically by pg
+            } else {
+                value = parseFloat(row.setting_value);
+            }
+            
+            settingsByType[row.setting_type][row.setting_name] = {
+                value: value,
+                description: row.description
+            };
+        });
+        
+        res.json({ 
+            success: true, 
+            settings: settingsByType
+        });
+        
+    } catch (error) {
+        console.error('❌ [REWARD SETTINGS] Error retrieving settings:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving reward settings',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Update reward settings
+app.post('/api/admin/reward-settings', async (req, res) => {
+    const { settings } = req.body;
+    
+    if (!settings) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Settings data is required' 
+        });
+    }
+    
+    let client;
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+        
+        console.log('🔧 [REWARD SETTINGS] Updating settings:', JSON.stringify(settings, null, 2));
+        
+        // Update each setting
+        for (const settingType of Object.keys(settings)) {
+            for (const settingName of Object.keys(settings[settingType])) {
+                const value = settings[settingType][settingName];
+                
+                console.log(`🔧 [REWARD SETTINGS] Updating ${settingType}.${settingName}:`, value, 'Type:', typeof value, 'IsArray:', Array.isArray(value));
+                
+                // Determine if this is a JSON array or numeric value
+                if (Array.isArray(value)) {
+                    await client.query(`
+                        UPDATE reward_settings 
+                        SET setting_json = $1, setting_value = 0, updated_at = CURRENT_TIMESTAMP
+                        WHERE setting_type = $2 AND setting_name = $3
+                    `, [JSON.stringify(value), settingType, settingName]);
+                } else {
+                    await client.query(`
+                        UPDATE reward_settings 
+                        SET setting_value = $1, setting_json = NULL, updated_at = CURRENT_TIMESTAMP
+                        WHERE setting_type = $2 AND setting_name = $3
+                    `, [value, settingType, settingName]);
+                }
+            }
+        }
+        
+        await client.query('COMMIT');
+        console.log('✅ [REWARD SETTINGS] Updated reward settings successfully');
+        
+        res.json({ 
+            success: true, 
+            message: 'Reward settings updated successfully'
+        });
+        
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        console.error('❌ [REWARD SETTINGS] Error updating settings:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error updating reward settings',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get mana potion data for raid logs
+app.get('/api/mana-potions-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🧪 [MANA POTIONS] Retrieving mana potion data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [MANA POTIONS] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get dynamic settings for mana potions calculation
+        const settingsResult = await client.query(`
+            SELECT setting_name, setting_value
+            FROM reward_settings 
+            WHERE setting_type = 'mana_potions'
+        `);
+        
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            settings[row.setting_name] = parseFloat(row.setting_value);
+        });
+        
+        const threshold = settings.threshold || 10;
+        const pointsPerPotion = settings.points_per_potion || 3;
+        const maxPoints = settings.max_points || 10;
+        
+        console.log(`🧪 [MANA POTIONS] Using dynamic settings: threshold=${threshold}, points_per_potion=${pointsPerPotion}, max_points=${maxPoints}`);
+        
+        // Query for Major Mana Potion usage
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND ability_name = 'Major Mana Potion'
+            ORDER BY character_name
+        `, [eventId]);
+        
+        console.log(`🧪 [MANA POTIONS] Found ${result.rows.length} potion records for event: ${eventId}`);
+        console.log(`🧪 [MANA POTIONS] Raw data sample:`, result.rows.slice(0, 3));
+        
+        // Process and calculate points for each character
+        const finalData = result.rows.map(row => {
+            // Parse the potion count (might be "15" or "15 (some text)")
+            const potionMatch = row.ability_value.toString().match(/(\d+)/);
+            const potionsUsed = potionMatch ? parseInt(potionMatch[1]) : 0;
+            
+            // Calculate points: potions above threshold * points per potion, capped at max
+            const extraPotions = Math.max(0, potionsUsed - threshold);
+            const points = Math.min(maxPoints, extraPotions * pointsPerPotion);
+            
+            return {
+                character_name: row.character_name,
+                character_class: row.character_class,
+                potions_used: potionsUsed,
+                extra_potions: extraPotions,
+                points: points
+            };
+        }).filter(char => char.potions_used > 0) // Only include characters who used potions
+          .sort((a, b) => b.points - a.points); // Sort by points descending
+        
+        console.log(`🧪 [MANA POTIONS] Processed ${finalData.length} characters with potion usage`);
+        console.log(`🧪 [MANA POTIONS] Final data sample:`, finalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                threshold: threshold,
+                points_per_potion: pointsPerPotion,
+                max_points: maxPoints
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [MANA POTIONS] Error retrieving mana potion data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving mana potion data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get runes data for raid logs
+app.get('/api/runes-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🔮 [RUNES] Retrieving runes data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [RUNES] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get dynamic settings for runes calculation
+        const settingsResult = await client.query(`
+            SELECT setting_name, setting_value
+            FROM reward_settings 
+            WHERE setting_type = 'runes'
+        `);
+        
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            settings[row.setting_name] = parseFloat(row.setting_value);
+        });
+        
+        const usageDivisor = settings.usage_divisor || 2;
+        const pointsPerDivision = settings.points_per_division || 1;
+        
+        console.log(`🔮 [RUNES] Using dynamic settings: usage_divisor=${usageDivisor}, points_per_division=${pointsPerDivision}`);
+        
+        // Query for Dark Rune and Demonic Rune usage
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_name,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND (ability_name = 'Dark Rune' OR ability_name = 'Demonic Rune' OR ability_name = 'Demonic Rune/Dark Rune')
+            ORDER BY character_name, ability_name
+        `, [eventId]);
+        
+        console.log(`🔮 [RUNES] Found ${result.rows.length} rune records for event: ${eventId}`);
+        console.log(`🔮 [RUNES] Raw data sample:`, result.rows.slice(0, 3));
+        
+        // Process and calculate points for each character (combine both rune types)
+        const characterData = {};
+        
+        result.rows.forEach(row => {
+            const characterName = row.character_name;
+            
+            if (!characterData[characterName]) {
+                characterData[characterName] = {
+                    character_name: row.character_name,
+                    character_class: row.character_class,
+                    dark_runes: 0,
+                    demonic_runes: 0,
+                    total_runes: 0
+                };
+            }
+            
+            // Parse the rune count (might be "5" or "5 (some text)")
+            const runeMatch = row.ability_value.toString().match(/(\d+)/);
+            const runesUsed = runeMatch ? parseInt(runeMatch[1]) : 0;
+            
+            if (row.ability_name === 'Dark Rune') {
+                characterData[characterName].dark_runes = runesUsed;
+            } else if (row.ability_name === 'Demonic Rune') {
+                characterData[characterName].demonic_runes = runesUsed;
+            } else if (row.ability_name === 'Demonic Rune/Dark Rune') {
+                // Combined entry - add to total for both types
+                characterData[characterName].dark_runes += runesUsed;
+                characterData[characterName].demonic_runes += runesUsed;
+            }
+            
+            characterData[characterName].total_runes = characterData[characterName].dark_runes + characterData[characterName].demonic_runes;
+        });
+        
+        // Calculate points and convert to array
+        const finalData = Object.values(characterData).map(char => {
+            // Calculate points: floor(total_runes / divisor) * points_per_division
+            const points = Math.floor(char.total_runes / usageDivisor) * pointsPerDivision;
+            
+            return {
+                ...char,
+                points: points
+            };
+        }).filter(char => char.total_runes > 0) // Only include characters who used runes
+          .sort((a, b) => b.points - a.points); // Sort by points descending
+        
+        console.log(`🔮 [RUNES] Processed ${finalData.length} characters with rune usage`);
+        console.log(`🔮 [RUNES] Final data sample:`, finalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                usage_divisor: usageDivisor,
+                points_per_division: pointsPerDivision
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [RUNES] Error retrieving runes data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving runes data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get interrupts data for raid logs
+app.get('/api/interrupts-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`⚡ [INTERRUPTS] Retrieving interrupts data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [INTERRUPTS] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get dynamic settings for interrupts calculation
+        const settingsResult = await client.query(`
+            SELECT setting_name, setting_value
+            FROM reward_settings 
+            WHERE setting_type = 'interrupts'
+        `);
+        
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            settings[row.setting_name] = parseFloat(row.setting_value);
+        });
+        
+        const pointsPerInterrupt = settings.points_per_interrupt || 1;
+        const interruptsNeeded = settings.interrupts_needed || 1;
+        const maxPoints = settings.max_points || 5;
+        
+        console.log(`⚡ [INTERRUPTS] Using dynamic settings: points_per_interrupt=${pointsPerInterrupt}, interrupts_needed=${interruptsNeeded}, max_points=${maxPoints}`);
+        
+        // Query for "# of interrupted spells" usage
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND ability_name = '# of interrupted spells'
+            ORDER BY character_name
+        `, [eventId]);
+        
+        console.log(`⚡ [INTERRUPTS] Found ${result.rows.length} interrupt records for event: ${eventId}`);
+        console.log(`⚡ [INTERRUPTS] Raw data sample:`, result.rows.slice(0, 3));
+        
+        // Process and calculate points for each character
+        const finalData = result.rows.map(row => {
+            // Parse the interrupt count (might be "3" or "3 (some text)")
+            const interruptMatch = row.ability_value.toString().match(/(\d+)/);
+            const interruptsUsed = interruptMatch ? parseInt(interruptMatch[1]) : 0;
+            
+            // Calculate points: min(max_points, floor(interrupts / needed) * points_per)
+            const points = Math.min(maxPoints, Math.floor(interruptsUsed / interruptsNeeded) * pointsPerInterrupt);
+            
+            return {
+                character_name: row.character_name,
+                character_class: row.character_class,
+                interrupts_used: interruptsUsed,
+                points: points
+            };
+        }).filter(char => char.interrupts_used > 0) // Only include characters who interrupted
+          .sort((a, b) => b.points - a.points); // Sort by points descending
+        
+        console.log(`⚡ [INTERRUPTS] Processed ${finalData.length} characters with interrupts`);
+        console.log(`⚡ [INTERRUPTS] Final data sample:`, finalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                points_per_interrupt: pointsPerInterrupt,
+                interrupts_needed: interruptsNeeded,
+                max_points: maxPoints
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [INTERRUPTS] Error retrieving interrupts data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving interrupts data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get disarms data for raid logs
+app.get('/api/disarms-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🛡️ [DISARMS] Retrieving disarms data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [DISARMS] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get dynamic settings for disarms calculation
+        const settingsResult = await client.query(`
+            SELECT setting_name, setting_value
+            FROM reward_settings 
+            WHERE setting_type = 'disarms'
+        `);
+        
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            settings[row.setting_name] = parseFloat(row.setting_value);
+        });
+        
+        const pointsPerDisarm = settings.points_per_disarm || 1;
+        const disarmsNeeded = settings.disarms_needed || 1;
+        const maxPoints = settings.max_points || 5;
+        
+        console.log(`🛡️ [DISARMS] Using dynamic settings: points_per_disarm=${pointsPerDisarm}, disarms_needed=${disarmsNeeded}, max_points=${maxPoints}`);
+        
+        // Query for "Disarm" usage
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND ability_name = 'Disarm'
+            ORDER BY character_name
+        `, [eventId]);
+        
+        console.log(`🛡️ [DISARMS] Found ${result.rows.length} disarm records for event: ${eventId}`);
+        console.log(`🛡️ [DISARMS] Raw data sample:`, result.rows.slice(0, 3));
+        
+        // Process and calculate points for each character
+        const finalData = result.rows.map(row => {
+            // Parse the disarm count (might be "3" or "3 (some text)")
+            const disarmMatch = row.ability_value.toString().match(/(\d+)/);
+            const disarmsUsed = disarmMatch ? parseInt(disarmMatch[1]) : 0;
+            
+            // Calculate points: min(max_points, floor(disarms / needed) * points_per)
+            const points = Math.min(maxPoints, Math.floor(disarmsUsed / disarmsNeeded) * pointsPerDisarm);
+            
+            return {
+                character_name: row.character_name,
+                character_class: row.character_class,
+                disarms_used: disarmsUsed,
+                points: points
+            };
+        }).filter(char => char.disarms_used > 0) // Only include characters who disarmed
+          .sort((a, b) => b.points - a.points); // Sort by points descending
+        
+        console.log(`🛡️ [DISARMS] Processed ${finalData.length} characters with disarms`);
+        console.log(`🛡️ [DISARMS] Final data sample:`, finalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                points_per_disarm: pointsPerDisarm,
+                disarms_needed: disarmsNeeded,
+                max_points: maxPoints
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [DISARMS] Error retrieving disarms data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving disarms data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get all reward settings for raid logs page
+app.get('/api/reward-settings', async (req, res) => {
+    let client;
+    try {
+        client = await pool.connect();
+        
+        const result = await client.query(`
+            SELECT setting_type, setting_name, setting_value, setting_json
+            FROM reward_settings 
+            ORDER BY setting_type, setting_name
+        `);
+        
+        // Group settings by type
+        const settingsByType = {};
+        result.rows.forEach(row => {
+            if (!settingsByType[row.setting_type]) {
+                settingsByType[row.setting_type] = {};
+            }
+            
+            // Use JSON value if available, otherwise use numeric value
+            let value;
+            if (row.setting_json) {
+                value = row.setting_json; // Already parsed by pg
+            } else {
+                value = parseFloat(row.setting_value);
+            }
+            
+            settingsByType[row.setting_type][row.setting_name] = value;
+        });
+        
+        res.json({ 
+            success: true, 
+            settings: settingsByType
+        });
+        
+    } catch (error) {
+        console.error('❌ [REWARD SETTINGS] Error retrieving settings:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving reward settings',
             error: error.message 
         });
     } finally {
@@ -4259,35 +5819,66 @@ app.get('/api/admin/channel-filters', async (req, res) => {
   }
 
   try {
-    // First, get all current events to find channels with raids
-    const events = await fetchEventsFromAPI();
-    const enrichedEvents = await enrichEventsWithChannelNames(events);
+    // Get both upcoming and completed events to find all channels with raids
+    const [upcomingEventsResponse, historicEventsResponse] = await Promise.all([
+              fetchEventsFromAPI().then(events => enrichEventsWithDiscordChannelNames(events)),
+        getCachedHistoricEvents() || fetchHistoricEventsFromAPI().then(events => enrichHistoricEventsWithDiscordChannelNames(events))
+    ]);
     
-    // Filter to upcoming events only
+    // Filter to upcoming events only for upcoming
     const today = new Date();
-    const upcomingEvents = enrichedEvents.filter(event => {
+    const upcomingEvents = upcomingEventsResponse.filter(event => {
       if (!event.startTime) return false;
       const eventStartDate = new Date(parseInt(event.startTime) * 1000);
       return eventStartDate >= today;
     });
 
-    // Extract unique channels from upcoming events
+    // Completed events are already filtered in their function
+    const historicEvents = historicEventsResponse || [];
+
+    // Extract unique channels from BOTH upcoming and completed events
     const channelMap = new Map();
+    
+    // Process upcoming events
     upcomingEvents.forEach(event => {
-      if (event.channelId) {
-        const channelName = event.channelName || `Channel ${event.channelId}`;
-        if (channelMap.has(event.channelId)) {
-          channelMap.get(event.channelId).raid_count++;
+      const channelId = event.channelId || event.channelID || event.channel_id || event.discordChannelId;
+      if (channelId) {
+        const channelName = event.channelName || `Channel ${channelId}`;
+        if (channelMap.has(channelId)) {
+          channelMap.get(channelId).upcoming_count++;
         } else {
-          channelMap.set(event.channelId, {
-            channel_id: event.channelId,
+          channelMap.set(channelId, {
+            channel_id: channelId,
             channel_name: channelName,
-            raid_count: 1,
+            upcoming_count: 1,
+            historic_count: 0,
             is_visible: true // Default to visible
           });
         }
       }
     });
+    
+    // Process completed events
+    historicEvents.forEach(event => {
+      const channelId = event.channelId || event.channelID || event.channel_id || event.discordChannelId;
+      if (channelId) {
+        const channelName = event.channelName || `Channel ${channelId}`;
+        if (channelMap.has(channelId)) {
+          channelMap.get(channelId).historic_count++;
+        } else {
+          channelMap.set(channelId, {
+            channel_id: channelId,
+            channel_name: channelName,
+            upcoming_count: 0,
+            historic_count: 1,
+            is_visible: true // Default to visible
+          });
+        }
+      }
+    });
+
+    console.log(`🔍 Channel loading debug: Found ${upcomingEvents.length} upcoming and ${historicEvents.length} completed events`);
+    console.log(`📊 Extracted ${channelMap.size} unique channels from both upcoming and completed events`);
 
     // Get existing filter settings from database
     const filterResult = await pool.query('SELECT channel_id, is_visible FROM channel_filters');
@@ -4299,6 +5890,7 @@ app.get('/api/admin/channel-filters', async (req, res) => {
     // Merge current channels with existing filter settings
     const channels = Array.from(channelMap.values()).map(channel => ({
       ...channel,
+      raid_count: (channel.upcoming_count || 0) + (channel.historic_count || 0), // Total count
       is_visible: existingFilters.has(channel.channel_id) 
         ? existingFilters.get(channel.channel_id)
         : true // Default to visible for new channels
@@ -4406,6 +5998,344 @@ async function getChannelFilterSettings() {
     return new Map(); // Return empty map as fallback
   }
 }
+
+// ====================================
+// LOOT MANAGEMENT API ENDPOINTS
+// ====================================
+
+// Get loot items for an event
+app.get('/api/loot/:eventId', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+
+  const { eventId } = req.params;
+  let client;
+
+  try {
+    client = await pool.connect();
+    
+    // Check if loot_items table exists, if not return empty array
+    const tableCheckResult = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'loot_items'
+      );
+    `);
+    
+    if (!tableCheckResult.rows[0].exists) {
+      console.log('[LOOT] loot_items table does not exist yet, returning empty array');
+      return res.json({
+        success: true,
+        items: []
+      });
+    }
+    
+    const result = await client.query(`
+      SELECT item_name, player_name, gold_amount, wowhead_link, icon_link, created_at
+      FROM loot_items 
+      WHERE event_id = $1 
+      ORDER BY created_at DESC, item_name ASC
+    `, [eventId]);
+
+    res.json({
+      success: true,
+      items: result.rows
+    });
+  } catch (error) {
+    console.error('Error fetching loot items:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching loot items'
+    });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Import loot items from Gargul string
+app.post('/api/loot/import', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+
+  // Check if user has management role
+  const hasRole = await hasManagementRole(req.user.accessToken);
+  if (!hasRole) {
+    return res.status(403).json({ success: false, message: 'Management role required' });
+  }
+
+  const { eventId, items, expandExisting } = req.body;
+
+  if (!eventId || !items || !Array.isArray(items)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid request data'
+    });
+  }
+
+  let client;
+
+  try {
+    client = await pool.connect();
+    
+    // Start transaction
+    await client.query('BEGIN');
+
+    // Create loot_items table if it doesn't exist
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS loot_items (
+        id SERIAL PRIMARY KEY,
+        event_id TEXT NOT NULL,
+        item_name TEXT NOT NULL,
+        player_name TEXT NOT NULL,
+        gold_amount INTEGER DEFAULT 0,
+        wowhead_link TEXT,
+        icon_link TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create index if it doesn't exist
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_loot_items_event_id ON loot_items (event_id)
+    `);
+
+    // If not expanding existing list, delete current items for this event
+    if (!expandExisting) {
+      await client.query('DELETE FROM loot_items WHERE event_id = $1', [eventId]);
+      console.log(`[LOOT] Cleared existing items for event ${eventId}`);
+    }
+
+    // Insert new items
+    let insertedCount = 0;
+    for (const item of items) {
+      await client.query(`
+        INSERT INTO loot_items (event_id, item_name, player_name, gold_amount, wowhead_link, icon_link)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [
+        eventId,
+        item.item_name,
+        item.player_name,
+        item.gold_amount || 0,
+        item.wowhead_link,
+        item.icon_link
+      ]);
+      insertedCount++;
+    }
+
+    // Commit transaction
+    await client.query('COMMIT');
+
+    console.log(`[LOOT] Successfully imported ${insertedCount} items for event ${eventId}`);
+
+    res.json({
+      success: true,
+      message: `Successfully imported ${insertedCount} items`,
+      itemsImported: insertedCount
+    });
+  } catch (error) {
+    // Rollback transaction on error
+    if (client) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Error rolling back transaction:', rollbackError);
+      }
+    }
+    
+    console.error('Error importing loot items:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error importing loot items'
+    });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Get raid statistics for dashboard including RPB archive URL and WarcraftLogs data
+app.get('/api/raid-stats/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`📊 [RAID STATS] Fetching raid statistics for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Get RPB archive information
+        const rpbResult = await client.query(`
+            SELECT archive_url, archive_name, rpb_completed_at
+            FROM rpb_tracking 
+            WHERE event_id = $1 AND archive_url IS NOT NULL
+            ORDER BY created_at DESC 
+            LIMIT 1
+        `, [eventId]);
+        
+        // Get log data to find the latest log_id for WarcraftLogs API call
+        const logResult = await client.query(`
+            SELECT log_id 
+            FROM log_data 
+            WHERE event_id = $1 
+            ORDER BY created_at DESC 
+            LIMIT 1
+        `, [eventId]);
+        
+        let rpbData = null;
+        let raidStats = {
+            totalTime: null,
+            activeFightTime: null,
+            bossesKilled: 0,
+            lastBoss: null,
+            firstMob: null,
+            logUrl: null
+        };
+        
+        // Process RPB data if available
+        if (rpbResult.rows.length > 0) {
+            const rpb = rpbResult.rows[0];
+            rpbData = {
+                archiveUrl: rpb.archive_url,
+                archiveName: rpb.archive_name,
+                completedAt: rpb.rpb_completed_at
+            };
+        }
+        
+                // Fetch WarcraftLogs data if we have a log_id
+        if (logResult.rows.length > 0) {
+            const logId = logResult.rows[0].log_id;
+            console.log(`📖 [RAID STATS] Fetching WarcraftLogs data for log: ${logId}`);
+            
+            // Set log URL for the WoW Logs widget
+            raidStats.logUrl = `https://vanilla.warcraftlogs.com/reports/${logId}`;
+            
+            try {
+                // Use WarcraftLogs API to get raid statistics - use the same key as frontend
+                const wclApiKey = process.env.WCL_API_KEY || 'e5c41ab0436b3a44c0e9c2fbd6cf016d';
+                if (wclApiKey) {
+                    // First, get fights data to determine time range (same as frontend)
+                    const fightsUrl = `https://vanilla.warcraftlogs.com:443/v1/report/fights/${logId}?translate=true&api_key=${wclApiKey}`;
+                    console.log(`🥊 [RAID STATS] Getting fights data: ${fightsUrl}`);
+                    
+                    const fightsResponse = await fetch(fightsUrl);
+                    if (fightsResponse.ok) {
+                        const fightsData = await fightsResponse.json();
+                        console.log(`⚔️ [RAID STATS] Fights count: ${fightsData.fights?.length || 0}`);
+                        
+                        // Get time range from fights (same logic as frontend)
+                        let logStartTime = 0;
+                        let logEndTime = 0;
+                        if (fightsData.fights && fightsData.fights.length > 0) {
+                            logStartTime = fightsData.fights[0].start_time;
+                            logEndTime = fightsData.fights[fightsData.fights.length - 1].end_time;
+                        }
+                        console.log(`⏱️ [RAID STATS] Time range: ${logStartTime} - ${logEndTime}`);
+                        
+                        // Calculate actual raid duration (including downtime)
+                        const actualRaidDuration = logEndTime - logStartTime;
+                        const actualRaidMinutes = Math.round(actualRaidDuration / 60000);
+                        console.log(`🕒 [RAID STATS] Actual raid duration: ${actualRaidMinutes} minutes`);
+                        
+                        // Store the actual duration
+                        raidStats.totalTime = actualRaidMinutes;
+                        
+                        // Find the last boss from fights data
+                        const bossKills = fightsData.fights.filter(fight => fight.boss > 0 && fight.kill === true);
+                        if (bossKills.length > 0) {
+                            const lastBossFight = bossKills[bossKills.length - 1];
+                            raidStats.lastBoss = lastBossFight.name;
+                            raidStats.bossesKilled = bossKills.length;
+                            console.log(`👑 [RAID STATS] Last boss from fights: ${lastBossFight.name}, Total bosses killed: ${bossKills.length}`);
+                        }
+                        
+                        // Now get damage data with time range
+                        const wclUrl = `https://vanilla.warcraftlogs.com:443/v1/report/tables/damage-done/${logId}?start=${logStartTime}&end=${logEndTime}&translate=true&api_key=${wclApiKey}`;
+                        console.log(`🔗 [RAID STATS] WCL Damage URL: ${wclUrl}`);
+                        
+                        const wclResponse = await fetch(wclUrl);
+                        console.log(`📡 [RAID STATS] WCL Response status: ${wclResponse.status}`);
+                        
+                        if (wclResponse.ok) {
+                            const wclData = await wclResponse.json();
+                            console.log(`📊 [RAID STATS] WCL Data keys: ${Object.keys(wclData)}`);
+                            console.log(`📊 [RAID STATS] TotalTime: ${wclData.totalTime}, Entries count: ${wclData.entries?.length || 0}`);
+                            
+                            // Store active fight time for display
+                            if (wclData.totalTime) {
+                                raidStats.activeFightTime = Math.round(wclData.totalTime / 60000); // Convert ms to minutes
+                            }
+                            
+                            // Only update boss counts if we didn't get them from fights data
+                            if (wclData.entries && raidStats.bossesKilled === 0) {
+                                const bosses = wclData.entries.filter(entry => 
+                                    entry.targets && entry.targets.some(target => target.type === "Boss")
+                                );
+                                
+                                if (bosses.length > 0) {
+                                    // Count unique boss targets as fallback
+                                    const uniqueBosses = new Set();
+                                    bosses.forEach(boss => {
+                                        if (boss.targets) {
+                                            boss.targets.forEach(target => {
+                                                if (target.type === "Boss") {
+                                                    uniqueBosses.add(target.name);
+                                                }
+                                            });
+                                        }
+                                    });
+                                    
+                                    raidStats.bossesKilled = uniqueBosses.size;
+                                    
+                                    // Find the last boss as fallback
+                                    const bossArray = Array.from(uniqueBosses);
+                                    if (bossArray.length > 0 && !raidStats.lastBoss) {
+                                        raidStats.lastBoss = bossArray[bossArray.length - 1];
+                                    }
+                                }
+                            }
+                            
+                            console.log(`✅ [RAID STATS] WarcraftLogs data processed: ${raidStats.totalTime}min, ${raidStats.bossesKilled} bosses`);
+                        } else {
+                            const errorText = await wclResponse.text();
+                            console.warn(`⚠️ [RAID STATS] WarcraftLogs damage API error: ${wclResponse.status} - ${errorText}`);
+                        }
+                    } else {
+                        const errorText = await fightsResponse.text();
+                        console.warn(`⚠️ [RAID STATS] WarcraftLogs fights API error: ${fightsResponse.status} - ${errorText}`);
+                    }
+                } else {
+                    console.warn(`⚠️ [RAID STATS] No WCL_API_KEY found, using fallback`);
+                }
+            } catch (wclError) {
+                console.error('❌ [RAID STATS] Error fetching WarcraftLogs data:', wclError);
+            }
+        }
+        
+        res.json({
+            success: true,
+            data: {
+                rpb: rpbData,
+                stats: raidStats
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [RAID STATS] Error fetching raid statistics:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching raid statistics',
+            error: error.message
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// ====================================
+// CATCH-ALL ROUTE (MUST BE LAST)
+// ====================================
 
 // This route will handle both the root path ('/') AND any other unmatched paths,
 // serving events.html. It MUST be the LAST route definition in your application.

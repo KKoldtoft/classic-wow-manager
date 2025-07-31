@@ -471,6 +471,9 @@
     border: 1px solid var(--border-color, #3a3a3a);
     border-radius: 8px;
     overflow: hidden;
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .data-section h2 {
@@ -1891,4 +1894,33 @@
         margin: 0.25rem;
         font-size: 0.9rem;
     }
+}
+
+/* Additional Characters Styling */
+.additional-characters-container {
+    margin-bottom: 5px;
+}
+
+.additional-character {
+    margin-top: 3px;
+    border-left: 2px solid #007bff;
+    padding-left: 5px;
+}
+
+.additional-character .roster-character {
+    border-radius: 4px;
+    border: 1px solid rgba(0, 123, 255, 0.4);
+    position: relative;
+}
+
+.additional-character .roster-character::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 123, 255, 0.15);
+    border-radius: 4px;
+    pointer-events: none;
 } 
