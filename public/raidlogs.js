@@ -14,6 +14,8 @@ class RaidLogsManager {
         this.interruptsSettings = { points_per_interrupt: 1, interrupts_needed: 1, max_points: 5 };
         this.disarmsData = [];
         this.disarmsSettings = { points_per_disarm: 1, disarms_needed: 1, max_points: 5 };
+        this.sunderData = [];
+        this.sunderSettings = { point_ranges: [] };
         this.rewardSettings = {};
         this.specData = {};
         this.initializeEventListeners();
@@ -43,7 +45,7 @@ class RaidLogsManager {
         this.showLoading();
         
         try {
-            // Fetch log data, raid statistics, abilities data, mana potions data, runes data, interrupts data, disarms data, and reward settings in parallel
+            // Fetch log data, raid statistics, abilities data, mana potions data, runes data, interrupts data, disarms data, sunder data, and reward settings in parallel
             await Promise.all([
                 this.fetchLogData(), // Now includes backend role enhancement via roster_overrides
                 this.fetchRaidStats(),
@@ -52,6 +54,7 @@ class RaidLogsManager {
                 this.fetchRunesData(),
                 this.fetchInterruptsData(),
                 this.fetchDisarmsData(),
+                this.fetchSunderData(),
                 this.fetchRewardSettings()
             ]);
             this.displayRaidLogs();
@@ -282,6 +285,35 @@ class RaidLogsManager {
             // Don't fail the whole page if disarms fail - just show empty data
             this.disarmsData = [];
             this.disarmsSettings = { points_per_disarm: 1, disarms_needed: 1, max_points: 5 }; // fallback
+        }
+    }
+
+    async fetchSunderData() {
+        console.log(`⚔️ Fetching sunder armor data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/sunder-data/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch sunder data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch sunder data');
+            }
+            
+            this.sunderData = result.data || [];
+            this.sunderSettings = result.settings || { point_ranges: [] };
+            console.log(`⚔️ Loaded sunder data:`, this.sunderData);
+            console.log(`⚔️ Loaded sunder settings:`, this.sunderSettings);
+            
+        } catch (error) {
+            console.error('Error fetching sunder data:', error);
+            // Don't fail the whole page if sunder fails - just show empty data
+            this.sunderData = [];
+            this.sunderSettings = { point_ranges: [] }; // fallback
         }
     }
 
@@ -878,6 +910,79 @@ class RaidLogsManager {
             const pointsText = points_per_disarm === 1 ? 'pt' : 'pts';
             const disarmsText = disarms_needed === 1 ? 'disarm' : 'disarms';
             headerElement.textContent = `Ranked by points (${points_per_disarm} ${pointsText} per ${disarms_needed} ${disarmsText}, max ${max_points})`;
+        }
+    }
+
+    displaySunderRankings(players) {
+        const container = document.getElementById('sunder-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('sunder');
+
+        // Filter out players with 0 or negative points for display, but show all non-zero
+        const playersWithPoints = players.filter(player => player.points !== 0);
+
+        if (playersWithPoints.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-shield-virus"></i>
+                    <p>Nothing to see, move along</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Get max absolute points for percentage calculation
+        const maxAbsPoints = Math.max(...playersWithPoints.map(p => Math.abs(p.points))) || 1;
+
+        container.innerHTML = playersWithPoints.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const fillPercentage = Math.max(5, (Math.abs(player.points) / maxAbsPoints) * 100); // Minimum 5% for visibility
+
+            const sunderText = `${player.sunder_count} sunders (${player.raw_value})`;
+            
+            // Determine point color based on the range color
+            let pointColor = '#ff6b35'; // default
+            if (player.color === 'red') pointColor = '#dc3545';
+            else if (player.color === 'gray') pointColor = '#6c757d';
+            else if (player.color === 'green') pointColor = '#28a745';
+            else if (player.color === 'blue') pointColor = '#007bff';
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${player.character_name}
+                        </div>
+                        <div class="character-details" title="${sunderText}">
+                            ${this.truncateWithTooltip(sunderText).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${player.sunder_count} sunders applied">
+                        <div class="amount-value" style="color: ${pointColor}">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updateSunderHeader() {
+        const headerElement = document.querySelector('.sunder-section .section-header p');
+        if (headerElement && this.sunderSettings && this.sunderSettings.point_ranges) {
+            const ranges = this.sunderSettings.point_ranges;
+            if (ranges.length > 0) {
+                // Create a summary of ranges
+                const rangeTexts = ranges.map(r => {
+                    if (r.min === 0 && r.max < 50) return `<${r.max + 1}: ${r.points}pts`;
+                    if (r.max >= 999) return `${r.min}+: ${r.points}pts`;
+                    return `${r.min}-${r.max}: ${r.points}pts`;
+                });
+                headerElement.textContent = `Ranked by points (${rangeTexts.join(', ')})`;
+            }
         }
     }
 

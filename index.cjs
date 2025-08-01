@@ -3395,7 +3395,21 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 ('interrupts', 'max_points', 5, 'Maximum points that can be earned from interrupts'),
                 ('disarms', 'points_per_disarm', 1, 'Points earned per disarm'),
                 ('disarms', 'disarms_needed', 1, 'Number of disarms needed per point'),
-                ('disarms', 'max_points', 5, 'Maximum points that can be earned from disarms')
+                ('disarms', 'max_points', 5, 'Maximum points that can be earned from disarms'),
+                ('sunder', 'enabled', 1, 'Whether Sunder Armor tracking is enabled')
+            ON CONFLICT (setting_type, setting_name) DO NOTHING
+        `);
+
+        // Insert sunder armor point ranges separately (JSON data)
+        await client.query(`
+            INSERT INTO reward_settings (setting_type, setting_name, setting_value, setting_json, description)
+            VALUES 
+                ('sunder', 'point_ranges', 0, '[
+                  {"min": 0, "max": 49, "points": -10, "color": "red"},
+                  {"min": 50, "max": 99, "points": 0, "color": "gray"},
+                  {"min": 100, "max": 119, "points": 5, "color": "green"},
+                  {"min": 120, "max": 999, "points": 10, "color": "blue"}
+                ]', 'Point ranges for Sunder Armor performance')
             ON CONFLICT (setting_type, setting_name) DO NOTHING
         `);
 
@@ -4380,7 +4394,7 @@ app.get('/api/abilities-data/:eventId', async (req, res) => {
         const settingsResult = await client.query(`
             SELECT setting_type, setting_name, setting_value, setting_json
             FROM reward_settings 
-            WHERE setting_type IN ('abilities', 'damage', 'healing', 'mana_potions', 'runes', 'interrupts', 'disarms')
+            WHERE setting_type IN ('abilities', 'damage', 'healing', 'mana_potions', 'runes', 'interrupts', 'disarms', 'sunder')
         `);
         
         const allSettings = {};
@@ -5260,6 +5274,129 @@ app.post('/api/logs/rpb-archive', async (req, res) => {
     }
 });
 
+// Get sunder armor data for raid logs
+app.get('/api/sunder-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`⚔️ [SUNDER] Retrieving sunder armor data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [SUNDER] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get dynamic settings for sunder armor calculation
+        const settingsResult = await client.query(`
+            SELECT setting_name, setting_value, setting_json
+            FROM reward_settings 
+            WHERE setting_type = 'sunder'
+        `);
+        
+        console.log(`⚔️ [SUNDER] Raw settings from DB:`, settingsResult.rows);
+        
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            if (row.setting_json) {
+                try {
+                    // Handle case where setting_json might be a string or already parsed
+                    if (typeof row.setting_json === 'string') {
+                        settings[row.setting_name] = JSON.parse(row.setting_json);
+                    } else {
+                        settings[row.setting_name] = row.setting_json;
+                    }
+                } catch (error) {
+                    console.error(`⚔️ [SUNDER] Error parsing JSON for ${row.setting_name}:`, error);
+                    settings[row.setting_name] = null;
+                }
+            } else {
+                settings[row.setting_name] = parseFloat(row.setting_value);
+            }
+        });
+        
+        console.log(`⚔️ [SUNDER] Parsed settings:`, settings);
+        
+        const pointRanges = settings.point_ranges || [
+            {"min": 0, "max": 49, "points": -10, "color": "red"},
+            {"min": 50, "max": 99, "points": 0, "color": "gray"},
+            {"min": 100, "max": 119, "points": 5, "color": "green"},
+            {"min": 120, "max": 999, "points": 10, "color": "blue"}
+        ];
+        
+        console.log(`⚔️ [SUNDER] Using point ranges:`, pointRanges);
+        
+        // Query for "Sunder Armor% on targets < 5 stacks" usage
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND ability_name = 'Sunder Armor% on targets < 5 stacks'
+            ORDER BY character_name
+        `, [eventId]);
+        
+        console.log(`⚔️ [SUNDER] Found ${result.rows.length} sunder records for event: ${eventId}`);
+        console.log(`⚔️ [SUNDER] Raw data sample:`, result.rows.slice(0, 3));
+        
+        // Process and calculate points for each character
+        const finalData = result.rows.map(row => {
+            // Parse the sunder count from "112 (64%)" format - extract first number
+            const sunderMatch = row.ability_value.toString().match(/(\d+)/);
+            const sunderCount = sunderMatch ? parseInt(sunderMatch[1]) : 0;
+            
+            // Find the appropriate range and calculate points
+            const range = pointRanges.find(r => sunderCount >= r.min && sunderCount <= r.max);
+            const points = range ? range.points : 0;
+            const color = range ? range.color : 'gray';
+            
+            return {
+                character_name: row.character_name,
+                character_class: row.character_class,
+                sunder_count: sunderCount,
+                points: points,
+                color: color,
+                raw_value: row.ability_value
+            };
+        }).filter(char => char.sunder_count > 0) // Only include characters who used sunder
+          .sort((a, b) => b.points - a.points || b.sunder_count - a.sunder_count); // Sort by points, then by count
+        
+        console.log(`⚔️ [SUNDER] Processed ${finalData.length} characters with sunder usage`);
+        console.log(`⚔️ [SUNDER] Final data sample:`, finalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                point_ranges: pointRanges
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [SUNDER] Error retrieving sunder data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving sunder data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // Debug endpoint for checking environment variables on Heroku (remove after debugging)
 app.get('/api/debug/env', (req, res) => {
     const googleVars = Object.keys(process.env).filter(key => key.startsWith('GOOGLE_'));
@@ -5304,12 +5441,28 @@ app.post('/api/admin/migrate-reward-settings', async (req, res) => {
                 ('interrupts', 'max_points', 5, 'Maximum points that can be earned from interrupts'),
                 ('disarms', 'points_per_disarm', 1, 'Points earned per disarm'),
                 ('disarms', 'disarms_needed', 1, 'Number of disarms needed per point'),
-                ('disarms', 'max_points', 5, 'Maximum points that can be earned from disarms')
+                ('disarms', 'max_points', 5, 'Maximum points that can be earned from disarms'),
+                ('sunder', 'enabled', 1, 'Whether Sunder Armor tracking is enabled')
+            ON CONFLICT (setting_type, setting_name) DO NOTHING
+            RETURNING setting_type, setting_name
+        `);
+        
+        // Insert sunder armor point ranges separately (JSON data)
+        const sunderResult = await client.query(`
+            INSERT INTO reward_settings (setting_type, setting_name, setting_value, setting_json, description)
+            VALUES 
+                ('sunder', 'point_ranges', 0, '[
+                  {"min": 0, "max": 49, "points": -10, "color": "red"},
+                  {"min": 50, "max": 99, "points": 0, "color": "gray"},
+                  {"min": 100, "max": 119, "points": 5, "color": "green"},
+                  {"min": 120, "max": 999, "points": 10, "color": "blue"}
+                ]', 'Point ranges for Sunder Armor performance')
             ON CONFLICT (setting_type, setting_name) DO NOTHING
             RETURNING setting_type, setting_name
         `);
         
         console.log(`✅ [MIGRATION] Added ${result.rows.length} new reward settings:`, result.rows);
+        console.log(`✅ [MIGRATION] Added ${sunderResult.rows.length} sunder settings:`, sunderResult.rows);
         
         // Get final count
         const finalSettings = await client.query(`

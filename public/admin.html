@@ -1497,6 +1497,91 @@
                 `;
             }
 
+            // Sunder Armor settings
+            if (settings.sunder) {
+                const ranges = settings.sunder.point_ranges.value || [];
+                let rangesHTML = '';
+                
+                ranges.forEach((range, index) => {
+                    rangesHTML += `
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px; padding: 10px; border: 1px solid #e9ecef; border-radius: 4px;">
+                            <div>
+                                <label style="font-size: 12px; font-weight: 600;">Min Count</label>
+                                <input 
+                                    type="number" 
+                                    id="sunder-range-${index}-min" 
+                                    value="${range.min}" 
+                                    min="0" 
+                                    max="999"
+                                    style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 14px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                            </div>
+                            <div>
+                                <label style="font-size: 12px; font-weight: 600;">Max Count</label>
+                                <input 
+                                    type="number" 
+                                    id="sunder-range-${index}-max" 
+                                    value="${range.max}" 
+                                    min="0" 
+                                    max="999"
+                                    style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 14px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                            </div>
+                            <div>
+                                <label style="font-size: 12px; font-weight: 600;">Points</label>
+                                <input 
+                                    type="number" 
+                                    id="sunder-range-${index}-points" 
+                                    value="${range.points}" 
+                                    min="-50" 
+                                    max="50"
+                                    style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 14px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                            </div>
+                            <div>
+                                <label style="font-size: 12px; font-weight: 600;">Color</label>
+                                <select 
+                                    id="sunder-range-${index}-color" 
+                                    style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 14px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                    <option value="red" ${range.color === 'red' ? 'selected' : ''}>Red</option>
+                                    <option value="gray" ${range.color === 'gray' ? 'selected' : ''}>Gray</option>
+                                    <option value="green" ${range.color === 'green' ? 'selected' : ''}>Green</option>
+                                    <option value="blue" ${range.color === 'blue' ? 'selected' : ''}>Blue</option>
+                                </select>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                settingsHTML += `
+                    <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                        <h4 style="color: #6f42c1; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_sunder.jpg" style="width: 20px; height: 20px;"> 
+                            Sunder Armor
+                        </h4>
+                        
+                        <div style="margin-bottom: 15px;">
+                            <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                Point Ranges
+                            </label>
+                            <div id="sunder-ranges-container">
+                                ${rangesHTML}
+                            </div>
+                        </div>
+                        
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid #6f42c1;">
+                            <strong>How it works:</strong> Players are awarded points based on their Sunder Armor count falling into these ranges.
+                            <br><strong>Note:</strong> Negative points (red) will be displayed in red text. Zero points (gray) mean no reward or penalty.
+                        </div>
+                    </div>
+                `;
+            }
+
             contentDiv.innerHTML = settingsHTML;
         }
 
@@ -1504,7 +1589,46 @@
             document.getElementById('save-rewards-btn').style.display = 'inline-flex';
         }
 
-        async function saveRewardSettings() {
+        function collectSunderRanges() {
+        const ranges = [];
+        const container = document.getElementById('sunder-ranges-container');
+        if (!container) return ranges;
+        
+        const rangeElements = container.querySelectorAll('[id^="sunder-range-"]');
+        const rangeIndexes = new Set();
+        
+        // Extract unique range indexes
+        rangeElements.forEach(element => {
+            const match = element.id.match(/sunder-range-(\d+)-/);
+            if (match) {
+                rangeIndexes.add(parseInt(match[1]));
+            }
+        });
+        
+        // Collect data for each range
+        rangeIndexes.forEach(index => {
+            const minElement = document.getElementById(`sunder-range-${index}-min`);
+            const maxElement = document.getElementById(`sunder-range-${index}-max`);
+            const pointsElement = document.getElementById(`sunder-range-${index}-points`);
+            const colorElement = document.getElementById(`sunder-range-${index}-color`);
+            
+            if (minElement && maxElement && pointsElement && colorElement) {
+                ranges.push({
+                    min: parseInt(minElement.value),
+                    max: parseInt(maxElement.value),
+                    points: parseInt(pointsElement.value),
+                    color: colorElement.value
+                });
+            }
+        });
+        
+        // Sort ranges by min value
+        ranges.sort((a, b) => a.min - b.min);
+        
+        return ranges;
+    }
+
+    async function saveRewardSettings() {
             const saveBtn = document.getElementById('save-rewards-btn');
             
             saveBtn.disabled = true;
@@ -1547,6 +1671,9 @@
                     points_per_disarm: parseFloat(document.getElementById('disarms-points-earned').value),
                     disarms_needed: parseInt(document.getElementById('disarms-threshold').value),
                     max_points: parseInt(document.getElementById('disarms-max-points').value)
+                },
+                sunder: {
+                    point_ranges: collectSunderRanges()
                 }
             };
 

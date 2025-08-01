@@ -401,6 +401,21 @@
     font-size: 1.4em;
 }
 
+/* Sunder specific styling */
+.rankings-section.sunder .section-header {
+    background: linear-gradient(135deg, #6f42c1 0%, #5a3499 100%);
+}
+
+.rankings-section.sunder .amount-value {
+    color: #ff6b35; /* This will be overridden by inline styles for different point ranges */
+    font-size: 1.4em;
+}
+
+/* Sunder container specific styling */
+.sunder-container {
+    margin-top: 30px;
+}
+
 /* Role badge - removed as requested */
 
 /* Empty state for rankings */

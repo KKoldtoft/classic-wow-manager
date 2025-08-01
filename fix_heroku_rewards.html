@@ -135,7 +135,7 @@
                 
                 if (result.success) {
                     const settingTypes = Object.keys(result.settings);
-                    const expectedTypes = ['abilities', 'damage', 'healing', 'mana_potions', 'runes', 'interrupts', 'disarms'];
+                    const expectedTypes = ['abilities', 'damage', 'healing', 'mana_potions', 'runes', 'interrupts', 'disarms', 'sunder'];
                     const missingTypes = expectedTypes.filter(type => !settingTypes.includes(type));
                     
                     resultDiv.className = 'result info';
