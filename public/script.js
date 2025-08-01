@@ -51,6 +51,59 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    // Function to fetch and display event duration
+    async function fetchEventDuration(eventId, delay = 0) {
+        const durationElement = document.getElementById(`duration-${eventId}`);
+        if (!durationElement) return;
+
+        // Add delay to prevent overwhelming the server
+        if (delay > 0) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+            
+            const response = await fetch(`/api/event-duration/${eventId}`, {
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            if (data.success && data.duration && typeof data.duration === 'number') {
+                // Format duration like the raidlogs page
+                const totalMinutes = data.duration;
+                const hours = Math.floor(totalMinutes / 60);
+                const minutes = totalMinutes % 60;
+                
+                let formattedDuration;
+                if (hours > 0) {
+                    formattedDuration = `${hours}h ${minutes}m`;
+                } else {
+                    formattedDuration = `${totalMinutes}m`;
+                }
+                
+                durationElement.innerHTML = `<p><i class="far fa-clock event-icon"></i> Time: ${formattedDuration}</p>`;
+            } else {
+                durationElement.innerHTML = `<p><i class="far fa-clock event-icon"></i> Duration N/A</p>`;
+            }
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                console.warn(`Duration fetch timeout for event ${eventId}`);
+            } else {
+                console.warn(`Error fetching duration for event ${eventId}:`, error.message);
+            }
+            durationElement.innerHTML = `<p><i class="far fa-clock event-icon"></i> Duration N/A</p>`;
+        }
+    }
+
     async function fetchAndDisplayMyCharacters() {
         const myCharsContainer = document.getElementById('my-characters-list');
         if (!myCharsContainer) return; // Don't run if the container doesn't exist
@@ -451,37 +504,44 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const eventStartDate = new Date(event.startTime * 1000);
                     const cetTimeZone = 'Europe/Copenhagen';
 
-                    // For completed events, always show the full date
-                    const optionsDay = { weekday: 'long', timeZone: cetTimeZone };
+                    // For completed events, get just the date in DD/MM/YYYY format
                     const optionsDate = { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: cetTimeZone };
-                    const formattedDayName = eventStartDate.toLocaleDateString('en-US', optionsDay);
                     const formattedDate = eventStartDate.toLocaleDateString('en-GB', optionsDate);
-                    const dateDisplayHTML = `${formattedDayName} (${formattedDate})`;
                     
-                    const optionsTime = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: cetTimeZone };
-                    const formattedStartTime = eventStartDate.toLocaleTimeString('en-GB', optionsTime);
-                    const signUpCount = event.signUpCount || '0';
-                    
-                    let channelDisplayName = '#unknown-channel';
+                    // Get and format channel name
+                    let channelName = 'Unknown Channel';
                     if (event.channelName && 
                         event.channelName.trim() && 
                         event.channelName !== event.channelId &&
                         !event.channelName.match(/^\d+$/)) {
-                        channelDisplayName = `#${event.channelName}`;
+                        channelName = event.channelName;
                     } else if (event.channelId) {
-                        channelDisplayName = `#channel-${event.channelId.slice(-4)}`;
+                        channelName = `channel-${event.channelId.slice(-4)}`;
                     }
+                    
+                    // Clean and format channel name: remove emojis, replace dashes with spaces, capitalize words
+                    const cleanChannelName = channelName
+                        .replace(/[^\w\s-]/g, '') // Remove emojis and special chars except dashes and spaces
+                        .replace(/-/g, ' ') // Replace dashes with spaces
+                        .trim()
+                        .split(' ')
+                        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                        .join(' ');
+                    
+                    // Create the combined headline: "Channel Name - DD/MM/YYYY"
+                    const combinedHeadline = `${cleanChannelName} - ${formattedDate}`;
 
                     eventDiv.innerHTML = `
-                        <h3>${eventTitle}</h3>
-                        <div class="event-time-info">
-                            <p><i class="far fa-calendar-alt event-icon"></i> ${dateDisplayHTML}</p>
-                            <p><i class="far fa-clock event-icon"></i> ${formattedStartTime}</p>
-                            <p><i class="fas fa-user event-icon"></i> ${signUpCount} Signed</p>
-                            <p class="channel-info"><i class="fas fa-hashtag event-icon"></i> ${channelDisplayName}</p>
+                        <h3>${combinedHeadline}</h3>
+                        <div class="raid-duration" id="duration-${eventId}">
+                            <p><i class="far fa-clock event-icon"></i> Loading...</p>
                         </div>
                     `;
                     historicEventsList.appendChild(eventDiv);
+                    
+                    // Fetch scheduled duration for this event with staggered delay
+                    const delay = index * 300; // 300ms delay between each request  
+                    fetchEventDuration(eventId, delay);
                 } catch (renderError) {
                     console.error('Error rendering completed event:', renderError);
                 }

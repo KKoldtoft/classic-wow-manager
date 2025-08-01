@@ -40,6 +40,9 @@ initializeRPBTrackingTable();
 // Initialize Raid-Helper events cache table
 initializeRaidHelperEventsCacheTable();
 
+// Initialize raid durations table
+initializeRaidDurationsTable();
+
 // Migrate player confirmed logs table
 migratePlayerConfirmedLogsTable();
   })
@@ -585,166 +588,22 @@ async function enrichEventsWithChannelNames(events) {
   return enrichedEvents;
 }
 
-/* OLD FUNCTION - REPLACED WITH Discord API approach for better reliability
-async function enrichHistoricEventsWithChannelNames(events) {
-  // Use global cache for channel names - SHARED with upcoming events but longer TTL for historic
-  if (!global.channelNameCache) {
-    global.channelNameCache = new Map();
-  }
-  const channelNameCache = global.channelNameCache;
-  const CACHE_TTL = 60 * 60 * 1000; // 1 hour for historic events (they don't change)
-  
-  // CRITICAL: Filter and sort historic events (past events, last 30 days)
-  const now = new Date();
-  const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
-  const historicEvents = events.filter(event => {
-    if (!event.startTime) return false;
-    const eventStartDate = new Date(parseInt(event.startTime) * 1000);
-    return eventStartDate < now && eventStartDate >= thirtyDaysAgo;
-  }).sort((a, b) => parseInt(b.startTime) - parseInt(a.startTime)); // Sort newest first
-  
-  // OPTIMIZATION: Only enrich the first 3 historic events to avoid rate limits
-  const eventsToEnrich = historicEvents.slice(0, 3);
-  const remainingEvents = historicEvents.slice(3);
-  
-  console.log(`📊 Filtered to ${historicEvents.length} historic events, processing ${eventsToEnrich.length} for channel names, skipping ${remainingEvents.length}`);
-  
-  // Helper function to fetch channel name with retry and rate limit handling (HISTORIC EVENTS VERSION - VERY CONSERVATIVE)
-  const fetchChannelNameWithRetry = async (eventId, maxRetries = 1) => { // Only 1 retry for historic
-    const cacheKey = `channel_${eventId}`;
-    const cached = channelNameCache.get(cacheKey);
-    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
-      console.log(`💾 Using cached channelName for historic event ${eventId}: "${cached.channelName}"`);
-      return cached.channelName;
-    }
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`🔄 Fetching channelName for historic event ${eventId} (attempt ${attempt}/${maxRetries})`);
-        
-        const eventDetailResponse = await axios.get(
-          `https://raid-helper.dev/api/v2/events/${eventId}`, // Use v2 API like upcoming events
-          {
-            headers: {
-              'Authorization': `${process.env.RAID_HELPER_API_KEY}`,
-              'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
-            },
-            timeout: 15000 // Very long timeout for historic events
-          }
-        );
-        
-        const channelName = eventDetailResponse.data.channelName;
-        console.log(`📡 API Response for historic event ${eventId}: channelName="${channelName}"`);
-        
-        if (channelName && 
-            channelName.trim() && 
-            channelName !== eventId &&
-            !channelName.match(/^\d+$/)) {
-          console.log(`✅ Valid channelName found: "${channelName}"`);
-          
-          channelNameCache.set(cacheKey, {
-            channelName: channelName,
-            timestamp: Date.now()
-          });
-          
-          return channelName;
-        }
-        
-        console.log(`⚠️ Invalid or empty channelName: "${channelName}"`);
-        
-        channelNameCache.set(cacheKey, {
-          channelName: null,
-          timestamp: Date.now()
-        });
-        
-        return null;
-        
-      } catch (error) {
-        console.log(`❌ Attempt ${attempt} failed for historic event ${eventId}:`, error.message);
-        
-        if (error.response && error.response.status === 429) {
-          const rateLimitDelay = attempt * 8000; // Much longer delays for historic events
-          console.log(`🚦 Rate limit hit for historic event, waiting ${rateLimitDelay}ms before retry...`);
-          if (attempt < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, rateLimitDelay));
-            continue;
-          }
-        }
-        
-        if (attempt === maxRetries) {
-          console.log(`💥 All ${maxRetries} attempts failed for historic event ${eventId}`);
-          
-          channelNameCache.set(cacheKey, {
-            channelName: null,
-            timestamp: Date.now()
-          });
-          
-          return null;
-        }
-        
-        const delay = attempt * 5000; // Much longer delays for historic events
-        console.log(`⏳ Waiting ${delay}ms before retry for historic event...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-    return null;
-  };
-  
-  // Enrich historic events with channel names
-  const enrichedEvents = [];
-  const startTime = Date.now();
-  const TOTAL_TIMEOUT = 20000; // 20 second total timeout (reduced for historic events)
-  
-  for (let i = 0; i < eventsToEnrich.length; i++) {
-    const event = eventsToEnrich[i];
-    
-    if (Date.now() - startTime > TOTAL_TIMEOUT) {
-      console.log(`⏰ Timeout reached, skipping remaining ${eventsToEnrich.length - i} historic events`);
-      for (let j = i; j < eventsToEnrich.length; j++) {
-        enrichedEvents.push({
-          ...eventsToEnrich[j],
-          channelName: null
-        });
-      }
-      break;
-    }
-    
+// Initialize raid durations table for storing calculated durations
+async function initializeRaidDurationsTable() {
     try {
-      const channelName = await fetchChannelNameWithRetry(event.id);
-      console.log(`📋 Final result for historic event ${event.id}: channelName = "${channelName}"`);
-      
-      enrichedEvents.push({
-        ...event,
-        channelName: channelName
-      });
-      
-      if (i < eventsToEnrich.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 5000)); // Very long delay for historic events to avoid rate limits
-      }
-      
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS raid_durations (
+                event_id VARCHAR(50) PRIMARY KEY,
+                duration_minutes INTEGER NOT NULL,
+                calculated_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        console.log('✅ Raid durations table initialized');
     } catch (error) {
-      console.log(`💀 Critical error processing historic event ${event.id}:`, error);
-      enrichedEvents.push({
-        ...event,
-        channelName: null
-      });
+        console.error('❌ Error creating raid durations table:', error);
     }
-  }
-  
-  // Add remaining historic events without enrichment
-  remainingEvents.forEach(event => {
-    enrichedEvents.push({
-      ...event,
-      channelName: null
-    });
-  });
-  
-  const processingTime = ((Date.now() - startTime) / 1000).toFixed(1);
-  console.log(`⏱️ Historic channel name processing completed in ${processingTime}s`);
-  
-  return enrichedEvents;
 }
-*/
 
 // Discord channel name cache and fetching
 const DISCORD_CHANNEL_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
@@ -7510,6 +7369,19 @@ app.get('/api/raid-stats/:eventId', async (req, res) => {
                         // Store the actual duration
                         raidStats.totalTime = actualRaidMinutes;
                         
+                        // Save duration to database for use on front page
+                        try {
+                            await client.query(`
+                                INSERT INTO raid_durations (event_id, duration_minutes, updated_at) 
+                                VALUES ($1, $2, NOW()) 
+                                ON CONFLICT (event_id) 
+                                DO UPDATE SET duration_minutes = $2, updated_at = NOW()
+                            `, [eventId, actualRaidMinutes]);
+                            console.log(`💾 [RAID STATS] Saved duration ${actualRaidMinutes}min for event ${eventId}`);
+                        } catch (saveError) {
+                            console.warn(`⚠️ [RAID STATS] Failed to save duration for event ${eventId}:`, saveError.message);
+                        }
+                        
                         // Find the last boss from fights data
                         const bossKills = fightsData.fights.filter(fight => fight.boss > 0 && fight.kill === true);
                         if (bossKills.length > 0) {
@@ -7599,6 +7471,41 @@ app.get('/api/raid-stats/:eventId', async (req, res) => {
         });
     } finally {
         if (client) client.release();
+    }
+});
+
+// Get saved raid duration (from WarcraftLogs calculation)
+app.get('/api/event-duration/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
+    }
+    
+    try {
+        console.log(`⏱️ [EVENT DURATION] Fetching saved duration for event: ${eventId}`);
+        
+        const result = await pool.query(
+            'SELECT duration_minutes FROM raid_durations WHERE event_id = $1',
+            [eventId]
+        );
+        
+        if (result.rows.length === 0) {
+            console.log(`❌ [EVENT DURATION] No saved duration found for event: ${eventId}`);
+            return res.json({ success: false, error: 'Duration not calculated yet' });
+        }
+        
+        const durationMinutes = result.rows[0].duration_minutes;
+        console.log(`⏱️ [EVENT DURATION] Found saved duration for event ${eventId}: ${durationMinutes} minutes`);
+        
+        return res.json({
+            success: true,
+            duration: durationMinutes
+        });
+        
+    } catch (error) {
+        console.error(`❌ [EVENT DURATION] Error for event ${eventId}:`, error.message);
+        return res.json({ success: false, error: 'Database error' });
     }
 });
 
