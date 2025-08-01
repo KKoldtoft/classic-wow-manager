@@ -96,6 +96,8 @@ function highlightActiveRaidNav() {
             link.classList.add('active');
         } else if (currentPath.includes('/roster') && link.id === 'raid-roster-link') {
             link.classList.add('active');
+        } else if (currentPath === '/attendance' && linkHref === '/attendance') {
+            link.classList.add('active');
         } else if (linkHref && linkHref === currentPath) {
             link.classList.add('active');
         } else {

@@ -223,7 +223,6 @@
 .character-info {
     flex: 1;
     margin-left: 20px;
-    min-width: 220px;
     padding: 8px;
     border-radius: 6px;
     position: relative;
@@ -318,6 +317,10 @@
 }
 
 /* Damage specific styling */
+.rankings-section.damage {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
 .rankings-section.damage .section-header {
     background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
 }
@@ -327,6 +330,10 @@
 }
 
 /* Healing specific styling */
+.rankings-section.healing {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
 .rankings-section.healing .section-header {
     background: linear-gradient(135deg, #28a745 0%, #218838 100%);
 }
@@ -336,6 +343,10 @@
 }
 
 /* Abilities specific styling */
+.rankings-section.abilities {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
 .rankings-section.abilities .section-header {
     background: linear-gradient(135deg, #ff6b35 0%, #e55a2b 100%);
 }
@@ -362,6 +373,10 @@
 }
 
 /* Mana Potions specific styling */
+.rankings-section.mana-potions {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
 .rankings-section.mana-potions .section-header {
     background: linear-gradient(135deg, #4a9eff 0%, #3d82e6 100%);
 }
@@ -372,6 +387,10 @@
 }
 
 /* Runes specific styling */
+.rankings-section.runes {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
 .rankings-section.runes .section-header {
     background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
 }
@@ -382,6 +401,10 @@
 }
 
 /* Interrupts specific styling */
+.rankings-section.interrupts {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
 .rankings-section.interrupts .section-header {
     background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
 }
@@ -392,6 +415,10 @@
 }
 
 /* Disarms specific styling */
+.rankings-section.disarms {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
 .rankings-section.disarms .section-header {
     background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
 }
@@ -402,6 +429,10 @@
 }
 
 /* Sunder specific styling */
+.rankings-section.sunder {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
 .rankings-section.sunder .section-header {
     background: linear-gradient(135deg, #6f42c1 0%, #5a3499 100%);
 }
@@ -413,6 +444,114 @@
 
 /* Sunder container specific styling */
 .sunder-container {
+    margin-top: 30px;
+}
+
+/* Curse specific styling */
+.rankings-section.curse {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.rankings-section.curse .section-header {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+}
+
+.rankings-section.curse .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Curse of Recklessness specific styling */
+.rankings-section.curse-recklessness {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.rankings-section.curse-recklessness .section-header {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+}
+
+.rankings-section.curse-recklessness .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Curse of Shadow specific styling */
+.rankings-section.curse-shadow {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.rankings-section.curse-shadow .section-header {
+    background: linear-gradient(135deg, #6b46c1 0%, #553c9a 100%);
+}
+
+.rankings-section.curse-shadow .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Curse of Elements specific styling */
+.rankings-section.curse-elements {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.rankings-section.curse-elements .section-header {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
+.rankings-section.curse-elements .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Faerie Fire specific styling */
+.rankings-section.faerie-fire {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.rankings-section.faerie-fire .section-header {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.rankings-section.faerie-fire .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Curse container specific styling */
+.curse-container {
+    margin-top: 30px;
+}
+
+/* Scorch specific styling */
+.rankings-section.scorch {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.rankings-section.scorch .section-header {
+    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+}
+
+.rankings-section.scorch .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Demoralizing Shout specific styling */
+.rankings-section.demo-shout {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.rankings-section.demo-shout .section-header {
+    background: linear-gradient(135deg, #d2691e 0%, #b8860b 100%);
+}
+
+.rankings-section.demo-shout .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Debuffs container specific styling (contains Faerie Fire, Scorch, and Demoralizing Shout) */
+.debuffs-container {
     margin-top: 30px;
 }
 
@@ -474,7 +613,6 @@
     
     .character-info {
         margin-left: 15px;
-        min-width: 200px;
         width: 200px;
     }
     

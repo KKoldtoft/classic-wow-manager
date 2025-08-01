@@ -37,6 +37,9 @@ initializeEventsCacheTable();
 // Initialize RPB tracking table
 initializeRPBTrackingTable();
 
+// Initialize Raid-Helper events cache table
+initializeRaidHelperEventsCacheTable();
+
 // Migrate player confirmed logs table
 migratePlayerConfirmedLogsTable();
   })
@@ -83,6 +86,35 @@ async function initializeRPBTrackingTable() {
     console.log('✅ RPB tracking table initialized');
   } catch (error) {
     console.error('❌ Error creating RPB tracking table:', error);
+  }
+}
+
+// Function to create Raid-Helper events cache table if it doesn't exist
+async function initializeRaidHelperEventsCacheTable() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS raid_helper_events_cache (
+        event_id VARCHAR(50) PRIMARY KEY,
+        event_data JSONB NOT NULL,
+        cached_at TIMESTAMP DEFAULT NOW(),
+        last_accessed TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    
+    // Create indexes for better performance
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_raid_events_cached 
+      ON raid_helper_events_cache(cached_at)
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_raid_events_accessed 
+      ON raid_helper_events_cache(last_accessed)
+    `);
+    
+    console.log('✅ Raid-Helper events cache table initialized');
+  } catch (error) {
+    console.error('❌ Error creating Raid-Helper events cache table:', error);
   }
 }
 
@@ -237,6 +269,75 @@ async function setCachedHistoricEvents(eventsData) {
   } catch (error) {
     console.error('❌ Error caching historic events:', error);
   }
+}
+
+// Raid-Helper individual event cache helper functions
+const RAID_HELPER_EVENT_CACHE_TTL_HOURS = 6; // 6 hours default TTL
+
+async function getCachedRaidHelperEvent(eventId, maxAgeHours = RAID_HELPER_EVENT_CACHE_TTL_HOURS) {
+    try {
+        const result = await pool.query(`
+            SELECT event_data, cached_at 
+            FROM raid_helper_events_cache 
+            WHERE event_id = $1 
+            AND cached_at > NOW() - INTERVAL '${maxAgeHours} hours'
+        `, [eventId]);
+        
+        if (result.rows.length > 0) {
+            // Update last_accessed timestamp
+            await pool.query(`
+                UPDATE raid_helper_events_cache 
+                SET last_accessed = NOW() 
+                WHERE event_id = $1
+            `, [eventId]);
+            
+            console.log(`📦 [CACHE] Hit for event ${eventId} (cached: ${result.rows[0].cached_at})`);
+            return result.rows[0].event_data;
+        }
+        
+        console.log(`🔍 [CACHE] Miss for event ${eventId}`);
+        return null;
+    } catch (error) {
+        console.error(`❌ [CACHE] Error checking cache for event ${eventId}:`, error);
+        return null;
+    }
+}
+
+async function setCachedRaidHelperEvent(eventId, eventData) {
+    try {
+        await pool.query(`
+            INSERT INTO raid_helper_events_cache (event_id, event_data, cached_at, last_accessed)
+            VALUES ($1, $2, NOW(), NOW())
+            ON CONFLICT (event_id) 
+            DO UPDATE SET 
+                event_data = $2,
+                cached_at = NOW(),
+                last_accessed = NOW()
+        `, [eventId, JSON.stringify(eventData)]);
+        
+        console.log(`💾 [CACHE] Stored event ${eventId}`);
+    } catch (error) {
+        console.error(`❌ [CACHE] Error storing event ${eventId}:`, error);
+    }
+}
+
+async function cleanupRaidHelperEventCache(olderThanDays = 30) {
+    try {
+        const result = await pool.query(`
+            DELETE FROM raid_helper_events_cache 
+            WHERE cached_at < NOW() - INTERVAL '${olderThanDays} days'
+            RETURNING event_id
+        `);
+        
+        if (result.rows.length > 0) {
+            console.log(`🧹 [CACHE] Cleaned up ${result.rows.length} old Raid-Helper event cache entries`);
+        }
+        
+        return result.rows.length;
+    } catch (error) {
+        console.error('❌ [CACHE] Error cleaning up Raid-Helper event cache:', error);
+        return 0;
+    }
 }
 
 async function fetchEventsFromAPI() {
@@ -3396,6 +3497,24 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 ('disarms', 'points_per_disarm', 1, 'Points earned per disarm'),
                 ('disarms', 'disarms_needed', 1, 'Number of disarms needed per point'),
                 ('disarms', 'max_points', 5, 'Maximum points that can be earned from disarms'),
+                ('curse', 'uptime_threshold', 85, 'Minimum uptime percentage required to earn points'),
+                ('curse', 'points', 10, 'Points awarded for achieving uptime threshold'),
+                ('curse_shadow', 'uptime_threshold', 85, 'Minimum uptime percentage required to earn points for Curse of Shadow'),
+                ('curse_shadow', 'points', 10, 'Points awarded for achieving Curse of Shadow uptime threshold'),
+                ('curse_elements', 'uptime_threshold', 85, 'Minimum uptime percentage required to earn points for Curse of Elements'),
+                ('curse_elements', 'points', 10, 'Points awarded for achieving Curse of Elements uptime threshold'),
+                ('faerie_fire', 'uptime_threshold', 85, 'Minimum uptime percentage required to earn points for Faerie Fire'),
+                ('faerie_fire', 'points', 10, 'Points awarded for achieving Faerie Fire uptime threshold'),
+                ('scorch', 'tier1_max', 99, 'Maximum scorch count for tier 1 (0 points)'),
+                ('scorch', 'tier1_points', 0, 'Points awarded for tier 1 scorch count (0-99)'),
+                ('scorch', 'tier2_max', 199, 'Maximum scorch count for tier 2 (5 points)'),
+                ('scorch', 'tier2_points', 5, 'Points awarded for tier 2 scorch count (100-199)'),
+                ('scorch', 'tier3_points', 10, 'Points awarded for tier 3 scorch count (200+)'),
+                ('demo_shout', 'tier1_max', 99, 'Maximum demoralizing shout count for tier 1 (0 points)'),
+                ('demo_shout', 'tier1_points', 0, 'Points awarded for tier 1 demoralizing shout count (0-99)'),
+                ('demo_shout', 'tier2_max', 199, 'Maximum demoralizing shout count for tier 2 (5 points)'),
+                ('demo_shout', 'tier2_points', 5, 'Points awarded for tier 2 demoralizing shout count (100-199)'),
+                ('demo_shout', 'tier3_points', 10, 'Points awarded for tier 3 demoralizing shout count (200+)'),
                 ('sunder', 'enabled', 1, 'Whether Sunder Armor tracking is enabled')
             ON CONFLICT (setting_type, setting_name) DO NOTHING
         `);
@@ -3415,10 +3534,10 @@ app.post('/api/admin/setup-database', async (req, res) => {
 
         // Insert damage and healing point arrays
         await client.query(`
-            INSERT INTO reward_settings (setting_type, setting_name, setting_json, description)
+            INSERT INTO reward_settings (setting_type, setting_name, setting_value, setting_json, description)
             VALUES 
-                ('damage', 'points_array', '[80, 70, 55, 40, 35, 30, 25, 20, 15, 10, 8, 6, 5, 4, 3]', 'Points awarded for damage dealer rankings (positions 1-15)'),
-                ('healing', 'points_array', '[80, 65, 60, 55, 40, 35, 30, 20, 15, 10]', 'Points awarded for healer rankings (positions 1-10)')
+                ('damage', 'points_array', 0, '[80, 70, 55, 40, 35, 30, 25, 20, 15, 10, 8, 6, 5, 4, 3]', 'Points awarded for damage dealer rankings (positions 1-15)'),
+                ('healing', 'points_array', 0, '[80, 65, 60, 55, 40, 35, 30, 20, 15, 10]', 'Points awarded for healer rankings (positions 1-10)')
             ON CONFLICT (setting_type, setting_name) DO NOTHING
         `);
         
@@ -3508,6 +3627,46 @@ app.post('/api/admin/setup-database', async (req, res) => {
             )
         `);
         
+        // Create attendance_cache table for tracking weekly raid attendance
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS attendance_cache (
+                discord_id VARCHAR(255),
+                discord_username VARCHAR(255),
+                week_year INTEGER,
+                week_number INTEGER,
+                event_id VARCHAR(255),
+                event_date DATE,
+                channel_id VARCHAR(255),
+                channel_name VARCHAR(255),
+                character_name VARCHAR(255),
+                character_class VARCHAR(50),
+                cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (discord_id, week_year, week_number, event_id)
+            )
+        `);
+        
+        // Create attendance_channel_filters table for filtering which channels to include
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS attendance_channel_filters (
+                channel_id VARCHAR(255) PRIMARY KEY,
+                channel_name VARCHAR(255),
+                is_included BOOLEAN DEFAULT true,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        
+        // Create indexes for attendance_cache
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_attendance_cache_discord_id ON attendance_cache (discord_id)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_attendance_cache_week ON attendance_cache (week_year, week_number)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_attendance_cache_event ON attendance_cache (event_id)
+        `);
+        
         res.json({ 
             success: true, 
             message: 'Database tables created successfully!' 
@@ -3515,10 +3674,12 @@ app.post('/api/admin/setup-database', async (req, res) => {
         
     } catch (error) {
         console.error('Error setting up database:', error);
+        console.error('Error stack:', error.stack);
         res.status(500).json({ 
             success: false, 
             message: 'Error setting up database', 
-            error: error.message 
+            error: error.message,
+            stack: error.stack 
         });
     } finally {
         if (client) client.release();
@@ -4394,7 +4555,7 @@ app.get('/api/abilities-data/:eventId', async (req, res) => {
         const settingsResult = await client.query(`
             SELECT setting_type, setting_name, setting_value, setting_json
             FROM reward_settings 
-            WHERE setting_type IN ('abilities', 'damage', 'healing', 'mana_potions', 'runes', 'interrupts', 'disarms', 'sunder')
+            WHERE setting_type IN ('abilities', 'damage', 'healing', 'mana_potions', 'runes', 'interrupts', 'disarms', 'sunder', 'curse', 'curse_shadow', 'curse_elements', 'faerie_fire', 'scorch', 'demo_shout')
         `);
         
         const allSettings = {};
@@ -5155,12 +5316,22 @@ app.post('/api/add-character', async (req, res) => {
     }
 });
 
-// Raid-Helper API proxy endpoint for CORS
+// Raid-Helper API proxy endpoint for CORS with caching
 app.get('/api/raid-helper/events/:eventId', async (req, res) => {
     const { eventId } = req.params;
+    const forceRefresh = req.query.refresh === 'true';
     
     try {
-        console.log(`🔄 Proxying Raid-Helper request for event: ${eventId}`);
+        // Try cache first (unless force refresh requested)
+        if (!forceRefresh) {
+            const cachedData = await getCachedRaidHelperEvent(eventId);
+            if (cachedData) {
+                console.log(`📦 [CACHE] Serving cached data for event: ${eventId}`);
+                return res.json(cachedData);
+            }
+        }
+        
+        console.log(`🔄 Fetching fresh Raid-Helper data for event: ${eventId}`);
         
         const response = await axios.get(`https://raid-helper.dev/api/v2/events/${eventId}`, {
             timeout: 10000,
@@ -5170,11 +5341,23 @@ app.get('/api/raid-helper/events/:eventId', async (req, res) => {
             }
         });
         
-        console.log(`✅ Raid-Helper data fetched successfully for event: ${eventId}`);
+        // Cache the fresh data
+        await setCachedRaidHelperEvent(eventId, response.data);
+        
+        console.log(`✅ Raid-Helper data fetched and cached for event: ${eventId}`);
         res.json(response.data);
         
     } catch (error) {
         console.error(`❌ Failed to fetch Raid-Helper data for event ${eventId}:`, error.message);
+        
+        // Fallback to stale cache if API fails (up to 7 days old)
+        if (!forceRefresh) {
+            const staleCache = await getCachedRaidHelperEvent(eventId, 24 * 7); // 7 days
+            if (staleCache) {
+                console.log(`🔄 [FALLBACK] Using stale cache for event ${eventId} due to API failure`);
+                return res.json(staleCache);
+            }
+        }
         
         if (error.response) {
             // API responded with error status
@@ -5190,6 +5373,89 @@ app.get('/api/raid-helper/events/:eventId', async (req, res) => {
                 message: error.message
             });
         }
+    }
+});
+
+// Cache management endpoints for Raid-Helper events
+app.get('/api/cache/raid-helper/stats', async (req, res) => {
+    try {
+        const stats = await pool.query(`
+            SELECT 
+                COUNT(*) as total_events,
+                COUNT(CASE WHEN cached_at > NOW() - INTERVAL '6 hours' THEN 1 END) as fresh_events,
+                COUNT(CASE WHEN cached_at <= NOW() - INTERVAL '6 hours' THEN 1 END) as stale_events,
+                MIN(cached_at) as oldest_cache,
+                MAX(cached_at) as newest_cache,
+                AVG(EXTRACT(EPOCH FROM (NOW() - cached_at))/3600) as avg_age_hours
+            FROM raid_helper_events_cache
+        `);
+        
+        const sizeStats = await pool.query(`
+            SELECT pg_size_pretty(pg_total_relation_size('raid_helper_events_cache')) as table_size
+        `);
+        
+        res.json({
+            success: true,
+            stats: {
+                ...stats.rows[0],
+                table_size: sizeStats.rows[0].table_size
+            }
+        });
+    } catch (error) {
+        console.error('❌ Error getting cache stats:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to get cache stats'
+        });
+    }
+});
+
+app.post('/api/cache/raid-helper/cleanup', async (req, res) => {
+    try {
+        const { olderThanDays = 30 } = req.body;
+        const cleanedCount = await cleanupRaidHelperEventCache(olderThanDays);
+        
+        res.json({
+            success: true,
+            message: `Cleaned up ${cleanedCount} old cache entries`,
+            cleanedCount
+        });
+    } catch (error) {
+        console.error('❌ Error cleaning cache:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to clean cache'
+        });
+    }
+});
+
+app.delete('/api/cache/raid-helper/events/:eventId', async (req, res) => {
+    try {
+        const { eventId } = req.params;
+        
+        const result = await pool.query(`
+            DELETE FROM raid_helper_events_cache 
+            WHERE event_id = $1
+            RETURNING event_id
+        `, [eventId]);
+        
+        if (result.rows.length > 0) {
+            res.json({
+                success: true,
+                message: `Cache cleared for event ${eventId}`
+            });
+        } else {
+            res.status(404).json({
+                success: false,
+                message: `No cache found for event ${eventId}`
+            });
+        }
+    } catch (error) {
+        console.error('❌ Error clearing cache:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to clear cache'
+        });
     }
 });
 
@@ -5390,6 +5656,730 @@ app.get('/api/sunder-data/:eventId', async (req, res) => {
         res.status(500).json({ 
             success: false, 
             message: 'Error retrieving sunder data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get curse of recklessness data for raid logs
+app.get('/api/curse-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🔮 [CURSE] Retrieving curse of recklessness data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [CURSE] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get dynamic settings for curse of recklessness calculation
+        const settingsResult = await client.query(`
+            SELECT setting_name, setting_value, setting_json
+            FROM reward_settings 
+            WHERE setting_type = 'curse'
+        `);
+        
+        console.log(`🔮 [CURSE] Raw settings from DB:`, settingsResult.rows);
+        
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            if (row.setting_json) {
+                try {
+                    if (typeof row.setting_json === 'string') {
+                        settings[row.setting_name] = JSON.parse(row.setting_json);
+                    } else {
+                        settings[row.setting_name] = row.setting_json;
+                    }
+                } catch (error) {
+                    console.error(`🔮 [CURSE] Error parsing JSON for ${row.setting_name}:`, error);
+                    settings[row.setting_name] = null;
+                }
+            } else {
+                settings[row.setting_name] = parseFloat(row.setting_value);
+            }
+        });
+        
+        console.log(`🔮 [CURSE] Parsed settings:`, settings);
+        
+        const uptimeThreshold = settings.uptime_threshold || 85;
+        const points = settings.points || 10;
+        
+        console.log(`🔮 [CURSE] Using settings: threshold=${uptimeThreshold}%, points=${points}`);
+        
+        // Query for "Curse of Recklessness (uptime% - overall: XX%)" usage
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_name,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND ability_name LIKE 'Curse of Recklessness (uptime%% - overall: %)'
+            ORDER BY character_name
+        `, [eventId]);
+        
+        console.log(`🔮 [CURSE] Found ${result.rows.length} curse records for event: ${eventId}`);
+        console.log(`🔮 [CURSE] Raw data sample:`, result.rows.slice(0, 3));
+        
+        // Process and calculate points for each character
+        const finalData = result.rows.map(row => {
+            // Parse the uptime percentage from "133 (85%)" format - extract percentage from brackets
+            const uptimeMatch = row.ability_value.toString().match(/\((\d+(?:\.\d+)?)%\)/);
+            const uptimePercentage = uptimeMatch ? parseFloat(uptimeMatch[1]) : 0;
+            
+            // Calculate points based on threshold
+            const earnedPoints = uptimePercentage > uptimeThreshold ? points : 0;
+            
+            return {
+                character_name: row.character_name,
+                character_class: row.character_class,
+                uptime_percentage: uptimePercentage,
+                points: earnedPoints,
+                raw_value: row.ability_value
+            };
+        }).filter(char => char.uptime_percentage >= 0) // Include all characters with valid uptime data
+          .sort((a, b) => b.uptime_percentage - a.uptime_percentage); // Sort by uptime percentage descending
+        
+        console.log(`🔮 [CURSE] Processed ${finalData.length} characters with curse uptime data`);
+        console.log(`🔮 [CURSE] Final data sample:`, finalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                uptime_threshold: uptimeThreshold,
+                points: points
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [CURSE] Error retrieving curse data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving curse data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get curse of shadow data for raid logs
+app.get('/api/curse-shadow-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🌑 [CURSE SHADOW] Retrieving curse of shadow data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [CURSE SHADOW] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get dynamic settings for curse of shadow calculation
+        const settingsResult = await client.query(`
+            SELECT setting_name, setting_value, setting_json
+            FROM reward_settings 
+            WHERE setting_type = 'curse_shadow'
+        `);
+        
+        console.log(`🌑 [CURSE SHADOW] Raw settings from DB:`, settingsResult.rows);
+        
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            if (row.setting_json) {
+                try {
+                    if (typeof row.setting_json === 'string') {
+                        settings[row.setting_name] = JSON.parse(row.setting_json);
+                    } else {
+                        settings[row.setting_name] = row.setting_json;
+                    }
+                } catch (error) {
+                    console.error(`🌑 [CURSE SHADOW] Error parsing JSON for ${row.setting_name}:`, error);
+                    settings[row.setting_name] = null;
+                }
+            } else {
+                settings[row.setting_name] = parseFloat(row.setting_value);
+            }
+        });
+        
+        console.log(`🌑 [CURSE SHADOW] Parsed settings:`, settings);
+        
+        const uptimeThreshold = settings.uptime_threshold || 85;
+        const points = settings.points || 10;
+        
+        console.log(`🌑 [CURSE SHADOW] Using settings: threshold=${uptimeThreshold}%, points=${points}`);
+        
+        // Query for "Curse of Shadow (uptime% - overall: XX%)" usage
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_name,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND ability_name LIKE 'Curse of Shadow (uptime%% - overall: %)'
+            ORDER BY character_name
+        `, [eventId]);
+        
+        console.log(`🌑 [CURSE SHADOW] Found ${result.rows.length} curse shadow records for event: ${eventId}`);
+        console.log(`🌑 [CURSE SHADOW] Raw data sample:`, result.rows.slice(0, 3));
+        
+        // Process and calculate points for each character
+        const finalData = result.rows.map(row => {
+            // Parse the uptime percentage from "133 (85%)" format - extract percentage from brackets
+            const uptimeMatch = row.ability_value.toString().match(/\((\d+(?:\.\d+)?)%\)/);
+            const uptimePercentage = uptimeMatch ? parseFloat(uptimeMatch[1]) : 0;
+            
+            // Calculate points based on threshold
+            const earnedPoints = uptimePercentage > uptimeThreshold ? points : 0;
+            
+            return {
+                character_name: row.character_name,
+                character_class: row.character_class,
+                uptime_percentage: uptimePercentage,
+                points: earnedPoints,
+                raw_value: row.ability_value
+            };
+        }).filter(char => char.uptime_percentage >= 0) // Include all characters with valid uptime data
+          .sort((a, b) => b.uptime_percentage - a.uptime_percentage); // Sort by uptime percentage descending
+        
+        console.log(`🌑 [CURSE SHADOW] Processed ${finalData.length} characters with curse shadow uptime data`);
+        console.log(`🌑 [CURSE SHADOW] Final data sample:`, finalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                uptime_threshold: uptimeThreshold,
+                points: points
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [CURSE SHADOW] Error retrieving curse shadow data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving curse shadow data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get curse of elements data for raid logs
+app.get('/api/curse-elements-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`❄️ [CURSE ELEMENTS] Retrieving curse of elements data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [CURSE ELEMENTS] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get dynamic settings for curse of elements calculation
+        const settingsResult = await client.query(`
+            SELECT setting_name, setting_value, setting_json
+            FROM reward_settings 
+            WHERE setting_type = 'curse_elements'
+        `);
+        
+        console.log(`❄️ [CURSE ELEMENTS] Raw settings from DB:`, settingsResult.rows);
+        
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            if (row.setting_json) {
+                try {
+                    if (typeof row.setting_json === 'string') {
+                        settings[row.setting_name] = JSON.parse(row.setting_json);
+                    } else {
+                        settings[row.setting_name] = row.setting_json;
+                    }
+                } catch (error) {
+                    console.error(`❄️ [CURSE ELEMENTS] Error parsing JSON for ${row.setting_name}:`, error);
+                    settings[row.setting_name] = null;
+                }
+            } else {
+                settings[row.setting_name] = parseFloat(row.setting_value);
+            }
+        });
+        
+        console.log(`❄️ [CURSE ELEMENTS] Parsed settings:`, settings);
+        
+        const uptimeThreshold = settings.uptime_threshold || 85;
+        const points = settings.points || 10;
+        
+        console.log(`❄️ [CURSE ELEMENTS] Using settings: threshold=${uptimeThreshold}%, points=${points}`);
+        
+        // Query for "Curse of the Elements (uptime% - overall: XX%)" usage
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_name,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND ability_name LIKE 'Curse of the Elements (uptime%% - overall: %)'
+            ORDER BY character_name
+        `, [eventId]);
+        
+        console.log(`❄️ [CURSE ELEMENTS] Found ${result.rows.length} curse elements records for event: ${eventId}`);
+        console.log(`❄️ [CURSE ELEMENTS] Raw data sample:`, result.rows.slice(0, 3));
+        
+        // Process and calculate points for each character
+        const finalData = result.rows.map(row => {
+            // Parse the uptime percentage from "133 (85%)" format - extract percentage from brackets
+            const uptimeMatch = row.ability_value.toString().match(/\((\d+(?:\.\d+)?)%\)/);
+            const uptimePercentage = uptimeMatch ? parseFloat(uptimeMatch[1]) : 0;
+            
+            // Calculate points based on threshold
+            const earnedPoints = uptimePercentage > uptimeThreshold ? points : 0;
+            
+            return {
+                character_name: row.character_name,
+                character_class: row.character_class,
+                uptime_percentage: uptimePercentage,
+                points: earnedPoints,
+                raw_value: row.ability_value
+            };
+        }).filter(char => char.uptime_percentage >= 0) // Include all characters with valid uptime data
+          .sort((a, b) => b.uptime_percentage - a.uptime_percentage); // Sort by uptime percentage descending
+        
+        console.log(`❄️ [CURSE ELEMENTS] Processed ${finalData.length} characters with curse elements uptime data`);
+        console.log(`❄️ [CURSE ELEMENTS] Final data sample:`, finalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                uptime_threshold: uptimeThreshold,
+                points: points
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [CURSE ELEMENTS] Error retrieving curse elements data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving curse elements data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get faerie fire data for raid logs
+app.get('/api/faerie-fire-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🌟 [FAERIE FIRE] Retrieving faerie fire data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [FAERIE FIRE] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get dynamic settings for faerie fire calculation
+        const settingsResult = await client.query(`
+            SELECT setting_name, setting_value, setting_json
+            FROM reward_settings 
+            WHERE setting_type = 'faerie_fire'
+        `);
+        
+        console.log(`🌟 [FAERIE FIRE] Raw settings from DB:`, settingsResult.rows);
+        
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            if (row.setting_json) {
+                try {
+                    if (typeof row.setting_json === 'string') {
+                        settings[row.setting_name] = JSON.parse(row.setting_json);
+                    } else {
+                        settings[row.setting_name] = row.setting_json;
+                    }
+                } catch (error) {
+                    console.error(`🌟 [FAERIE FIRE] Error parsing JSON for ${row.setting_name}:`, error);
+                    settings[row.setting_name] = null;
+                }
+            } else {
+                settings[row.setting_name] = parseFloat(row.setting_value);
+            }
+        });
+        
+        console.log(`🌟 [FAERIE FIRE] Parsed settings:`, settings);
+        
+        const uptimeThreshold = settings.uptime_threshold || 85;
+        const points = settings.points || 10;
+        
+        console.log(`🌟 [FAERIE FIRE] Using settings: threshold=${uptimeThreshold}%, points=${points}`);
+        
+        // Query for "Faerie Fire (uptime% - overall: XX%)" usage
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_name,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND ability_name LIKE 'Faerie Fire (uptime%% - overall: %)'
+            ORDER BY character_name
+        `, [eventId]);
+        
+        console.log(`🌟 [FAERIE FIRE] Found ${result.rows.length} faerie fire records for event: ${eventId}`);
+        console.log(`🌟 [FAERIE FIRE] Raw data sample:`, result.rows.slice(0, 3));
+        
+        // Process and calculate points for each character
+        const finalData = result.rows.map(row => {
+            // Parse the uptime percentage from "133 (85%)" format - extract percentage from brackets
+            const uptimeMatch = row.ability_value.toString().match(/\((\d+(?:\.\d+)?)%\)/);
+            const uptimePercentage = uptimeMatch ? parseFloat(uptimeMatch[1]) : 0;
+            
+            // Calculate points based on threshold
+            const earnedPoints = uptimePercentage > uptimeThreshold ? points : 0;
+            
+            return {
+                character_name: row.character_name,
+                character_class: row.character_class,
+                uptime_percentage: uptimePercentage,
+                points: earnedPoints,
+                raw_value: row.ability_value
+            };
+        }).filter(char => char.uptime_percentage >= 0) // Include all characters with valid uptime data
+          .sort((a, b) => b.uptime_percentage - a.uptime_percentage); // Sort by uptime percentage descending
+        
+        console.log(`🌟 [FAERIE FIRE] Processed ${finalData.length} characters with faerie fire uptime data`);
+        console.log(`🌟 [FAERIE FIRE] Final data sample:`, finalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                uptime_threshold: uptimeThreshold,
+                points: points
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [FAERIE FIRE] Error retrieving faerie fire data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving faerie fire data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get scorch data for raid logs
+app.get('/api/scorch-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🔥 [SCORCH] Retrieving scorch data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [SCORCH] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get dynamic settings for scorch calculation
+        const settingsResult = await client.query(`
+            SELECT setting_name, setting_value, setting_json
+            FROM reward_settings 
+            WHERE setting_type = 'scorch'
+        `);
+        
+        console.log(`🔥 [SCORCH] Raw settings from DB:`, settingsResult.rows);
+        
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            if (row.setting_json) {
+                try {
+                    if (typeof row.setting_json === 'string') {
+                        settings[row.setting_name] = JSON.parse(row.setting_json);
+                    } else {
+                        settings[row.setting_name] = row.setting_json;
+                    }
+                } catch (error) {
+                    console.error(`🔥 [SCORCH] Error parsing JSON for ${row.setting_name}:`, error);
+                    settings[row.setting_name] = null;
+                }
+            } else {
+                settings[row.setting_name] = parseFloat(row.setting_value);
+            }
+        });
+        
+        console.log(`🔥 [SCORCH] Parsed settings:`, settings);
+        
+        const tier1Max = settings.tier1_max || 99;
+        const tier1Points = settings.tier1_points || 0;
+        const tier2Max = settings.tier2_max || 199;
+        const tier2Points = settings.tier2_points || 5;
+        const tier3Points = settings.tier3_points || 10;
+        
+        console.log(`🔥 [SCORCH] Using settings: 0-${tier1Max}=${tier1Points}pts, ${tier1Max + 1}-${tier2Max}=${tier2Points}pts, ${tier2Max + 1}+=${tier3Points}pts`);
+        
+        // Query for "Scorch% on targets < 5 stacks" usage
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_name,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND ability_name = 'Scorch% on targets < 5 stacks'
+            ORDER BY character_name
+        `, [eventId]);
+        
+        console.log(`🔥 [SCORCH] Found ${result.rows.length} scorch records for event: ${eventId}`);
+        console.log(`🔥 [SCORCH] Raw data sample:`, result.rows.slice(0, 3));
+        
+        // Process and calculate points for each character
+        const finalData = result.rows.map(row => {
+            // Parse the scorch count from "334 (74%)" format - extract number before brackets
+            const scorchMatch = row.ability_value.toString().match(/^(\d+)/);
+            const scorchCount = scorchMatch ? parseInt(scorchMatch[1]) : 0;
+            
+            // Calculate points based on tiers
+            let earnedPoints = tier1Points; // default 0-99 range
+            if (scorchCount > tier2Max) {
+                earnedPoints = tier3Points; // 200+
+            } else if (scorchCount > tier1Max) {
+                earnedPoints = tier2Points; // 100-199
+            }
+            
+            return {
+                character_name: row.character_name,
+                character_class: row.character_class,
+                scorch_count: scorchCount,
+                points: earnedPoints,
+                raw_value: row.ability_value
+            };
+        }).filter(char => char.scorch_count >= 0) // Include all characters with valid scorch data
+          .sort((a, b) => b.scorch_count - a.scorch_count); // Sort by scorch count descending
+        
+        console.log(`🔥 [SCORCH] Processed ${finalData.length} characters with scorch data`);
+        console.log(`🔥 [SCORCH] Final data sample:`, finalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                tier1_max: tier1Max,
+                tier1_points: tier1Points,
+                tier2_max: tier2Max,
+                tier2_points: tier2Points,
+                tier3_points: tier3Points
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [SCORCH] Error retrieving scorch data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving scorch data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get demoralizing shout data for raid logs
+app.get('/api/demo-shout-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`⚔️ [DEMO SHOUT] Retrieving demoralizing shout data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [DEMO SHOUT] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get dynamic settings for demoralizing shout calculation
+        const settingsResult = await client.query(`
+            SELECT setting_name, setting_value, setting_json
+            FROM reward_settings 
+            WHERE setting_type = 'demo_shout'
+        `);
+        
+        console.log(`⚔️ [DEMO SHOUT] Raw settings from DB:`, settingsResult.rows);
+        
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            if (row.setting_json) {
+                try {
+                    if (typeof row.setting_json === 'string') {
+                        settings[row.setting_name] = JSON.parse(row.setting_json);
+                    } else {
+                        settings[row.setting_name] = row.setting_json;
+                    }
+                } catch (error) {
+                    console.error(`⚔️ [DEMO SHOUT] Error parsing JSON for ${row.setting_name}:`, error);
+                    settings[row.setting_name] = null;
+                }
+            } else {
+                settings[row.setting_name] = parseFloat(row.setting_value);
+            }
+        });
+        
+        console.log(`⚔️ [DEMO SHOUT] Parsed settings:`, settings);
+        
+        const tier1Max = settings.tier1_max || 99;
+        const tier1Points = settings.tier1_points || 0;
+        const tier2Max = settings.tier2_max || 199;
+        const tier2Points = settings.tier2_points || 5;
+        const tier3Points = settings.tier3_points || 10;
+        
+        console.log(`⚔️ [DEMO SHOUT] Using settings: 0-${tier1Max}=${tier1Points}pts, ${tier1Max + 1}-${tier2Max}=${tier2Points}pts, ${tier2Max + 1}+=${tier3Points}pts`);
+        
+        // Query for "Demoralizing Shout (uptime% - overall: XX%)" usage
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_name,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND ability_name LIKE 'Demoralizing Shout (uptime%% - overall: %)'
+            ORDER BY character_name
+        `, [eventId]);
+        
+        console.log(`⚔️ [DEMO SHOUT] Found ${result.rows.length} demoralizing shout records for event: ${eventId}`);
+        console.log(`⚔️ [DEMO SHOUT] Raw data sample:`, result.rows.slice(0, 3));
+        
+        // Process and calculate points for each character
+        const finalData = result.rows.map(row => {
+            // Parse the demoralizing shout count from "113 (51%)" format - extract number before brackets
+            const demoShoutMatch = row.ability_value.toString().match(/^(\d+)/);
+            const demoShoutCount = demoShoutMatch ? parseInt(demoShoutMatch[1]) : 0;
+            
+            // Calculate points based on tiers
+            let earnedPoints = tier1Points; // default 0-99 range
+            if (demoShoutCount > tier2Max) {
+                earnedPoints = tier3Points; // 200+
+            } else if (demoShoutCount > tier1Max) {
+                earnedPoints = tier2Points; // 100-199
+            }
+            
+            return {
+                character_name: row.character_name,
+                character_class: row.character_class,
+                demo_shout_count: demoShoutCount,
+                points: earnedPoints,
+                raw_value: row.ability_value
+            };
+        }).filter(char => char.demo_shout_count >= 0) // Include all characters with valid demo shout data
+          .sort((a, b) => b.demo_shout_count - a.demo_shout_count); // Sort by demo shout count descending
+        
+        console.log(`⚔️ [DEMO SHOUT] Processed ${finalData.length} characters with demoralizing shout data`);
+        console.log(`⚔️ [DEMO SHOUT] Final data sample:`, finalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                tier1_max: tier1Max,
+                tier1_points: tier1Points,
+                tier2_max: tier2Max,
+                tier2_points: tier2Points,
+                tier3_points: tier3Points
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [DEMO SHOUT] Error retrieving demoralizing shout data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving demoralizing shout data',
             error: error.message 
         });
     } finally {
@@ -6612,9 +7602,478 @@ app.get('/api/raid-stats/:eventId', async (req, res) => {
     }
 });
 
+// ===========================
+// ATTENDANCE TRACKING API
+// ===========================
+
+// Helper function to calculate ISO week number (Monday = start of week)
+function getISOWeek(date) {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    // Thursday in current week decides the year
+    d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+    // January 4 is always in week 1
+    const week1 = new Date(d.getFullYear(), 0, 4);
+    // Adjust to Thursday in week 1 and count weeks from there
+    return 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+}
+
+// Helper function to get week year (can be different from calendar year)
+function getWeekYear(date) {
+    const d = new Date(date);
+    d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+    return d.getFullYear();
+}
+
+// Helper function to get the first Monday of January for a given year
+function getFirstMondayOfJanuary(year) {
+    const firstDay = new Date(year, 0, 1); // January 1st
+    const dayOfWeek = firstDay.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    
+    // If January 1st is Monday (1), use it; otherwise find next Monday
+    const daysToAdd = dayOfWeek === 0 ? 1 : dayOfWeek === 1 ? 0 : 8 - dayOfWeek;
+    const firstMonday = new Date(year, 0, 1 + daysToAdd);
+    return firstMonday;
+}
+
+// Helper function to get week number based on first Monday of January
+function getCustomWeekNumber(date) {
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const firstMonday = getFirstMondayOfJanuary(year);
+    
+    // If date is before first Monday, it belongs to previous year
+    if (d < firstMonday) {
+        const prevYearFirstMonday = getFirstMondayOfJanuary(year - 1);
+        const weeksDiff = Math.floor((d - prevYearFirstMonday) / (7 * 24 * 60 * 60 * 1000));
+        return {
+            weekYear: year - 1,
+            weekNumber: weeksDiff + 1
+        };
+    }
+    
+    // Calculate weeks from first Monday of this year
+    const weeksDiff = Math.floor((d - firstMonday) / (7 * 24 * 60 * 60 * 1000));
+    return {
+        weekYear: year,
+        weekNumber: weeksDiff + 1
+    };
+}
+
+// Get attendance data for display
+app.get('/api/attendance', async (req, res) => {
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Get current week info
+        const now = new Date();
+        const currentWeekInfo = getCustomWeekNumber(now);
+        
+        // Calculate the last 15 weeks
+        const weeks = [];
+        for (let i = 14; i >= 0; i--) {
+            const weekDate = new Date(now);
+            weekDate.setDate(weekDate.getDate() - (i * 7));
+            const weekInfo = getCustomWeekNumber(weekDate);
+            weeks.push(weekInfo);
+        }
+        
+        // Get all unique discord IDs from the attendance data, respecting channel filters
+        const playersResult = await client.query(`
+            SELECT DISTINCT ac.discord_id, ac.discord_username
+            FROM attendance_cache ac
+            LEFT JOIN attendance_channel_filters acf ON ac.channel_id = acf.channel_id
+            WHERE (ac.week_year, ac.week_number) IN (${weeks.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ')})
+            AND (acf.is_included IS NULL OR acf.is_included = true)
+            ORDER BY ac.discord_username ASC
+        `, weeks.flatMap(w => [w.weekYear, w.weekNumber]));
+        
+        // Get attendance data for all players and weeks, respecting channel filters
+        const attendanceResult = await client.query(`
+            SELECT ac.discord_id, ac.week_year, ac.week_number, ac.event_id, ac.channel_name, ac.character_name, ac.character_class
+            FROM attendance_cache ac
+            LEFT JOIN attendance_channel_filters acf ON ac.channel_id = acf.channel_id
+            WHERE (ac.week_year, ac.week_number) IN (${weeks.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ')})
+            AND (acf.is_included IS NULL OR acf.is_included = true)
+            ORDER BY ac.discord_id, ac.week_year, ac.week_number, ac.event_id
+        `, weeks.flatMap(w => [w.weekYear, w.weekNumber]));
+        
+        // Organize attendance data by player and week
+        const attendanceByPlayer = {};
+        attendanceResult.rows.forEach(row => {
+            if (!attendanceByPlayer[row.discord_id]) {
+                attendanceByPlayer[row.discord_id] = {};
+            }
+            const weekKey = `${row.week_year}-${row.week_number}`;
+            if (!attendanceByPlayer[row.discord_id][weekKey]) {
+                attendanceByPlayer[row.discord_id][weekKey] = [];
+            }
+            attendanceByPlayer[row.discord_id][weekKey].push({
+                eventId: row.event_id,
+                channelName: row.channel_name,
+                characterName: row.character_name,
+                characterClass: row.character_class
+            });
+        });
+        
+        res.json({
+            success: true,
+            data: {
+                weeks: weeks,
+                players: playersResult.rows,
+                attendance: attendanceByPlayer,
+                currentWeek: currentWeekInfo
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [ATTENDANCE] Error fetching attendance data:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching attendance data',
+            error: error.message
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Clear cache and rebuild attendance data
+app.post('/api/attendance/rebuild', async (req, res) => {
+    let client;
+    try {
+        client = await pool.connect();
+        
+        console.log('🔄 [ATTENDANCE] Starting cache rebuild...');
+        
+        // Clear existing cache
+        await client.query('DELETE FROM attendance_cache');
+        console.log('✅ [ATTENDANCE] Cleared existing cache');
+        
+        // Get all log_data entries with event_id and discord_id
+        const logDataResult = await client.query(`
+            SELECT DISTINCT event_id, discord_id, character_name, character_class
+            FROM log_data
+            WHERE event_id IS NOT NULL AND discord_id IS NOT NULL
+            ORDER BY event_id
+        `);
+        
+        console.log(`📊 [ATTENDANCE] Found ${logDataResult.rows.length} unique attendance records`);
+        
+        let processedEvents = 0;
+        let skippedEvents = 0;
+        let rateLimitDelay = 1000; // Start with 1 second delay
+        
+        // Process each unique event
+        const uniqueEvents = [...new Set(logDataResult.rows.map(row => row.event_id))];
+        
+        for (const eventId of uniqueEvents) {
+            try {
+                console.log(`🔍 [ATTENDANCE] Processing event ${eventId}...`);
+                
+                // Fetch event data from Raid Helper API with retry logic
+                let eventData = null;
+                let attempts = 0;
+                const maxAttempts = 3;
+                
+                while (attempts < maxAttempts && !eventData) {
+                    try {
+                        const response = await fetch(`https://raid-helper.dev/api/v2/events/${eventId}`);
+                        
+                        if (response.status === 429) {
+                            // Rate limited - increase delay and retry
+                            rateLimitDelay = Math.min(rateLimitDelay * 2, 10000); // Max 10 seconds
+                            console.warn(`⚠️ [ATTENDANCE] Rate limited for event ${eventId}, waiting ${rateLimitDelay}ms...`);
+                            await new Promise(resolve => setTimeout(resolve, rateLimitDelay));
+                            attempts++;
+                            continue;
+                        }
+                        
+                        if (!response.ok) {
+                            console.warn(`⚠️ [ATTENDANCE] API error for event ${eventId}: ${response.status}`);
+                            break;
+                        }
+                        
+                        eventData = await response.json();
+                        // Reset delay on success
+                        rateLimitDelay = Math.max(rateLimitDelay / 2, 1000);
+                        
+                    } catch (apiError) {
+                        console.error(`❌ [ATTENDANCE] API error for event ${eventId}:`, apiError.message);
+                        attempts++;
+                        if (attempts < maxAttempts) {
+                            await new Promise(resolve => setTimeout(resolve, 2000));
+                        }
+                    }
+                }
+                
+                if (!eventData || !eventData.date || !eventData.channelId) {
+                    console.warn(`⚠️ [ATTENDANCE] Skipping event ${eventId} - incomplete data`);
+                    skippedEvents++;
+                    continue;
+                }
+                
+                // Parse date (format: "4-7-2025" = day-month-year)
+                const dateParts = eventData.date.split('-');
+                if (dateParts.length !== 3) {
+                    console.warn(`⚠️ [ATTENDANCE] Invalid date format for event ${eventId}: ${eventData.date}`);
+                    skippedEvents++;
+                    continue;
+                }
+                
+                const eventDate = new Date(
+                    parseInt(dateParts[2]), // year
+                    parseInt(dateParts[1]) - 1, // month (0-based)
+                    parseInt(dateParts[0]) // day
+                );
+                
+                // Calculate week info
+                const weekInfo = getCustomWeekNumber(eventDate);
+                
+                // Clean up channel name for display
+                let channelDisplayName = '#unknown-channel';
+                if (eventData.channelName && 
+                    eventData.channelName.trim() && 
+                    eventData.channelName !== eventData.channelId &&
+                    !eventData.channelName.match(/^\d+$/)) {
+                    channelDisplayName = eventData.channelName.replace(/^📅/, '').trim();
+                } else if (eventData.channelId) {
+                    channelDisplayName = `channel-${eventData.channelId.slice(-4)}`;
+                }
+                
+                // Get all players for this event
+                const eventPlayers = logDataResult.rows.filter(row => row.event_id === eventId);
+                
+                // Get discord usernames for these players
+                const discordIds = [...new Set(eventPlayers.map(p => p.discord_id))];
+                const usernameResult = await client.query(`
+                    SELECT DISTINCT discord_id, character_name as username
+                    FROM guildies
+                    WHERE discord_id = ANY($1) AND character_name IS NOT NULL
+                    LIMIT 1
+                `, [discordIds]);
+                
+                const usernameMap = {};
+                usernameResult.rows.forEach(row => {
+                    usernameMap[row.discord_id] = row.username;
+                });
+                
+                // Insert attendance records
+                for (const player of eventPlayers) {
+                    const username = usernameMap[player.discord_id] || `user-${player.discord_id.slice(-4)}`;
+                    
+                    await client.query(`
+                        INSERT INTO attendance_cache (
+                            discord_id, discord_username, week_year, week_number,
+                            event_id, event_date, channel_id, channel_name,
+                            character_name, character_class
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                        ON CONFLICT (discord_id, week_year, week_number, event_id) 
+                        DO UPDATE SET
+                            discord_username = EXCLUDED.discord_username,
+                            event_date = EXCLUDED.event_date,
+                            channel_id = EXCLUDED.channel_id,
+                            channel_name = EXCLUDED.channel_name,
+                            character_name = EXCLUDED.character_name,
+                            character_class = EXCLUDED.character_class,
+                            cached_at = CURRENT_TIMESTAMP
+                    `, [
+                        player.discord_id,
+                        username,
+                        weekInfo.weekYear,
+                        weekInfo.weekNumber,
+                        eventId,
+                        eventDate,
+                        eventData.channelId,
+                        channelDisplayName,
+                        player.character_name,
+                        player.character_class
+                    ]);
+                }
+                
+                processedEvents++;
+                console.log(`✅ [ATTENDANCE] Processed event ${eventId} (${eventPlayers.length} players)`);
+                
+                // Add delay between API calls to avoid rate limiting
+                await new Promise(resolve => setTimeout(resolve, rateLimitDelay));
+                
+            } catch (eventError) {
+                console.error(`❌ [ATTENDANCE] Error processing event ${eventId}:`, eventError);
+                skippedEvents++;
+            }
+        }
+        
+        console.log(`🎉 [ATTENDANCE] Cache rebuild complete! Processed: ${processedEvents}, Skipped: ${skippedEvents}`);
+        
+        res.json({
+            success: true,
+            message: 'Attendance cache rebuilt successfully',
+            stats: {
+                processed: processedEvents,
+                skipped: skippedEvents,
+                total: uniqueEvents.length
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [ATTENDANCE] Error rebuilding attendance cache:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error rebuilding attendance cache',
+            error: error.message
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Test endpoint for week calculation
+app.get('/api/attendance/week-test', (req, res) => {
+    const testDate = req.query.date ? new Date(req.query.date) : new Date();
+    const weekInfo = getCustomWeekNumber(testDate);
+    
+    res.json({
+        success: true,
+        data: {
+            inputDate: testDate.toISOString(),
+            weekYear: weekInfo.weekYear,
+            weekNumber: weekInfo.weekNumber,
+            firstMondayOfYear: getFirstMondayOfJanuary(weekInfo.weekYear).toISOString()
+        }
+    });
+});
+
+// Get attendance channel filters
+app.get('/api/admin/attendance-channel-filters', async (req, res) => {
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Get all unique channels from attendance_cache with event counts
+        const channelsResult = await client.query(`
+            SELECT 
+                channel_id,
+                channel_name,
+                COUNT(DISTINCT event_id) as event_count,
+                COUNT(*) as attendance_records
+            FROM attendance_cache
+            WHERE channel_id IS NOT NULL AND channel_name IS NOT NULL
+            GROUP BY channel_id, channel_name
+            ORDER BY event_count DESC, channel_name ASC
+        `);
+        
+        // Get current filter settings
+        const filtersResult = await client.query(`
+            SELECT channel_id, is_included
+            FROM attendance_channel_filters
+        `);
+        
+        const filterMap = {};
+        filtersResult.rows.forEach(row => {
+            filterMap[row.channel_id] = row.is_included;
+        });
+        
+        // Combine channel data with filter settings
+        const channels = channelsResult.rows.map(row => ({
+            channel_id: row.channel_id,
+            channel_name: row.channel_name,
+            event_count: parseInt(row.event_count),
+            attendance_records: parseInt(row.attendance_records),
+            is_included: filterMap[row.channel_id] !== undefined ? filterMap[row.channel_id] : true
+        }));
+        
+        res.json({
+            success: true,
+            channels: channels
+        });
+        
+    } catch (error) {
+        console.error('❌ [ATTENDANCE FILTERS] Error fetching channel filters:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching attendance channel filters',
+            error: error.message
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Save attendance channel filters
+app.post('/api/admin/attendance-channel-filters', async (req, res) => {
+    let client;
+    try {
+        client = await pool.connect();
+        
+        const { filters } = req.body;
+        
+        if (!filters || !Array.isArray(filters)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid filters data'
+            });
+        }
+        
+        console.log(`🔄 [ATTENDANCE FILTERS] Saving filters for ${filters.length} channels...`);
+        
+        // Start transaction
+        await client.query('BEGIN');
+        
+        for (const filter of filters) {
+            // Get channel name
+            const channelResult = await client.query(`
+                SELECT channel_name FROM attendance_cache 
+                WHERE channel_id = $1 
+                LIMIT 1
+            `, [filter.channelId]);
+            
+            const channelName = channelResult.rows[0]?.channel_name || 'Unknown Channel';
+            
+            // Upsert filter setting
+            await client.query(`
+                INSERT INTO attendance_channel_filters (channel_id, channel_name, is_included, updated_at)
+                VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+                ON CONFLICT (channel_id) 
+                DO UPDATE SET 
+                    channel_name = EXCLUDED.channel_name,
+                    is_included = EXCLUDED.is_included,
+                    updated_at = CURRENT_TIMESTAMP
+            `, [filter.channelId, channelName, filter.isIncluded]);
+            
+            console.log(`✅ [ATTENDANCE FILTERS] ${filter.isIncluded ? 'Included' : 'Excluded'} channel: ${channelName}`);
+        }
+        
+        await client.query('COMMIT');
+        
+        console.log(`🎉 [ATTENDANCE FILTERS] Filter settings saved successfully!`);
+        
+        res.json({
+            success: true,
+            message: 'Attendance channel filters updated successfully'
+        });
+        
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        console.error('❌ [ATTENDANCE FILTERS] Error saving channel filters:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error saving attendance channel filters',
+            error: error.message
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // ====================================
 // CATCH-ALL ROUTE (MUST BE LAST)
 // ====================================
+
+// Serve attendance page
+app.get('/attendance', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'attendance.html'));
+});
 
 // This route will handle both the root path ('/') AND any other unmatched paths,
 // serving events.html. It MUST be the LAST route definition in your application.
@@ -6628,8 +8087,33 @@ app.get('*', (req, res) => {
 });
 
 // --- Server Start ---
+// Periodic cleanup for Raid-Helper event cache (runs every 24 hours)
+setInterval(async () => {
+    try {
+        console.log('🧹 [SCHEDULED] Running periodic Raid-Helper cache cleanup...');
+        const cleanedCount = await cleanupRaidHelperEventCache(30); // Clean entries older than 30 days
+        if (cleanedCount > 0) {
+            console.log(`🧹 [SCHEDULED] Cleaned up ${cleanedCount} old cache entries`);
+        } else {
+            console.log('🧹 [SCHEDULED] No old cache entries to clean up');
+        }
+    } catch (error) {
+        console.error('❌ [SCHEDULED] Error during periodic cache cleanup:', error);
+    }
+}, 24 * 60 * 60 * 1000); // 24 hours in milliseconds
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  
+  // Run initial cache cleanup on startup
+  setTimeout(async () => {
+      try {
+          console.log('🧹 [STARTUP] Running initial Raid-Helper cache cleanup...');
+          await cleanupRaidHelperEventCache(30);
+      } catch (error) {
+          console.error('❌ [STARTUP] Error during initial cache cleanup:', error);
+      }
+  }, 5000); // Wait 5 seconds after startup
 });
 
 // --- Graceful Shutdown ---

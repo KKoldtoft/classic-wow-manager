@@ -16,6 +16,18 @@ class RaidLogsManager {
         this.disarmsSettings = { points_per_disarm: 1, disarms_needed: 1, max_points: 5 };
         this.sunderData = [];
         this.sunderSettings = { point_ranges: [] };
+        this.curseData = [];
+        this.curseSettings = { uptime_threshold: 85, points: 10 };
+        this.curseShadowData = [];
+        this.curseShadowSettings = { uptime_threshold: 85, points: 10 };
+        this.curseElementsData = [];
+        this.curseElementsSettings = { uptime_threshold: 85, points: 10 };
+        this.faerieFireData = [];
+        this.faerieFireSettings = { uptime_threshold: 85, points: 10 };
+        this.scorchData = [];
+        this.scorchSettings = { tier1_max: 99, tier1_points: 0, tier2_max: 199, tier2_points: 5, tier3_points: 10 };
+        this.demoShoutData = [];
+        this.demoShoutSettings = { tier1_max: 99, tier1_points: 0, tier2_max: 199, tier2_points: 5, tier3_points: 10 };
         this.rewardSettings = {};
         this.specData = {};
         this.initializeEventListeners();
@@ -45,7 +57,7 @@ class RaidLogsManager {
         this.showLoading();
         
         try {
-            // Fetch log data, raid statistics, abilities data, mana potions data, runes data, interrupts data, disarms data, sunder data, and reward settings in parallel
+            // Fetch log data, raid statistics, abilities data, mana potions data, runes data, interrupts data, disarms data, sunder data, curse data, and reward settings in parallel
             await Promise.all([
                 this.fetchLogData(), // Now includes backend role enhancement via roster_overrides
                 this.fetchRaidStats(),
@@ -55,6 +67,12 @@ class RaidLogsManager {
                 this.fetchInterruptsData(),
                 this.fetchDisarmsData(),
                 this.fetchSunderData(),
+                this.fetchCurseData(),
+                this.fetchCurseShadowData(),
+                this.fetchCurseElementsData(),
+                this.fetchFaerieFireData(),
+                this.fetchScorchData(),
+                this.fetchDemoShoutData(),
                 this.fetchRewardSettings()
             ]);
             this.displayRaidLogs();
@@ -317,6 +335,180 @@ class RaidLogsManager {
         }
     }
 
+    async fetchCurseData() {
+        console.log(`🔮 Fetching curse of recklessness data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/curse-data/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch curse data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch curse data');
+            }
+            
+            this.curseData = result.data || [];
+            this.curseSettings = result.settings || { uptime_threshold: 85, points: 10 };
+            console.log(`🔮 Loaded curse data:`, this.curseData);
+            console.log(`🔮 Loaded curse settings:`, this.curseSettings);
+            
+        } catch (error) {
+            console.error('Error fetching curse data:', error);
+            // Don't fail the whole page if curse fails - just show empty data
+            this.curseData = [];
+            this.curseSettings = { uptime_threshold: 85, points: 10 }; // fallback
+        }
+    }
+
+    async fetchCurseShadowData() {
+        console.log(`🌑 Fetching curse of shadow data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/curse-shadow-data/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch curse shadow data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch curse shadow data');
+            }
+            
+            this.curseShadowData = result.data || [];
+            this.curseShadowSettings = result.settings || { uptime_threshold: 85, points: 10 };
+            console.log(`🌑 Loaded curse shadow data:`, this.curseShadowData);
+            console.log(`🌑 Loaded curse shadow settings:`, this.curseShadowSettings);
+            
+        } catch (error) {
+            console.error('Error fetching curse shadow data:', error);
+            // Don't fail the whole page if curse shadow fails - just show empty data
+            this.curseShadowData = [];
+            this.curseShadowSettings = { uptime_threshold: 85, points: 10 }; // fallback
+        }
+    }
+
+    async fetchCurseElementsData() {
+        console.log(`❄️ Fetching curse of elements data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/curse-elements-data/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch curse elements data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch curse elements data');
+            }
+            
+            this.curseElementsData = result.data || [];
+            this.curseElementsSettings = result.settings || { uptime_threshold: 85, points: 10 };
+            console.log(`❄️ Loaded curse elements data:`, this.curseElementsData);
+            console.log(`❄️ Loaded curse elements settings:`, this.curseElementsSettings);
+            
+        } catch (error) {
+            console.error('Error fetching curse elements data:', error);
+            // Don't fail the whole page if curse elements fails - just show empty data
+            this.curseElementsData = [];
+            this.curseElementsSettings = { uptime_threshold: 85, points: 10 }; // fallback
+        }
+    }
+
+    async fetchFaerieFireData() {
+        console.log(`🌟 Fetching faerie fire data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/faerie-fire-data/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch faerie fire data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch faerie fire data');
+            }
+            
+            this.faerieFireData = result.data || [];
+            this.faerieFireSettings = result.settings || { uptime_threshold: 85, points: 10 };
+            console.log(`🌟 Loaded faerie fire data:`, this.faerieFireData);
+            console.log(`🌟 Loaded faerie fire settings:`, this.faerieFireSettings);
+            
+        } catch (error) {
+            console.error('Error fetching faerie fire data:', error);
+            // Don't fail the whole page if faerie fire fails - just show empty data
+            this.faerieFireData = [];
+            this.faerieFireSettings = { uptime_threshold: 85, points: 10 }; // fallback
+        }
+    }
+
+    async fetchScorchData() {
+        console.log(`🔥 Fetching scorch data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/scorch-data/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch scorch data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch scorch data');
+            }
+            
+            this.scorchData = result.data || [];
+            this.scorchSettings = result.settings || { tier1_max: 99, tier1_points: 0, tier2_max: 199, tier2_points: 5, tier3_points: 10 };
+            console.log(`🔥 Loaded scorch data:`, this.scorchData);
+            console.log(`🔥 Loaded scorch settings:`, this.scorchSettings);
+            
+        } catch (error) {
+            console.error('Error fetching scorch data:', error);
+            // Don't fail the whole page if scorch fails - just show empty data
+            this.scorchData = [];
+            this.scorchSettings = { tier1_max: 99, tier1_points: 0, tier2_max: 199, tier2_points: 5, tier3_points: 10 }; // fallback
+        }
+    }
+
+    async fetchDemoShoutData() {
+        console.log(`⚔️ Fetching demoralizing shout data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/demo-shout-data/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch demoralizing shout data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch demoralizing shout data');
+            }
+            
+            this.demoShoutData = result.data || [];
+            this.demoShoutSettings = result.settings || { tier1_max: 99, tier1_points: 0, tier2_max: 199, tier2_points: 5, tier3_points: 10 };
+            console.log(`⚔️ Loaded demoralizing shout data:`, this.demoShoutData);
+            console.log(`⚔️ Loaded demoralizing shout settings:`, this.demoShoutSettings);
+            
+        } catch (error) {
+            console.error('Error fetching demoralizing shout data:', error);
+            // Don't fail the whole page if demoralizing shout fails - just show empty data
+            this.demoShoutData = [];
+            this.demoShoutSettings = { tier1_max: 99, tier1_points: 0, tier2_max: 199, tier2_points: 5, tier3_points: 10 }; // fallback
+        }
+    }
+
     updateStatCards() {
         // Update RPB Archive card
         this.updateRPBArchiveCard();
@@ -470,11 +662,25 @@ class RaidLogsManager {
         this.displayRunesRankings(this.runesData);
         this.displayInterruptsRankings(this.interruptsData);
         this.displayDisarmsRankings(this.disarmsData);
+        this.displaySunderRankings(this.sunderData);
+        this.displayCurseRankings(this.curseData);
+        this.displayCurseShadowRankings(this.curseShadowData);
+        this.displayCurseElementsRankings(this.curseElementsData);
+        this.displayFaerieFireRankings(this.faerieFireData);
+        this.displayScorchRankings(this.scorchData);
+        this.displayDemoShoutRankings(this.demoShoutData);
         this.updateAbilitiesHeader();
         this.updateManaPotionsHeader();
         this.updateRunesHeader();
         this.updateInterruptsHeader();
         this.updateDisarmsHeader();
+        this.updateSunderHeader();
+        this.updateCurseHeader();
+        this.updateCurseShadowHeader();
+        this.updateCurseElementsHeader();
+        this.updateFaerieFireHeader();
+        this.updateScorchHeader();
+        this.updateDemoShoutHeader();
         
         this.hideLoading();
         this.showContent();
@@ -613,10 +819,11 @@ class RaidLogsManager {
         const section = container.closest('.rankings-section');
         section.classList.add('abilities');
 
-        // Filter out players with 0 points
-        const playersWithPoints = players.filter(player => player.points > 0);
+        // Filter out players with 0 abilities used and sort by total_used (highest first)
+        const playersWithAbilities = players.filter(player => player.total_used > 0)
+            .sort((a, b) => b.total_used - a.total_used);
 
-        if (playersWithPoints.length === 0) {
+        if (playersWithAbilities.length === 0) {
             container.innerHTML = `
                 <div class="rankings-empty">
                     <i class="fas fa-bomb"></i>
@@ -626,13 +833,13 @@ class RaidLogsManager {
             return;
         }
 
-        // Get max points for percentage calculation
-        const maxPoints = Math.max(...playersWithPoints.map(p => p.points)) || 1;
+        // Get max abilities used for percentage calculation
+        const maxAbilities = Math.max(...playersWithAbilities.map(p => p.total_used)) || 1;
 
-        container.innerHTML = playersWithPoints.map((player, index) => {
+        container.innerHTML = playersWithAbilities.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const fillPercentage = Math.max(5, (player.points / maxPoints) * 100); // Minimum 5% for visibility
+            const fillPercentage = Math.max(5, (player.total_used / maxAbilities) * 100); // Minimum 5% for visibility
 
             // Create breakdown of abilities used
             const abilities = [];
@@ -677,10 +884,11 @@ class RaidLogsManager {
         const section = container.closest('.rankings-section');
         section.classList.add('mana-potions');
 
-        // Filter out players with 0 points
-        const playersWithPoints = players.filter(player => player.points > 0);
+        // Filter out players with 0 potions used and sort by potions_used (highest first)
+        const playersWithPotions = players.filter(player => player.potions_used > 0)
+            .sort((a, b) => b.potions_used - a.potions_used);
 
-        if (playersWithPoints.length === 0) {
+        if (playersWithPotions.length === 0) {
             container.innerHTML = `
                 <div class="rankings-empty">
                     <i class="fas fa-flask"></i>
@@ -690,13 +898,13 @@ class RaidLogsManager {
             return;
         }
 
-        // Get max points for percentage calculation
-        const maxPoints = Math.max(...playersWithPoints.map(p => p.points)) || 1;
+        // Get max potions used for percentage calculation
+        const maxPotions = Math.max(...playersWithPotions.map(p => p.potions_used)) || 1;
 
-        container.innerHTML = playersWithPoints.map((player, index) => {
+        container.innerHTML = playersWithPotions.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const fillPercentage = Math.max(5, (player.points / maxPoints) * 100); // Minimum 5% for visibility
+            const fillPercentage = Math.max(5, (player.potions_used / maxPotions) * 100); // Minimum 5% for visibility
 
             return `
                 <div class="ranking-item">
@@ -733,10 +941,11 @@ class RaidLogsManager {
         const section = container.closest('.rankings-section');
         section.classList.add('runes');
 
-        // Filter out players with 0 points
-        const playersWithPoints = players.filter(player => player.points > 0);
+        // Filter out players with 0 runes used and sort by total_runes (highest first)
+        const playersWithRunes = players.filter(player => player.total_runes > 0)
+            .sort((a, b) => b.total_runes - a.total_runes);
 
-        if (playersWithPoints.length === 0) {
+        if (playersWithRunes.length === 0) {
             container.innerHTML = `
                 <div class="rankings-empty">
                     <i class="fas fa-magic"></i>
@@ -746,13 +955,13 @@ class RaidLogsManager {
             return;
         }
 
-        // Get max points for percentage calculation
-        const maxPoints = Math.max(...playersWithPoints.map(p => p.points)) || 1;
+        // Get max runes used for percentage calculation
+        const maxRunes = Math.max(...playersWithRunes.map(p => p.total_runes)) || 1;
 
-        container.innerHTML = playersWithPoints.map((player, index) => {
+        container.innerHTML = playersWithRunes.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const fillPercentage = Math.max(5, (player.points / maxPoints) * 100); // Minimum 5% for visibility
+            const fillPercentage = Math.max(5, (player.total_runes / maxRunes) * 100); // Minimum 5% for visibility
 
             // Create breakdown of runes used
             const runes = [];
@@ -798,10 +1007,11 @@ class RaidLogsManager {
         const section = container.closest('.rankings-section');
         section.classList.add('interrupts');
 
-        // Filter out players with 0 points
-        const playersWithPoints = players.filter(player => player.points > 0);
+        // Filter out players with 0 interrupts and sort by interrupts_used (highest first)
+        const playersWithInterrupts = players.filter(player => player.interrupts_used > 0)
+            .sort((a, b) => b.interrupts_used - a.interrupts_used);
 
-        if (playersWithPoints.length === 0) {
+        if (playersWithInterrupts.length === 0) {
             container.innerHTML = `
                 <div class="rankings-empty">
                     <i class="fas fa-hand-paper"></i>
@@ -811,13 +1021,13 @@ class RaidLogsManager {
             return;
         }
 
-        // Get max points for percentage calculation
-        const maxPoints = Math.max(...playersWithPoints.map(p => p.points)) || 1;
+        // Get max interrupts for percentage calculation
+        const maxInterrupts = Math.max(...playersWithInterrupts.map(p => p.interrupts_used)) || 1;
 
-        container.innerHTML = playersWithPoints.map((player, index) => {
+        container.innerHTML = playersWithInterrupts.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const fillPercentage = Math.max(5, (player.points / maxPoints) * 100); // Minimum 5% for visibility
+            const fillPercentage = Math.max(5, (player.interrupts_used / maxInterrupts) * 100); // Minimum 5% for visibility
 
             const interruptsText = `${player.interrupts_used} interrupts`;
 
@@ -858,10 +1068,11 @@ class RaidLogsManager {
         const section = container.closest('.rankings-section');
         section.classList.add('disarms');
 
-        // Filter out players with 0 points
-        const playersWithPoints = players.filter(player => player.points > 0);
+        // Filter out players with 0 disarms and sort by disarms_used (highest first)
+        const playersWithDisarms = players.filter(player => player.disarms_used > 0)
+            .sort((a, b) => b.disarms_used - a.disarms_used);
 
-        if (playersWithPoints.length === 0) {
+        if (playersWithDisarms.length === 0) {
             container.innerHTML = `
                 <div class="rankings-empty">
                     <i class="fas fa-shield-alt"></i>
@@ -871,13 +1082,13 @@ class RaidLogsManager {
             return;
         }
 
-        // Get max points for percentage calculation
-        const maxPoints = Math.max(...playersWithPoints.map(p => p.points)) || 1;
+        // Get max disarms for percentage calculation
+        const maxDisarms = Math.max(...playersWithDisarms.map(p => p.disarms_used)) || 1;
 
-        container.innerHTML = playersWithPoints.map((player, index) => {
+        container.innerHTML = playersWithDisarms.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const fillPercentage = Math.max(5, (player.points / maxPoints) * 100); // Minimum 5% for visibility
+            const fillPercentage = Math.max(5, (player.disarms_used / maxDisarms) * 100); // Minimum 5% for visibility
 
             const disarmsText = `${player.disarms_used} disarms`;
 
@@ -931,13 +1142,13 @@ class RaidLogsManager {
             return;
         }
 
-        // Get max absolute points for percentage calculation
-        const maxAbsPoints = Math.max(...playersWithPoints.map(p => Math.abs(p.points))) || 1;
+        // Get max sunder count for percentage calculation
+        const maxSunderCount = Math.max(...playersWithPoints.map(p => p.sunder_count)) || 1;
 
         container.innerHTML = playersWithPoints.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const fillPercentage = Math.max(5, (Math.abs(player.points) / maxAbsPoints) * 100); // Minimum 5% for visibility
+            const fillPercentage = Math.max(5, (player.sunder_count / maxSunderCount) * 100); // Minimum 5% for visibility
 
             const sunderText = `${player.sunder_count} sunders (${player.raw_value})`;
             
@@ -983,6 +1194,390 @@ class RaidLogsManager {
                 });
                 headerElement.textContent = `Ranked by points (${rangeTexts.join(', ')})`;
             }
+        }
+    }
+
+    displayCurseRankings(players) {
+        const container = document.getElementById('curse-recklessness-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('curse', 'curse-recklessness');
+
+        // Filter out players with 0 points and sort by uptime percentage (highest first)
+        const playersWithUptime = players.filter(player => player.uptime_percentage >= 0)
+            .sort((a, b) => b.uptime_percentage - a.uptime_percentage);
+
+        if (playersWithUptime.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-magic"></i>
+                    <p>Nothing to see, move along</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Get max uptime for percentage calculation
+        const maxUptime = Math.max(...playersWithUptime.map(p => p.uptime_percentage)) || 1;
+
+        container.innerHTML = playersWithUptime.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const fillPercentage = Math.max(5, (player.uptime_percentage / maxUptime) * 100); // Minimum 5% for visibility
+
+            const uptimeText = `${player.uptime_percentage.toFixed(1)}% uptime`;
+            
+            // Determine point color based on uptime threshold
+            let pointColor = '#ff6b35'; // default
+            if (player.points > 0) pointColor = '#28a745'; // green for points earned
+            else pointColor = '#dc3545'; // red for no points
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${player.character_name}
+                        </div>
+                        <div class="character-details" title="${uptimeText}">
+                            ${this.truncateWithTooltip(uptimeText).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${player.uptime_percentage.toFixed(1)}% uptime (threshold: ${this.curseSettings.uptime_threshold}%)">
+                        <div class="amount-value" style="color: ${pointColor}">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updateCurseHeader() {
+        const headerElement = document.querySelector('.curse-recklessness-section .section-header p');
+        if (headerElement && this.curseSettings) {
+            const { uptime_threshold, points } = this.curseSettings;
+            headerElement.textContent = `Ranked by points (>${uptime_threshold}% uptime: ${points}pts)`;
+        }
+    }
+
+    displayCurseShadowRankings(players) {
+        const container = document.getElementById('curse-shadow-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('curse', 'curse-shadow');
+
+        // Filter out players with 0 points and sort by uptime percentage (highest first)
+        const playersWithUptime = players.filter(player => player.uptime_percentage >= 0)
+            .sort((a, b) => b.uptime_percentage - a.uptime_percentage);
+
+        if (playersWithUptime.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-magic"></i>
+                    <p>Nothing to see, move along</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Get max uptime for percentage calculation
+        const maxUptime = Math.max(...playersWithUptime.map(p => p.uptime_percentage)) || 1;
+
+        container.innerHTML = playersWithUptime.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const fillPercentage = Math.max(5, (player.uptime_percentage / maxUptime) * 100); // Minimum 5% for visibility
+
+            const uptimeText = `${player.uptime_percentage.toFixed(1)}% uptime`;
+            
+            // Determine point color based on uptime threshold
+            let pointColor = '#ff6b35'; // default
+            if (player.points > 0) pointColor = '#28a745'; // green for points earned
+            else pointColor = '#dc3545'; // red for no points
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${player.character_name}
+                        </div>
+                        <div class="character-details" title="${uptimeText}">
+                            ${this.truncateWithTooltip(uptimeText).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${player.uptime_percentage.toFixed(1)}% uptime (threshold: ${this.curseShadowSettings.uptime_threshold}%)">
+                        <div class="amount-value" style="color: ${pointColor}">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updateCurseShadowHeader() {
+        const headerElement = document.querySelector('.curse-shadow-section .section-header p');
+        if (headerElement && this.curseShadowSettings) {
+            const { uptime_threshold, points } = this.curseShadowSettings;
+            headerElement.textContent = `Ranked by points (>${uptime_threshold}% uptime: ${points}pts)`;
+        }
+    }
+
+    displayCurseElementsRankings(players) {
+        const container = document.getElementById('curse-elements-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('curse', 'curse-elements');
+
+        // Filter out players with 0 points and sort by uptime percentage (highest first)
+        const playersWithUptime = players.filter(player => player.uptime_percentage >= 0)
+            .sort((a, b) => b.uptime_percentage - a.uptime_percentage);
+
+        if (playersWithUptime.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-magic"></i>
+                    <p>Nothing to see, move along</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Get max uptime for percentage calculation
+        const maxUptime = Math.max(...playersWithUptime.map(p => p.uptime_percentage)) || 1;
+
+        container.innerHTML = playersWithUptime.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const fillPercentage = Math.max(5, (player.uptime_percentage / maxUptime) * 100); // Minimum 5% for visibility
+
+            const uptimeText = `${player.uptime_percentage.toFixed(1)}% uptime`;
+            
+            // Determine point color based on uptime threshold
+            let pointColor = '#ff6b35'; // default
+            if (player.points > 0) pointColor = '#28a745'; // green for points earned
+            else pointColor = '#dc3545'; // red for no points
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${player.character_name}
+                        </div>
+                        <div class="character-details" title="${uptimeText}">
+                            ${this.truncateWithTooltip(uptimeText).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${player.uptime_percentage.toFixed(1)}% uptime (threshold: ${this.curseElementsSettings.uptime_threshold}%)">
+                        <div class="amount-value" style="color: ${pointColor}">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updateCurseElementsHeader() {
+        const headerElement = document.querySelector('.curse-elements-section .section-header p');
+        if (headerElement && this.curseElementsSettings) {
+            const { uptime_threshold, points } = this.curseElementsSettings;
+            headerElement.textContent = `Ranked by points (>${uptime_threshold}% uptime: ${points}pts)`;
+        }
+    }
+
+    displayFaerieFireRankings(players) {
+        const container = document.getElementById('faerie-fire-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('curse', 'faerie-fire');
+
+        // Filter out players with 0 points and sort by uptime percentage (highest first)
+        const playersWithUptime = players.filter(player => player.uptime_percentage >= 0)
+            .sort((a, b) => b.uptime_percentage - a.uptime_percentage);
+
+        if (playersWithUptime.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-magic"></i>
+                    <p>Nothing to see, move along</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Get max uptime for percentage calculation
+        const maxUptime = Math.max(...playersWithUptime.map(p => p.uptime_percentage)) || 1;
+
+        container.innerHTML = playersWithUptime.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const fillPercentage = Math.max(5, (player.uptime_percentage / maxUptime) * 100); // Minimum 5% for visibility
+
+            const uptimeText = `${player.uptime_percentage.toFixed(1)}% uptime`;
+            
+            // Determine point color based on uptime threshold
+            let pointColor = '#ff6b35'; // default
+            if (player.points > 0) pointColor = '#28a745'; // green for points earned
+            else pointColor = '#dc3545'; // red for no points
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${player.character_name}
+                        </div>
+                        <div class="character-details" title="${uptimeText}">
+                            ${this.truncateWithTooltip(uptimeText).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${player.uptime_percentage.toFixed(1)}% uptime (threshold: ${this.faerieFireSettings.uptime_threshold}%)">
+                        <div class="amount-value" style="color: ${pointColor}">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updateFaerieFireHeader() {
+        const headerElement = document.querySelector('.faerie-fire-section .section-header p');
+        if (headerElement && this.faerieFireSettings) {
+            const { uptime_threshold, points } = this.faerieFireSettings;
+            headerElement.textContent = `Ranked by points (>${uptime_threshold}% uptime: ${points}pts)`;
+        }
+    }
+
+    displayScorchRankings(players) {
+        const container = document.getElementById('scorch-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('scorch');
+
+        // Filter out players with negative scorch count and sort by scorch count (highest first)
+        const playersWithScorch = players.filter(player => player.scorch_count >= 0)
+            .sort((a, b) => b.scorch_count - a.scorch_count);
+
+        if (playersWithScorch.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-fire"></i>
+                    <p>Nothing to see, move along</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Get max scorch count for percentage calculation
+        const maxScorch = Math.max(...playersWithScorch.map(p => p.scorch_count)) || 1;
+
+        container.innerHTML = playersWithScorch.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const fillPercentage = Math.max(5, (player.scorch_count / maxScorch) * 100); // Minimum 5% for visibility
+
+            const scorchText = `${player.scorch_count} scorches`;
+            
+            // Determine point color based on scorch tiers
+            let pointColor = '#dc3545'; // red for 0 points
+            if (player.points > 5) pointColor = '#28a745'; // green for 10pts
+            else if (player.points > 0) pointColor = '#ffc107'; // yellow for 5pts
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${player.character_name}
+                        </div>
+                        <div class="character-details" title="${scorchText}">
+                            ${this.truncateWithTooltip(scorchText).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${player.scorch_count} scorches (tiers: 0-${this.scorchSettings.tier1_max}: ${this.scorchSettings.tier1_points}pts, ${this.scorchSettings.tier1_max + 1}-${this.scorchSettings.tier2_max}: ${this.scorchSettings.tier2_points}pts, ${this.scorchSettings.tier2_max + 1}+: ${this.scorchSettings.tier3_points}pts)">
+                        <div class="amount-value" style="color: ${pointColor}">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updateScorchHeader() {
+        const headerElement = document.querySelector('.scorch-section .section-header p');
+        if (headerElement && this.scorchSettings) {
+            const { tier1_max, tier1_points, tier2_max, tier2_points, tier3_points } = this.scorchSettings;
+            headerElement.textContent = `Ranked by points (0-${tier1_max}: ${tier1_points}pts, ${tier1_max + 1}-${tier2_max}: ${tier2_points}pts, ${tier2_max + 1}+: ${tier3_points}pts)`;
+        }
+    }
+
+    displayDemoShoutRankings(players) {
+        const container = document.getElementById('demo-shout-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('demo-shout');
+
+        // Filter out players with less than 10 demo shouts and sort by demo shout count (highest first)
+        const playersWithDemoShout = players.filter(player => player.demo_shout_count >= 10)
+            .sort((a, b) => b.demo_shout_count - a.demo_shout_count);
+
+        if (playersWithDemoShout.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-shield-alt"></i>
+                    <p>Nothing to see, move along</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Get max demo shout count for percentage calculation
+        const maxDemoShout = Math.max(...playersWithDemoShout.map(p => p.demo_shout_count)) || 1;
+
+        container.innerHTML = playersWithDemoShout.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const fillPercentage = Math.max(5, (player.demo_shout_count / maxDemoShout) * 100); // Minimum 5% for visibility
+
+            const demoShoutText = `${player.demo_shout_count} demo shouts`;
+            
+            // Determine point color based on demo shout tiers
+            let pointColor = '#dc3545'; // red for 0 points
+            if (player.points > 5) pointColor = '#28a745'; // green for 10pts
+            else if (player.points > 0) pointColor = '#ffc107'; // yellow for 5pts
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${player.character_name}
+                        </div>
+                        <div class="character-details" title="${demoShoutText}">
+                            ${this.truncateWithTooltip(demoShoutText).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${player.demo_shout_count} demoralizing shouts (tiers: 0-${this.demoShoutSettings.tier1_max}: ${this.demoShoutSettings.tier1_points}pts, ${this.demoShoutSettings.tier1_max + 1}-${this.demoShoutSettings.tier2_max}: ${this.demoShoutSettings.tier2_points}pts, ${this.demoShoutSettings.tier2_max + 1}+: ${this.demoShoutSettings.tier3_points}pts)">
+                        <div class="amount-value" style="color: ${pointColor}">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updateDemoShoutHeader() {
+        const headerElement = document.querySelector('.demo-shout-section .section-header p');
+        if (headerElement && this.demoShoutSettings) {
+            const { tier1_max, tier1_points, tier2_max, tier2_points, tier3_points } = this.demoShoutSettings;
+            headerElement.textContent = `Ranked by points (0-${tier1_max}: ${tier1_points}pts, ${tier1_max + 1}-${tier2_max}: ${tier2_points}pts, ${tier2_max + 1}+: ${tier3_points}pts)`;
         }
     }
 

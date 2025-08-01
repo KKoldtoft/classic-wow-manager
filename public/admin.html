@@ -195,6 +195,7 @@
                     </div>
                 </div>
                 <a href="/guild-members" class="top-nav-link">Guild Members</a>
+                <a href="/attendance" class="top-nav-link">Regular Attendance</a>
             </nav>
         </div>
         <div id="auth-container">
@@ -301,6 +302,25 @@
                 </div>
             </div>
 
+            <!-- Attendance Channel Filter section -->
+            <div id="attendance-channel-filter-section" class="permission-card management-section" style="display: none;">
+                <h2>📅 Regular Attendance Channel Filter</h2>
+                <p>Control which Discord channels should be included in the Regular Attendance tracking. Events from filtered-out channels will not appear in attendance statistics.</p>
+                
+                <div style="margin-bottom: 20px;">
+                    <button class="btn" onclick="loadAttendanceChannelFilters()" id="load-attendance-channels-btn">
+                        <i class="fas fa-refresh"></i> Load Channels from Log Data
+                    </button>
+                    <button class="btn" onclick="saveAttendanceChannelFilters()" id="save-attendance-filters-btn" style="display: none;">
+                        <i class="fas fa-save"></i> Save Changes
+                    </button>
+                </div>
+                
+                <div id="attendance-channel-filters-content">
+                    <!-- Attendance channel filters will be loaded here -->
+                </div>
+            </div>
+
             <!-- Rewards and Deductions section -->
             <div id="rewards-section" class="permission-card management-section" style="display: none;">
                 <h2>🏆 Rewards and Deductions</h2>
@@ -381,6 +401,7 @@
                 document.getElementById('management-section').style.display = 'block';
                 document.getElementById('guild-import-section').style.display = 'block';
                 document.getElementById('channel-filter-section').style.display = 'block';
+                document.getElementById('attendance-channel-filter-section').style.display = 'block';
                 document.getElementById('rewards-section').style.display = 'block';
             }
         }
@@ -531,6 +552,8 @@
                                 <li>Events cache table created/updated</li>
                                 <li>RPB tracking table created/updated</li>
                                 <li><strong>Channel filters table created/updated</strong> 📡</li>
+                        <li><strong>Attendance cache table created/updated</strong> 📅</li>
+                        <li><strong>Attendance channel filters table created/updated</strong> 🎯</li>
                                 <li><strong>Reward settings table created/updated</strong> 🏆</li>
                                 <li>All indexes created/updated</li>
                             </ul>
@@ -1030,6 +1053,166 @@
             } catch (error) {
                 console.error('Error saving channel filters:', error);
                 alert('Network error occurred while saving filters.');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
+            }
+        }
+
+        // ATTENDANCE CHANNEL FILTER FUNCTIONS
+        // ====================================
+        
+        async function loadAttendanceChannelFilters() {
+            const contentDiv = document.getElementById('attendance-channel-filters-content');
+            const loadBtn = document.getElementById('load-attendance-channels-btn');
+            
+            loadBtn.disabled = true;
+            loadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+            contentDiv.innerHTML = '<p>Loading attendance channels...</p>';
+            
+            try {
+                const response = await fetch('/api/admin/attendance-channel-filters');
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                const data = await response.json();
+                renderAttendanceChannelFilters(data.channels);
+                
+                document.getElementById('save-attendance-filters-btn').style.display = 'inline-block';
+            } catch (error) {
+                console.error('Error loading attendance channel filters:', error);
+                contentDiv.innerHTML = `
+                    <div class="alert alert-error">
+                        <p><strong>Error loading attendance channels:</strong> ${error.message}</p>
+                    </div>
+                `;
+            } finally {
+                loadBtn.disabled = false;
+                loadBtn.innerHTML = '<i class="fas fa-refresh"></i> Load Channels from Log Data';
+            }
+        }
+
+        function renderAttendanceChannelFilters(channels) {
+            const contentDiv = document.getElementById('attendance-channel-filters-content');
+            
+            if (channels.length === 0) {
+                contentDiv.innerHTML = `
+                    <div class="alert alert-info">
+                        <p>No channels found in attendance log data. Make sure you have attendance data populated first.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const channelsHtml = `
+                <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin-top: 15px;">
+                    <h4 style="margin-bottom: 15px; color: #2c3e50;">📅 Attendance Channel Filter Settings</h4>
+                    <p style="margin-bottom: 20px; color: #7f8c8d;">
+                        Toggle channels to control which raids are included in attendance tracking. 
+                        Disabled channels will be excluded from all attendance calculations.
+                    </p>
+                    <div style="display: grid; gap: 12px;">
+                        ${channels.map(channel => {
+                            const isIncluded = channel.is_included !== false; // Default to true if not set
+                            return `
+                                <div class="attendance-channel-filter-item" data-channel-id="${channel.channel_id}">
+                                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: white; border-radius: 6px; border: 1px solid #e0e0e0;">
+                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                            <span style="font-weight: 600; color: ${isIncluded ? '#27ae60' : '#e74c3c'};">${channel.channel_name}</span>
+                                            <span style="font-size: 12px; color: #7f8c8d; font-family: monospace;">${channel.channel_id}</span>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <span style="font-size: 14px; color: ${isIncluded ? '#27ae60' : '#e74c3c'};">
+                                                ${isIncluded ? '✅ Included' : '❌ Excluded'}
+                                            </span>
+                                            <label class="switch">
+                                                <input type="checkbox" ${isIncluded ? 'checked' : ''} onchange="toggleAttendanceChannelFilter(this)">
+                                                <span class="slider round"></span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+
+            contentDiv.innerHTML = channelsHtml;
+        }
+
+        function toggleAttendanceChannelFilter(toggle) {
+            const isChecked = toggle.checked;
+            const statusSpan = toggle.closest('.attendance-channel-filter-item').querySelector('span[style*="color:"]');
+            
+            if (isChecked) {
+                statusSpan.textContent = '✅ Included';
+                statusSpan.style.color = '#27ae60';
+                // Update the channel name color too
+                const channelNameSpan = toggle.closest('.attendance-channel-filter-item').querySelector('span[style*="font-weight"]');
+                channelNameSpan.style.color = '#27ae60';
+            } else {
+                statusSpan.textContent = '❌ Excluded';
+                statusSpan.style.color = '#e74c3c';
+                // Update the channel name color too
+                const channelNameSpan = toggle.closest('.attendance-channel-filter-item').querySelector('span[style*="font-weight"]');
+                channelNameSpan.style.color = '#e74c3c';
+            }
+            
+            // Show save button
+            document.getElementById('save-attendance-filters-btn').style.display = 'inline-block';
+        }
+
+        async function saveAttendanceChannelFilters() {
+            const saveBtn = document.getElementById('save-attendance-filters-btn');
+            
+            // Collect filter states
+            const filters = [];
+            document.querySelectorAll('.attendance-channel-filter-item').forEach(item => {
+                const channelId = item.dataset.channelId;
+                const isIncluded = item.querySelector('input[type="checkbox"]').checked;
+                filters.push({ channelId, isIncluded });
+            });
+
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+            try {
+                const response = await fetch('/api/admin/attendance-channel-filters', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ filters })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Show success message
+                    const contentDiv = document.getElementById('attendance-channel-filters-content');
+                    const successMsg = document.createElement('div');
+                    successMsg.className = 'alert alert-success';
+                    successMsg.style.marginTop = '15px';
+                    successMsg.innerHTML = `
+                        <p style="margin: 0;">Attendance channel filter settings have been updated successfully. 
+                        Attendance tracking will now respect these filter settings.</p>
+                    `;
+                    contentDiv.appendChild(successMsg);
+
+                    // Remove success message after 3 seconds
+                    setTimeout(() => {
+                        if (successMsg.parentNode) {
+                            successMsg.parentNode.removeChild(successMsg);
+                        }
+                    }, 3000);
+
+                    saveBtn.style.display = 'none';
+                } else {
+                    alert(`Error saving attendance filters: ${data.message}`);
+                }
+            } catch (error) {
+                console.error('Error saving attendance channel filters:', error);
+                alert('Network error occurred while saving attendance filters.');
             } finally {
                 saveBtn.disabled = false;
                 saveBtn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
@@ -1582,6 +1765,422 @@
                 `;
             }
 
+            // Curse of Recklessness settings
+            if (settings.curse) {
+                settingsHTML += `
+                    <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                        <h4 style="color: #8b5cf6; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_unholystrength.jpg" style="width: 24px; height: 24px;"> 
+                            Curse of Recklessness
+                        </h4>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 15px;">
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Uptime Threshold (%)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="curse-uptime-threshold" 
+                                    value="${settings.curse.uptime_threshold.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="0.1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Players need more than this % uptime to earn points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Points Awarded
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="curse-points" 
+                                    value="${settings.curse.points.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Points given to players above threshold
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid #8b5cf6;">
+                            <strong>Description:</strong> ${settings.curse.uptime_threshold.description}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Curse of Shadow settings
+            if (settings.curse_shadow) {
+                settingsHTML += `
+                    <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                        <h4 style="color: #6b46c1; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_curseofachimonde.jpg" style="width: 24px; height: 24px;"> 
+                            Curse of Shadow
+                        </h4>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 15px;">
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Uptime Threshold (%)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="curse-shadow-uptime-threshold" 
+                                    value="${settings.curse_shadow.uptime_threshold.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="0.1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Players need more than this % uptime to earn points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Points Awarded
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="curse-shadow-points" 
+                                    value="${settings.curse_shadow.points.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Points given to players above threshold
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid #6b46c1;">
+                            <strong>Description:</strong> ${settings.curse_shadow.uptime_threshold.description}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Curse of the Elements settings
+            if (settings.curse_elements) {
+                settingsHTML += `
+                    <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                        <h4 style="color: #3b82f6; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_chilltouch.jpg" style="width: 24px; height: 24px;"> 
+                            Curse of the Elements
+                        </h4>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 15px;">
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Uptime Threshold (%)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="curse-elements-uptime-threshold" 
+                                    value="${settings.curse_elements.uptime_threshold.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="0.1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Players need more than this % uptime to earn points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Points Awarded
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="curse-elements-points" 
+                                    value="${settings.curse_elements.points.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Points given to players above threshold
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid #3b82f6;">
+                            <strong>Description:</strong> ${settings.curse_elements.uptime_threshold.description}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Faerie Fire settings
+            if (settings.faerie_fire) {
+                settingsHTML += `
+                    <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                        <h4 style="color: #10b981; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_faeriefire.jpg" style="width: 24px; height: 24px;"> 
+                            Faerie Fire
+                        </h4>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 15px;">
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Uptime Threshold (%)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="faerie-fire-uptime-threshold" 
+                                    value="${settings.faerie_fire.uptime_threshold.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="0.1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Players need more than this % uptime to earn points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Points Awarded
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="faerie-fire-points" 
+                                    value="${settings.faerie_fire.points.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Points given to players above threshold
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid #10b981;">
+                            <strong>Description:</strong> ${settings.faerie_fire.uptime_threshold.description}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Scorch settings
+            if (settings.scorch) {
+                settingsHTML += `
+                    <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                        <h4 style="color: #dc3545; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/spell_fire_soulburn.jpg" style="width: 24px; height: 24px;"> 
+                            Scorch
+                        </h4>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Tier 1 Max (0 points)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="scorch-tier1-max" 
+                                    value="${settings.scorch.tier1_max.value}" 
+                                    min="0" 
+                                    max="999" 
+                                    step="1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Max scorch count for 0 points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Tier 2 Max
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="scorch-tier2-max" 
+                                    value="${settings.scorch.tier2_max.value}" 
+                                    min="0" 
+                                    max="999" 
+                                    step="1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Max for tier 2 points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Tier 2 Points
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="scorch-tier2-points" 
+                                    value="${settings.scorch.tier2_points.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Points for mid-tier
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr; gap: 15px; margin-bottom: 15px;">
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Tier 3 Points (High Tier)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="scorch-tier3-points" 
+                                    value="${settings.scorch.tier3_points.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Points for highest tier (above tier 2 max)
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid #dc3545;">
+                            <strong>Description:</strong> ${settings.scorch.tier1_max.description}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Demoralizing Shout settings
+            if (settings.demo_shout) {
+                settingsHTML += `
+                    <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                        <h4 style="color: #d2691e; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_warcry.jpg" style="width: 24px; height: 24px;"> 
+                            Demoralizing Shout
+                        </h4>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Tier 1 Max (0 points)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="demo-shout-tier1-max" 
+                                    value="${settings.demo_shout.tier1_max.value}" 
+                                    min="0" 
+                                    max="999" 
+                                    step="1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Max demo shout count for 0 points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Tier 2 Max
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="demo-shout-tier2-max" 
+                                    value="${settings.demo_shout.tier2_max.value}" 
+                                    min="0" 
+                                    max="999" 
+                                    step="1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Max for tier 2 points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Tier 2 Points
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="demo-shout-tier2-points" 
+                                    value="${settings.demo_shout.tier2_points.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Points for mid-tier
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr; gap: 15px; margin-bottom: 15px;">
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                                    Tier 3 Points (High Tier)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="demo-shout-tier3-points" 
+                                    value="${settings.demo_shout.tier3_points.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="1"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small style="color: #6c757d; display: block; margin-top: 4px;">
+                                    Points for highest tier (above tier 2 max)
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid #d2691e;">
+                            <strong>Description:</strong> ${settings.demo_shout.tier1_max.description}
+                        </div>
+                    </div>
+                `;
+            }
+
             contentDiv.innerHTML = settingsHTML;
         }
 
@@ -1674,8 +2273,51 @@
                 },
                 sunder: {
                     point_ranges: collectSunderRanges()
+                },
+                curse: {
+                    uptime_threshold: parseFloat(document.getElementById('curse-uptime-threshold').value),
+                    points: parseInt(document.getElementById('curse-points').value)
+                },
+                curse_shadow: {
+                    uptime_threshold: parseFloat(document.getElementById('curse-shadow-uptime-threshold').value),
+                    points: parseInt(document.getElementById('curse-shadow-points').value)
+                },
+                curse_elements: {
+                    uptime_threshold: parseFloat(document.getElementById('curse-elements-uptime-threshold').value),
+                    points: parseInt(document.getElementById('curse-elements-points').value)
                 }
             };
+
+            // Only include settings if the corresponding input fields exist (defensive checks)
+            const faerieFireThreshold = document.getElementById('faerie-fire-uptime-threshold');
+            if (faerieFireThreshold) {
+                settings.faerie_fire = {
+                    uptime_threshold: parseFloat(faerieFireThreshold.value),
+                    points: parseInt(document.getElementById('faerie-fire-points').value)
+                };
+            }
+
+            const scorchTier1Max = document.getElementById('scorch-tier1-max');
+            if (scorchTier1Max) {
+                settings.scorch = {
+                    tier1_max: parseInt(scorchTier1Max.value),
+                    tier1_points: 0, // Always 0 for tier 1
+                    tier2_max: parseInt(document.getElementById('scorch-tier2-max').value),
+                    tier2_points: parseInt(document.getElementById('scorch-tier2-points').value),
+                    tier3_points: parseInt(document.getElementById('scorch-tier3-points').value)
+                };
+            }
+
+            const demoShoutTier1Max = document.getElementById('demo-shout-tier1-max');
+            if (demoShoutTier1Max) {
+                settings.demo_shout = {
+                    tier1_max: parseInt(demoShoutTier1Max.value),
+                    tier1_points: 0, // Always 0 for tier 1
+                    tier2_max: parseInt(document.getElementById('demo-shout-tier2-max').value),
+                    tier2_points: parseInt(document.getElementById('demo-shout-tier2-points').value),
+                    tier3_points: parseInt(document.getElementById('demo-shout-tier3-points').value)
+                };
+            }
 
             try {
                 const response = await fetch('/api/admin/reward-settings', {

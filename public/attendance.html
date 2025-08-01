@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Regular Attendance - Classic WoW Manager</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="attendance.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Top Navigation Bar -->
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Home</a>
+                <div class="top-nav-dropdown">
+                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+                        Upcoming Raids <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="upcoming-raids-menu">
+                        <div class="dropdown-loading">Loading raids...</div>
+                    </div>
+                </div>
+                <a href="/guild-members" class="top-nav-link">Guild Members</a>
+                <a href="/attendance" class="top-nav-link">Regular Attendance</a>
+            </nav>
+        </div>
+        <div id="auth-container">
+            <!-- User authentication UI will be injected here by JavaScript -->
+        </div>
+    </div>
+
+    <!-- Raid Navigation Bar (Optional - will be shown when a raid is active) -->
+    <div class="raid-bar" id="raid-bar" style="display: none;">
+        <div class="raid-bar-left">
+            <span class="raid-title" id="raid-title">Loading...</span>
+            <nav class="raid-nav">
+                <a href="#" class="raid-nav-link" id="raid-roster-link">
+                    <i class="fas fa-users"></i> Roster
+                </a>
+                <a href="#" class="raid-nav-link" id="raid-assignments-link">
+                    <i class="fas fa-tasks"></i> Assignments
+                </a>
+                <a href="/raidlogs" class="raid-nav-link" id="raid-logs-link">
+                    <i class="fas fa-chart-line"></i> Raid Logs
+                </a>
+                <a href="/gold" class="raid-nav-link" id="raid-goldpot-link">
+                    <i class="fas fa-coins"></i> Gold Pot
+                </a>
+            </nav>
+        </div>
+        <div class="raid-bar-right">
+            <button class="raid-close-btn" onclick="localStorage.removeItem('activeEventSession'); location.reload();">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="attendance-container">
+        <!-- Page Header -->
+        <div class="page-header">
+            <h1><i class="fas fa-calendar-check"></i> Regular Attendance</h1>
+            <p>Track player attendance streaks across raid weeks. Week 1 starts on the first Monday of January.</p>
+        </div>
+
+        <!-- Controls -->
+        <div class="attendance-controls">
+            <button class="btn btn-primary" id="refresh-attendance-btn">
+                <i class="fas fa-sync-alt"></i> Refresh Data
+            </button>
+            <button class="btn btn-secondary" id="rebuild-cache-btn">
+                <i class="fas fa-database"></i> Clear Cache & Rebuild
+            </button>
+            <div class="attendance-info">
+                <span id="current-week-info">Loading...</span>
+                <span class="separator">|</span>
+                <span id="last-updated">Never updated</span>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div class="loading-indicator" id="loading-indicator">
+            <div class="spinner"></div>
+            <p>Loading attendance data...</p>
+        </div>
+
+        <!-- Error Display -->
+        <div class="error-display" id="error-display" style="display: none;">
+            <div class="error-content">
+                <h3><i class="fas fa-exclamation-triangle"></i> Error</h3>
+                <p id="error-message">Failed to load attendance data</p>
+            </div>
+        </div>
+
+        <!-- No Data Message -->
+        <div class="no-data-message" id="no-data-message" style="display: none;">
+            <div class="no-data-content">
+                <i class="fas fa-calendar-times"></i>
+                <h3>No Attendance Data</h3>
+                <p>No attendance records found. Try rebuilding the cache first.</p>
+            </div>
+        </div>
+
+        <!-- Attendance Table -->
+        <div class="attendance-table-container" id="attendance-table-container" style="display: none;">
+            <!-- Legend -->
+            <div class="attendance-legend">
+                <h4><i class="fas fa-info-circle"></i> Legend</h4>
+                <div class="legend-items">
+                    <div class="legend-item">
+                        <span class="legend-indicator attended"></span>
+                        <span>Attended</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-indicator not-attended"></span>
+                        <span>Not Attended</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-indicator current-week"></span>
+                        <span>Current Week</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Attendance Table -->
+            <div class="attendance-table-wrapper">
+                <table class="attendance-table" id="attendance-table">
+                    <thead>
+                        <tr id="table-header">
+                            <th class="player-column">Player</th>
+                            <!-- Week columns will be dynamically generated -->
+                        </tr>
+                    </thead>
+                    <tbody id="table-body">
+                        <!-- Player rows will be dynamically generated -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Statistics -->
+            <div class="attendance-stats" id="attendance-stats">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="total-players">0</div>
+                        <div class="stat-label">Total Players</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="active-players">0</div>
+                        <div class="stat-label">Active Players (Last 4 Weeks)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="perfect-attendance">0</div>
+                        <div class="stat-label">Perfect Attendance (Last 4 Weeks)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="average-attendance">0%</div>
+                        <div class="stat-label">Average Attendance Rate</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="top-bar.js"></script>
+    <script src="attendance.js"></script>
+</body>
+</html> 
