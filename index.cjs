@@ -1870,11 +1870,31 @@ app.post('/api/events/refresh', async (req, res) => {
     // Update the cache with fresh data
     await setCachedEvents(enrichedEvents);
     
+    console.log(`🔍 [REFRESH DEBUG] About to apply filtering to ${enrichedEvents.length} events`);
+    
+    // Apply channel filters to the events (same as /api/events endpoint)
+    const channelFilters = await getChannelFilterSettings();
+    console.log(`🔍 [REFRESH DEBUG] Channel filters loaded: ${channelFilters.size} rules`);
+    
+    // Filter out events from hidden channels
+    const filteredEvents = enrichedEvents.filter(event => {
+      // If no channel ID, show the event (default)
+      if (!event.channelId) return true;
+      
+      // If channel has filter setting, use it; otherwise default to visible (true)
+      const isVisible = channelFilters.has(event.channelId) 
+        ? channelFilters.get(event.channelId) 
+        : true;
+      
+      return isVisible;
+    });
+    
+    console.log(`📡 Filtered events: ${enrichedEvents.length} total → ${filteredEvents.length} visible`);
     console.log('✅ Events cache refreshed successfully');
     
     res.json({ 
       message: 'Events refreshed successfully',
-      scheduledEvents: enrichedEvents 
+      scheduledEvents: filteredEvents 
     });
     
   } catch (error) {
@@ -7505,6 +7525,72 @@ app.get('/api/event-duration/:eventId', async (req, res) => {
         
     } catch (error) {
         console.error(`❌ [EVENT DURATION] Error for event ${eventId}:`, error.message);
+        return res.json({ success: false, error: 'Database error' });
+    }
+});
+
+// Get total gold pot for an event (sum of all gold amounts)
+app.get('/api/event-goldpot/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
+    }
+    
+    try {
+        console.log(`💰 [EVENT GOLDPOT] Fetching gold pot for event: ${eventId}`);
+        
+        const result = await pool.query(
+            'SELECT COALESCE(SUM(gold_amount), 0) as total_gold FROM loot_items WHERE event_id = $1',
+            [eventId]
+        );
+        
+        const totalGold = result.rows[0].total_gold;
+        console.log(`💰 [EVENT GOLDPOT] Gold pot for event ${eventId}: ${totalGold} gold`);
+        
+        return res.json({
+            success: true,
+            goldPot: parseInt(totalGold) || 0
+        });
+        
+    } catch (error) {
+        console.error(`❌ [EVENT GOLDPOT] Error for event ${eventId}:`, error.message);
+        return res.json({ success: false, error: 'Database error' });
+    }
+});
+
+// Get biggest item for an event (item with highest gold amount)
+app.get('/api/event-biggestitem/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
+    }
+    
+    try {
+        console.log(`💎 [EVENT BIGGESTITEM] Fetching biggest item for event: ${eventId}`);
+        
+        const result = await pool.query(
+            'SELECT item_name, gold_amount FROM loot_items WHERE event_id = $1 ORDER BY gold_amount DESC LIMIT 1',
+            [eventId]
+        );
+        
+        if (result.rows.length === 0) {
+            console.log(`❌ [EVENT BIGGESTITEM] No items found for event: ${eventId}`);
+            return res.json({ success: false, error: 'No items found' });
+        }
+        
+        const biggestItem = result.rows[0];
+        console.log(`💎 [EVENT BIGGESTITEM] Biggest item for event ${eventId}: ${biggestItem.item_name} (${biggestItem.gold_amount} gold)`);
+        
+        return res.json({
+            success: true,
+            itemName: biggestItem.item_name,
+            goldAmount: biggestItem.gold_amount
+        });
+        
+    } catch (error) {
+        console.error(`❌ [EVENT BIGGESTITEM] Error for event ${eventId}:`, error.message);
         return res.json({ success: false, error: 'Database error' });
     }
 });

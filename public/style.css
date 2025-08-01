@@ -213,6 +213,8 @@ body.has-raid-bar {
 .raid-bar-left {
     display: flex;
     align-items: center;
+    gap: 30px;
+    flex: 1;
 }
 
 .raid-title {
@@ -221,6 +223,7 @@ body.has-raid-bar {
     color: #ffffff;
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
     letter-spacing: 0.3px;
+    white-space: nowrap;
 }
 
 .raid-title::before {
@@ -236,6 +239,24 @@ body.has-raid-bar {
 .raid-nav {
     display: flex;
     gap: 15px;
+    justify-content: center;
+    flex: 1;
+}
+
+.raid-close-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: #ffffff;
+    padding: 8px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s, color 0.2s;
+    font-size: 14px;
+}
+
+.raid-close-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #ff6b6b;
 }
 
 .raid-nav-link {

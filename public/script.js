@@ -104,6 +104,84 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    // Function to fetch and display event gold pot
+    async function fetchEventGoldPot(eventId, delay = 0) {
+        const goldPotElement = document.getElementById(`goldpot-${eventId}`);
+        if (!goldPotElement) return;
+
+        // Add delay to prevent overwhelming the server
+        if (delay > 0) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+            
+            const response = await fetch(`/api/event-goldpot/${eventId}`, {
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            if (data.success && typeof data.goldPot === 'number') {
+                goldPotElement.innerHTML = `<p><i class="fas fa-coins event-icon"></i> Gold pot: <span style="color: #FFD700; font-weight: bold;">${data.goldPot}g</span></p>`;
+            } else {
+                goldPotElement.innerHTML = `<p><i class="fas fa-coins event-icon"></i> Gold pot: <span style="color: #FFD700; font-weight: bold;">0g</span></p>`;
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.warn(`Error fetching gold pot for event ${eventId}:`, error.message);
+            }
+            goldPotElement.innerHTML = `<p><i class="fas fa-coins event-icon"></i> Gold pot: <span style="color: #FFD700; font-weight: bold;">N/A</span></p>`;
+        }
+    }
+
+    // Function to fetch and display event biggest item
+    async function fetchEventBiggestItem(eventId, delay = 0) {
+        const biggestItemElement = document.getElementById(`biggestitem-${eventId}`);
+        if (!biggestItemElement) return;
+
+        // Add delay to prevent overwhelming the server
+        if (delay > 0) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+            
+            const response = await fetch(`/api/event-biggestitem/${eventId}`, {
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            if (data.success && data.itemName) {
+                biggestItemElement.innerHTML = `<p><i class="fas fa-gem event-icon"></i> Biggest item: <span style="color: #a335ee; font-weight: bold;">${data.itemName}</span></p>`;
+            } else {
+                biggestItemElement.innerHTML = `<p><i class="fas fa-gem event-icon"></i> Biggest item: None</p>`;
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.warn(`Error fetching biggest item for event ${eventId}:`, error.message);
+            }
+            biggestItemElement.innerHTML = `<p><i class="fas fa-gem event-icon"></i> Biggest item: N/A</p>`;
+        }
+    }
+
     async function fetchAndDisplayMyCharacters() {
         const myCharsContainer = document.getElementById('my-characters-list');
         if (!myCharsContainer) return; // Don't run if the container doesn't exist
@@ -536,12 +614,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="raid-duration" id="duration-${eventId}">
                             <p><i class="far fa-clock event-icon"></i> Loading...</p>
                         </div>
+                        <div class="gold-pot" id="goldpot-${eventId}">
+                            <p><i class="fas fa-coins event-icon"></i> Gold pot: Loading...</p>
+                        </div>
+                        <div class="biggest-item" id="biggestitem-${eventId}">
+                            <p><i class="fas fa-gem event-icon"></i> Biggest item: Loading...</p>
+                        </div>
                     `;
                     historicEventsList.appendChild(eventDiv);
                     
-                    // Fetch scheduled duration for this event with staggered delay
+                    // Fetch scheduled duration, gold pot, and biggest item for this event with staggered delay
                     const delay = index * 300; // 300ms delay between each request  
                     fetchEventDuration(eventId, delay);
+                    fetchEventGoldPot(eventId, delay + 100); // Small additional delay
+                    fetchEventBiggestItem(eventId, delay + 200); // Small additional delay
                 } catch (renderError) {
                     console.error('Error rendering completed event:', renderError);
                 }

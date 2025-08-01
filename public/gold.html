@@ -34,16 +34,29 @@
     <!-- Active Raid Bar (shown when raid is selected) -->
     <div class="raid-bar" id="raid-bar" style="display: none;">
         <div class="raid-bar-left">
-            <div class="raid-title" id="raid-title">Loading raid...</div>
+            <span class="raid-title" id="raid-title">Loading...</span>
+            <nav class="raid-nav">
+                <a href="#" class="raid-nav-link" id="raid-roster-link">
+                    <i class="fas fa-users"></i> Roster
+                </a>
+                <a href="#" class="raid-nav-link" id="raid-assignments-link">
+                    <i class="fas fa-tasks"></i> Assignments
+                </a>
+                <a href="/raidlogs" class="raid-nav-link" id="raid-logs-link">
+                    <i class="fas fa-chart-line"></i> Raid Logs
+                </a>
+                <a href="/gold" class="raid-nav-link active" id="raid-goldpot-link">
+                    <i class="fas fa-coins"></i> Gold Pot
+                </a>
+                <a href="/loot" class="raid-nav-link" id="raid-loot-link">
+                    <i class="fas fa-shield-alt"></i> Loot
+                </a>
+            </nav>
         </div>
         <div class="raid-bar-right">
-            <nav class="raid-nav">
-                <a href="#" class="raid-nav-link" id="raid-roster-link">Roster</a>
-                <a href="#" class="raid-nav-link" id="raid-assignments-link">Assignments</a>
-                <a href="/raidlogs" class="raid-nav-link" id="raid-logs-link">Raid Logs</a>
-                <a href="#" class="raid-nav-link" id="raid-goldpot-link">Gold Pot</a>
-                <a href="/loot" class="raid-nav-link" id="raid-loot-link">Loot</a>
-            </nav>
+            <button class="raid-close-btn" onclick="localStorage.removeItem('activeEventSession'); location.reload();">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
     </div>
     
