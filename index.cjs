@@ -6478,6 +6478,250 @@ app.get('/api/demo-shout-data/:eventId', async (req, res) => {
     }
 });
 
+// Get polymorph data for raid logs
+app.get('/api/polymorph-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🔮 [POLYMORPH] Retrieving polymorph data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [POLYMORPH] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get dynamic settings for polymorph calculation
+        const settingsResult = await client.query(`
+            SELECT setting_name, setting_value
+            FROM reward_settings 
+            WHERE setting_type = 'polymorph'
+        `);
+        
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            settings[row.setting_name] = parseFloat(row.setting_value);
+        });
+        
+        const pointsPerDivision = settings.points_per_division || 1;
+        const polymorphsNeeded = settings.polymorphs_needed || 2;
+        const maxPoints = settings.max_points || 5;
+        
+        console.log(`🔮 [POLYMORPH] Using dynamic settings: points_per_division=${pointsPerDivision}, polymorphs_needed=${polymorphsNeeded}, max_points=${maxPoints}`);
+        
+        // Query for "Polymorph" ability usage
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND ability_name = 'Polymorph'
+            ORDER BY character_name
+        `, [eventId]);
+        
+        console.log(`🔮 [POLYMORPH] Found ${result.rows.length} polymorph records for event: ${eventId}`);
+        console.log(`🔮 [POLYMORPH] Raw data sample:`, result.rows.slice(0, 3));
+        
+        // Process and calculate points for each character
+        const finalData = result.rows.map(row => {
+            // Parse the polymorph count (might be "6" or "6 (some text)")
+            const polymorphMatch = row.ability_value.toString().match(/(\d+)/);
+            const polymorphsUsed = polymorphMatch ? parseInt(polymorphMatch[1]) : 0;
+            
+            // Calculate points: min(max_points, floor(polymorphs / needed) * points_per_division)
+            // 1 point per 2 polymorphs, max 5 points
+            const points = Math.min(maxPoints, Math.floor(polymorphsUsed / polymorphsNeeded) * pointsPerDivision);
+            
+            return {
+                character_name: row.character_name,
+                character_class: row.character_class,
+                polymorphs_used: polymorphsUsed,
+                points: points
+            };
+        }).filter(char => char.polymorphs_used > 0) // Only include characters who used polymorph
+          .sort((a, b) => b.points - a.points); // Sort by points descending
+        
+        console.log(`🔮 [POLYMORPH] Processed ${finalData.length} characters with polymorphs`);
+        console.log(`🔮 [POLYMORPH] Final data sample:`, finalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                points_per_division: pointsPerDivision,
+                polymorphs_needed: polymorphsNeeded,
+                max_points: maxPoints
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [POLYMORPH] Error retrieving polymorph data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving polymorph data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get power infusion data for raid logs
+app.get('/api/power-infusion-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`💫 [POWER_INFUSION] Retrieving power infusion data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [POWER_INFUSION] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get dynamic settings for power infusion calculation
+        const settingsResult = await client.query(`
+            SELECT setting_name, setting_value
+            FROM reward_settings 
+            WHERE setting_type = 'power_infusion'
+        `);
+        
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            settings[row.setting_name] = parseFloat(row.setting_value);
+        });
+        
+        const pointsPerDivision = settings.points_per_division || 1;
+        const infusionsNeeded = settings.infusions_needed || 2;
+        const maxPoints = settings.max_points || 10;
+        
+        console.log(`💫 [POWER_INFUSION] Using dynamic settings: points_per_division=${pointsPerDivision}, infusions_needed=${infusionsNeeded}, max_points=${maxPoints}`);
+        
+        // Query for both power infusion abilities
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_name,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND (ability_name = 'Power Infusion used or gained* on bosses' 
+                OR ability_name = 'Power Infusion used or gained* on trash')
+            ORDER BY character_name, ability_name
+        `, [eventId]);
+        
+        console.log(`💫 [POWER_INFUSION] Found ${result.rows.length} power infusion records for event: ${eventId}`);
+        console.log(`💫 [POWER_INFUSION] Raw data sample:`, result.rows.slice(0, 5));
+        
+        // Group by character and combine abilities
+        const characterMap = new Map();
+        
+        result.rows.forEach(row => {
+            const characterName = row.character_name;
+            
+            if (!characterMap.has(characterName)) {
+                characterMap.set(characterName, {
+                    character_name: characterName,
+                    character_class: row.character_class,
+                    boss_infusions: 0,
+                    trash_infusions: 0,
+                    boss_raw: '',
+                    trash_raw: ''
+                });
+            }
+            
+            const character = characterMap.get(characterName);
+            const abilityValue = row.ability_value.toString();
+            
+            // Parse ability value: "15 (5 self)" -> 15 - 5 = 10
+            // or "5" -> 5
+            const mainMatch = abilityValue.match(/^(\d+)/);
+            const selfMatch = abilityValue.match(/\((\d+)\s+self\)/i);
+            
+            const mainCount = mainMatch ? parseInt(mainMatch[1]) : 0;
+            const selfCount = selfMatch ? parseInt(selfMatch[1]) : 0;
+            const effectiveCount = Math.max(0, mainCount - selfCount);
+            
+            if (row.ability_name.includes('bosses')) {
+                character.boss_infusions = effectiveCount;
+                character.boss_raw = abilityValue;
+            } else if (row.ability_name.includes('trash')) {
+                character.trash_infusions = effectiveCount;
+                character.trash_raw = abilityValue;
+            }
+        });
+        
+        // Process and calculate points for each character
+        const finalData = Array.from(characterMap.values()).map(character => {
+            const totalInfusions = character.boss_infusions + character.trash_infusions;
+            
+            // Calculate points: min(max_points, floor(infusions / needed) * points_per_division)
+            // 1 point per 2 power infusions, max 5 points
+            const points = Math.min(maxPoints, Math.floor(totalInfusions / infusionsNeeded) * pointsPerDivision);
+            
+            return {
+                character_name: character.character_name,
+                character_class: character.character_class,
+                boss_infusions: character.boss_infusions,
+                trash_infusions: character.trash_infusions,
+                total_infusions: totalInfusions,
+                boss_raw: character.boss_raw,
+                trash_raw: character.trash_raw,
+                points: points
+            };
+        }).filter(char => char.total_infusions > 0) // Only include characters who used power infusion
+          .sort((a, b) => b.total_infusions - a.total_infusions); // Sort by total infusions descending
+        
+        console.log(`💫 [POWER_INFUSION] Processed ${finalData.length} characters with power infusions`);
+        console.log(`💫 [POWER_INFUSION] Final data sample:`, finalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                points_per_division: pointsPerDivision,
+                infusions_needed: infusionsNeeded,
+                max_points: maxPoints
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [POWER_INFUSION] Error retrieving power infusion data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving power infusion data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // Debug endpoint for checking environment variables on Heroku (remove after debugging)
 app.get('/api/debug/env', (req, res) => {
     const googleVars = Object.keys(process.env).filter(key => key.startsWith('GOOGLE_'));

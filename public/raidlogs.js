@@ -28,6 +28,10 @@ class RaidLogsManager {
         this.scorchSettings = { tier1_max: 99, tier1_points: 0, tier2_max: 199, tier2_points: 5, tier3_points: 10 };
         this.demoShoutData = [];
         this.demoShoutSettings = { tier1_max: 99, tier1_points: 0, tier2_max: 199, tier2_points: 5, tier3_points: 10 };
+        this.polymorphData = [];
+        this.polymorphSettings = { points_per_division: 1, polymorphs_needed: 2, max_points: 5 };
+        this.powerInfusionData = [];
+        this.powerInfusionSettings = { points_per_division: 1, infusions_needed: 2, max_points: 10 };
         this.playerStreaksData = [];
         this.guildMembersData = [];
         this.rewardSettings = {};
@@ -75,6 +79,8 @@ class RaidLogsManager {
                 this.fetchFaerieFireData(),
                 this.fetchScorchData(),
                 this.fetchDemoShoutData(),
+                this.fetchPolymorphData(),
+                this.fetchPowerInfusionData(),
                 this.fetchPlayerStreaksData(),
                 this.fetchGuildMembersData(),
                 this.fetchRewardSettings()
@@ -513,6 +519,64 @@ class RaidLogsManager {
         }
     }
 
+    async fetchPolymorphData() {
+        console.log(`🔮 Fetching polymorph data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/polymorph-data/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch polymorph data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch polymorph data');
+            }
+            
+            this.polymorphData = result.data || [];
+            this.polymorphSettings = result.settings || { points_per_division: 1, polymorphs_needed: 2, max_points: 5 };
+            console.log(`🔮 Loaded polymorph data:`, this.polymorphData);
+            console.log(`🔮 Loaded polymorph settings:`, this.polymorphSettings);
+            
+        } catch (error) {
+            console.error('Error fetching polymorph data:', error);
+            // Don't fail the whole page if polymorph fails - just show empty data
+            this.polymorphData = [];
+            this.polymorphSettings = { points_per_division: 1, polymorphs_needed: 2, max_points: 5 }; // fallback
+        }
+    }
+
+    async fetchPowerInfusionData() {
+        console.log(`💫 Fetching power infusion data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/power-infusion-data/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch power infusion data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch power infusion data');
+            }
+            
+            this.powerInfusionData = result.data || [];
+            this.powerInfusionSettings = result.settings || { points_per_division: 1, infusions_needed: 2, max_points: 10 };
+            console.log(`💫 Loaded power infusion data:`, this.powerInfusionData);
+            console.log(`💫 Loaded power infusion settings:`, this.powerInfusionSettings);
+            
+        } catch (error) {
+            console.error('Error fetching power infusion data:', error);
+            // Don't fail the whole page if power infusion fails - just show empty data
+            this.powerInfusionData = [];
+            this.powerInfusionSettings = { points_per_division: 1, infusions_needed: 2, max_points: 10 }; // fallback
+        }
+    }
+
     async fetchPlayerStreaksData() {
         console.log(`🔥 Fetching player streaks data for event: ${this.activeEventId}`);
         
@@ -712,9 +776,15 @@ class RaidLogsManager {
         console.log('🔍 [DEBUG] Damage dealers:', damageDealer.map(p => `${p.character_name} (${p.role_detected})`));
         console.log('🔍 [DEBUG] Healers:', healers.map(p => `${p.character_name} (${p.role_detected})`));
 
+        // Calculate God Gamer awards
+        const godGamerDPS = this.calculateGodGamerDPS(damageDealer);
+        const godGamerHealer = this.calculateGodGamerHealer(healers);
+
         // Display the rankings
         this.displayPlayerStreaksRankings(this.playerStreaksData);
         this.displayGuildMembersRankings(this.guildMembersData);
+        this.displayGodGamerDPS(godGamerDPS);
+        this.displayGodGamerHealer(godGamerHealer);
         this.displayDamageRankings(damageDealer);
         this.displayHealerRankings(healers);
         this.displayAbilitiesRankings(this.abilitiesData);
@@ -729,6 +799,8 @@ class RaidLogsManager {
         this.displayFaerieFireRankings(this.faerieFireData);
         this.displayScorchRankings(this.scorchData);
         this.displayDemoShoutRankings(this.demoShoutData);
+        this.displayPolymorphRankings(this.polymorphData);
+        this.displayPowerInfusionRankings(this.powerInfusionData);
         this.updateAbilitiesHeader();
         this.updateManaPotionsHeader();
         this.updateRunesHeader();
@@ -741,6 +813,8 @@ class RaidLogsManager {
         this.updateFaerieFireHeader();
         this.updateScorchHeader();
         this.updateDemoShoutHeader();
+        this.updatePolymorphHeader();
+        this.updatePowerInfusionHeader();
         
         this.hideLoading();
         this.showContent();
@@ -842,6 +916,158 @@ class RaidLogsManager {
                 </div>
             `;
         }).join('');
+    }
+
+    calculateGodGamerDPS(players) {
+        if (players.length < 2) {
+            return null; // Need at least 2 players to compare
+        }
+
+        const firstPlace = parseInt(players[0].damage_amount) || 0;
+        const secondPlace = parseInt(players[1].damage_amount) || 0;
+        const difference = firstPlace - secondPlace;
+
+        console.log(`⚔️ [GOD GAMER DPS] #1: ${players[0].character_name} (${firstPlace.toLocaleString()}) vs #2: ${players[1].character_name} (${secondPlace.toLocaleString()}) = ${difference.toLocaleString()} difference`);
+
+        if (difference >= 250000) {
+            return {
+                ...players[0],
+                title: "God Gamer DPS",
+                points: 30,
+                trophy: "gold",
+                difference: difference,
+                secondPlace: players[1]
+            };
+        } else if (difference >= 150000) {
+            return {
+                ...players[0],
+                title: "Demi God DPS",
+                points: 20,
+                trophy: "silver",
+                difference: difference,
+                secondPlace: players[1]
+            };
+        }
+
+        return null; // Difference not large enough
+    }
+
+    calculateGodGamerHealer(players) {
+        if (players.length < 2) {
+            return null; // Need at least 2 players to compare
+        }
+
+        const firstPlace = parseInt(players[0].healing_amount) || 0;
+        const secondPlace = parseInt(players[1].healing_amount) || 0;
+        const difference = firstPlace - secondPlace;
+
+        console.log(`❤️ [GOD GAMER HEALER] #1: ${players[0].character_name} (${firstPlace.toLocaleString()}) vs #2: ${players[1].character_name} (${secondPlace.toLocaleString()}) = ${difference.toLocaleString()} difference`);
+
+        if (difference >= 250000) {
+            return {
+                ...players[0],
+                title: "God Gamer Healer",
+                points: 20,
+                trophy: "gold",
+                difference: difference,
+                secondPlace: players[1]
+            };
+        } else if (difference >= 150000) {
+            return {
+                ...players[0],
+                title: "Demi God Healer",
+                points: 15,
+                trophy: "silver",
+                difference: difference,
+                secondPlace: players[1]
+            };
+        }
+
+        return null; // Difference not large enough
+    }
+
+    displayGodGamerDPS(godGamer) {
+        const container = document.getElementById('god-gamer-dps-list');
+        const section = container.closest('.rankings-section');
+        
+        if (!godGamer) {
+            // Hide the entire section if no god gamer
+            section.style.display = 'none';
+            return;
+        }
+
+        // Show the section
+        section.style.display = 'block';
+        section.classList.add('god-gamer-dps');
+
+        const characterClass = this.normalizeClassName(godGamer.character_class);
+        const formattedDamage = this.formatNumber(parseInt(godGamer.damage_amount) || 0);
+        const formattedDifference = this.formatNumber(godGamer.difference);
+        const trophyIcon = godGamer.trophy === 'gold' ? 
+            '<i class="fas fa-trophy trophy-icon gold"></i>' : 
+            '<i class="fas fa-trophy trophy-icon silver"></i>';
+
+        container.innerHTML = `
+            <div class="ranking-item">
+                <div class="ranking-position">
+                    ${trophyIcon}
+                </div>
+                <div class="character-info class-${characterClass}" style="--fill-percentage: 100%;">
+                    <div class="character-name">
+                        ${this.getSpecIconHtml(godGamer.spec_name, godGamer.character_class)}${godGamer.character_name}
+                    </div>
+                    <div class="character-details" title="${formattedDamage} damage (+${formattedDifference} over #2)">
+                        ${formattedDamage} damage (+${formattedDifference} ahead)
+                    </div>
+                </div>
+                <div class="performance-amount" title="${godGamer.title}: ${formattedDifference} more damage than ${godGamer.secondPlace.character_name}">
+                    <div class="amount-value">${godGamer.points}</div>
+                    <div class="points-label">points</div>
+                </div>
+            </div>
+        `;
+    }
+
+    displayGodGamerHealer(godGamer) {
+        const container = document.getElementById('god-gamer-healer-list');
+        const section = container.closest('.rankings-section');
+        
+        if (!godGamer) {
+            // Hide the entire section if no god gamer
+            section.style.display = 'none';
+            return;
+        }
+
+        // Show the section
+        section.style.display = 'block';
+        section.classList.add('god-gamer-healer');
+
+        const characterClass = this.normalizeClassName(godGamer.character_class);
+        const formattedHealing = this.formatNumber(parseInt(godGamer.healing_amount) || 0);
+        const formattedDifference = this.formatNumber(godGamer.difference);
+        const trophyIcon = godGamer.trophy === 'gold' ? 
+            '<i class="fas fa-trophy trophy-icon gold"></i>' : 
+            '<i class="fas fa-trophy trophy-icon silver"></i>';
+
+        container.innerHTML = `
+            <div class="ranking-item">
+                <div class="ranking-position">
+                    ${trophyIcon}
+                </div>
+                <div class="character-info class-${characterClass}" style="--fill-percentage: 100%;">
+                    <div class="character-name">
+                        ${this.getSpecIconHtml(godGamer.spec_name, godGamer.character_class)}${godGamer.character_name}
+                    </div>
+                    <div class="character-details" title="${formattedHealing} healing (+${formattedDifference} over #2)">
+                        ${formattedHealing} healing (+${formattedDifference} ahead)
+                    </div>
+                </div>
+                <div class="performance-amount" title="${godGamer.title}: ${formattedDifference} more healing than ${godGamer.secondPlace.character_name}">
+                    <div class="amount-value">${godGamer.points}</div>
+                    <div class="points-label">points</div>
+                </div>
+            </div>
+        `;
     }
 
     displayDamageRankings(players) {
@@ -1736,6 +1962,139 @@ class RaidLogsManager {
         if (headerElement && this.demoShoutSettings) {
             const { tier1_max, tier1_points, tier2_max, tier2_points, tier3_points } = this.demoShoutSettings;
             headerElement.textContent = `Ranked by points (0-${tier1_max}: ${tier1_points}pts, ${tier1_max + 1}-${tier2_max}: ${tier2_points}pts, ${tier2_max + 1}+: ${tier3_points}pts)`;
+        }
+    }
+
+    displayPolymorphRankings(players) {
+        const container = document.getElementById('polymorph-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('polymorph');
+
+        // Filter out players with 0 polymorphs and sort by polymorphs used (highest first)
+        const playersWithPolymorphs = players.filter(player => player.polymorphs_used > 0)
+            .sort((a, b) => b.polymorphs_used - a.polymorphs_used);
+
+        if (playersWithPolymorphs.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-magic"></i>
+                    <p>Nothing to see, move along</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Get max polymorphs for percentage calculation
+        const maxPolymorphs = Math.max(...playersWithPolymorphs.map(p => p.polymorphs_used)) || 1;
+
+        container.innerHTML = playersWithPolymorphs.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const fillPercentage = Math.max(5, (player.polymorphs_used / maxPolymorphs) * 100); // Minimum 5% for visibility
+
+            const polymorphText = `${player.polymorphs_used} polymorphs`;
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${player.character_name}
+                        </div>
+                        <div class="character-details" title="${polymorphText}">
+                            ${this.truncateWithTooltip(polymorphText).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${player.polymorphs_used} polymorphs (${Math.floor(player.polymorphs_used / this.polymorphSettings.polymorphs_needed)} divisions, max ${this.polymorphSettings.max_points} points)">
+                        <div class="amount-value">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updatePolymorphHeader() {
+        const headerElement = document.querySelector('.polymorph-section .section-header p');
+        if (headerElement && this.polymorphSettings) {
+            const { points_per_division, polymorphs_needed, max_points } = this.polymorphSettings;
+            const pointsText = points_per_division === 1 ? 'pt' : 'pts';
+            const polymorphsText = polymorphs_needed === 1 ? 'polymorph' : 'polymorphs';
+            headerElement.textContent = `Ranked by points (${points_per_division} ${pointsText} per ${polymorphs_needed} ${polymorphsText}, max ${max_points})`;
+        }
+    }
+
+    displayPowerInfusionRankings(players) {
+        const container = document.getElementById('power-infusion-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('power-infusion');
+
+        // Filter out players with 0 infusions and sort by total infusions (highest first)
+        const playersWithInfusions = players.filter(player => player.total_infusions > 0)
+            .sort((a, b) => b.total_infusions - a.total_infusions);
+
+        if (playersWithInfusions.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-bolt"></i>
+                    <p>Nothing to see, move along</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Get max infusions for percentage calculation
+        const maxInfusions = Math.max(...playersWithInfusions.map(p => p.total_infusions)) || 1;
+
+        container.innerHTML = playersWithInfusions.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const fillPercentage = Math.max(5, (player.total_infusions / maxInfusions) * 100); // Minimum 5% for visibility
+
+            // Create breakdown showing boss and trash separately
+            const infusionBreakdown = [];
+            if (player.boss_infusions > 0) infusionBreakdown.push(`${player.boss_infusions} on bosses`);
+            if (player.trash_infusions > 0) infusionBreakdown.push(`${player.trash_infusions} on trash`);
+            
+            const infusionText = `${player.total_infusions} total (${infusionBreakdown.join(', ')})`;
+            
+            // Show raw values in tooltip for debugging
+            const rawBreakdown = [];
+            if (player.boss_raw) rawBreakdown.push(`Bosses: ${player.boss_raw}`);
+            if (player.trash_raw) rawBreakdown.push(`Trash: ${player.trash_raw}`);
+            const tooltipText = rawBreakdown.length > 0 ? `${infusionText} - Raw: ${rawBreakdown.join(', ')}` : infusionText;
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${player.character_name}
+                        </div>
+                        <div class="character-details" title="${tooltipText}">
+                            ${this.truncateWithTooltip(infusionText).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${tooltipText}">
+                        <div class="amount-value">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updatePowerInfusionHeader() {
+        const headerElement = document.querySelector('.power-infusion-section .section-header p');
+        if (headerElement && this.powerInfusionSettings) {
+            const { points_per_division, infusions_needed, max_points } = this.powerInfusionSettings;
+            const pointsText = points_per_division === 1 ? 'pt' : 'pts';
+            const infusionsText = infusions_needed === 1 ? 'infusion' : 'infusions';
+            headerElement.textContent = `Ranked by points (${points_per_division} ${pointsText} per ${infusions_needed} ${infusionsText}, max ${max_points}, excludes self-casts)`;
         }
     }
 
