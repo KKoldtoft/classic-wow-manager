@@ -787,6 +787,9 @@ class RaidLogsManager {
         this.displayGodGamerHealer(godGamerHealer);
         this.displayDamageRankings(damageDealer);
         this.displayHealerRankings(healers);
+        this.displayShamanHealers(healers);
+        this.displayPriestHealers(healers);
+        this.displayDruidHealers(healers);
         this.displayAbilitiesRankings(this.abilitiesData);
         this.displayManaPotionsRankings(this.manaPotionsData);
         this.displayRunesRankings(this.runesData);
@@ -1174,6 +1177,171 @@ class RaidLogsManager {
             
             // Calculate points (based on array length, rest get 0)
             const points = position <= healingPoints.length ? healingPoints[position - 1] : 0;
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        ${trophyHtml}
+                        ${position <= 3 ? '' : `<span class="ranking-number">#${position}</span>`}
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${this.getSpecIconHtml(player.spec_name, player.character_class)}${player.character_name}
+                        </div>
+                        <div class="character-details" title="${formattedHealing} healing">
+                            ${this.truncateWithTooltip(`${formattedHealing} healing`).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${(parseInt(player.healing_amount) || 0).toLocaleString()} healing">
+                        <div class="amount-value">${points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    displayShamanHealers(healers) {
+        const container = document.getElementById('shaman-healers-list');
+        const section = container.closest('.rankings-section');
+        
+        // Filter shamans and take top 3
+        const shamanHealers = healers
+            .filter(player => {
+                const className = (player.character_class || '').toLowerCase();
+                return className.includes('shaman');
+            })
+            .slice(0, 3); // Top 3 shamans
+
+        if (shamanHealers.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = 'block';
+        section.classList.add('shaman-healers');
+
+        const pointsArray = [25, 20, 15]; // Points for positions 1, 2, 3
+        const maxHealing = parseInt(shamanHealers[0].healing_amount) || 1;
+
+        container.innerHTML = shamanHealers.map((player, index) => {
+            const position = index + 1;
+            const trophyHtml = this.getTrophyHtml(position);
+            const characterClass = this.normalizeClassName(player.character_class);
+            const formattedHealing = this.formatNumber(parseInt(player.healing_amount) || 0);
+            const playerHealing = parseInt(player.healing_amount) || 0;
+            const fillPercentage = Math.max(5, (playerHealing / maxHealing) * 100);
+            const points = pointsArray[index] || 0;
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        ${trophyHtml}
+                        ${position <= 3 ? '' : `<span class="ranking-number">#${position}</span>`}
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${this.getSpecIconHtml(player.spec_name, player.character_class)}${player.character_name}
+                        </div>
+                        <div class="character-details" title="${formattedHealing} healing">
+                            ${this.truncateWithTooltip(`${formattedHealing} healing`).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${(parseInt(player.healing_amount) || 0).toLocaleString()} healing">
+                        <div class="amount-value">${points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    displayPriestHealers(healers) {
+        const container = document.getElementById('priest-healers-list');
+        const section = container.closest('.rankings-section');
+        
+        // Filter priests and take top 2
+        const priestHealers = healers
+            .filter(player => {
+                const className = (player.character_class || '').toLowerCase();
+                return className.includes('priest');
+            })
+            .slice(0, 2); // Top 2 priests
+
+        if (priestHealers.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = 'block';
+        section.classList.add('priest-healers');
+
+        const pointsArray = [20, 15]; // Points for positions 1, 2
+        const maxHealing = parseInt(priestHealers[0].healing_amount) || 1;
+
+        container.innerHTML = priestHealers.map((player, index) => {
+            const position = index + 1;
+            const trophyHtml = this.getTrophyHtml(position);
+            const characterClass = this.normalizeClassName(player.character_class);
+            const formattedHealing = this.formatNumber(parseInt(player.healing_amount) || 0);
+            const playerHealing = parseInt(player.healing_amount) || 0;
+            const fillPercentage = Math.max(5, (playerHealing / maxHealing) * 100);
+            const points = pointsArray[index] || 0;
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        ${trophyHtml}
+                        ${position <= 3 ? '' : `<span class="ranking-number">#${position}</span>`}
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${this.getSpecIconHtml(player.spec_name, player.character_class)}${player.character_name}
+                        </div>
+                        <div class="character-details" title="${formattedHealing} healing">
+                            ${this.truncateWithTooltip(`${formattedHealing} healing`).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${(parseInt(player.healing_amount) || 0).toLocaleString()} healing">
+                        <div class="amount-value">${points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    displayDruidHealers(healers) {
+        const container = document.getElementById('druid-healers-list');
+        const section = container.closest('.rankings-section');
+        
+        // Filter druids and take top 1
+        const druidHealers = healers
+            .filter(player => {
+                const className = (player.character_class || '').toLowerCase();
+                return className.includes('druid');
+            })
+            .slice(0, 1); // Top 1 druid
+
+        if (druidHealers.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = 'block';
+        section.classList.add('druid-healers');
+
+        const pointsArray = [15]; // Points for position 1
+        const maxHealing = parseInt(druidHealers[0].healing_amount) || 1;
+
+        container.innerHTML = druidHealers.map((player, index) => {
+            const position = index + 1;
+            const trophyHtml = this.getTrophyHtml(position);
+            const characterClass = this.normalizeClassName(player.character_class);
+            const formattedHealing = this.formatNumber(parseInt(player.healing_amount) || 0);
+            const playerHealing = parseInt(player.healing_amount) || 0;
+            const fillPercentage = 100; // Always 100% since it's the top druid
+            const points = pointsArray[index] || 0;
 
             return `
                 <div class="ranking-item">
