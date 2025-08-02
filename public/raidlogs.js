@@ -28,6 +28,7 @@ class RaidLogsManager {
         this.scorchSettings = { tier1_max: 99, tier1_points: 0, tier2_max: 199, tier2_points: 5, tier3_points: 10 };
         this.demoShoutData = [];
         this.demoShoutSettings = { tier1_max: 99, tier1_points: 0, tier2_max: 199, tier2_points: 5, tier3_points: 10 };
+        this.playerStreaksData = [];
         this.rewardSettings = {};
         this.specData = {};
         this.initializeEventListeners();
@@ -57,7 +58,7 @@ class RaidLogsManager {
         this.showLoading();
         
         try {
-            // Fetch log data, raid statistics, abilities data, mana potions data, runes data, interrupts data, disarms data, sunder data, curse data, and reward settings in parallel
+            // Fetch log data, raid statistics, abilities data, mana potions data, runes data, interrupts data, disarms data, sunder data, curse data, player streaks, and reward settings in parallel
             await Promise.all([
                 this.fetchLogData(), // Now includes backend role enhancement via roster_overrides
                 this.fetchRaidStats(),
@@ -73,6 +74,7 @@ class RaidLogsManager {
                 this.fetchFaerieFireData(),
                 this.fetchScorchData(),
                 this.fetchDemoShoutData(),
+                this.fetchPlayerStreaksData(),
                 this.fetchRewardSettings()
             ]);
             this.displayRaidLogs();
@@ -509,6 +511,33 @@ class RaidLogsManager {
         }
     }
 
+    async fetchPlayerStreaksData() {
+        console.log(`🔥 Fetching player streaks data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/player-streaks/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch player streaks data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch player streaks data');
+            }
+            
+            this.playerStreaksData = result.data || [];
+            console.log(`🔥 Loaded player streaks data:`, this.playerStreaksData);
+            console.log(`🔥 Found ${this.playerStreaksData.length} players with streak >= 4`);
+            
+        } catch (error) {
+            console.error('Error fetching player streaks data:', error);
+            // Don't fail the whole page if player streaks fails - just show empty data
+            this.playerStreaksData = [];
+        }
+    }
+
     updateStatCards() {
         // Update RPB Archive card
         this.updateRPBArchiveCard();
@@ -655,6 +684,7 @@ class RaidLogsManager {
         console.log('🔍 [DEBUG] Healers:', healers.map(p => `${p.character_name} (${p.role_detected})`));
 
         // Display the rankings
+        this.displayPlayerStreaksRankings(this.playerStreaksData);
         this.displayDamageRankings(damageDealer);
         this.displayHealerRankings(healers);
         this.displayAbilitiesRankings(this.abilitiesData);
@@ -684,6 +714,49 @@ class RaidLogsManager {
         
         this.hideLoading();
         this.showContent();
+    }
+
+    displayPlayerStreaksRankings(players) {
+        const container = document.getElementById('player-streaks-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('streak-section');
+
+        if (!players || players.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-fire"></i>
+                    <p>No players with 4+ week attendance streak in this raid</p>
+                </div>
+            `;
+            return;
+        }
+
+        console.log(`🔥 Displaying ${players.length} players with streaks >= 4`);
+
+        container.innerHTML = players.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const trophyHtml = this.getTrophyHtml(position);
+            
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        ${trophyHtml}
+                        <span class="ranking-number">${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}">
+                        <div class="character-name">${player.character_name}</div>
+                        <div class="character-details" title="${player.discord_username}">
+                            ${player.discord_username}
+                        </div>
+                    </div>
+                    <div class="performance-amount">
+                        <div class="streak-badge">${player.player_streak}</div>
+                        <div class="points-label">weeks</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
     }
 
     displayDamageRankings(players) {

@@ -283,35 +283,7 @@ class AttendanceManager {
         }
     }
     
-    calculatePlayerStreak(playerId, weeks, attendance, currentWeek) {
-        // Calculate consecutive weeks attended including current week
-        let streak = 0;
-        
-        // Sort weeks in reverse chronological order (most recent first, including current week)
-        // Create a copy to avoid mutating the original array
-        const sortedWeeks = [...weeks]
-            .sort((a, b) => {
-                if (a.weekYear !== b.weekYear) {
-                    return b.weekYear - a.weekYear;
-                }
-                return b.weekNumber - a.weekNumber;
-            });
-        
-        // Check consecutive attendance from most recent week backwards
-        for (const week of sortedWeeks) {
-            const weekKey = `${week.weekYear}-${week.weekNumber}`;
-            const playerAttendance = attendance[playerId];
-            const weekAttendance = playerAttendance && playerAttendance[weekKey];
-            
-            if (weekAttendance && weekAttendance.length > 0) {
-                streak++;
-            } else {
-                break; // Streak broken
-            }
-        }
-        
-        return streak;
-    }
+
     
     getPlayerCharacters(playerId, weeks, attendance) {
         // Collect all unique characters for this player across all weeks
@@ -471,7 +443,7 @@ class AttendanceManager {
             playerCell.className = 'player-column';
             
             const characters = this.getPlayerCharacters(player.discord_id, weeks, attendance);
-            const streak = this.calculatePlayerStreak(player.discord_id, weeks, attendance, currentWeek);
+            const streak = player.player_streak || 0;
             
             // Create character list HTML
             const charactersHtml = characters.length > 0 

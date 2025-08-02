@@ -555,6 +555,37 @@
     margin-top: 30px;
 }
 
+/* Player Streaks specific styling */
+.streak-container {
+    margin-bottom: 30px;
+}
+
+.rankings-section.streak-section {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.rankings-section.streak-section .section-header {
+    background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+}
+
+.rankings-section.streak-section .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+.streak-badge {
+    background: linear-gradient(135deg, #ff6b35, #f7931e);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.9em;
+    font-weight: 700;
+    margin-left: 10px;
+    min-width: 40px;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(255, 107, 53, 0.3);
+}
+
 /* Role badge - removed as requested */
 
 /* Empty state for rankings */

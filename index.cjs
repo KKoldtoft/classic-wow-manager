@@ -3531,9 +3531,16 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 channel_name VARCHAR(255),
                 character_name VARCHAR(255),
                 character_class VARCHAR(50),
+                player_streak INTEGER DEFAULT 0,
                 cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (discord_id, week_year, week_number, event_id)
             )
+        `);
+        
+        // Add player_streak column if it doesn't exist (for existing tables)
+        await client.query(`
+            ALTER TABLE attendance_cache 
+            ADD COLUMN IF NOT EXISTS player_streak INTEGER DEFAULT 0
         `);
         
         // Create attendance_channel_filters table for filtering which channels to include
@@ -4359,6 +4366,94 @@ app.get('/api/log-data/:eventId', async (req, res) => {
         res.status(500).json({ 
             success: false, 
             message: 'Error retrieving log data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get player streak data for raid logs
+app.get('/api/player-streaks/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🔥 [PLAYER STREAKS] Retrieving player streak data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if log_data table exists
+        const logTableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'log_data'
+            );
+        `);
+        
+        if (!logTableCheck.rows[0].exists) {
+            console.log('⚠️ [PLAYER STREAKS] log_data table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Check if attendance_cache table exists
+        const attendanceTableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'attendance_cache'
+            );
+        `);
+        
+        if (!attendanceTableCheck.rows[0].exists) {
+            console.log('⚠️ [PLAYER STREAKS] attendance_cache table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get players from the raid log and their streak data
+        const result = await client.query(`
+            SELECT 
+                ld.character_name,
+                ld.character_class,
+                ld.discord_id,
+                ac.player_streak,
+                ac.discord_username
+            FROM log_data ld
+            LEFT JOIN (
+                SELECT DISTINCT ON (discord_id) 
+                    discord_id, 
+                    player_streak,
+                    discord_username
+                FROM attendance_cache 
+                ORDER BY discord_id, cached_at DESC
+            ) ac ON ld.discord_id = ac.discord_id
+            WHERE ld.event_id = $1
+            AND ac.player_streak >= 4
+            ORDER BY ac.player_streak DESC, ld.character_name ASC
+        `, [eventId]);
+        
+        console.log(`🔥 [PLAYER STREAKS] Found ${result.rows.length} players with streak >= 4 for event: ${eventId}`);
+        
+        const playersWithStreaks = result.rows.map(row => ({
+            character_name: row.character_name,
+            character_class: row.character_class,
+            discord_id: row.discord_id,
+            discord_username: row.discord_username || `user-${row.discord_id.slice(-4)}`,
+            player_streak: row.player_streak || 0
+        }));
+        
+        res.json({ 
+            success: true, 
+            data: playersWithStreaks,
+            eventId: eventId,
+            minStreak: 4,
+            totalCount: playersWithStreaks.length
+        });
+        
+    } catch (error) {
+        console.error('❌ [PLAYER STREAKS] Error retrieving player streak data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving player streak data',
             error: error.message 
         });
     } finally {
@@ -7754,6 +7849,83 @@ function getCustomWeekNumber(date) {
     };
 }
 
+// Helper function to calculate player streak from attendance cache
+async function calculatePlayerStreak(client, discordId, currentWeek) {
+    try {
+        // Get the last 15 weeks of data for this player
+        const weeks = [];
+        const now = new Date();
+        for (let i = 14; i >= 0; i--) {
+            const weekDate = new Date(now);
+            weekDate.setDate(weekDate.getDate() - (i * 7));
+            const weekInfo = getCustomWeekNumber(weekDate);
+            weeks.push(weekInfo);
+        }
+        
+        // Get attendance data for this player, respecting channel filters
+        const attendanceResult = await client.query(`
+            SELECT DISTINCT ac.week_year, ac.week_number
+            FROM attendance_cache ac
+            LEFT JOIN attendance_channel_filters acf ON ac.channel_id = acf.channel_id
+            WHERE ac.discord_id = $1
+            AND (ac.week_year, ac.week_number) IN (${weeks.map((_, i) => `($${i * 2 + 2}, $${i * 2 + 3})`).join(', ')})
+            AND (acf.is_included IS NULL OR acf.is_included = true)
+            ORDER BY ac.week_year DESC, ac.week_number DESC
+        `, [discordId, ...weeks.flatMap(w => [w.weekYear, w.weekNumber])]);
+        
+        const attendedWeeks = new Set(
+            attendanceResult.rows.map(row => `${row.week_year}-${row.week_number}`)
+        );
+        
+        // Sort weeks in reverse chronological order (most recent first)
+        const sortedWeeks = [...weeks].sort((a, b) => {
+            if (a.weekYear !== b.weekYear) {
+                return b.weekYear - a.weekYear;
+            }
+            return b.weekNumber - a.weekNumber;
+        });
+        
+        // Calculate consecutive attendance streak from most recent week backwards
+        let streak = 0;
+        for (const week of sortedWeeks) {
+            const weekKey = `${week.weekYear}-${week.weekNumber}`;
+            if (attendedWeeks.has(weekKey)) {
+                streak++;
+            } else {
+                break; // Streak broken
+            }
+        }
+        
+        return streak;
+        
+    } catch (error) {
+        console.error('❌ Error calculating player streak:', error);
+        return 0;
+    }
+}
+
+// Helper function to update player_streak for all characters of a given player
+async function updatePlayerStreakForAllCharacters(client, discordId, currentWeek) {
+    try {
+        // Calculate the current streak for this player
+        const streak = await calculatePlayerStreak(client, discordId, currentWeek);
+        
+        // Update all characters for this player with the calculated streak
+        await client.query(`
+            UPDATE attendance_cache 
+            SET player_streak = $1 
+            WHERE discord_id = $2
+        `, [streak, discordId]);
+        
+        console.log(`✅ Updated streak (${streak}) for all characters of player ${discordId}`);
+        return streak;
+        
+    } catch (error) {
+        console.error('❌ Error updating player streak for all characters:', error);
+        return 0;
+    }
+}
+
 // Get attendance data for display
 app.get('/api/attendance', async (req, res) => {
     let client;
@@ -7774,18 +7946,22 @@ app.get('/api/attendance', async (req, res) => {
         }
         
         // Get all unique discord IDs from the attendance data, respecting channel filters
+        // We'll get the most recent player_streak for each player
         const playersResult = await client.query(`
-            SELECT DISTINCT ac.discord_id, ac.discord_username
+            SELECT DISTINCT ON (ac.discord_id) 
+                ac.discord_id, 
+                ac.discord_username, 
+                ac.player_streak
             FROM attendance_cache ac
             LEFT JOIN attendance_channel_filters acf ON ac.channel_id = acf.channel_id
             WHERE (ac.week_year, ac.week_number) IN (${weeks.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ')})
             AND (acf.is_included IS NULL OR acf.is_included = true)
-            ORDER BY ac.discord_username ASC
+            ORDER BY ac.discord_id, ac.week_year DESC, ac.week_number DESC, ac.cached_at DESC
         `, weeks.flatMap(w => [w.weekYear, w.weekNumber]));
         
         // Get attendance data for all players and weeks, respecting channel filters
         const attendanceResult = await client.query(`
-            SELECT ac.discord_id, ac.week_year, ac.week_number, ac.event_id, ac.channel_name, ac.character_name, ac.character_class
+            SELECT ac.discord_id, ac.week_year, ac.week_number, ac.event_id, ac.channel_name, ac.character_name, ac.character_class, ac.player_streak
             FROM attendance_cache ac
             LEFT JOIN attendance_channel_filters acf ON ac.channel_id = acf.channel_id
             WHERE (ac.week_year, ac.week_number) IN (${weeks.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ')})
@@ -7982,6 +8158,7 @@ app.post('/api/attendance/rebuild', async (req, res) => {
                 });
                 
                 // Insert attendance records
+                const processedPlayers = new Set();
                 for (const player of eventPlayers) {
                     const username = usernameMap[player.discord_id] || `user-${player.discord_id.slice(-4)}`;
                     
@@ -7989,8 +8166,8 @@ app.post('/api/attendance/rebuild', async (req, res) => {
                         INSERT INTO attendance_cache (
                             discord_id, discord_username, week_year, week_number,
                             event_id, event_date, channel_id, channel_name,
-                            character_name, character_class
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                            character_name, character_class, player_streak
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                         ON CONFLICT (discord_id, week_year, week_number, event_id) 
                         DO UPDATE SET
                             discord_username = EXCLUDED.discord_username,
@@ -7999,6 +8176,7 @@ app.post('/api/attendance/rebuild', async (req, res) => {
                             channel_name = EXCLUDED.channel_name,
                             character_name = EXCLUDED.character_name,
                             character_class = EXCLUDED.character_class,
+                            player_streak = EXCLUDED.player_streak,
                             cached_at = CURRENT_TIMESTAMP
                     `, [
                         player.discord_id,
@@ -8010,8 +8188,17 @@ app.post('/api/attendance/rebuild', async (req, res) => {
                         eventData.channelId,
                         channelDisplayName,
                         player.character_name,
-                        player.character_class
+                        player.character_class,
+                        0 // Temporary value, will be updated below
                     ]);
+                    
+                    // Track which players we need to update streaks for
+                    processedPlayers.add(player.discord_id);
+                }
+                
+                // Update player streaks for all affected players
+                for (const discordId of processedPlayers) {
+                    await updatePlayerStreakForAllCharacters(client, discordId, weekInfo);
                 }
                 
                 processedEvents++;
@@ -8204,6 +8391,7 @@ app.post('/api/attendance/rebuild-week', async (req, res) => {
                 });
                 
                 // Insert attendance records
+                const processedPlayers = new Set();
                 for (const player of players) {
                     const username = usernameMap[player.discord_id] || `user-${player.discord_id.slice(-4)}`;
                     
@@ -8211,8 +8399,8 @@ app.post('/api/attendance/rebuild-week', async (req, res) => {
                         INSERT INTO attendance_cache (
                             discord_id, discord_username, week_year, week_number,
                             event_id, event_date, channel_id, channel_name,
-                            character_name, character_class
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                            character_name, character_class, player_streak
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                         ON CONFLICT (discord_id, week_year, week_number, event_id) 
                         DO UPDATE SET
                             discord_username = EXCLUDED.discord_username,
@@ -8221,6 +8409,7 @@ app.post('/api/attendance/rebuild-week', async (req, res) => {
                             channel_name = EXCLUDED.channel_name,
                             character_name = EXCLUDED.character_name,
                             character_class = EXCLUDED.character_class,
+                            player_streak = EXCLUDED.player_streak,
                             cached_at = CURRENT_TIMESTAMP
                     `, [
                         player.discord_id,
@@ -8232,8 +8421,17 @@ app.post('/api/attendance/rebuild-week', async (req, res) => {
                         eventData.channelId,
                         channelDisplayName,
                         player.character_name,
-                        player.character_class
+                        player.character_class,
+                        0 // Temporary value, will be updated below
                     ]);
+                    
+                    // Track which players we need to update streaks for
+                    processedPlayers.add(player.discord_id);
+                }
+                
+                // Update player streaks for all affected players
+                for (const discordId of processedPlayers) {
+                    await updatePlayerStreakForAllCharacters(client, discordId, weekInfo);
                 }
                 
                 processedEvents++;
