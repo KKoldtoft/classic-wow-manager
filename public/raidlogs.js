@@ -733,26 +733,39 @@ class RaidLogsManager {
 
         console.log(`🔥 Displaying ${players.length} players with streaks >= 4`);
 
+        // Calculate points for each player based on streak
+        const calculatePoints = (streak) => {
+            if (streak <= 3) return 0;
+            if (streak === 4) return 3;
+            if (streak === 5) return 6;
+            if (streak === 6) return 9;
+            if (streak === 7) return 12;
+            return 15; // 8+ weeks
+        };
+
+        // Get max streak for percentage calculation
+        const maxStreak = Math.max(...players.map(p => p.player_streak));
+
         container.innerHTML = players.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const trophyHtml = this.getTrophyHtml(position);
+            const points = calculatePoints(player.player_streak);
+            const fillPercentage = Math.round((player.player_streak / maxStreak) * 100);
             
             return `
                 <div class="ranking-item">
                     <div class="ranking-position">
-                        ${trophyHtml}
-                        <span class="ranking-number">${position}</span>
+                        <span class="ranking-number">#${position}</span>
                     </div>
-                    <div class="character-info class-${characterClass}">
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%">
                         <div class="character-name">${player.character_name}</div>
-                        <div class="character-details" title="${player.discord_username}">
-                            ${player.discord_username}
+                        <div class="character-details" title="${player.player_streak} consecutive weeks">
+                            ${player.player_streak} weeks
                         </div>
                     </div>
                     <div class="performance-amount">
-                        <div class="streak-badge">${player.player_streak}</div>
-                        <div class="points-label">weeks</div>
+                        <div class="amount-value">${points}</div>
+                        <div class="points-label">points</div>
                     </div>
                 </div>
             `;
