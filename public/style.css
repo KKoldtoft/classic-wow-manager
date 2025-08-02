@@ -527,7 +527,7 @@ body.has-raid-bar {
     color: #ffffff; /* Discord blue for titles */
     margin-top: 0;
     margin-bottom: 10px;
-    font-size: 1.3em;
+    font-size: 16px;
     border-bottom: 1px solid #f0f0f0; /* Separator under title */
     padding-bottom: 8px;
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8); /* Dark drop shadow for readability */
@@ -566,12 +566,17 @@ body.has-raid-bar {
 .raid-duration,
 .gold-pot,
 .biggest-item {
+    font-size: 0.95em; /* Match upcoming raids font size */
     text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); /* Dark drop shadow for readability */
 }
 
 .raid-duration p,
 .gold-pot p,
 .biggest-item p {
+    margin: 8px 0;
+    font-size: 0.9em; /* Match upcoming raids font size */
+    display: flex;
+    align-items: center;
     text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); /* Dark drop shadow for readability */
 }
 

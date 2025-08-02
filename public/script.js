@@ -344,15 +344,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             const data = await response.json();
 
             if (data.success && typeof data.goldPot === 'number') {
-                goldPotElement.innerHTML = `<p><i class="fas fa-coins event-icon"></i> Gold pot: <span style="color: #FFD700; font-weight: bold;">${data.goldPot}g</span></p>`;
+                goldPotElement.innerHTML = `<p><i class="fas fa-coins event-icon"></i> Gold pot: <span style="color: #FFD700;">${data.goldPot}g</span></p>`;
             } else {
-                goldPotElement.innerHTML = `<p><i class="fas fa-coins event-icon"></i> Gold pot: <span style="color: #FFD700; font-weight: bold;">0g</span></p>`;
+                goldPotElement.innerHTML = `<p><i class="fas fa-coins event-icon"></i> Gold pot: <span style="color: #FFD700;">0g</span></p>`;
             }
         } catch (error) {
             if (error.name !== 'AbortError') {
                 console.warn(`Error fetching gold pot for event ${eventId}:`, error.message);
             }
-            goldPotElement.innerHTML = `<p><i class="fas fa-coins event-icon"></i> Gold pot: <span style="color: #FFD700; font-weight: bold;">N/A</span></p>`;
+            goldPotElement.innerHTML = `<p><i class="fas fa-coins event-icon"></i> Gold pot: <span style="color: #FFD700;">N/A</span></p>`;
         }
     }
 
@@ -384,9 +384,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (data.success && data.itemName) {
                 const iconHtml = data.iconLink ? 
-                    `<img src="${data.iconLink}" alt="${data.itemName}" class="item-icon-small" style="width: 30px; height: 30px; vertical-align: middle; margin-right: 8px; border-radius: 4px;">` : 
+                    `<img src="${data.iconLink}" alt="${data.itemName}" class="item-icon-small" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 8px; border-radius: 4px;">` : 
                     `<i class="fas fa-gem event-icon"></i> `;
-                biggestItemElement.innerHTML = `<p>${iconHtml}<span style="color: #a335ee; font-weight: bold;">${data.itemName}</span></p>`;
+                biggestItemElement.innerHTML = `<p>${iconHtml}<span style="color: #a335ee;">${data.itemName}</span></p>`;
             } else {
                 biggestItemElement.innerHTML = `<p><i class="fas fa-gem event-icon"></i> None</p>`;
             }
@@ -918,7 +918,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <p><i class="fas fa-coins event-icon"></i> Gold pot: Loading...</p>
                         </div>
                         <div class="biggest-item" id="biggestitem-${eventId}">
-                            <p><i class="fas fa-gem event-icon"></i> Biggest item: Loading...</p>
+                            <p><i class="fas fa-gem event-icon"></i> Loading...</p>
                         </div>
                     `;
                     historicEventsList.appendChild(eventDiv);
