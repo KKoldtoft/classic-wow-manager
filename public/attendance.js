@@ -284,12 +284,12 @@ class AttendanceManager {
     }
     
     calculatePlayerStreak(playerId, weeks, attendance, currentWeek) {
-        // Calculate consecutive weeks attended up to (but not including) current week
+        // Calculate consecutive weeks attended including current week
         let streak = 0;
         
-        // Sort weeks in reverse chronological order (most recent first, excluding current week)
-        const sortedWeeks = weeks
-            .filter(week => !(week.weekYear === currentWeek.weekYear && week.weekNumber === currentWeek.weekNumber))
+        // Sort weeks in reverse chronological order (most recent first, including current week)
+        // Create a copy to avoid mutating the original array
+        const sortedWeeks = [...weeks]
             .sort((a, b) => {
                 if (a.weekYear !== b.weekYear) {
                     return b.weekYear - a.weekYear;
@@ -311,6 +311,32 @@ class AttendanceManager {
         }
         
         return streak;
+    }
+    
+    getPlayerCharacters(playerId, weeks, attendance) {
+        // Collect all unique characters for this player across all weeks
+        const charactersMap = new Map();
+        
+        weeks.forEach(week => {
+            const weekKey = `${week.weekYear}-${week.weekNumber}`;
+            const playerAttendance = attendance[playerId];
+            const weekAttendance = playerAttendance && playerAttendance[weekKey];
+            
+            if (weekAttendance && weekAttendance.length > 0) {
+                weekAttendance.forEach(event => {
+                    const characterName = event.characterName || 'Unknown';
+                    const characterClass = (event.characterClass || 'unknown').toLowerCase();
+                    
+                    // Store the character with its class (use the most recent class if name appears multiple times)
+                    charactersMap.set(characterName, characterClass);
+                });
+            }
+        });
+        
+        // Convert to array and sort alphabetically
+        return Array.from(charactersMap.entries())
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([name, characterClass]) => ({ name, characterClass }));
     }
     
     renderAttendanceTable() {
@@ -338,7 +364,7 @@ class AttendanceManager {
         if (!headerRow) return;
         
         // Clear existing headers except player column
-        headerRow.innerHTML = '<th class="player-column">Player</th>';
+        headerRow.innerHTML = '<th class="player-column">Characters</th>';
         
         // Add week columns
         weeks.forEach(week => {
@@ -440,15 +466,24 @@ class AttendanceManager {
         sortedPlayers.forEach(player => {
             const row = document.createElement('tr');
             
-            // Player name column with streak
+            // Player characters column with streak
             const playerCell = document.createElement('td');
             playerCell.className = 'player-column';
             
-            const playerName = player.discord_username || `user-${player.discord_id.slice(-4)}`;
+            const characters = this.getPlayerCharacters(player.discord_id, weeks, attendance);
             const streak = this.calculatePlayerStreak(player.discord_id, weeks, attendance, currentWeek);
             
+            // Create character list HTML
+            const charactersHtml = characters.length > 0 
+                ? characters.map(char => 
+                    `<div class="character-name-line class-${char.characterClass}">${char.name}</div>`
+                  ).join('')
+                : `<div class="character-name-line class-unknown">No characters</div>`;
+            
             playerCell.innerHTML = `
-                <span class="player-name">${playerName}</span>
+                <div class="player-characters">
+                    ${charactersHtml}
+                </div>
                 <span class="player-streak">[${streak}]</span>
             `;
             

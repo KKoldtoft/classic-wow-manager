@@ -338,9 +338,33 @@
     color: #333;
 }
 
-.player-name {
-    margin-right: 8px;
+.player-characters {
+    margin-bottom: 8px;
 }
+
+.character-name-line {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.3;
+    margin-bottom: 2px;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.character-name-line:last-child {
+    margin-bottom: 0;
+}
+
+/* WoW Class Colors for character names with drop shadow */
+.character-name-line.class-warrior { color: #C79C6E; }
+.character-name-line.class-paladin { color: #F58CBA; }
+.character-name-line.class-hunter { color: #ABD473; }
+.character-name-line.class-rogue { color: #FFF569; }
+.character-name-line.class-priest { color: #FFFFFF; }
+.character-name-line.class-shaman { color: #0070DE; }
+.character-name-line.class-mage { color: #69CCF0; }
+.character-name-line.class-warlock { color: #9482C9; }
+.character-name-line.class-druid { color: #FF7D0A; }
+.character-name-line.class-unknown { color: #999; }
 
 .player-streak {
     font-size: 12px;
