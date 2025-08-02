@@ -416,20 +416,20 @@ class AttendanceManager {
         // Clear existing rows
         tableBody.innerHTML = '';
         
-        // Filter and sort players - only show players with more than 2 raids in the past 15 weeks
+        // Filter and sort players - only show players with at least 1 week attended in the past 15 weeks
         const filteredPlayers = players.filter(player => {
             const playerAttendance = attendance[player.discord_id] || {};
-            let totalEvents = 0;
+            let attendedWeeks = 0;
             
             weeks.forEach(week => {
                 const weekKey = `${week.weekYear}-${week.weekNumber}`;
                 const weekAttendance = playerAttendance[weekKey];
                 if (weekAttendance && weekAttendance.length > 0) {
-                    totalEvents += weekAttendance.length;
+                    attendedWeeks++;
                 }
             });
             
-            return totalEvents > 2;
+            return attendedWeeks > 0;
         });
         
         const sortedPlayers = [...filteredPlayers].sort((a, b) => 
@@ -604,8 +604,8 @@ class AttendanceManager {
             totalAttendanceEvents += totalEvents;
             totalPossibleEvents += weeks.length;
             
-            // Total active players: attended at least 3 raids (more than 2) in last 15 weeks
-            if (totalEvents > 2) {
+            // Total active players: attended at least 1 week in last 15 weeks
+            if (attendedWeeks > 0) {
                 totalActivePlayersCount++;
             }
             
