@@ -253,6 +253,42 @@
     border-bottom: 2px solid #dee2e6;
 }
 
+/* Week Rebuild Buttons */
+.week-rebuild-container {
+    margin-top: 5px;
+}
+
+.week-rebuild-btn {
+    background: #6c757d;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 24px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.week-rebuild-btn:hover {
+    background: #5a6268;
+    transform: translateY(-1px);
+}
+
+.week-rebuild-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.week-rebuild-btn.loading {
+    background: #007bff;
+}
+
 .attendance-table .player-column {
     text-align: left;
     min-width: 180px;

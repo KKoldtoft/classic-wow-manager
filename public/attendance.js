@@ -119,6 +119,66 @@ class AttendanceManager {
         }
     }
     
+    async rebuildWeekCache(weekYear, weekNumber, buttonElement) {
+        if (this.isLoading) return;
+        
+        if (!confirm(`Rebuild attendance cache for Week ${weekNumber}, ${weekYear}?\n\nThis will clear and rebuild attendance data for this specific week only.`)) {
+            return;
+        }
+        
+        this.isLoading = true;
+        
+        // Disable the specific button and show loading state
+        buttonElement.disabled = true;
+        buttonElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        buttonElement.classList.add('loading');
+        
+        try {
+            console.log(`🔄 Rebuilding attendance cache for Week ${weekNumber}, ${weekYear}...`);
+            
+            const response = await fetch('/api/attendance/rebuild-week', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    weekYear: weekYear,
+                    weekNumber: weekNumber
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.message || 'Failed to rebuild week cache');
+            }
+            
+            console.log(`✅ Week ${weekNumber}, ${weekYear} cache rebuild completed:`, result.stats);
+            
+            // Show success message
+            const stats = result.stats;
+            alert(`Week ${weekNumber}, ${weekYear} cache rebuild completed!\n\nProcessed: ${stats.processed} events\nSkipped: ${stats.skipped} events\nTotal: ${stats.total} events`);
+            
+            // Reload data to show updated results
+            await this.loadAttendanceData();
+            
+        } catch (error) {
+            console.error(`❌ Error rebuilding cache for Week ${weekNumber}, ${weekYear}:`, error);
+            alert(`Week ${weekNumber}, ${weekYear} cache rebuild failed:\n${error.message}`);
+        } finally {
+            this.isLoading = false;
+            
+            // Reset button state
+            buttonElement.disabled = false;
+            buttonElement.innerHTML = '<i class="fas fa-sync-alt"></i>';
+            buttonElement.classList.remove('loading');
+        }
+    }
+    
     renderAttendanceTable() {
         if (!this.attendanceData || !this.attendanceData.weeks || !this.attendanceData.players) {
             this.showNoData();
@@ -162,7 +222,23 @@ class AttendanceManager {
             th.innerHTML = `
                 <div>Week ${week.weekNumber}</div>
                 <div style="font-size: 10px; opacity: 0.7;">${dateRange}</div>
+                <div class="week-rebuild-container">
+                    <button class="week-rebuild-btn" 
+                            data-week-year="${week.weekYear}" 
+                            data-week-number="${week.weekNumber}"
+                            title="Rebuild cache for Week ${week.weekNumber}, ${week.weekYear}">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
             `;
+            
+            // Add click handler for week rebuild button
+            const rebuildBtn = th.querySelector('.week-rebuild-btn');
+            rebuildBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.rebuildWeekCache(week.weekYear, week.weekNumber, rebuildBtn);
+            });
             
             headerRow.appendChild(th);
         });

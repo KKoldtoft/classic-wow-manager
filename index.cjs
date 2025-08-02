@@ -8006,6 +8006,227 @@ app.post('/api/attendance/rebuild', async (req, res) => {
     }
 });
 
+// Rebuild attendance cache for a specific week
+app.post('/api/attendance/rebuild-week', async (req, res) => {
+    let client;
+    try {
+        const { weekYear, weekNumber } = req.body;
+        
+        if (!weekYear || !weekNumber) {
+            return res.status(400).json({
+                success: false,
+                message: 'Missing weekYear or weekNumber parameters'
+            });
+        }
+        
+        client = await pool.connect();
+        
+        console.log(`🔄 [ATTENDANCE] Starting cache rebuild for Week ${weekNumber}, ${weekYear}...`);
+        
+        // Clear existing cache for this specific week
+        await client.query(`
+            DELETE FROM attendance_cache 
+            WHERE week_year = $1 AND week_number = $2
+        `, [weekYear, weekNumber]);
+        
+        console.log(`✅ [ATTENDANCE] Cleared existing cache for Week ${weekNumber}, ${weekYear}`);
+        
+        // Calculate the date range for this week
+        const firstMondayOfYear = getFirstMondayOfJanuary(weekYear);
+        const weekStartDate = new Date(firstMondayOfYear);
+        weekStartDate.setDate(firstMondayOfYear.getDate() + (weekNumber - 1) * 7);
+        
+        const weekEndDate = new Date(weekStartDate);
+        weekEndDate.setDate(weekStartDate.getDate() + 6);
+        
+        console.log(`📅 [ATTENDANCE] Week ${weekNumber}, ${weekYear} date range: ${weekStartDate.toDateString()} to ${weekEndDate.toDateString()}`);
+        
+        // Get all log_data entries for events in this week
+        const logDataResult = await client.query(`
+            SELECT DISTINCT ld.event_id, ld.discord_id, ld.character_name, ld.character_class
+            FROM log_data ld
+            JOIN raid_helper_events_cache rhec ON ld.event_id = rhec.event_id
+            WHERE ld.event_id IS NOT NULL 
+            AND ld.discord_id IS NOT NULL
+            AND rhec.event_data->>'date' IS NOT NULL
+        `);
+        
+        console.log(`📊 [ATTENDANCE] Found ${logDataResult.rows.length} potential attendance records`);
+        
+        let processedEvents = 0;
+        let skippedEvents = 0;
+        let rateLimitDelay = 500; // Start with shorter delay for single week
+        
+        // Filter events that fall within the target week
+        const weekEvents = new Map();
+        
+        for (const row of logDataResult.rows) {
+            try {
+                // Try to get event data from cache first
+                const cacheResult = await client.query(`
+                    SELECT event_data FROM raid_helper_events_cache 
+                    WHERE event_id = $1 AND cached_at > NOW() - INTERVAL '7 days'
+                `, [row.event_id]);
+                
+                let eventData = null;
+                
+                if (cacheResult.rows.length > 0) {
+                    eventData = cacheResult.rows[0].event_data;
+                } else {
+                    // Fetch from API if not in cache or cache is old
+                    const response = await fetch(`https://raid-helper.dev/api/v2/events/${row.event_id}`);
+                    if (response.ok) {
+                        eventData = await response.json();
+                        
+                        // Update cache
+                        await client.query(`
+                            INSERT INTO raid_helper_events_cache (event_id, event_data, cached_at, last_accessed)
+                            VALUES ($1, $2, NOW(), NOW())
+                            ON CONFLICT (event_id) DO UPDATE SET
+                                event_data = EXCLUDED.event_data,
+                                cached_at = EXCLUDED.cached_at,
+                                last_accessed = EXCLUDED.last_accessed
+                        `, [row.event_id, JSON.stringify(eventData)]);
+                    }
+                    
+                    // Add delay only for API calls
+                    await new Promise(resolve => setTimeout(resolve, rateLimitDelay));
+                }
+                
+                if (!eventData || !eventData.date) {
+                    continue;
+                }
+                
+                // Parse event date
+                const dateParts = eventData.date.split('-');
+                if (dateParts.length !== 3) {
+                    continue;
+                }
+                
+                const eventDate = new Date(
+                    parseInt(dateParts[2]), // year
+                    parseInt(dateParts[1]) - 1, // month (0-based)
+                    parseInt(dateParts[0]) // day
+                );
+                
+                // Check if event falls within the target week
+                if (eventDate >= weekStartDate && eventDate <= weekEndDate) {
+                    if (!weekEvents.has(row.event_id)) {
+                        weekEvents.set(row.event_id, {
+                            eventData,
+                            eventDate,
+                            players: []
+                        });
+                    }
+                    weekEvents.get(row.event_id).players.push(row);
+                }
+                
+            } catch (error) {
+                console.error(`❌ [ATTENDANCE] Error processing event ${row.event_id}:`, error);
+            }
+        }
+        
+        console.log(`🎯 [ATTENDANCE] Found ${weekEvents.size} events in Week ${weekNumber}, ${weekYear}`);
+        
+        // Process each event in the target week
+        for (const [eventId, { eventData, eventDate, players }] of weekEvents) {
+            try {
+                // Calculate week info
+                const weekInfo = getCustomWeekNumber(eventDate);
+                
+                // Clean up channel name for display
+                let channelDisplayName = '#unknown-channel';
+                if (eventData.channelName && 
+                    eventData.channelName.trim() && 
+                    eventData.channelName !== eventData.channelId &&
+                    !eventData.channelName.match(/^\d+$/)) {
+                    channelDisplayName = eventData.channelName.replace(/^📅/, '').trim();
+                } else if (eventData.channelId) {
+                    channelDisplayName = `channel-${eventData.channelId.slice(-4)}`;
+                }
+                
+                // Get discord usernames for these players
+                const discordIds = [...new Set(players.map(p => p.discord_id))];
+                const usernameResult = await client.query(`
+                    SELECT DISTINCT discord_id, character_name as username
+                    FROM guildies
+                    WHERE discord_id = ANY($1) AND character_name IS NOT NULL
+                    LIMIT 1
+                `, [discordIds]);
+                
+                const usernameMap = {};
+                usernameResult.rows.forEach(row => {
+                    usernameMap[row.discord_id] = row.username;
+                });
+                
+                // Insert attendance records
+                for (const player of players) {
+                    const username = usernameMap[player.discord_id] || `user-${player.discord_id.slice(-4)}`;
+                    
+                    await client.query(`
+                        INSERT INTO attendance_cache (
+                            discord_id, discord_username, week_year, week_number,
+                            event_id, event_date, channel_id, channel_name,
+                            character_name, character_class
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                        ON CONFLICT (discord_id, week_year, week_number, event_id) 
+                        DO UPDATE SET
+                            discord_username = EXCLUDED.discord_username,
+                            event_date = EXCLUDED.event_date,
+                            channel_id = EXCLUDED.channel_id,
+                            channel_name = EXCLUDED.channel_name,
+                            character_name = EXCLUDED.character_name,
+                            character_class = EXCLUDED.character_class,
+                            cached_at = CURRENT_TIMESTAMP
+                    `, [
+                        player.discord_id,
+                        username,
+                        weekInfo.weekYear,
+                        weekInfo.weekNumber,
+                        eventId,
+                        eventDate,
+                        eventData.channelId,
+                        channelDisplayName,
+                        player.character_name,
+                        player.character_class
+                    ]);
+                }
+                
+                processedEvents++;
+                console.log(`✅ [ATTENDANCE] Processed event ${eventId} (${players.length} players) for Week ${weekNumber}, ${weekYear}`);
+                
+            } catch (eventError) {
+                console.error(`❌ [ATTENDANCE] Error processing event ${eventId}:`, eventError);
+                skippedEvents++;
+            }
+        }
+        
+        console.log(`🎉 [ATTENDANCE] Week ${weekNumber}, ${weekYear} cache rebuild complete! Processed: ${processedEvents}, Skipped: ${skippedEvents}`);
+        
+        res.json({
+            success: true,
+            message: `Attendance cache rebuilt successfully for Week ${weekNumber}, ${weekYear}`,
+            stats: {
+                processed: processedEvents,
+                skipped: skippedEvents,
+                total: weekEvents.size,
+                weekYear,
+                weekNumber
+            }
+        });
+        
+    } catch (error) {
+        console.error(`❌ [ATTENDANCE] Error rebuilding attendance cache for specific week:`, error);
+        res.status(500).json({
+            success: false,
+            message: 'Error rebuilding attendance cache for specific week',
+            error: error.message
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // Test endpoint for week calculation
 app.get('/api/attendance/week-test', (req, res) => {
     const testDate = req.query.date ? new Date(req.query.date) : new Date();
@@ -8529,7 +8750,7 @@ setInterval(async () => {
     }
 }, 24 * 60 * 60 * 1000); // 24 hours in milliseconds
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   
   // Run initial cache cleanup on startup
@@ -8542,6 +8763,9 @@ app.listen(PORT, () => {
       }
   }, 5000); // Wait 5 seconds after startup
 });
+
+// Set server timeout to 5 minutes (300 seconds) for long-running operations
+server.timeout = 300000;
 
 // --- Graceful Shutdown ---
 process.on('SIGINT', () => {

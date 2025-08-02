@@ -357,15 +357,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const iconHtml = data.iconLink ? 
                     `<img src="${data.iconLink}" alt="${data.itemName}" class="item-icon-small" style="width: 30px; height: 30px; vertical-align: middle; margin-right: 8px; border-radius: 4px;">` : 
                     `<i class="fas fa-gem event-icon"></i> `;
-                biggestItemElement.innerHTML = `<p>${iconHtml}Biggest item: <span style="color: #a335ee; font-weight: bold;">${data.itemName}</span></p>`;
+                biggestItemElement.innerHTML = `<p>${iconHtml}<span style="color: #a335ee; font-weight: bold;">${data.itemName}</span></p>`;
             } else {
-                biggestItemElement.innerHTML = `<p><i class="fas fa-gem event-icon"></i> Biggest item: None</p>`;
+                biggestItemElement.innerHTML = `<p><i class="fas fa-gem event-icon"></i> None</p>`;
             }
         } catch (error) {
             if (error.name !== 'AbortError') {
                 console.warn(`Error fetching biggest item for event ${eventId}:`, error.message);
             }
-            biggestItemElement.innerHTML = `<p><i class="fas fa-gem event-icon"></i> Biggest item: N/A</p>`;
+            biggestItemElement.innerHTML = `<p><i class="fas fa-gem event-icon"></i> N/A</p>`;
         }
     }
 
