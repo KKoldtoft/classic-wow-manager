@@ -10,11 +10,20 @@ const path = require('path');
 const axios = require('axios');
 const multer = require('multer');
 const fs = require('fs');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', 1);
+
+// --- Cloudinary Configuration ---
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 // --- Database Configuration ---
 const connectionString = process.env.DATABASE_URL;
@@ -3544,9 +3553,16 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 channel_id VARCHAR(255) PRIMARY KEY,
                 channel_name VARCHAR(255),
                 background_image_url VARCHAR(500),
+                cloudinary_public_id VARCHAR(255),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
+        `);
+        
+        // Add cloudinary_public_id column if it doesn't exist (for existing tables)
+        await client.query(`
+            ALTER TABLE channel_backgrounds 
+            ADD COLUMN IF NOT EXISTS cloudinary_public_id VARCHAR(255)
         `);
         
         // Create indexes for attendance_cache
@@ -8397,22 +8413,20 @@ app.post('/api/admin/attendance-channel-filters', async (req, res) => {
 // CHANNEL BACKGROUNDS MANAGEMENT
 // ====================================
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        const uploadDir = path.join(__dirname, 'public', 'uploads', 'backgrounds');
-        // Create directory if it doesn't exist
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-        }
-        cb(null, uploadDir);
-    },
-    filename: function (req, file, cb) {
-        // Create unique filename with timestamp and original extension
-        const ext = path.extname(file.originalname).toLowerCase();
-        const timestamp = Date.now();
-        const filename = `channel_bg_${timestamp}${ext}`;
-        cb(null, filename);
+// Configure Cloudinary storage for file uploads
+const storage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+        folder: 'wow-manager/channel-backgrounds',
+        allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+        public_id: (req, file) => {
+            // Create unique filename with timestamp
+            const timestamp = Date.now();
+            return `channel_bg_${timestamp}`;
+        },
+        transformation: [
+            { width: 1920, height: 1080, crop: 'limit', quality: 'auto' }
+        ]
     }
 });
 
@@ -8503,34 +8517,35 @@ app.post('/api/admin/channel-backgrounds/upload', upload.single('backgroundImage
     try {
         client = await pool.connect();
         
-        // Create the URL path for the uploaded image
-        const imageUrl = `/uploads/backgrounds/${req.file.filename}`;
+        // Get the Cloudinary URL from the uploaded file
+        const imageUrl = req.file.path; // Cloudinary provides the full URL in req.file.path
+        const publicId = req.file.filename; // Cloudinary public_id for deletion if needed
         
         // Check if this channel already has a background
         const existingResult = await client.query(`
-            SELECT background_image_url FROM channel_backgrounds WHERE channel_id = $1
+            SELECT background_image_url, cloudinary_public_id FROM channel_backgrounds WHERE channel_id = $1
         `, [channelId]);
         
-        // If there's an existing background, delete the old file
-        if (existingResult.rows.length > 0 && existingResult.rows[0].background_image_url) {
-            const oldFilename = path.basename(existingResult.rows[0].background_image_url);
-            const oldFilePath = path.join(__dirname, 'public', 'uploads', 'backgrounds', oldFilename);
-            
-            if (fs.existsSync(oldFilePath)) {
-                fs.unlinkSync(oldFilePath);
-                console.log(`🗑️ [CHANNEL BACKGROUNDS] Deleted old background file: ${oldFilename}`);
+        // If there's an existing background, delete the old file from Cloudinary
+        if (existingResult.rows.length > 0 && existingResult.rows[0].cloudinary_public_id) {
+            try {
+                await cloudinary.uploader.destroy(existingResult.rows[0].cloudinary_public_id);
+                console.log(`🗑️ [CHANNEL BACKGROUNDS] Deleted old background from Cloudinary: ${existingResult.rows[0].cloudinary_public_id}`);
+            } catch (deleteError) {
+                console.warn(`⚠️ [CHANNEL BACKGROUNDS] Could not delete old Cloudinary image: ${deleteError.message}`);
             }
         }
         
         // Insert or update the channel background
         await client.query(`
-            INSERT INTO channel_backgrounds (channel_id, channel_name, background_image_url)
-            VALUES ($1, $2, $3)
+            INSERT INTO channel_backgrounds (channel_id, channel_name, background_image_url, cloudinary_public_id)
+            VALUES ($1, $2, $3, $4)
             ON CONFLICT (channel_id) DO UPDATE SET
                 channel_name = EXCLUDED.channel_name,
                 background_image_url = EXCLUDED.background_image_url,
+                cloudinary_public_id = EXCLUDED.cloudinary_public_id,
                 updated_at = CURRENT_TIMESTAMP
-        `, [channelId, channelName, imageUrl]);
+        `, [channelId, channelName, imageUrl, publicId]);
         
         console.log(`✅ [CHANNEL BACKGROUNDS] Background uploaded for channel: ${channelName} (${channelId})`);
         
@@ -8545,9 +8560,14 @@ app.post('/api/admin/channel-backgrounds/upload', upload.single('backgroundImage
     } catch (error) {
         console.error('❌ [CHANNEL BACKGROUNDS] Error uploading background:', error);
         
-        // Clean up the uploaded file if database operation failed
-        if (req.file && fs.existsSync(req.file.path)) {
-            fs.unlinkSync(req.file.path);
+        // Clean up the uploaded file from Cloudinary if database operation failed
+        if (req.file && req.file.filename) {
+            try {
+                await cloudinary.uploader.destroy(req.file.filename);
+                console.log(`🗑️ [CHANNEL BACKGROUNDS] Cleaned up failed upload from Cloudinary: ${req.file.filename}`);
+            } catch (cleanupError) {
+                console.warn(`⚠️ [CHANNEL BACKGROUNDS] Could not clean up failed upload: ${cleanupError.message}`);
+            }
         }
         
         res.status(500).json({
@@ -8580,20 +8600,28 @@ app.delete('/api/admin/channel-backgrounds/:channelId', async (req, res) => {
         
         // Get the current background to delete the file
         const existingResult = await client.query(`
-            SELECT background_image_url, channel_name FROM channel_backgrounds WHERE channel_id = $1
+            SELECT background_image_url, channel_name, cloudinary_public_id FROM channel_backgrounds WHERE channel_id = $1
         `, [channelId]);
         
         if (existingResult.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Channel background not found' });
         }
         
-        const { background_image_url, channel_name } = existingResult.rows[0];
+        const { background_image_url, channel_name, cloudinary_public_id } = existingResult.rows[0];
         
         // Delete from database
         await client.query(`DELETE FROM channel_backgrounds WHERE channel_id = $1`, [channelId]);
         
-        // Delete the image file
-        if (background_image_url) {
+        // Delete the image file from Cloudinary
+        if (cloudinary_public_id) {
+            try {
+                await cloudinary.uploader.destroy(cloudinary_public_id);
+                console.log(`🗑️ [CHANNEL BACKGROUNDS] Deleted background from Cloudinary: ${cloudinary_public_id}`);
+            } catch (deleteError) {
+                console.warn(`⚠️ [CHANNEL BACKGROUNDS] Could not delete from Cloudinary: ${deleteError.message}`);
+            }
+        } else if (background_image_url && background_image_url.includes('/uploads/backgrounds/')) {
+            // Handle old local files for backward compatibility
             const filename = path.basename(background_image_url);
             const filePath = path.join(__dirname, 'public', 'uploads', 'backgrounds', filename);
             
