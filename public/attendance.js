@@ -565,16 +565,21 @@ class AttendanceManager {
         const { players, attendance, weeks } = this.attendanceData;
         
         // Calculate statistics for all 15 weeks
-        let activePlayersCount = 0;
+        let totalActivePlayersCount = 0;
+        let activePlayersLast4WeeksCount = 0;
         let perfectAttendanceCount = 0;
         let totalAttendanceEvents = 0;
         let totalPossibleEvents = 0;
+        
+        // Get last 4 weeks for the second stat
+        const last4Weeks = weeks.slice(-4);
         
         players.forEach(player => {
             const playerAttendance = attendance[player.discord_id] || {};
             
             let attendedWeeks = 0;
             let totalEvents = 0;
+            let attendedLast4Weeks = 0;
             
             weeks.forEach(week => {
                 const weekKey = `${week.weekYear}-${week.weekNumber}`;
@@ -586,12 +591,27 @@ class AttendanceManager {
                 }
             });
             
+            // Check last 4 weeks attendance
+            last4Weeks.forEach(week => {
+                const weekKey = `${week.weekYear}-${week.weekNumber}`;
+                const weekAttendance = playerAttendance[weekKey];
+                
+                if (weekAttendance && weekAttendance.length > 0) {
+                    attendedLast4Weeks++;
+                }
+            });
+            
             totalAttendanceEvents += totalEvents;
             totalPossibleEvents += weeks.length;
             
-            // Active player: attended at least 3 raids (more than 2) in last 15 weeks
+            // Total active players: attended at least 3 raids (more than 2) in last 15 weeks
             if (totalEvents > 2) {
-                activePlayersCount++;
+                totalActivePlayersCount++;
+            }
+            
+            // Active in last 4 weeks: attended at least 1 week in last 4 weeks
+            if (attendedLast4Weeks > 0) {
+                activePlayersLast4WeeksCount++;
             }
             
             // Perfect attendance: attended all 15 weeks
@@ -601,7 +621,8 @@ class AttendanceManager {
         });
         
         // Update statistics display
-        document.getElementById('active-players').textContent = activePlayersCount;
+        document.getElementById('total-active-players').textContent = totalActivePlayersCount;
+        document.getElementById('active-players-4-weeks').textContent = activePlayersLast4WeeksCount;
         document.getElementById('perfect-attendance').textContent = perfectAttendanceCount;
         
         // Calculate average attendance rate
