@@ -555,8 +555,8 @@
     margin-top: 30px;
 }
 
-/* Player Streaks specific styling */
-.streak-container {
+/* Player Streaks and Guild Members specific styling */
+.streak-guild-container {
     margin-bottom: 30px;
 }
 
@@ -570,6 +570,20 @@
 
 .rankings-section.streak-section .amount-value {
     color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Guild Members specific styling */
+.rankings-section.guild-section {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.rankings-section.guild-section .section-header {
+    background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+}
+
+.rankings-section.guild-section .amount-value {
+    color: #28a745;
     font-size: 1.4em;
 }
 

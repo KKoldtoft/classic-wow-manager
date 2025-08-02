@@ -29,6 +29,7 @@ class RaidLogsManager {
         this.demoShoutData = [];
         this.demoShoutSettings = { tier1_max: 99, tier1_points: 0, tier2_max: 199, tier2_points: 5, tier3_points: 10 };
         this.playerStreaksData = [];
+        this.guildMembersData = [];
         this.rewardSettings = {};
         this.specData = {};
         this.initializeEventListeners();
@@ -75,6 +76,7 @@ class RaidLogsManager {
                 this.fetchScorchData(),
                 this.fetchDemoShoutData(),
                 this.fetchPlayerStreaksData(),
+                this.fetchGuildMembersData(),
                 this.fetchRewardSettings()
             ]);
             this.displayRaidLogs();
@@ -538,6 +540,33 @@ class RaidLogsManager {
         }
     }
 
+    async fetchGuildMembersData() {
+        console.log(`🏰 Fetching guild members data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/guild-members/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch guild members data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch guild members data');
+            }
+            
+            this.guildMembersData = result.data || [];
+            console.log(`🏰 Loaded guild members data:`, this.guildMembersData);
+            console.log(`🏰 Found ${this.guildMembersData.length} guild members in raid`);
+            
+        } catch (error) {
+            console.error('Error fetching guild members data:', error);
+            // Don't fail the whole page if guild members fails - just show empty data
+            this.guildMembersData = [];
+        }
+    }
+
     updateStatCards() {
         // Update RPB Archive card
         this.updateRPBArchiveCard();
@@ -685,6 +714,7 @@ class RaidLogsManager {
 
         // Display the rankings
         this.displayPlayerStreaksRankings(this.playerStreaksData);
+        this.displayGuildMembersRankings(this.guildMembersData);
         this.displayDamageRankings(damageDealer);
         this.displayHealerRankings(healers);
         this.displayAbilitiesRankings(this.abilitiesData);
@@ -765,6 +795,48 @@ class RaidLogsManager {
                     </div>
                     <div class="performance-amount">
                         <div class="amount-value">${points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    displayGuildMembersRankings(players) {
+        const container = document.getElementById('guild-members-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('guild-section');
+
+        if (!players || players.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-shield-alt"></i>
+                    <p>No guild members found in this raid</p>
+                </div>
+            `;
+            return;
+        }
+
+        console.log(`🏰 Displaying ${players.length} guild members`);
+
+        // Since all guild members get 10 points, they all have 100% fill
+        container.innerHTML = players.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                                         <div class="character-info class-${characterClass}" style="--fill-percentage: 100%">
+                         <div class="character-name">${player.character_name}</div>
+                         <div class="character-details" title="Guild member: ${player.guild_character_name}">
+                             Guild Member
+                         </div>
+                     </div>
+                    <div class="performance-amount">
+                        <div class="amount-value">10</div>
                         <div class="points-label">points</div>
                     </div>
                 </div>

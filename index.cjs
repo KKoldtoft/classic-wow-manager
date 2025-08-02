@@ -4461,6 +4461,88 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
     }
 });
 
+// Get guild membership data for raid logs
+app.get('/api/guild-members/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🏰 [GUILD MEMBERS] Retrieving guild membership data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if log_data table exists
+        const logTableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'log_data'
+            );
+        `);
+        
+        if (!logTableCheck.rows[0].exists) {
+            console.log('⚠️ [GUILD MEMBERS] log_data table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Check if guildies table exists
+        const guildiesTableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'guildies'
+            );
+        `);
+        
+        if (!guildiesTableCheck.rows[0].exists) {
+            console.log('⚠️ [GUILD MEMBERS] guildies table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get players from the raid log and check their guild membership
+        // Use DISTINCT ON to only show each Discord user once
+        const result = await client.query(`
+            SELECT DISTINCT ON (ld.discord_id)
+                ld.character_name,
+                ld.character_class,
+                ld.discord_id,
+                g.discord_id as guild_member_id,
+                g.character_name as guild_character_name
+            FROM log_data ld
+            LEFT JOIN guildies g ON ld.discord_id = g.discord_id
+            WHERE ld.event_id = $1
+            AND g.discord_id IS NOT NULL
+            ORDER BY ld.discord_id, ld.character_name ASC
+        `, [eventId]);
+        
+        console.log(`🏰 [GUILD MEMBERS] Found ${result.rows.length} guild members in raid for event: ${eventId}`);
+        
+        const guildMembers = result.rows.map(row => ({
+            character_name: row.character_name,
+            character_class: row.character_class,
+            discord_id: row.discord_id,
+            guild_character_name: row.guild_character_name || row.character_name,
+            points: 10 // Fixed 10 points for guild members
+        }));
+        
+        res.json({ 
+            success: true, 
+            data: guildMembers,
+            eventId: eventId,
+            pointsPerMember: 10,
+            totalCount: guildMembers.length
+        });
+        
+    } catch (error) {
+        console.error('❌ [GUILD MEMBERS] Error retrieving guild membership data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving guild membership data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // Get abilities data for raid logs (Sappers, Dynamite, Holy Water)
 app.get('/api/abilities-data/:eventId', async (req, res) => {
     const { eventId } = req.params;
