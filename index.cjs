@@ -7779,6 +7779,8 @@ app.get('/api/attendance', async (req, res) => {
         
         // Organize attendance data by player and week
         const attendanceByPlayer = {};
+        const weekStats = {};
+        
         attendanceResult.rows.forEach(row => {
             if (!attendanceByPlayer[row.discord_id]) {
                 attendanceByPlayer[row.discord_id] = {};
@@ -7793,12 +7795,38 @@ app.get('/api/attendance', async (req, res) => {
                 characterName: row.character_name,
                 characterClass: row.character_class
             });
+            
+            // Track stats for each week
+            if (!weekStats[weekKey]) {
+                weekStats[weekKey] = {
+                    players: new Set(),
+                    characters: new Set()
+                };
+            }
+            weekStats[weekKey].players.add(row.discord_id);
+            if (row.character_name) {
+                weekStats[weekKey].characters.add(`${row.discord_id}-${row.character_name}`);
+            }
+        });
+        
+        // Convert sets to counts and add to weeks data
+        const enrichedWeeks = weeks.map(week => {
+            const weekKey = `${week.weekYear}-${week.weekNumber}`;
+            const stats = weekStats[weekKey];
+            const playerCount = stats ? stats.players.size : 0;
+            const characterCount = stats ? stats.characters.size : 0;
+            
+            return {
+                ...week,
+                playerCount: playerCount,
+                characterCount: characterCount
+            };
         });
         
         res.json({
             success: true,
             data: {
-                weeks: weeks,
+                weeks: enrichedWeeks,
                 players: playersResult.rows,
                 attendance: attendanceByPlayer,
                 currentWeek: currentWeekInfo

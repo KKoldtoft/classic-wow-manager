@@ -11,16 +11,12 @@ class AttendanceManager {
     }
     
     initializeEventListeners() {
-        // Refresh button
-        const refreshBtn = document.getElementById('refresh-attendance-btn');
-        if (refreshBtn) {
-            refreshBtn.addEventListener('click', () => this.loadAttendanceData());
-        }
-        
-        // Rebuild cache button
-        const rebuildBtn = document.getElementById('rebuild-cache-btn');
-        if (rebuildBtn) {
-            rebuildBtn.addEventListener('click', () => this.rebuildCache());
+        // Rebuild buttons for different week ranges
+        for (let i = 1; i <= 3; i++) {
+            const rebuildBtn = document.getElementById(`rebuild-weeks-${i}-btn`);
+            if (rebuildBtn) {
+                rebuildBtn.addEventListener('click', () => this.rebuildWeekRange(i));
+            }
         }
     }
     
@@ -52,6 +48,7 @@ class AttendanceManager {
             this.renderAttendanceTable();
             this.updateCurrentWeekInfo();
             this.updateStatistics();
+            this.updateRebuildButtonTexts();
             this.showContent();
             
         } catch (error) {
@@ -62,60 +59,167 @@ class AttendanceManager {
         }
     }
     
-    async rebuildCache() {
+    async rebuildWeekRange(rangeNumber) {
         if (this.isLoading) return;
         
-        if (!confirm('This will clear the attendance cache and rebuild it from scratch. This may take several minutes. Continue?')) {
+        if (!this.attendanceData || !this.attendanceData.currentWeek) {
+            alert('Please load attendance data first');
+            return;
+        }
+        
+        const currentWeek = this.attendanceData.currentWeek;
+        const { startWeek, endWeek } = this.calculateWeekRange(currentWeek, rangeNumber);
+        
+        if (!confirm(`Rebuild attendance cache for weeks ${startWeek.weekNumber}-${endWeek.weekNumber} (${startWeek.weekYear}-${endWeek.weekYear})?\n\nThis will clear and rebuild attendance data for these weeks.`)) {
             return;
         }
         
         this.isLoading = true;
-        this.showLoading('Rebuilding attendance cache...');
         
-        // Disable buttons during rebuild
-        const refreshBtn = document.getElementById('refresh-attendance-btn');
-        const rebuildBtn = document.getElementById('rebuild-cache-btn');
-        if (refreshBtn) refreshBtn.disabled = true;
-        if (rebuildBtn) rebuildBtn.disabled = true;
+        // Disable all rebuild buttons and show loading state
+        for (let i = 1; i <= 3; i++) {
+            const btn = document.getElementById(`rebuild-weeks-${i}-btn`);
+            if (btn) {
+                btn.disabled = true;
+                if (i === rangeNumber) {
+                    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Rebuilding...';
+                }
+            }
+        }
         
         try {
-            console.log('🔄 Rebuilding attendance cache...');
+            console.log(`🔄 Rebuilding attendance cache for week range ${rangeNumber}...`);
             
-            const response = await fetch('/api/attendance/rebuild', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
+            // Rebuild each week in the range
+            let totalProcessed = 0;
+            let totalSkipped = 0;
+            let totalEvents = 0;
+            
+            for (let weekYear = startWeek.weekYear; weekYear <= endWeek.weekYear; weekYear++) {
+                const startWeekNum = weekYear === startWeek.weekYear ? startWeek.weekNumber : 1;
+                const endWeekNum = weekYear === endWeek.weekYear ? endWeek.weekNumber : 52;
+                
+                for (let weekNumber = startWeekNum; weekNumber <= endWeekNum; weekNumber++) {
+                    const response = await fetch('/api/attendance/rebuild-week', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            weekYear: weekYear,
+                            weekNumber: weekNumber
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (result.success) {
+                            totalProcessed += result.stats.processed;
+                            totalSkipped += result.stats.skipped;
+                            totalEvents += result.stats.total;
+                        }
+                    }
+                    
+                    // Small delay between requests
+                    await new Promise(resolve => setTimeout(resolve, 200));
                 }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             
-            const result = await response.json();
-            
-            if (!result.success) {
-                throw new Error(result.message || 'Failed to rebuild cache');
-            }
-            
-            console.log('✅ Cache rebuild completed:', result.stats);
+            console.log(`✅ Week range ${rangeNumber} cache rebuild completed`);
             
             // Show success message
-            const stats = result.stats;
-            alert(`Cache rebuild completed!\n\nProcessed: ${stats.processed} events\nSkipped: ${stats.skipped} events\nTotal: ${stats.total} events`);
+            alert(`Week range ${rangeNumber} cache rebuild completed!\n\nProcessed: ${totalProcessed} events\nSkipped: ${totalSkipped} events\nTotal: ${totalEvents} events`);
             
-            // Reload data
+            // Reload data to show updated results
             await this.loadAttendanceData();
             
         } catch (error) {
-            console.error('❌ Error rebuilding cache:', error);
-            this.showError(`Cache rebuild failed: ${error.message}`);
+            console.error(`❌ Error rebuilding cache for week range ${rangeNumber}:`, error);
+            alert(`Week range ${rangeNumber} cache rebuild failed:\n${error.message}`);
         } finally {
             this.isLoading = false;
             
-            // Re-enable buttons
-            if (refreshBtn) refreshBtn.disabled = false;
-            if (rebuildBtn) rebuildBtn.disabled = false;
+            // Reset button states
+            this.updateRebuildButtonTexts();
+            for (let i = 1; i <= 3; i++) {
+                const btn = document.getElementById(`rebuild-weeks-${i}-btn`);
+                if (btn) {
+                    btn.disabled = false;
+                }
+            }
+        }
+    }
+    
+    calculateWeekRange(currentWeek, rangeNumber) {
+        // Calculate the last 15 weeks split into 3 ranges of 5 weeks each
+        // Range 1: weeks (current-14) to (current-10)
+        // Range 2: weeks (current-9) to (current-5) 
+        // Range 3: weeks (current-4) to current
+        
+        const currentWeekNumber = currentWeek.weekNumber;
+        const currentYear = currentWeek.weekYear;
+        
+        let startOffset, endOffset;
+        switch (rangeNumber) {
+            case 1:
+                startOffset = 14;
+                endOffset = 10;
+                break;
+            case 2:
+                startOffset = 9;
+                endOffset = 5;
+                break;
+            case 3:
+                startOffset = 4;
+                endOffset = 0;
+                break;
+            default:
+                throw new Error('Invalid range number');
+        }
+        
+        // Calculate start week
+        let startWeekNumber = currentWeekNumber - startOffset;
+        let startYear = currentYear;
+        if (startWeekNumber <= 0) {
+            startYear--;
+            startWeekNumber = 52 + startWeekNumber; // 52 weeks in a year
+        }
+        
+        // Calculate end week
+        let endWeekNumber = currentWeekNumber - endOffset;
+        let endYear = currentYear;
+        if (endWeekNumber <= 0) {
+            endYear--;
+            endWeekNumber = 52 + endWeekNumber;
+        }
+        
+        return {
+            startWeek: { weekNumber: startWeekNumber, weekYear: startYear },
+            endWeek: { weekNumber: endWeekNumber, weekYear: endYear }
+        };
+    }
+    
+    updateRebuildButtonTexts() {
+        if (!this.attendanceData || !this.attendanceData.currentWeek) {
+            return;
+        }
+        
+        const currentWeek = this.attendanceData.currentWeek;
+        
+        for (let i = 1; i <= 3; i++) {
+            const { startWeek, endWeek } = this.calculateWeekRange(currentWeek, i);
+            const textElement = document.getElementById(`rebuild-weeks-${i}-text`);
+            
+            if (textElement) {
+                let yearText = '';
+                if (startWeek.weekYear !== endWeek.weekYear) {
+                    yearText = ` (${startWeek.weekYear}-${endWeek.weekYear})`;
+                } else if (startWeek.weekYear !== currentWeek.weekYear) {
+                    yearText = ` (${startWeek.weekYear})`;
+                }
+                
+                textElement.textContent = `Clear Cache & Rebuild Weeks ${startWeek.weekNumber}-${endWeek.weekNumber}${yearText}`;
+            }
         }
     }
     
@@ -179,6 +283,36 @@ class AttendanceManager {
         }
     }
     
+    calculatePlayerStreak(playerId, weeks, attendance, currentWeek) {
+        // Calculate consecutive weeks attended up to (but not including) current week
+        let streak = 0;
+        
+        // Sort weeks in reverse chronological order (most recent first, excluding current week)
+        const sortedWeeks = weeks
+            .filter(week => !(week.weekYear === currentWeek.weekYear && week.weekNumber === currentWeek.weekNumber))
+            .sort((a, b) => {
+                if (a.weekYear !== b.weekYear) {
+                    return b.weekYear - a.weekYear;
+                }
+                return b.weekNumber - a.weekNumber;
+            });
+        
+        // Check consecutive attendance from most recent week backwards
+        for (const week of sortedWeeks) {
+            const weekKey = `${week.weekYear}-${week.weekNumber}`;
+            const playerAttendance = attendance[playerId];
+            const weekAttendance = playerAttendance && playerAttendance[weekKey];
+            
+            if (weekAttendance && weekAttendance.length > 0) {
+                streak++;
+            } else {
+                break; // Streak broken
+            }
+        }
+        
+        return streak;
+    }
+    
     renderAttendanceTable() {
         if (!this.attendanceData || !this.attendanceData.weeks || !this.attendanceData.players) {
             this.showNoData();
@@ -219,9 +353,14 @@ class AttendanceManager {
             // Calculate the date range for this week
             const dateRange = this.getWeekDateRange(week.weekYear, week.weekNumber);
             
+            // Format stats text
+            const statsText = `${week.characterCount || 0} Characters, ${week.playerCount || 0} Players`;
+            const shortStatsText = statsText.length > 20 ? `${week.characterCount || 0}C, ${week.playerCount || 0}P` : statsText;
+            
             th.innerHTML = `
                 <div>Week ${week.weekNumber}</div>
                 <div style="font-size: 10px; opacity: 0.7;">${dateRange}</div>
+                <div style="font-size: 10px; opacity: 0.6; margin-top: 2px;" title="${statsText}">${shortStatsText}</div>
                 <div class="week-rebuild-container">
                     <button class="week-rebuild-btn" 
                             data-week-year="${week.weekYear}" 
@@ -277,8 +416,23 @@ class AttendanceManager {
         // Clear existing rows
         tableBody.innerHTML = '';
         
-        // Sort players by username
-        const sortedPlayers = [...players].sort((a, b) => 
+        // Filter and sort players - only show players with more than 2 raids in the past 15 weeks
+        const filteredPlayers = players.filter(player => {
+            const playerAttendance = attendance[player.discord_id] || {};
+            let totalEvents = 0;
+            
+            weeks.forEach(week => {
+                const weekKey = `${week.weekYear}-${week.weekNumber}`;
+                const weekAttendance = playerAttendance[weekKey];
+                if (weekAttendance && weekAttendance.length > 0) {
+                    totalEvents += weekAttendance.length;
+                }
+            });
+            
+            return totalEvents > 2;
+        });
+        
+        const sortedPlayers = [...filteredPlayers].sort((a, b) => 
             (a.discord_username || '').localeCompare(b.discord_username || '')
         );
         
@@ -286,10 +440,18 @@ class AttendanceManager {
         sortedPlayers.forEach(player => {
             const row = document.createElement('tr');
             
-            // Player name column
+            // Player name column with streak
             const playerCell = document.createElement('td');
             playerCell.className = 'player-column';
-            playerCell.textContent = player.discord_username || `user-${player.discord_id.slice(-4)}`;
+            
+            const playerName = player.discord_username || `user-${player.discord_id.slice(-4)}`;
+            const streak = this.calculatePlayerStreak(player.discord_id, weeks, attendance, currentWeek);
+            
+            playerCell.innerHTML = `
+                <span class="player-name">${playerName}</span>
+                <span class="player-streak">[${streak}]</span>
+            `;
+            
             row.appendChild(playerCell);
             
             // Week columns
@@ -402,12 +564,7 @@ class AttendanceManager {
         
         const { players, attendance, weeks } = this.attendanceData;
         
-        // Total players
-        const totalPlayers = players.length;
-        document.getElementById('total-players').textContent = totalPlayers;
-        
-        // Calculate statistics for last 4 weeks
-        const last4Weeks = weeks.slice(-4);
+        // Calculate statistics for all 15 weeks
         let activePlayersCount = 0;
         let perfectAttendanceCount = 0;
         let totalAttendanceEvents = 0;
@@ -419,7 +576,7 @@ class AttendanceManager {
             let attendedWeeks = 0;
             let totalEvents = 0;
             
-            last4Weeks.forEach(week => {
+            weeks.forEach(week => {
                 const weekKey = `${week.weekYear}-${week.weekNumber}`;
                 const weekAttendance = playerAttendance[weekKey];
                 
@@ -430,15 +587,15 @@ class AttendanceManager {
             });
             
             totalAttendanceEvents += totalEvents;
-            totalPossibleEvents += last4Weeks.length;
+            totalPossibleEvents += weeks.length;
             
-            // Active player: attended at least 1 week in last 4 weeks
-            if (attendedWeeks > 0) {
+            // Active player: attended at least 3 raids (more than 2) in last 15 weeks
+            if (totalEvents > 2) {
                 activePlayersCount++;
             }
             
-            // Perfect attendance: attended all 4 weeks
-            if (attendedWeeks === last4Weeks.length) {
+            // Perfect attendance: attended all 15 weeks
+            if (attendedWeeks === weeks.length) {
                 perfectAttendanceCount++;
             }
         });
@@ -481,6 +638,7 @@ class AttendanceManager {
         document.getElementById('loading-indicator').style.display = 'none';
         document.getElementById('error-display').style.display = 'none';
         document.getElementById('no-data-message').style.display = 'none';
+        document.getElementById('attendance-stats').style.display = 'block';
         document.getElementById('attendance-table-container').style.display = 'block';
     }
 }

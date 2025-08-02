@@ -66,20 +66,37 @@
 
     <!-- Main Content -->
     <div class="attendance-container">
-        <!-- Page Header -->
-        <div class="page-header">
-            <h1><i class="fas fa-calendar-check"></i> Regular Attendance</h1>
-            <p>Track player attendance streaks across raid weeks. Week 1 starts on the first Monday of January.</p>
+        <!-- Statistics -->
+        <div class="attendance-stats" id="attendance-stats" style="display: none;">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="active-players">0</div>
+                    <div class="stat-label">Active Players</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="perfect-attendance">0</div>
+                    <div class="stat-label">Perfect Attendance (Last 15 Weeks)</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="average-attendance">0%</div>
+                    <div class="stat-label">Average Attendance Rate</div>
+                </div>
+            </div>
         </div>
 
         <!-- Controls -->
         <div class="attendance-controls">
-            <button class="btn btn-primary" id="refresh-attendance-btn">
-                <i class="fas fa-sync-alt"></i> Refresh Data
-            </button>
-            <button class="btn btn-secondary" id="rebuild-cache-btn">
-                <i class="fas fa-database"></i> Clear Cache & Rebuild
-            </button>
+            <div class="rebuild-buttons-group">
+                <button class="btn btn-secondary" id="rebuild-weeks-1-btn" data-week-range="1">
+                    <i class="fas fa-database"></i> <span id="rebuild-weeks-1-text">Clear Cache & Rebuild</span>
+                </button>
+                <button class="btn btn-secondary" id="rebuild-weeks-2-btn" data-week-range="2">
+                    <i class="fas fa-database"></i> <span id="rebuild-weeks-2-text">Clear Cache & Rebuild</span>
+                </button>
+                <button class="btn btn-secondary" id="rebuild-weeks-3-btn" data-week-range="3">
+                    <i class="fas fa-database"></i> <span id="rebuild-weeks-3-text">Clear Cache & Rebuild</span>
+                </button>
+            </div>
             <div class="attendance-info">
                 <span id="current-week-info">Loading...</span>
                 <span class="separator">|</span>
@@ -146,27 +163,7 @@
                 </table>
             </div>
 
-            <!-- Statistics -->
-            <div class="attendance-stats" id="attendance-stats">
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value" id="total-players">0</div>
-                        <div class="stat-label">Total Players</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="active-players">0</div>
-                        <div class="stat-label">Active Players (Last 4 Weeks)</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="perfect-attendance">0</div>
-                        <div class="stat-label">Perfect Attendance (Last 4 Weeks)</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="average-attendance">0%</div>
-                        <div class="stat-label">Average Attendance Rate</div>
-                    </div>
-                </div>
-            </div>
+
         </div>
     </div>
 
