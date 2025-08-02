@@ -353,6 +353,65 @@
                 </div>
             </div>
 
+            <!-- Channel Background Images section -->
+            <div id="channel-backgrounds-section" class="permission-card management-section" style="display: none;">
+                <h2>🖼️ Channel Background Images</h2>
+                <p>Upload and manage background images for each Discord channel. Images will be shown in color for upcoming raids and black & white for completed raids.</p>
+                
+                <!-- Background Blur Control -->
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #6f42c1;">
+                    <h4 style="margin: 0 0 15px 0; color: #2c3e50;">
+                        <i class="fas fa-adjust"></i> Background Blur Settings
+                    </h4>
+                    <p style="color: #6c757d; margin-bottom: 15px;">
+                        Apply a blur effect to all background images. This affects both upcoming and completed raids.
+                    </p>
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <label style="font-weight: 600; color: #495057;">Blur Intensity:</label>
+                        <input 
+                            type="range" 
+                            id="blur-slider" 
+                            min="0" 
+                            max="10" 
+                            step="0.5" 
+                            value="0"
+                            style="flex: 1; max-width: 200px;"
+                            oninput="updateBlurPreview(this.value)"
+                        >
+                        <input 
+                            type="number" 
+                            id="blur-input" 
+                            min="0" 
+                            max="10" 
+                            step="0.5" 
+                            value="0"
+                            style="width: 80px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: center;"
+                            oninput="updateBlurFromInput(this.value)"
+                        >
+                        <span style="color: #6c757d; font-size: 12px;">px</span>
+                        <button 
+                            class="btn" 
+                            onclick="saveBlurSetting()" 
+                            id="save-blur-btn"
+                            style="min-width: 100px;"
+                        >
+                            <i class="fas fa-save"></i> Save
+                        </button>
+                    </div>
+                    <div id="blur-status" style="margin-top: 10px; font-size: 14px;"></div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <button class="btn" onclick="loadChannelBackgrounds()" id="load-backgrounds-btn">
+                        <i class="fas fa-images"></i> Load Channel Backgrounds
+                    </button>
+                </div>
+                
+                <div id="channel-backgrounds-content">
+                    <!-- Channel background settings will be loaded here -->
+                </div>
+            </div>
+
             <!-- Regular user section -->
             <div id="user-section" class="permission-card">
                 <h2>👤 User Features</h2>
@@ -416,6 +475,7 @@
                 document.getElementById('channel-filter-section').style.display = 'block';
                 document.getElementById('attendance-channel-filter-section').style.display = 'block';
                 document.getElementById('rewards-section').style.display = 'block';
+                document.getElementById('channel-backgrounds-section').style.display = 'block';
             }
         }
 
@@ -568,6 +628,8 @@
                         <li><strong>Attendance cache table created/updated</strong> 📅</li>
                         <li><strong>Attendance channel filters table created/updated</strong> 🎯</li>
                                 <li><strong>Reward settings table created/updated</strong> 🏆</li>
+                                <li><strong>Channel backgrounds table created/updated</strong> 🖼️</li>
+                                <li><strong>Background blur setting added</strong> 🌫️</li>
                                 <li>All indexes created/updated</li>
                             </ul>
                         </div>
@@ -2381,6 +2443,384 @@
             } finally {
                 saveBtn.disabled = false;
                 saveBtn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
+            }
+        }
+
+        // ====================================
+        // CHANNEL BACKGROUNDS FUNCTIONS
+        // ====================================
+
+        async function loadChannelBackgrounds() {
+            const contentDiv = document.getElementById('channel-backgrounds-content');
+            const loadBtn = document.getElementById('load-backgrounds-btn');
+            
+            loadBtn.disabled = true;
+            loadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+            
+            contentDiv.innerHTML = '<div class="loading">Loading channel backgrounds...</div>';
+
+            try {
+                // Get all channels from events first
+                const channelsResponse = await fetch('/api/admin/channel-filters');
+                const channelsData = await channelsResponse.json();
+                
+                // Get existing backgrounds
+                const backgroundsResponse = await fetch('/api/admin/channel-backgrounds');
+                const backgroundsData = await backgroundsResponse.json();
+                
+                // Load current blur setting
+                await loadBlurSetting();
+                
+                if (channelsData.success && backgroundsData.success) {
+                    renderChannelBackgrounds(channelsData.channels, backgroundsData.backgrounds);
+                } else {
+                    contentDiv.innerHTML = `<div class="access-denied">Error loading data: ${channelsData.message || backgroundsData.message}</div>`;
+                }
+            } catch (error) {
+                console.error('Error loading channel backgrounds:', error);
+                contentDiv.innerHTML = '<div class="access-denied">Network error occurred while loading channel backgrounds.</div>';
+            } finally {
+                loadBtn.disabled = false;
+                loadBtn.innerHTML = '<i class="fas fa-images"></i> Load Channel Backgrounds';
+            }
+        }
+
+        // Background blur control functions
+        async function loadBlurSetting() {
+            try {
+                const response = await fetch('/api/ui/background-blur');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const blurValue = data.blurValue || 0;
+                    document.getElementById('blur-slider').value = blurValue;
+                    document.getElementById('blur-input').value = blurValue;
+                    updateBlurPreview(blurValue);
+                }
+            } catch (error) {
+                console.error('Error loading blur setting:', error);
+            }
+        }
+
+        function updateBlurPreview(value) {
+            const numValue = parseFloat(value);
+            document.getElementById('blur-slider').value = numValue;
+            document.getElementById('blur-input').value = numValue;
+            
+            // Apply blur to any visible preview images in the admin panel
+            const previews = document.querySelectorAll('[style*="background-image"]');
+            previews.forEach(preview => {
+                if (preview.style.backgroundImage && preview.style.backgroundImage.includes('url(')) {
+                    if (numValue > 0) {
+                        preview.style.filter = `blur(${numValue}px)`;
+                    } else {
+                        preview.style.filter = '';
+                    }
+                }
+            });
+        }
+
+        function updateBlurFromInput(value) {
+            updateBlurPreview(value);
+        }
+
+        async function saveBlurSetting() {
+            const blurValue = parseFloat(document.getElementById('blur-input').value);
+            const saveBtn = document.getElementById('save-blur-btn');
+            const statusDiv = document.getElementById('blur-status');
+            
+            if (isNaN(blurValue) || blurValue < 0 || blurValue > 10) {
+                statusDiv.innerHTML = '<span style="color: #dc3545;">❌ Blur value must be between 0 and 10</span>';
+                return;
+            }
+
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+            statusDiv.innerHTML = '<span style="color: #6c757d;">Saving blur setting...</span>';
+
+            try {
+                const response = await fetch('/api/admin/background-blur', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ blurValue })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    statusDiv.innerHTML = '<span style="color: #28a745;">✅ Blur setting saved successfully! Refresh pages to see the effect.</span>';
+                    
+                    // Clear success message after 3 seconds
+                    setTimeout(() => {
+                        statusDiv.innerHTML = '';
+                    }, 3000);
+                } else {
+                    statusDiv.innerHTML = `<span style="color: #dc3545;">❌ Error: ${data.message}</span>`;
+                }
+            } catch (error) {
+                console.error('Error saving blur setting:', error);
+                statusDiv.innerHTML = '<span style="color: #dc3545;">❌ Network error occurred while saving blur setting.</span>';
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+            }
+        }
+
+        function renderChannelBackgrounds(channels, backgrounds) {
+            const contentDiv = document.getElementById('channel-backgrounds-content');
+            
+            if (!channels || channels.length === 0) {
+                contentDiv.innerHTML = `
+                    <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 20px; border-radius: 8px; color: #856404;">
+                        <h4 style="color: #856404; margin-bottom: 10px;">📭 No Channels Found</h4>
+                        <p style="margin: 0;">No channels found. Please load some raids first to detect channels.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Create a map of existing backgrounds
+            const backgroundsMap = {};
+            backgrounds.forEach(bg => {
+                backgroundsMap[bg.channel_id] = bg;
+            });
+
+            let backgroundsHTML = `
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <h4 style="margin-bottom: 15px; color: #2c3e50;">🖼️ Channel Background Settings</h4>
+                    <p style="color: #7f8c8d; margin-bottom: 15px;">
+                        Upload background images for each Discord channel. Images will be shown in full color for upcoming raids 
+                        and in black & white for completed raids. Supported formats: JPG, PNG, GIF, WebP (max 10MB).
+                    </p>
+                </div>
+                
+                <div style="display: grid; gap: 20px;">
+            `;
+
+            channels.forEach(channel => {
+                const channelName = channel.channel_name || `Channel ${channel.channel_id}`;
+                const existingBackground = backgroundsMap[channel.channel_id];
+                
+                backgroundsHTML += `
+                    <div class="channel-background-item" data-channel-id="${channel.channel_id}">
+                        <div style="background: white; border-radius: 8px; border: 1px solid #dee2e6; overflow: hidden;">
+                            <div style="padding: 20px; border-bottom: 1px solid #dee2e6;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+                                    <div>
+                                        <h4 style="margin: 0; color: #2c3e50;">
+                                            <i class="fas fa-hashtag" style="color: #7289da; margin-right: 5px;"></i>
+                                            ${channelName}
+                                        </h4>
+                                        <p style="margin: 5px 0 0 0; font-size: 12px; color: #6c757d; font-family: monospace;">ID: ${channel.channel_id}</p>
+                                    </div>
+                                    ${existingBackground ? `
+                                        <button class="btn danger" onclick="deleteChannelBackground('${channel.channel_id}', '${channelName}')">
+                                            <i class="fas fa-trash"></i> Delete
+                                        </button>
+                                    ` : ''}
+                                </div>
+                                
+                                ${existingBackground ? `
+                                    <div style="margin-bottom: 15px;">
+                                        <div style="display: flex; gap: 20px;">
+                                            <div style="flex: 1;">
+                                                <h5 style="margin: 0 0 10px 0; color: #495057;">Current Background (Color - Upcoming Raids)</h5>
+                                                <div style="
+                                                    width: 200px; 
+                                                    height: 120px; 
+                                                    background-image: url('${existingBackground.background_image_url}'); 
+                                                    background-size: cover; 
+                                                    background-position: center;
+                                                    border-radius: 6px;
+                                                    border: 2px solid #dee2e6;
+                                                "></div>
+                                            </div>
+                                            <div style="flex: 1;">
+                                                <h5 style="margin: 0 0 10px 0; color: #495057;">Preview (B&W - Completed Raids)</h5>
+                                                <div style="
+                                                    width: 200px; 
+                                                    height: 120px; 
+                                                    background-image: url('${existingBackground.background_image_url}'); 
+                                                    background-size: cover; 
+                                                    background-position: center;
+                                                    border-radius: 6px;
+                                                    border: 2px solid #dee2e6;
+                                                    filter: grayscale(100%);
+                                                "></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ` : ''}
+                                
+                                <div>
+                                    <h5 style="margin: 0 0 10px 0; color: #495057;">${existingBackground ? 'Replace' : 'Upload'} Background Image</h5>
+                                    <form id="upload-form-${channel.channel_id}" style="display: flex; gap: 10px; align-items: end;">
+                                        <div style="flex: 1;">
+                                            <input 
+                                                type="file" 
+                                                id="file-${channel.channel_id}"
+                                                accept="image/*"
+                                                style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+                                                onchange="previewBackgroundImage('${channel.channel_id}')"
+                                            >
+                                            <small style="color: #6c757d;">Max 10MB. Formats: JPG, PNG, GIF, WebP</small>
+                                        </div>
+                                        <button 
+                                            type="button" 
+                                            class="btn" 
+                                            onclick="uploadChannelBackground('${channel.channel_id}', '${channelName}')"
+                                            id="upload-btn-${channel.channel_id}"
+                                        >
+                                            <i class="fas fa-upload"></i> Upload
+                                        </button>
+                                    </form>
+                                    
+                                    <div id="preview-${channel.channel_id}" style="margin-top: 15px; display: none;">
+                                        <h5 style="margin: 0 0 10px 0; color: #495057;">Preview</h5>
+                                        <div style="display: flex; gap: 20px;">
+                                            <div>
+                                                <p style="margin: 0 0 5px 0; font-size: 12px; color: #6c757d;">Color (Upcoming)</p>
+                                                <div id="preview-color-${channel.channel_id}" style="
+                                                    width: 150px; 
+                                                    height: 90px; 
+                                                    border-radius: 6px;
+                                                    border: 2px solid #dee2e6;
+                                                    background-size: cover;
+                                                    background-position: center;
+                                                "></div>
+                                            </div>
+                                            <div>
+                                                <p style="margin: 0 0 5px 0; font-size: 12px; color: #6c757d;">B&W (Completed)</p>
+                                                <div id="preview-bw-${channel.channel_id}" style="
+                                                    width: 150px; 
+                                                    height: 90px; 
+                                                    border-radius: 6px;
+                                                    border: 2px solid #dee2e6;
+                                                    background-size: cover;
+                                                    background-position: center;
+                                                    filter: grayscale(100%);
+                                                "></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            backgroundsHTML += `</div>`;
+            contentDiv.innerHTML = backgroundsHTML;
+        }
+
+        function previewBackgroundImage(channelId) {
+            const fileInput = document.getElementById(`file-${channelId}`);
+            const previewDiv = document.getElementById(`preview-${channelId}`);
+            const previewColor = document.getElementById(`preview-color-${channelId}`);
+            const previewBW = document.getElementById(`preview-bw-${channelId}`);
+            
+            if (fileInput.files && fileInput.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const imageUrl = e.target.result;
+                    previewColor.style.backgroundImage = `url("${imageUrl}")`;
+                    previewBW.style.backgroundImage = `url("${imageUrl}")`;
+                    previewDiv.style.display = 'block';
+                };
+                reader.readAsDataURL(fileInput.files[0]);
+            } else {
+                previewDiv.style.display = 'none';
+            }
+        }
+
+        async function uploadChannelBackground(channelId, channelName) {
+            const fileInput = document.getElementById(`file-${channelId}`);
+            const uploadBtn = document.getElementById(`upload-btn-${channelId}`);
+            
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('Please select an image file first.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('backgroundImage', fileInput.files[0]);
+            formData.append('channelId', channelId);
+            formData.append('channelName', channelName);
+
+            uploadBtn.disabled = true;
+            uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+
+            try {
+                const response = await fetch('/api/admin/channel-backgrounds/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    // Show success message
+                    const channelItem = document.querySelector(`[data-channel-id="${channelId}"]`);
+                    const successMsg = document.createElement('div');
+                    successMsg.style.cssText = `
+                        background: #d4edda;
+                        border: 1px solid #c3e6cb;
+                        color: #155724;
+                        padding: 10px;
+                        border-radius: 4px;
+                        margin-top: 10px;
+                    `;
+                    successMsg.innerHTML = `
+                        <i class="fas fa-check"></i> Background uploaded successfully! Refresh the page to see updated interface.
+                    `;
+                    channelItem.appendChild(successMsg);
+
+                    // Clear the file input
+                    fileInput.value = '';
+                    document.getElementById(`preview-${channelId}`).style.display = 'none';
+
+                    // Remove success message after 3 seconds
+                    setTimeout(() => {
+                        if (successMsg.parentNode) {
+                            successMsg.parentNode.removeChild(successMsg);
+                        }
+                    }, 3000);
+                } else {
+                    alert(`Error uploading background: ${data.message}`);
+                }
+            } catch (error) {
+                console.error('Error uploading background:', error);
+                alert('Network error occurred while uploading background.');
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = '<i class="fas fa-upload"></i> Upload';
+            }
+        }
+
+        async function deleteChannelBackground(channelId, channelName) {
+            if (!confirm(`Are you sure you want to delete the background image for ${channelName}?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/channel-backgrounds/${channelId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    // Reload the backgrounds to refresh the interface
+                    loadChannelBackgrounds();
+                } else {
+                    alert(`Error deleting background: ${data.message}`);
+                }
+            } catch (error) {
+                console.error('Error deleting background:', error);
+                alert('Network error occurred while deleting background.');
             }
         }
     </script>

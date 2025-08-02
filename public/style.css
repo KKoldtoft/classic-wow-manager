@@ -467,8 +467,50 @@ body.has-raid-bar {
     padding: 15px;
     margin-bottom: 15px;
     cursor: pointer;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.3s ease;
     color: white; /* Make text white for readability */
+    position: relative; /* For pseudo-element positioning */
+    overflow: hidden; /* Contain pseudo-elements */
+}
+
+/* Ensure content stays above background pseudo-elements */
+.event-panel > * {
+    position: relative;
+    z-index: 2;
+}
+
+/* Background pseudo-element styling */
+.event-panel .background-pseudo {
+    position: absolute !important;
+    top: -10px !important;
+    left: -10px !important;
+    right: -10px !important;
+    bottom: -10px !important;
+    background-size: cover !important;
+    background-position: center !important;
+    z-index: 0 !important;
+    pointer-events: none !important; /* Prevent interaction */
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+/* Grayscale effect for completed raids is now handled via pseudo-elements in JavaScript */
+
+/* Ensure upcoming raids (non-historic) handle backgrounds properly */
+.event-panel:not(.historic) {
+    /* Explicitly ensure these properties don't interfere */
+    background-attachment: scroll;
+    background-clip: border-box;
+    background-origin: padding-box;
+    isolation: auto;
+}
+
+/* Force proper stacking for upcoming raid pseudo-elements */
+.event-panel:not(.historic) .background-pseudo {
+    /* Extra specificity to ensure these work */
+    content: "" !important;
+    will-change: transform !important;
 }
 
 .event-panel:hover {
@@ -544,13 +586,21 @@ body.has-raid-bar {
     margin: 0 auto; /* Center the container */
 }
 
-/* --- New Main Content Layout --- */
+/* --- 4-Column Layout --- */
 .main-content-grid {
     display: grid;
-    grid-template-columns: 400px 1fr; /* Fixed width for raids, flexible for the rest */
-    gap: 30px;
+    grid-template-columns: 1fr 1fr 1fr 1fr; /* 4 equal columns */
+    gap: 30px; /* Space between columns */
     align-items: start;
     padding: 30px;
+    max-width: 1800px; /* Wider to accommodate 4 columns */
+    margin: 0 auto;
+}
+
+.grid-column {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
 }
 
 .panel {
@@ -558,7 +608,10 @@ body.has-raid-bar {
     border: 1px solid #ddd;
     border-radius: 8px;
     padding: 20px;
-    width: 360px;
+}
+
+.grid-column .panel {
+    width: 90%;
 }
 
 .panel-title {
@@ -569,44 +622,204 @@ body.has-raid-bar {
     margin-bottom: 15px;
 }
 
-/* My Characters List Styling */
+/* My Characters List Styling - Individual Character Panels */
 .character-list {
     list-style: none;
     padding: 0;
     margin: 0;
     display: flex;
     flex-direction: column;
-    gap: 10px; /* Spacing between items */
+    gap: 8px; /* Spacing between character panels */
 }
 
 .character-item {
     display: flex;
-    justify-content: space-between;
-    align-items: center; /* Vertically center content */
-    height: 35px;
-    padding: 0 5px; /* Add side padding */
-    border-radius: 5px; /* Rounded corners */
+    justify-content: center;
+    align-items: center;
+    height: 40px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.character-item:last-child {
-    border-bottom: none;
+.character-item:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
 .char-name {
-    font-weight: normal;
+    font-weight: 600;
+    font-size: 14px;
+    text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.8);
+    color: #000000;
+    text-align: center;
 }
 
-/* --- Class Colors --- */
-/* Background colors removed - using text colors only in logs.css */
+/* Hide the class text - we only show character name */
+.char-class {
+    display: none;
+}
 
-/* Ensure all text inside colored items is black */
-.character-item .char-name, .character-item .char-class {
-    color: black;
+/* WoW Class Background Colors for Character Panels */
+.character-item.class-warrior {
+    background: linear-gradient(135deg, #C79C6E, #A67C52);
+}
+
+.character-item.class-paladin {
+    background: linear-gradient(135deg, #F58CBA, #E06B9A);
+}
+
+.character-item.class-hunter {
+    background: linear-gradient(135deg, #ABD473, #8FB356);
+}
+
+.character-item.class-rogue {
+    background: linear-gradient(135deg, #FFF569, #E6DD4F);
+}
+
+.character-item.class-priest {
+    background: linear-gradient(135deg, #FFFFFF, #E6E6E6);
+}
+
+.character-item.class-shaman {
+    background: linear-gradient(135deg, #0070DE, #005BB8);
+}
+
+.character-item.class-mage {
+    background: linear-gradient(135deg, #69CCF0, #4FB3D9);
+}
+
+.character-item.class-warlock {
+    background: linear-gradient(135deg, #9482C9, #7A6BA8);
+}
+
+.character-item.class-druid {
+    background: linear-gradient(135deg, #FF7D0A, #E66A00);
+}
+
+.character-item.class-unknown {
+    background: linear-gradient(135deg, #666666, #555555);
+}
+
+/* All character names are now black with consistent styling */
+
+/* Items Hall of Fame Styling */
+.hall-of-fame-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.hall-of-fame-item {
+    display: flex;
+    align-items: flex-start;
+    background: #060a1e;
+    border: 2px solid #737373;
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    color: white;
+}
+
+.hall-of-fame-item:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.hall-of-fame-content {
+    display: flex;
+    align-items: flex-start;
+    flex: 1;
+}
+
+.hall-of-fame-details {
+    flex: 1;
+    line-height: 1.3;
+}
+
+.hall-of-fame-item-name {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 4px;
+    /* Item name color is set inline (#a335ee) */
+}
+
+.hall-of-fame-price {
+    font-size: 13px;
+    font-weight: bold;
+    margin: 2px 0;
+    /* Price color is set inline (#FFD700) */
+}
+
+.hall-of-fame-info {
+    font-size: 12px;
+    margin-top: 2px;
+    color: white;
+}
+
+/* Item icon styling */
+.item-icon-small {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.item-icon-large {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    border: 2px solid #ddd;
 }
 
 
 
-/* Basic responsiveness */
+/* Responsive Design for 4-Column Layout */
+@media (max-width: 1400px) {
+    .main-content-grid {
+        grid-template-columns: 1fr 1fr; /* 2 columns on medium screens */
+        gap: 25px;
+        padding: 25px;
+        max-width: 1200px;
+    }
+}
+
+@media (max-width: 900px) {
+    .main-content-grid {
+        grid-template-columns: 1fr; /* Single column on smaller screens */
+        gap: 20px;
+        padding: 20px;
+        max-width: 600px;
+    }
+    
+    .grid-column {
+        gap: 20px;
+    }
+}
+
+@media (max-width: 768px) {
+    .main-content-grid {
+        padding: 15px;
+        gap: 20px;
+    }
+    
+    .character-item {
+        height: 35px;
+        padding: 6px 10px;
+    }
+    
+    .char-name {
+        font-size: 13px;
+    }
+    
+    .hall-of-fame-item {
+        padding: 8px;
+    }
+    
+    .item-icon-large {
+        width: 50px !important;
+        height: 50px !important;
+    }
+}
+
 @media (max-width: 600px) {
     .top-bar {
         flex-direction: column;
@@ -615,5 +828,28 @@ body.has-raid-bar {
     .app-logo {
         margin-bottom: 10px;
         max-width: 140px;
+    }
+    
+    .main-content-grid {
+        padding: 10px;
+        gap: 15px;
+    }
+    
+    .character-item {
+        height: 35px;
+        padding: 6px 10px;
+    }
+    
+    .char-name {
+        font-size: 13px;
+    }
+    
+    .hall-of-fame-item {
+        padding: 8px;
+    }
+    
+    .item-icon-large {
+        width: 50px !important;
+        height: 50px !important;
     }
 }

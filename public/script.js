@@ -1,9 +1,187 @@
 // public/script.js
+
+// Global blur setting
+let globalBlurValue = 0;
+
+// Function to load global blur setting
+async function loadGlobalBlurSetting() {
+    try {
+        const response = await fetch('/api/ui/background-blur');
+        const data = await response.json();
+        
+        if (data.success) {
+            globalBlurValue = data.blurValue || 0;
+        }
+    } catch (error) {
+        console.warn('Error loading blur setting:', error);
+        globalBlurValue = 0;
+    }
+}
+
+// Function to apply channel-specific background images
+async function applyChannelBackground(eventDiv, channelId, isGrayscale = false) {
+    // Removed verbose debugging - keeping minimal logs
+    
+    try {
+        const response = await fetch(`/api/channel-background/${channelId}`);
+        const data = await response.json();
+        
+        let backgroundUrl = null;
+        
+        if (data.success && data.backgroundUrl) {
+            backgroundUrl = data.backgroundUrl;
+        } else {
+            // Use default AQ40 background
+            backgroundUrl = '/images/AQ40-background.png';
+        }
+        
+        // ALWAYS apply the blur pseudo-element approach when blur > 0 (make it identical for both cases)
+        if (globalBlurValue > 0) {
+            // Create a pseudo-element approach to blur only the background
+            eventDiv.style.position = 'relative';
+            eventDiv.style.overflow = 'hidden';
+            
+            // Remove any existing pseudo-element
+            const existingPseudo = eventDiv.querySelector('.background-pseudo');
+            if (existingPseudo) {
+                existingPseudo.remove();
+            }
+            
+            // Create pseudo-element for blurred background
+            const pseudoElement = document.createElement('div');
+            pseudoElement.className = 'background-pseudo';
+            
+            // Build filter string - IDENTICAL for both cases
+            let filterString = `blur(${globalBlurValue}px)`;
+            if (isGrayscale) {
+                filterString += ' grayscale(100%)';
+            }
+            
+            // Apply styles using individual properties instead of cssText for better debugging
+            pseudoElement.style.position = 'absolute';
+            pseudoElement.style.top = '-10px';
+            pseudoElement.style.left = '-10px';
+            pseudoElement.style.right = '-10px';
+            pseudoElement.style.bottom = '-10px';
+            pseudoElement.style.backgroundImage = `linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)), url('${backgroundUrl}')`;
+            pseudoElement.style.backgroundSize = 'cover';
+            pseudoElement.style.backgroundPosition = 'center';
+            pseudoElement.style.filter = filterString;
+            pseudoElement.style.zIndex = '0';
+            pseudoElement.style.pointerEvents = 'none';
+            
+            eventDiv.insertBefore(pseudoElement, eventDiv.firstChild);
+            
+            // Remove the background from the main element to prevent double-background
+            eventDiv.style.backgroundImage = 'none';
+            
+            console.log(`✅ Applied blur background for ${isGrayscale ? 'historic' : 'upcoming'} raid with ${globalBlurValue}px blur`);
+        } else {
+            // No blur - but we still need pseudo-element for historic events to apply grayscale to background only
+            if (isGrayscale) {
+                // Create pseudo-element for grayscale background (no blur)
+                eventDiv.style.position = 'relative';
+                eventDiv.style.overflow = 'hidden';
+                
+                // Remove any existing pseudo-element
+                const existingPseudo = eventDiv.querySelector('.background-pseudo');
+                if (existingPseudo) {
+                    existingPseudo.remove();
+                }
+                
+                // Create pseudo-element for grayscale background
+                const pseudoElement = document.createElement('div');
+                pseudoElement.className = 'background-pseudo';
+                
+                // Apply styles for grayscale background (no blur)
+                pseudoElement.style.position = 'absolute';
+                pseudoElement.style.top = '-10px';
+                pseudoElement.style.left = '-10px';
+                pseudoElement.style.right = '-10px';
+                pseudoElement.style.bottom = '-10px';
+                pseudoElement.style.backgroundImage = `linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)), url('${backgroundUrl}')`;
+                pseudoElement.style.backgroundSize = 'cover';
+                pseudoElement.style.backgroundPosition = 'center';
+                pseudoElement.style.filter = 'grayscale(100%)'; // Only grayscale, no blur
+                pseudoElement.style.zIndex = '0';
+                pseudoElement.style.pointerEvents = 'none';
+                
+                eventDiv.insertBefore(pseudoElement, eventDiv.firstChild);
+                eventDiv.style.backgroundImage = 'none';
+                
+                console.log(`⚫ Applied grayscale-only background for historic raid`);
+            } else {
+                // No blur, no grayscale - apply background normally to the div
+                if (data.success && data.backgroundUrl) {
+                    const backgroundImage = `linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)), url('${backgroundUrl}')`;
+                    eventDiv.style.backgroundImage = backgroundImage;
+                }
+                // If no custom background, keep the default CSS background
+            }
+        }
+    } catch (error) {
+        console.warn('Error loading channel background, using fallback:', error);
+        // Apply blur/grayscale to default background if needed
+        if (globalBlurValue > 0 || isGrayscale) {
+            applyBlurToDefaultBackground(eventDiv, isGrayscale);
+        }
+    }
+}
+
+// Function to apply blur/grayscale to default background (fallback)
+function applyBlurToDefaultBackground(eventDiv, isGrayscale = false) {
+    // Always use pseudo-element for historic events (grayscale) or when blur > 0
+    if (globalBlurValue > 0 || isGrayscale) {
+        eventDiv.style.position = 'relative';
+        eventDiv.style.overflow = 'hidden';
+        
+        // Remove any existing pseudo-element
+        const existingPseudo = eventDiv.querySelector('.background-pseudo');
+        if (existingPseudo) {
+            existingPseudo.remove();
+        }
+        
+        // Create pseudo-element for filtered default background
+        const pseudoElement = document.createElement('div');
+        pseudoElement.className = 'background-pseudo';
+        
+        // Build filter string properly
+        let filterString = '';
+        if (globalBlurValue > 0) {
+            filterString += `blur(${globalBlurValue}px)`;
+        }
+        if (isGrayscale) {
+            if (filterString) filterString += ' ';
+            filterString += 'grayscale(100%)';
+        }
+        
+        pseudoElement.style.cssText = `
+            position: absolute;
+            top: -10px;
+            left: -10px;
+            right: -10px;
+            bottom: -10px;
+            background-image: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.2)), url('/images/AQ40-background.png');
+            background-size: cover;
+            background-position: center;
+            filter: ${filterString};
+            z-index: 0;
+            pointer-events: none;
+        `;
+        
+        eventDiv.insertBefore(pseudoElement, eventDiv.firstChild);
+        eventDiv.style.backgroundImage = 'none';
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     const eventsList = document.getElementById('events-list');
     const historicEventsList = document.getElementById('historic-events-list');
     let lastRefreshTime = null;
     let lastHistoricRefreshTime = null;
+
+    // Load global blur setting
+    await loadGlobalBlurSetting();
 
     // The user status and auth UI are now handled by top-bar.js
     // We just need to check if the user is logged in to fetch events.
@@ -16,6 +194,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 fetchAndDisplayEvents();
                 fetchAndDisplayHistoricEvents();
                 fetchAndDisplayMyCharacters();
+                fetchAndDisplayItemsHallOfFame();
                 
                 // Show refresh buttons for logged-in users
                 showRefreshButtons(true);
@@ -27,6 +206,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const myCharsContainer = document.getElementById('my-characters-list');
                 if (myCharsContainer) {
                     myCharsContainer.innerHTML = '<p>Please sign in to see your characters.</p>';
+                }
+                
+                const hallOfFameContainer = document.getElementById('items-hall-of-fame-list');
+                if (hallOfFameContainer) {
+                    hallOfFameContainer.innerHTML = '<p>Please sign in to view the hall of fame.</p>';
                 }
                 
                 // Hide refresh buttons for non-logged-in users
@@ -170,7 +354,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const data = await response.json();
 
             if (data.success && data.itemName) {
-                biggestItemElement.innerHTML = `<p><i class="fas fa-gem event-icon"></i> Biggest item: <span style="color: #a335ee; font-weight: bold;">${data.itemName}</span></p>`;
+                const iconHtml = data.iconLink ? 
+                    `<img src="${data.iconLink}" alt="${data.itemName}" class="item-icon-small" style="width: 30px; height: 30px; vertical-align: middle; margin-right: 8px; border-radius: 4px;">` : 
+                    `<i class="fas fa-gem event-icon"></i> `;
+                biggestItemElement.innerHTML = `<p>${iconHtml}Biggest item: <span style="color: #a335ee; font-weight: bold;">${data.itemName}</span></p>`;
             } else {
                 biggestItemElement.innerHTML = `<p><i class="fas fa-gem event-icon"></i> Biggest item: None</p>`;
             }
@@ -215,6 +402,80 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (error) {
             console.error('Error fetching user characters:', error);
             myCharsContainer.innerHTML = '<p>An error occurred while fetching your characters.</p>';
+        }
+    }
+
+    // Function to fetch and display Items Hall of Fame
+    async function fetchAndDisplayItemsHallOfFame() {
+        const hallOfFameContainer = document.getElementById('items-hall-of-fame-list');
+        if (!hallOfFameContainer) return; // Don't run if the container doesn't exist
+
+        hallOfFameContainer.innerHTML = '<p>Loading hall of fame...</p>';
+
+        try {
+            const response = await fetch('/api/items-hall-of-fame');
+            if (!response.ok) {
+                hallOfFameContainer.innerHTML = '<p>Could not load items. Are you signed in?</p>';
+                return;
+            }
+
+            const data = await response.json();
+
+            if (data.success && data.items && data.items.length > 0) {
+                hallOfFameContainer.innerHTML = ''; // Clear loading message
+                const list = document.createElement('div');
+                list.classList.add('hall-of-fame-list');
+                
+                data.items.forEach((item, index) => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.classList.add('hall-of-fame-item');
+                    
+                    // Format the raid name like completed raids
+                    let raidName = 'Unknown Raid';
+                    if (item.channelName && item.channelName.trim() && !item.channelName.match(/^\d+$/)) {
+                        raidName = item.channelName
+                            .replace(/[^\w\s-]/g, '') // Remove emojis and special chars
+                            .replace(/-/g, ' ') // Replace dashes with spaces
+                            .trim()
+                            .split(' ')
+                            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                            .join(' ');
+                    }
+                    
+                    // Format date if available
+                    let dateStr = '';
+                    if (item.startTime) {
+                        const eventDate = new Date(item.startTime * 1000);
+                        const options = { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Copenhagen' };
+                        dateStr = ` - ${eventDate.toLocaleDateString('en-GB', options)}`;
+                    }
+                    
+                    const raidDisplay = `${raidName}${dateStr}`;
+                    
+                    const iconHtml = item.iconLink ? 
+                        `<img src="${item.iconLink}" alt="${item.itemName}" class="item-icon-large" style="width: 60px; height: 60px; border-radius: 8px; margin-right: 12px; vertical-align: top;">` : 
+                        `<div style="width: 60px; height: 60px; background: #666; border-radius: 8px; margin-right: 12px; display: inline-block; vertical-align: top;"></div>`;
+                    
+                    itemDiv.innerHTML = `
+                        <div class="hall-of-fame-content">
+                            ${iconHtml}
+                            <div class="hall-of-fame-details">
+                                <div class="hall-of-fame-item-name" style="color: #a335ee; font-weight: bold; font-size: 14px;">${item.itemName}</div>
+                                <div class="hall-of-fame-price" style="color: #FFD700; font-weight: bold; margin: 2px 0;">${item.goldAmount}g</div>
+                                <div class="hall-of-fame-info" style="font-size: 12px; margin-top: 2px;">${item.playerName}, ${raidDisplay}</div>
+                            </div>
+                        </div>
+                    `;
+                    list.appendChild(itemDiv);
+                });
+                hallOfFameContainer.appendChild(list);
+            } else {
+                hallOfFameContainer.innerHTML = '<p>No items found in the hall of fame yet.</p>';
+            }
+
+        } catch (error) {
+            console.error('Error fetching items hall of fame:', error);
+            hallOfFameContainer.innerHTML = '<p>An error occurred while fetching the hall of fame.</p>';
         }
     }
 
@@ -422,6 +683,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     
                     const eventId = event.id || 'unknown';
                     const eventTitle = event.title || 'Untitled Event';
+                    
+                    // Apply channel-specific background if available
+                    if (event.channelId) {
+                        applyChannelBackground(eventDiv, event.channelId, false); // false = color (upcoming)
+                    }
 
                     if (eventId !== 'unknown') {
                         eventDiv.style.cursor = 'pointer';
@@ -557,11 +823,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             historicEvents.forEach((event, index) => {
                 try {
                     const eventDiv = document.createElement('div');
-                    eventDiv.classList.add('event-panel');
+                    eventDiv.classList.add('event-panel', 'historic');
                     eventDiv.setAttribute('data-event-index', index);
                     
                     const eventId = event.id || 'unknown';
                     const eventTitle = event.title || 'Untitled Event';
+                    
+                    // Apply channel-specific background if available
+                    if (event.channelId) {
+                        applyChannelBackground(eventDiv, event.channelId, true); // true = grayscale (historic)
+                    }
 
                     if (eventId !== 'unknown') {
                         eventDiv.style.cursor = 'pointer';
@@ -725,6 +996,69 @@ document.addEventListener('DOMContentLoaded', async () => {
             updateLastHistoricRefreshDisplay();
         }
     }, 60000); // Update every minute
+
+    // Function to apply blur/grayscale to all existing event panels on page load
+    function applyBlurToAllPanels() {
+        const eventPanels = document.querySelectorAll('.event-panel');
+        eventPanels.forEach(panel => {
+            // Only apply if it doesn't already have a pseudo-element
+            if (!panel.querySelector('.background-pseudo')) {
+                const isHistoric = panel.classList.contains('historic');
+                // Apply pseudo-element if blur is enabled OR if it's a historic panel (needs grayscale)
+                if (globalBlurValue > 0 || isHistoric) {
+                    applyBlurToDefaultBackground(panel, isHistoric);
+                }
+            }
+        });
+    }
+
+    // Apply blur to any existing panels after loading the setting
+    setTimeout(applyBlurToAllPanels, 500);
+
+    // Add a simple test to verify blur is working for both types
+    setTimeout(() => {
+        const upcomingPanels = document.querySelectorAll('.event-panel:not(.historic)');
+        const historicPanels = document.querySelectorAll('.event-panel.historic');
+        console.log(`🔍 Panel verification - Upcoming: ${upcomingPanels.length}, Historic: ${historicPanels.length}, Blur setting: ${globalBlurValue}px`);
+        
+        if (globalBlurValue > 0) {
+            upcomingPanels.forEach((panel, index) => {
+                const pseudo = panel.querySelector('.background-pseudo');
+                console.log(`📅 Upcoming panel ${index + 1}: ${pseudo ? '✅ Has blur pseudo-element' : '❌ Missing blur pseudo-element'}`);
+                
+                if (pseudo) {
+                    const computedStyle = window.getComputedStyle(pseudo);
+                    console.log(`🔍 Upcoming panel ${index + 1} pseudo styles:`, {
+                        backgroundImage: computedStyle.backgroundImage,
+                        filter: computedStyle.filter,
+                        zIndex: computedStyle.zIndex,
+                        position: computedStyle.position,
+                        display: computedStyle.display,
+                        opacity: computedStyle.opacity,
+                        visibility: computedStyle.visibility
+                    });
+                }
+            });
+            
+            historicPanels.forEach((panel, index) => {
+                const pseudo = panel.querySelector('.background-pseudo');
+                console.log(`📚 Historic panel ${index + 1}: ${pseudo ? '✅ Has blur pseudo-element' : '❌ Missing blur pseudo-element'}`);
+                
+                if (pseudo && index === 0) { // Just check the first one for comparison
+                    const computedStyle = window.getComputedStyle(pseudo);
+                    console.log(`🔍 Historic panel ${index + 1} pseudo styles:`, {
+                        backgroundImage: computedStyle.backgroundImage,
+                        filter: computedStyle.filter,
+                        zIndex: computedStyle.zIndex,
+                        position: computedStyle.position,
+                        display: computedStyle.display,
+                        opacity: computedStyle.opacity,
+                        visibility: computedStyle.visibility
+                    });
+                }
+            });
+        }
+    }, 2000);
 
     // Initial check on page load
     checkLoginAndFetch();

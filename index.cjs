@@ -8,6 +8,8 @@ const DiscordStrategy = require('passport-discord').Strategy;
 const { Pool } = require('pg');
 const path = require('path');
 const axios = require('axios');
+const multer = require('multer');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -3394,7 +3396,8 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 ('demo_shout', 'tier2_max', 199, 'Maximum demoralizing shout count for tier 2 (5 points)'),
                 ('demo_shout', 'tier2_points', 5, 'Points awarded for tier 2 demoralizing shout count (100-199)'),
                 ('demo_shout', 'tier3_points', 10, 'Points awarded for tier 3 demoralizing shout count (200+)'),
-                ('sunder', 'enabled', 1, 'Whether Sunder Armor tracking is enabled')
+                ('sunder', 'enabled', 1, 'Whether Sunder Armor tracking is enabled'),
+                ('ui', 'background_blur', 0, 'Background image blur intensity (0-10)')
             ON CONFLICT (setting_type, setting_name) DO NOTHING
         `);
 
@@ -3535,6 +3538,17 @@ app.post('/api/admin/setup-database', async (req, res) => {
             )
         `);
         
+        // Create channel_backgrounds table for storing background images for each channel
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS channel_backgrounds (
+                channel_id VARCHAR(255) PRIMARY KEY,
+                channel_name VARCHAR(255),
+                background_image_url VARCHAR(500),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        
         // Create indexes for attendance_cache
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_attendance_cache_discord_id ON attendance_cache (discord_id)
@@ -3544,6 +3558,11 @@ app.post('/api/admin/setup-database', async (req, res) => {
         `);
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_attendance_cache_event ON attendance_cache (event_id)
+        `);
+        
+        // Create index for channel_backgrounds
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_channel_backgrounds_channel_name ON channel_backgrounds (channel_name)
         `);
         
         res.json({ 
@@ -7571,7 +7590,7 @@ app.get('/api/event-biggestitem/:eventId', async (req, res) => {
         console.log(`💎 [EVENT BIGGESTITEM] Fetching biggest item for event: ${eventId}`);
         
         const result = await pool.query(
-            'SELECT item_name, gold_amount FROM loot_items WHERE event_id = $1 ORDER BY gold_amount DESC LIMIT 1',
+            'SELECT item_name, gold_amount, icon_link FROM loot_items WHERE event_id = $1 ORDER BY gold_amount DESC LIMIT 1',
             [eventId]
         );
         
@@ -7586,12 +7605,78 @@ app.get('/api/event-biggestitem/:eventId', async (req, res) => {
         return res.json({
             success: true,
             itemName: biggestItem.item_name,
-            goldAmount: biggestItem.gold_amount
+            goldAmount: biggestItem.gold_amount,
+            iconLink: biggestItem.icon_link
         });
         
     } catch (error) {
         console.error(`❌ [EVENT BIGGESTITEM] Error for event ${eventId}:`, error.message);
         return res.json({ success: false, error: 'Database error' });
+    }
+});
+
+// Get top 10 most expensive items across all events for Items Hall of Fame
+app.get('/api/items-hall-of-fame', async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
+    }
+    
+    try {
+        console.log(`🏆 [ITEMS HALL OF FAME] Fetching top 10 most expensive items`);
+        
+        // Check if loot_items table exists, if not return empty array
+        const tableExists = await pool.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'loot_items'
+            );
+        `);
+        
+        if (!tableExists.rows[0].exists) {
+            console.log('[ITEMS HALL OF FAME] loot_items table does not exist yet, returning empty array');
+            return res.json({
+                success: true,
+                items: []
+            });
+        }
+        
+        const result = await pool.query(`
+            SELECT 
+                li.item_name,
+                li.player_name,
+                li.gold_amount,
+                li.icon_link,
+                li.event_id,
+                ec.event_data->>'channelName' as channel_name,
+                (ec.event_data->>'startTime')::bigint as start_time
+            FROM loot_items li
+            LEFT JOIN raid_helper_events_cache ec ON li.event_id = ec.event_id
+            WHERE li.gold_amount > 0
+            ORDER BY li.gold_amount DESC
+            LIMIT 10
+        `);
+        
+        const hallOfFameItems = result.rows.map(item => ({
+            itemName: item.item_name,
+            playerName: item.player_name,
+            goldAmount: item.gold_amount,
+            iconLink: item.icon_link,
+            eventId: item.event_id,
+            channelName: item.channel_name,
+            startTime: item.start_time
+        }));
+        
+        console.log(`🏆 [ITEMS HALL OF FAME] Found ${hallOfFameItems.length} items for hall of fame`);
+        
+        return res.json({
+            success: true,
+            items: hallOfFameItems
+        });
+        
+    } catch (error) {
+        console.error(`❌ [ITEMS HALL OF FAME] Error fetching hall of fame items:`, error);
+        return res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -8053,6 +8138,355 @@ app.post('/api/admin/attendance-channel-filters', async (req, res) => {
             success: false,
             message: 'Error saving attendance channel filters',
             error: error.message
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// ====================================
+// CHANNEL BACKGROUNDS MANAGEMENT
+// ====================================
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        const uploadDir = path.join(__dirname, 'public', 'uploads', 'backgrounds');
+        // Create directory if it doesn't exist
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+    },
+    filename: function (req, file, cb) {
+        // Create unique filename with timestamp and original extension
+        const ext = path.extname(file.originalname).toLowerCase();
+        const timestamp = Date.now();
+        const filename = `channel_bg_${timestamp}${ext}`;
+        cb(null, filename);
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: {
+        fileSize: 10 * 1024 * 1024 // 10MB limit
+    },
+    fileFilter: function (req, file, cb) {
+        // Only allow image files
+        const allowedTypes = /\.(jpg|jpeg|png|gif|webp)$/i;
+        if (allowedTypes.test(file.originalname)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed (jpg, jpeg, png, gif, webp)'));
+        }
+    }
+});
+
+// Get all channel background mappings
+app.get('/api/admin/channel-backgrounds', async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // Check if user has management role
+    const hasRole = await hasManagementRole(req.user.accessToken);
+    if (!hasRole) {
+        return res.status(403).json({ success: false, message: 'Management role required' });
+    }
+
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Get all channel backgrounds
+        const result = await client.query(`
+            SELECT 
+                channel_id,
+                channel_name,
+                background_image_url,
+                created_at,
+                updated_at
+            FROM channel_backgrounds
+            ORDER BY channel_name ASC
+        `);
+        
+        res.json({
+            success: true,
+            backgrounds: result.rows
+        });
+        
+    } catch (error) {
+        console.error('❌ [CHANNEL BACKGROUNDS] Error loading backgrounds:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error loading channel backgrounds',
+            error: error.message
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Upload background image for a channel
+app.post('/api/admin/channel-backgrounds/upload', upload.single('backgroundImage'), async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // Check if user has management role
+    const hasRole = await hasManagementRole(req.user.accessToken);
+    if (!hasRole) {
+        return res.status(403).json({ success: false, message: 'Management role required' });
+    }
+
+    if (!req.file) {
+        return res.status(400).json({ success: false, message: 'No image file provided' });
+    }
+
+    const { channelId, channelName } = req.body;
+    
+    if (!channelId || !channelName) {
+        return res.status(400).json({ success: false, message: 'Channel ID and name are required' });
+    }
+
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Create the URL path for the uploaded image
+        const imageUrl = `/uploads/backgrounds/${req.file.filename}`;
+        
+        // Check if this channel already has a background
+        const existingResult = await client.query(`
+            SELECT background_image_url FROM channel_backgrounds WHERE channel_id = $1
+        `, [channelId]);
+        
+        // If there's an existing background, delete the old file
+        if (existingResult.rows.length > 0 && existingResult.rows[0].background_image_url) {
+            const oldFilename = path.basename(existingResult.rows[0].background_image_url);
+            const oldFilePath = path.join(__dirname, 'public', 'uploads', 'backgrounds', oldFilename);
+            
+            if (fs.existsSync(oldFilePath)) {
+                fs.unlinkSync(oldFilePath);
+                console.log(`🗑️ [CHANNEL BACKGROUNDS] Deleted old background file: ${oldFilename}`);
+            }
+        }
+        
+        // Insert or update the channel background
+        await client.query(`
+            INSERT INTO channel_backgrounds (channel_id, channel_name, background_image_url)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (channel_id) DO UPDATE SET
+                channel_name = EXCLUDED.channel_name,
+                background_image_url = EXCLUDED.background_image_url,
+                updated_at = CURRENT_TIMESTAMP
+        `, [channelId, channelName, imageUrl]);
+        
+        console.log(`✅ [CHANNEL BACKGROUNDS] Background uploaded for channel: ${channelName} (${channelId})`);
+        
+        res.json({
+            success: true,
+            message: 'Background image uploaded successfully',
+            imageUrl: imageUrl,
+            channelId: channelId,
+            channelName: channelName
+        });
+        
+    } catch (error) {
+        console.error('❌ [CHANNEL BACKGROUNDS] Error uploading background:', error);
+        
+        // Clean up the uploaded file if database operation failed
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        
+        res.status(500).json({
+            success: false,
+            message: 'Error uploading background image',
+            error: error.message
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Delete background for a channel
+app.delete('/api/admin/channel-backgrounds/:channelId', async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // Check if user has management role
+    const hasRole = await hasManagementRole(req.user.accessToken);
+    if (!hasRole) {
+        return res.status(403).json({ success: false, message: 'Management role required' });
+    }
+
+    const { channelId } = req.params;
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Get the current background to delete the file
+        const existingResult = await client.query(`
+            SELECT background_image_url, channel_name FROM channel_backgrounds WHERE channel_id = $1
+        `, [channelId]);
+        
+        if (existingResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Channel background not found' });
+        }
+        
+        const { background_image_url, channel_name } = existingResult.rows[0];
+        
+        // Delete from database
+        await client.query(`DELETE FROM channel_backgrounds WHERE channel_id = $1`, [channelId]);
+        
+        // Delete the image file
+        if (background_image_url) {
+            const filename = path.basename(background_image_url);
+            const filePath = path.join(__dirname, 'public', 'uploads', 'backgrounds', filename);
+            
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                console.log(`🗑️ [CHANNEL BACKGROUNDS] Deleted background file: ${filename}`);
+            }
+        }
+        
+        console.log(`✅ [CHANNEL BACKGROUNDS] Background deleted for channel: ${channel_name} (${channelId})`);
+        
+        res.json({
+            success: true,
+            message: 'Background image deleted successfully'
+        });
+        
+    } catch (error) {
+        console.error('❌ [CHANNEL BACKGROUNDS] Error deleting background:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error deleting background image',
+            error: error.message
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get background for a specific channel (used by frontend)
+app.get('/api/channel-background/:channelId', async (req, res) => {
+    const { channelId } = req.params;
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        const result = await client.query(`
+            SELECT background_image_url FROM channel_backgrounds WHERE channel_id = $1
+        `, [channelId]);
+        
+        if (result.rows.length > 0) {
+            res.json({
+                success: true,
+                backgroundUrl: result.rows[0].background_image_url
+            });
+        } else {
+            res.json({
+                success: true,
+                backgroundUrl: null // No custom background, use default
+            });
+        }
+        
+    } catch (error) {
+        console.error('❌ [CHANNEL BACKGROUNDS] Error getting background:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting background image'
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// ====================================
+// BACKGROUND BLUR SETTINGS
+// ====================================
+
+// Get current background blur setting
+app.get('/api/ui/background-blur', async (req, res) => {
+    let client;
+    try {
+        client = await pool.connect();
+        
+        const result = await client.query(`
+            SELECT setting_value FROM reward_settings 
+            WHERE setting_type = 'ui' AND setting_name = 'background_blur'
+        `);
+        
+        const blurValue = result.rows.length > 0 ? parseFloat(result.rows[0].setting_value) : 0;
+        
+        res.json({
+            success: true,
+            blurValue: blurValue
+        });
+        
+    } catch (error) {
+        console.error('❌ [BACKGROUND BLUR] Error getting blur setting:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting background blur setting'
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Update background blur setting
+app.post('/api/admin/background-blur', async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const hasRole = await hasManagementRole(req.user.accessToken);
+    if (!hasRole) {
+        return res.status(403).json({ success: false, message: 'Management role required' });
+    }
+
+    const { blurValue } = req.body;
+    
+    // Validate blur value (0-10)
+    if (typeof blurValue !== 'number' || blurValue < 0 || blurValue > 10) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Blur value must be a number between 0 and 10' 
+        });
+    }
+
+    let client;
+    try {
+        client = await pool.connect();
+        
+        await client.query(`
+            INSERT INTO reward_settings (setting_type, setting_name, setting_value, description)
+            VALUES ('ui', 'background_blur', $1, 'Background image blur intensity (0-10)')
+            ON CONFLICT (setting_type, setting_name) DO UPDATE SET
+                setting_value = EXCLUDED.setting_value,
+                updated_at = CURRENT_TIMESTAMP
+        `, [blurValue]);
+        
+        console.log(`✅ [BACKGROUND BLUR] Updated blur setting to: ${blurValue}`);
+        
+        res.json({
+            success: true,
+            message: 'Background blur setting updated successfully',
+            blurValue: blurValue
+        });
+        
+    } catch (error) {
+        console.error('❌ [BACKGROUND BLUR] Error updating blur setting:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating background blur setting'
         });
     } finally {
         if (client) client.release();
