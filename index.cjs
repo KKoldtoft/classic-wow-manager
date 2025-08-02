@@ -8770,6 +8770,87 @@ app.post('/api/admin/background-blur', async (req, res) => {
     }
 });
 
+// Get current background darken setting
+app.get('/api/ui/background-darken', async (req, res) => {
+    let client;
+    try {
+        client = await pool.connect();
+        
+        const result = await client.query(`
+            SELECT setting_value FROM reward_settings 
+            WHERE setting_type = 'ui' AND setting_name = 'background_darken'
+        `);
+        
+        const darkenValue = result.rows.length > 0 ? parseFloat(result.rows[0].setting_value) : 100;
+        
+        res.json({
+            success: true,
+            darkenValue: darkenValue
+        });
+        
+    } catch (error) {
+        console.error('❌ [BACKGROUND DARKEN] Error getting darken setting:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting background darken setting'
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Update background darken setting
+app.post('/api/admin/background-darken', async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const hasRole = await hasManagementRole(req.user.accessToken);
+    if (!hasRole) {
+        return res.status(403).json({ success: false, message: 'Management role required' });
+    }
+
+    const { darkenValue } = req.body;
+    
+    // Validate darken value (50-100, where 100 is no darkening, 50 is maximum darkening)
+    if (typeof darkenValue !== 'number' || darkenValue < 50 || darkenValue > 100) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Darken value must be a number between 50 and 100' 
+        });
+    }
+
+    let client;
+    try {
+        client = await pool.connect();
+        
+        await client.query(`
+            INSERT INTO reward_settings (setting_type, setting_name, setting_value, description)
+            VALUES ('ui', 'background_darken', $1, 'Background image brightness percentage (50-100, where 100 is no darkening)')
+            ON CONFLICT (setting_type, setting_name) DO UPDATE SET
+                setting_value = EXCLUDED.setting_value,
+                updated_at = CURRENT_TIMESTAMP
+        `, [darkenValue]);
+        
+        console.log(`✅ [BACKGROUND DARKEN] Updated darken setting to: ${darkenValue}`);
+        
+        res.json({
+            success: true,
+            message: 'Background darken setting updated successfully',
+            darkenValue: darkenValue
+        });
+        
+    } catch (error) {
+        console.error('❌ [BACKGROUND DARKEN] Error updating darken setting:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating background darken setting'
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // ====================================
 // CATCH-ALL ROUTE (MUST BE LAST)
 // ====================================

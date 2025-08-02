@@ -1,7 +1,8 @@
 // public/script.js
 
-// Global blur setting
+// Global blur and darken settings
 let globalBlurValue = 0;
+let globalDarkenValue = 100;
 
 // Function to load global blur setting
 async function loadGlobalBlurSetting() {
@@ -15,6 +16,21 @@ async function loadGlobalBlurSetting() {
     } catch (error) {
         console.warn('Error loading blur setting:', error);
         globalBlurValue = 0;
+    }
+}
+
+// Function to load global darken setting
+async function loadGlobalDarkenSetting() {
+    try {
+        const response = await fetch('/api/ui/background-darken');
+        const data = await response.json();
+        
+        if (data.success) {
+            globalDarkenValue = data.darkenValue || 100;
+        }
+    } catch (error) {
+        console.warn('Error loading darken setting:', error);
+        globalDarkenValue = 100;
     }
 }
 
@@ -35,9 +51,9 @@ async function applyChannelBackground(eventDiv, channelId, isGrayscale = false) 
             backgroundUrl = '/images/AQ40-background.png';
         }
         
-        // ALWAYS apply the blur pseudo-element approach when blur > 0 (make it identical for both cases)
-        if (globalBlurValue > 0) {
-            // Create a pseudo-element approach to blur only the background
+        // ALWAYS apply the pseudo-element approach when blur > 0 OR darken < 100 (make it identical for both cases)
+        if (globalBlurValue > 0 || globalDarkenValue < 100) {
+            // Create a pseudo-element approach to apply effects only to the background
             eventDiv.style.position = 'relative';
             eventDiv.style.overflow = 'hidden';
             
@@ -47,14 +63,22 @@ async function applyChannelBackground(eventDiv, channelId, isGrayscale = false) 
                 existingPseudo.remove();
             }
             
-            // Create pseudo-element for blurred background
+            // Create pseudo-element for filtered background
             const pseudoElement = document.createElement('div');
             pseudoElement.className = 'background-pseudo';
             
             // Build filter string - IDENTICAL for both cases
-            let filterString = `blur(${globalBlurValue}px)`;
+            let filterString = '';
+            if (globalBlurValue > 0) {
+                filterString += `blur(${globalBlurValue}px)`;
+            }
+            if (globalDarkenValue < 100) {
+                if (filterString) filterString += ' ';
+                filterString += `brightness(${globalDarkenValue}%)`;
+            }
             if (isGrayscale) {
-                filterString += ' grayscale(100%)';
+                if (filterString) filterString += ' ';
+                filterString += 'grayscale(100%)';
             }
             
             // Apply styles using individual properties instead of cssText for better debugging
@@ -75,11 +99,11 @@ async function applyChannelBackground(eventDiv, channelId, isGrayscale = false) 
             // Remove the background from the main element to prevent double-background
             eventDiv.style.backgroundImage = 'none';
             
-            console.log(`✅ Applied blur background for ${isGrayscale ? 'historic' : 'upcoming'} raid with ${globalBlurValue}px blur`);
+            console.log(`✅ Applied filtered background for ${isGrayscale ? 'historic' : 'upcoming'} raid with ${globalBlurValue}px blur and ${globalDarkenValue}% brightness`);
         } else {
-            // No blur - but we still need pseudo-element for historic events to apply grayscale to background only
+            // No blur or darken - but we still need pseudo-element for historic events to apply grayscale to background only
             if (isGrayscale) {
-                // Create pseudo-element for grayscale background (no blur)
+                // Create pseudo-element for grayscale background (no blur or darken)
                 eventDiv.style.position = 'relative';
                 eventDiv.style.overflow = 'hidden';
                 
@@ -93,7 +117,7 @@ async function applyChannelBackground(eventDiv, channelId, isGrayscale = false) 
                 const pseudoElement = document.createElement('div');
                 pseudoElement.className = 'background-pseudo';
                 
-                // Apply styles for grayscale background (no blur)
+                // Apply styles for grayscale background (no blur or darken)
                 pseudoElement.style.position = 'absolute';
                 pseudoElement.style.top = '-10px';
                 pseudoElement.style.left = '-10px';
@@ -102,7 +126,7 @@ async function applyChannelBackground(eventDiv, channelId, isGrayscale = false) 
                 pseudoElement.style.backgroundImage = `linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)), url('${backgroundUrl}')`;
                 pseudoElement.style.backgroundSize = 'cover';
                 pseudoElement.style.backgroundPosition = 'center';
-                pseudoElement.style.filter = 'grayscale(100%)'; // Only grayscale, no blur
+                pseudoElement.style.filter = 'grayscale(100%)'; // Only grayscale, no blur or darken
                 pseudoElement.style.zIndex = '0';
                 pseudoElement.style.pointerEvents = 'none';
                 
@@ -111,7 +135,7 @@ async function applyChannelBackground(eventDiv, channelId, isGrayscale = false) 
                 
                 console.log(`⚫ Applied grayscale-only background for historic raid`);
             } else {
-                // No blur, no grayscale - apply background normally to the div
+                // No effects - apply background normally to the div
                 if (data.success && data.backgroundUrl) {
                     const backgroundImage = `linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)), url('${backgroundUrl}')`;
                     eventDiv.style.backgroundImage = backgroundImage;
@@ -121,17 +145,17 @@ async function applyChannelBackground(eventDiv, channelId, isGrayscale = false) 
         }
     } catch (error) {
         console.warn('Error loading channel background, using fallback:', error);
-        // Apply blur/grayscale to default background if needed
-        if (globalBlurValue > 0 || isGrayscale) {
-            applyBlurToDefaultBackground(eventDiv, isGrayscale);
+        // Apply effects to default background if needed
+        if (globalBlurValue > 0 || globalDarkenValue < 100 || isGrayscale) {
+            applyEffectsToDefaultBackground(eventDiv, isGrayscale);
         }
     }
 }
 
-// Function to apply blur/grayscale to default background (fallback)
-function applyBlurToDefaultBackground(eventDiv, isGrayscale = false) {
-    // Always use pseudo-element for historic events (grayscale) or when blur > 0
-    if (globalBlurValue > 0 || isGrayscale) {
+// Function to apply effects (blur/darken/grayscale) to default background (fallback)
+function applyEffectsToDefaultBackground(eventDiv, isGrayscale = false) {
+    // Always use pseudo-element for historic events (grayscale) or when effects are applied
+    if (globalBlurValue > 0 || globalDarkenValue < 100 || isGrayscale) {
         eventDiv.style.position = 'relative';
         eventDiv.style.overflow = 'hidden';
         
@@ -149,6 +173,10 @@ function applyBlurToDefaultBackground(eventDiv, isGrayscale = false) {
         let filterString = '';
         if (globalBlurValue > 0) {
             filterString += `blur(${globalBlurValue}px)`;
+        }
+        if (globalDarkenValue < 100) {
+            if (filterString) filterString += ' ';
+            filterString += `brightness(${globalDarkenValue}%)`;
         }
         if (isGrayscale) {
             if (filterString) filterString += ' ';
@@ -180,8 +208,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     let lastRefreshTime = null;
     let lastHistoricRefreshTime = null;
 
-    // Load global blur setting
+    // Load global blur and darken settings
     await loadGlobalBlurSetting();
+    await loadGlobalDarkenSetting();
 
     // The user status and auth UI are now handled by top-bar.js
     // We just need to check if the user is logged in to fetch events.
@@ -997,23 +1026,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }, 60000); // Update every minute
 
-    // Function to apply blur/grayscale to all existing event panels on page load
-    function applyBlurToAllPanels() {
+    // Function to apply effects to all existing event panels on page load
+    function applyEffectsToAllPanels() {
         const eventPanels = document.querySelectorAll('.event-panel');
         eventPanels.forEach(panel => {
             // Only apply if it doesn't already have a pseudo-element
             if (!panel.querySelector('.background-pseudo')) {
                 const isHistoric = panel.classList.contains('historic');
-                // Apply pseudo-element if blur is enabled OR if it's a historic panel (needs grayscale)
-                if (globalBlurValue > 0 || isHistoric) {
-                    applyBlurToDefaultBackground(panel, isHistoric);
+                // Apply pseudo-element if effects are enabled OR if it's a historic panel (needs grayscale)
+                if (globalBlurValue > 0 || globalDarkenValue < 100 || isHistoric) {
+                    applyEffectsToDefaultBackground(panel, isHistoric);
                 }
             }
         });
     }
 
-    // Apply blur to any existing panels after loading the setting
-    setTimeout(applyBlurToAllPanels, 500);
+    // Apply effects to any existing panels after loading the setting
+    setTimeout(applyEffectsToAllPanels, 500);
 
     // Add a simple test to verify blur is working for both types
     setTimeout(() => {

@@ -401,6 +401,49 @@
                     <div id="blur-status" style="margin-top: 10px; font-size: 14px;"></div>
                 </div>
                 
+                <!-- Background Darken Control -->
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #dc3545;">
+                    <h4 style="margin: 0 0 15px 0; color: #2c3e50;">
+                        <i class="fas fa-moon"></i> Background Darken Settings
+                    </h4>
+                    <p style="color: #6c757d; margin-bottom: 15px;">
+                        Apply a darkening effect to all background images. Lower values make backgrounds darker. This affects both upcoming and completed raids.
+                    </p>
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <label style="font-weight: 600; color: #495057;">Brightness:</label>
+                        <input 
+                            type="range" 
+                            id="darken-slider" 
+                            min="50" 
+                            max="100" 
+                            step="5" 
+                            value="100"
+                            style="flex: 1; max-width: 200px;"
+                            oninput="updateDarkenPreview(this.value)"
+                        >
+                        <input 
+                            type="number" 
+                            id="darken-input" 
+                            min="50" 
+                            max="100" 
+                            step="5" 
+                            value="100"
+                            style="width: 80px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: center;"
+                            oninput="updateDarkenFromInput(this.value)"
+                        >
+                        <span style="color: #6c757d; font-size: 12px;">%</span>
+                        <button 
+                            class="btn" 
+                            onclick="saveDarkenSetting()" 
+                            id="save-darken-btn"
+                            style="min-width: 100px;"
+                        >
+                            <i class="fas fa-save"></i> Save
+                        </button>
+                    </div>
+                    <div id="darken-status" style="margin-top: 10px; font-size: 14px;"></div>
+                </div>
+                
                 <div style="margin-bottom: 20px;">
                     <button class="btn" onclick="loadChannelBackgrounds()" id="load-backgrounds-btn">
                         <i class="fas fa-images"></i> Load Channel Backgrounds
@@ -630,6 +673,8 @@
                                 <li><strong>Reward settings table created/updated</strong> 🏆</li>
                                 <li><strong>Channel backgrounds table created/updated</strong> 🖼️</li>
                                 <li><strong>Background blur setting added</strong> 🌫️</li>
+                    <li><strong>Background darken setting added</strong> 🌙</li>
+                    <li><strong>Text shadows added to event cards</strong> ✨</li>
                                 <li>All indexes created/updated</li>
                             </ul>
                         </div>
@@ -2468,8 +2513,9 @@
                 const backgroundsResponse = await fetch('/api/admin/channel-backgrounds');
                 const backgroundsData = await backgroundsResponse.json();
                 
-                // Load current blur setting
+                // Load current blur and darken settings
                 await loadBlurSetting();
+                await loadDarkenSetting();
                 
                 if (channelsData.success && backgroundsData.success) {
                     renderChannelBackgrounds(channelsData.channels, backgroundsData.backgrounds);
@@ -2562,6 +2608,98 @@
             } catch (error) {
                 console.error('Error saving blur setting:', error);
                 statusDiv.innerHTML = '<span style="color: #dc3545;">❌ Network error occurred while saving blur setting.</span>';
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+            }
+        }
+
+        // Background darken control functions
+        async function loadDarkenSetting() {
+            try {
+                const response = await fetch('/api/ui/background-darken');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const darkenValue = data.darkenValue || 100;
+                    document.getElementById('darken-slider').value = darkenValue;
+                    document.getElementById('darken-input').value = darkenValue;
+                    updateDarkenPreview(darkenValue);
+                }
+            } catch (error) {
+                console.error('Error loading darken setting:', error);
+            }
+        }
+
+        function updateDarkenPreview(value) {
+            const numValue = parseFloat(value);
+            document.getElementById('darken-slider').value = numValue;
+            document.getElementById('darken-input').value = numValue;
+            
+            // Apply darken to any visible preview images in the admin panel
+            const previews = document.querySelectorAll('[style*="background-image"]');
+            previews.forEach(preview => {
+                if (preview.style.backgroundImage && preview.style.backgroundImage.includes('url(')) {
+                    if (numValue < 100) {
+                        const existingFilter = preview.style.filter || '';
+                        // Remove any existing brightness filter and add the new one
+                        const filterWithoutBrightness = existingFilter.replace(/brightness\([^)]*\)\s*/g, '').trim();
+                        const newFilter = filterWithoutBrightness ? 
+                            `${filterWithoutBrightness} brightness(${numValue}%)` : 
+                            `brightness(${numValue}%)`;
+                        preview.style.filter = newFilter;
+                    } else {
+                        // Remove brightness filter but keep other filters
+                        const existingFilter = preview.style.filter || '';
+                        const filterWithoutBrightness = existingFilter.replace(/brightness\([^)]*\)\s*/g, '').trim();
+                        preview.style.filter = filterWithoutBrightness;
+                    }
+                }
+            });
+        }
+
+        function updateDarkenFromInput(value) {
+            updateDarkenPreview(value);
+        }
+
+        async function saveDarkenSetting() {
+            const darkenValue = parseFloat(document.getElementById('darken-input').value);
+            const saveBtn = document.getElementById('save-darken-btn');
+            const statusDiv = document.getElementById('darken-status');
+            
+            if (isNaN(darkenValue) || darkenValue < 50 || darkenValue > 100) {
+                statusDiv.innerHTML = '<span style="color: #dc3545;">❌ Darken value must be between 50 and 100</span>';
+                return;
+            }
+
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+            statusDiv.innerHTML = '<span style="color: #6c757d;">Saving darken setting...</span>';
+
+            try {
+                const response = await fetch('/api/admin/background-darken', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ darkenValue })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    statusDiv.innerHTML = '<span style="color: #28a745;">✅ Darken setting saved successfully! Refresh pages to see the effect.</span>';
+                    
+                    // Clear success message after 3 seconds
+                    setTimeout(() => {
+                        statusDiv.innerHTML = '';
+                    }, 3000);
+                } else {
+                    statusDiv.innerHTML = `<span style="color: #dc3545;">❌ Error: ${data.message}</span>`;
+                }
+            } catch (error) {
+                console.error('Error saving darken setting:', error);
+                statusDiv.innerHTML = '<span style="color: #dc3545;">❌ Network error occurred while saving darken setting.</span>';
             } finally {
                 saveBtn.disabled = false;
                 saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
