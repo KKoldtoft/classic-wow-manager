@@ -641,6 +641,12 @@ class WoWLogsAnalyzer {
         console.log('🔍 Parsing roles with spec-based detection...');
         const roleMap = {};
         
+        // Check for large roster to reduce logging verbosity
+        const isLargeRoster = raidHelperData.signUps && raidHelperData.signUps.length > 30;
+        if (isLargeRoster) {
+            console.log(`📊 Large roster detected (${raidHelperData.signUps.length} signups) - reducing log verbosity to prevent browser crashes`);
+        }
+        
         // Create a map for roster spec overrides if available
         const specOverrides = {};
         if (rosterData && rosterData.isManaged && rosterData.raidDrop) {
@@ -668,7 +674,9 @@ class WoWLogsAnalyzer {
             if (specOverrides[userId]) {
                 specName = specOverrides[userId].spec;
                 className = specOverrides[userId].className;
-                console.log(`🔄 Using spec override for ${signup.name}: ${specName} (${className})`);
+                if (!isLargeRoster) {
+                    console.log(`🔄 Using spec override for ${signup.name}: ${specName} (${className})`);
+                }
             }
             
             // Determine role using spec-based detection
@@ -684,15 +692,33 @@ class WoWLogsAnalyzer {
                 source: specOverrides[userId] ? 'spec_override' : (specName ? 'spec_based' : 'role_based')
             };
             
-            console.log(`✅ ${signup.name}: ${role} (${specName || 'no spec'} ${className}) - Source: ${roleMap[userId].source}`);
+            if (!isLargeRoster) {
+                console.log(`✅ ${signup.name}: ${role} (${specName || 'no spec'} ${className}) - Source: ${roleMap[userId].source}`);
+            }
         });
         
-        console.log('🎯 Final role map by Discord ID:', Object.keys(roleMap).length, 'players processed');
+        if (isLargeRoster) {
+            // Provide summary for large rosters
+            const roleCounts = Object.values(roleMap).reduce((acc, role) => {
+                acc[role.role] = (acc[role.role] || 0) + 1;
+                return acc;
+            }, {});
+            console.log('🎯 Role processing complete for large roster:');
+            console.log(`   └─ Total players: ${Object.keys(roleMap).length}`);
+            console.log(`   └─ DPS: ${roleCounts.dps || 0}, Healers: ${roleCounts.healer || 0}, Tanks: ${roleCounts.tank || 0}`);
+        } else {
+            console.log('🎯 Final role map by Discord ID:', Object.keys(roleMap).length, 'players processed');
+        }
         return roleMap;
     }
 
     inferRoleFromPerformance(playerName, playerData, roleMap, damageEntries, healingEntries, rosterPlayers) {
-        console.log(`🔍 [ROLE DETECTION] Analyzing role for player: ${playerName}`);
+        // Reduce logging verbosity for large rosters to prevent browser crashes
+        const isLargeRoster = rosterPlayers.length > 30;
+        
+        if (!isLargeRoster) {
+            console.log(`🔍 [ROLE DETECTION] Analyzing role for player: ${playerName}`);
+        }
         
         // First, try to find the Discord ID for this player via roster matching
         const rosterPlayer = rosterPlayers.find(p => 
@@ -702,11 +728,13 @@ class WoWLogsAnalyzer {
         if (rosterPlayer && rosterPlayer.discordId && roleMap[rosterPlayer.discordId]) {
             // Found confirmed role via Discord ID match
             const roleData = roleMap[rosterPlayer.discordId];
-            console.log(`✅ [ROLE DETECTION] ${playerName}: Found confirmed role via Discord ID ${rosterPlayer.discordId}`);
-            console.log(`   └─ Role: ${roleData.role ? roleData.role.toUpperCase() : 'UNKNOWN'}`);
-            console.log(`   └─ Spec: ${roleData.specName || 'N/A'}`);
-            console.log(`   └─ Source: ${roleData.source || 'unknown'}`);
-            console.log(`   └─ Method: Discord ID Match`);
+            if (!isLargeRoster) {
+                console.log(`✅ [ROLE DETECTION] ${playerName}: Found confirmed role via Discord ID ${rosterPlayer.discordId}`);
+                console.log(`   └─ Role: ${roleData.role ? roleData.role.toUpperCase() : 'UNKNOWN'}`);
+                console.log(`   └─ Spec: ${roleData.specName || 'N/A'}`);
+                console.log(`   └─ Source: ${roleData.source || 'unknown'}`);
+                console.log(`   └─ Method: Discord ID Match`);
+            }
             return roleData;
         }
         
@@ -749,10 +777,12 @@ class WoWLogsAnalyzer {
             Math.min(...confirmedHealers.map(entry => entry.total)) : Infinity;
         
         if (playerDamage > lowestConfirmedDPSDamage && confirmedDPS.length > 0) {
-            console.log(`⚔️ [ROLE DETECTION] ${playerName}: Inferred as DPS based on performance`);
-            console.log(`   └─ Player damage: ${playerDamage.toLocaleString()}`);
-            console.log(`   └─ Lowest confirmed DPS: ${lowestConfirmedDPSDamage.toLocaleString()}`);
-            console.log(`   └─ Method: Performance Inference`);
+            if (!isLargeRoster) {
+                console.log(`⚔️ [ROLE DETECTION] ${playerName}: Inferred as DPS based on performance`);
+                console.log(`   └─ Player damage: ${playerDamage.toLocaleString()}`);
+                console.log(`   └─ Lowest confirmed DPS: ${lowestConfirmedDPSDamage.toLocaleString()}`);
+                console.log(`   └─ Method: Performance Inference`);
+            }
             return {
                 role: 'dps',
                 className: 'Unknown',
@@ -762,10 +792,12 @@ class WoWLogsAnalyzer {
         }
         
         if (playerHealing > lowestConfirmedHealerHealing && confirmedHealers.length > 0) {
-            console.log(`❤️ [ROLE DETECTION] ${playerName}: Inferred as HEALER based on performance`);
-            console.log(`   └─ Player healing: ${playerHealing.toLocaleString()}`);
-            console.log(`   └─ Lowest confirmed healer: ${lowestConfirmedHealerHealing.toLocaleString()}`);
-            console.log(`   └─ Method: Performance Inference`);
+            if (!isLargeRoster) {
+                console.log(`❤️ [ROLE DETECTION] ${playerName}: Inferred as HEALER based on performance`);
+                console.log(`   └─ Player healing: ${playerHealing.toLocaleString()}`);
+                console.log(`   └─ Lowest confirmed healer: ${lowestConfirmedHealerHealing.toLocaleString()}`);
+                console.log(`   └─ Method: Performance Inference`);
+            }
             return {
                 role: 'healer',
                 className: 'Unknown', 
@@ -774,11 +806,13 @@ class WoWLogsAnalyzer {
             };
         }
         
-        console.log(`❌ [ROLE DETECTION] ${playerName}: No role could be determined`);
-        console.log(`   └─ Player damage: ${playerDamage.toLocaleString()}`);
-        console.log(`   └─ Player healing: ${playerHealing.toLocaleString()}`);
-        console.log(`   └─ Roster match: ${rosterPlayer ? 'Found' : 'Not found'}`);
-        console.log(`   └─ Discord ID: ${rosterPlayer?.discordId || 'N/A'}`);
+        if (!isLargeRoster) {
+            console.log(`❌ [ROLE DETECTION] ${playerName}: No role could be determined`);
+            console.log(`   └─ Player damage: ${playerDamage.toLocaleString()}`);
+            console.log(`   └─ Player healing: ${playerHealing.toLocaleString()}`);
+            console.log(`   └─ Roster match: ${rosterPlayer ? 'Found' : 'Not found'}`);
+            console.log(`   └─ Discord ID: ${rosterPlayer?.discordId || 'N/A'}`);
+        }
         
         return null;
     }
@@ -1504,7 +1538,6 @@ class WoWLogsAnalyzer {
             'Healer': 'class-bg-unknown'  // Healers can be Priest/Druid/Shaman/Paladin, use unknown
         };
         
-        console.log(`🎨 [CLASS BG DEBUG] Input: "${characterClass}" -> Output: "${classBackgrounds[characterClass] || 'class-bg-unknown'}"`);
         return classBackgrounds[characterClass] || 'class-bg-unknown';
     }
 
@@ -1944,7 +1977,6 @@ class WoWLogsAnalyzer {
         let additionalHtml = '';
         additionalCharacters.forEach(char => {
             const characterClassBackgroundClass = this.getClassBackgroundClass(char.class);
-            console.log(`🎨 [CLASS DEBUG] Additional character: ${char.character_name}, Class: "${char.class}", CSS Class: "${characterClassBackgroundClass}"`);
             additionalHtml += `
                 <div class="character-comparison-row unmatched additional-character">
                     <div class="roster-character ${characterClassBackgroundClass}" style="margin-left: 20px; opacity: 0.8;">
