@@ -5218,7 +5218,7 @@ app.get('/api/debug/inspect-world-buffs-sheet/:eventId', async (req, res) => {
     
     // First, get the Google Sheet URL for this event
     const trackingResult = await client.query(`
-      SELECT archive_url, log_url, status
+      SELECT archive_url, log_url, rpb_status
       FROM rpb_tracking 
       WHERE event_id = $1 AND analysis_type = 'world_buffs'
       ORDER BY created_at DESC 
@@ -5234,7 +5234,7 @@ app.get('/api/debug/inspect-world-buffs-sheet/:eventId', async (req, res) => {
     }
 
     const sheetUrl = trackingResult.rows[0].archive_url;
-    const status = trackingResult.rows[0].status;
+    const status = trackingResult.rows[0].rpb_status;
     
     // Extract sheet ID from URL
     const sheetIdMatch = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
