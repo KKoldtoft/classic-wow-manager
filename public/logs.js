@@ -45,6 +45,10 @@ class WoWLogsAnalyzer {
                 // Still check RPB status even if no stored data
                 await this.checkRPBStatus();
             }
+            
+            // Pre-fill workflow input field with existing log URL if available
+            await this.preFillWorkflowLogUrl();
+            
         } catch (error) {
             console.error('❌ [STORED DATA] Error checking for stored data:', error);
         }
@@ -70,6 +74,52 @@ class WoWLogsAnalyzer {
             }
         } catch (error) {
             console.error('❌ [RPB STATUS] Error checking RPB status:', error);
+        }
+    }
+
+    async preFillWorkflowLogUrl() {
+        const activeEventSession = localStorage.getItem('activeEventSession');
+        if (!activeEventSession) {
+            console.log('🔗 [PRE-FILL] No active event session, skipping workflow URL pre-fill');
+            return;
+        }
+
+        try {
+            console.log(`🔗 [PRE-FILL] Checking for existing log URL for event: ${activeEventSession}`);
+            
+            // Try RPB tracking table first (has full log_url)
+            const rpbResponse = await fetch(`/api/rpb-tracking/${activeEventSession}`);
+            const rpbResult = await rpbResponse.json();
+            
+            let logUrl = null;
+            
+            if (rpbResult.success && rpbResult.hasRPB && rpbResult.logUrl) {
+                logUrl = rpbResult.logUrl;
+                console.log(`✅ [PRE-FILL] Found log URL from RPB tracking: ${logUrl}`);
+            } else {
+                // Fallback: try log_data table (has log_id, need to construct URL)
+                const logDataResponse = await fetch(`/api/log-data/${activeEventSession}`);
+                const logDataResult = await logDataResponse.json();
+                
+                if (logDataResult.success && logDataResult.logId) {
+                    logUrl = `https://classic.warcraftlogs.com/reports/${logDataResult.logId}`;
+                    console.log(`✅ [PRE-FILL] Constructed log URL from log_data: ${logUrl}`);
+                }
+            }
+            
+            // Pre-fill the workflow input field if we found a URL
+            if (logUrl) {
+                const workflowInput = document.getElementById('workflowLogInput');
+                if (workflowInput && !workflowInput.value) {
+                    workflowInput.value = logUrl;
+                    console.log(`🔗 [PRE-FILL] Pre-filled workflow input with: ${logUrl}`);
+                }
+            } else {
+                console.log('🔗 [PRE-FILL] No existing log URL found for this event');
+            }
+            
+        } catch (error) {
+            console.error('❌ [PRE-FILL] Error pre-filling workflow log URL:', error);
         }
     }
 
