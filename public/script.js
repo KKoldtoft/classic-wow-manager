@@ -207,6 +207,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const historicEventsList = document.getElementById('historic-events-list');
     let lastRefreshTime = null;
     let lastHistoricRefreshTime = null;
+    
+    // Historic events pagination variables
+    let allHistoricEvents = [];
+    let currentHistoricDisplayLimit = 5; // Temporarily set to 5 for testing
+    const historicEventsPerPage = 5; // Temporarily set to 5 for testing
 
     // Load global blur and darken settings
     await loadGlobalBlurSetting();
@@ -824,7 +829,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         if (scheduledEvents && Array.isArray(scheduledEvents) && scheduledEvents.length > 0) {
             console.log('📅 Displaying completed events:', scheduledEvents.length);
-            historicEventsList.innerHTML = ''; // Clear previous content
             
             const now = new Date();
             const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
@@ -843,13 +847,38 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             if (historicEvents.length === 0) {
                 historicEventsList.innerHTML = '<p>No completed events found for the last 30 days.</p>';
+                updateHistoricShowMoreButton(0, 0);
                 return;
             }
             
-            // Sort newest first for historic events
+            // Sort newest first for historic events and store all events
             historicEvents.sort((a, b) => b.startTime - a.startTime);
+            allHistoricEvents = historicEvents;
             
-            historicEvents.forEach((event, index) => {
+            // Display only the limited number of events
+            renderHistoricEventsPage();
+        } else {
+            historicEventsList.innerHTML = '<p>No completed events found for the last 30 days.</p>';
+            updateHistoricShowMoreButton(0, 0);
+        }
+    }
+    
+    // Function to render the current page of historic events
+    function renderHistoricEventsPage() {
+        if (!historicEventsList) return;
+        
+        historicEventsList.innerHTML = ''; // Clear previous content
+        
+        const eventsToShow = allHistoricEvents.slice(0, currentHistoricDisplayLimit);
+        console.log(`📅 Rendering ${eventsToShow.length} of ${allHistoricEvents.length} completed events`);
+        
+        if (eventsToShow.length === 0) {
+            historicEventsList.innerHTML = '<p>No completed events found for the last 30 days.</p>';
+            updateHistoricShowMoreButton(0, 0);
+            return;
+        }
+        
+        eventsToShow.forEach((event, index) => {
                 try {
                     const eventDiv = document.createElement('div');
                     eventDiv.classList.add('event-panel', 'historic');
@@ -932,9 +961,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     console.error('Error rendering completed event:', renderError);
                 }
             });
-        } else {
-            historicEventsList.innerHTML = '<p>No completed events found for the last 30 days.</p>';
-        }
+        
+        // Update the show more button visibility and count display
+        updateHistoricShowMoreButton(eventsToShow.length, allHistoricEvents.length);
     }
 
     // Refresh historic events functionality
@@ -945,6 +974,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!refreshBtn || !refreshStatus) return;
         
         try {
+            // Reset pagination limit when refreshing
+            currentHistoricDisplayLimit = historicEventsPerPage;
+            
             // Update UI to show loading state
             setHistoricLoadingState(true);
             refreshStatus.textContent = 'Refreshing completed events...';
@@ -978,32 +1010,76 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (data.scheduledEvents) {
                 displayHistoricEvents(data.scheduledEvents);
             } else {
-                // Fallback: re-fetch events normally
-                fetchAndDisplayHistoricEvents();
+                // Fallback: fetch fresh data if the response doesn't include it
+                await fetchAndDisplayHistoricEvents();
             }
             
-            // Clear success message after 3 seconds
+            // Clear success message after a few seconds
             setTimeout(() => {
-                refreshStatus.textContent = '';
-                refreshStatus.className = 'refresh-status';
+                if (refreshStatus) {
+                    refreshStatus.textContent = '';
+                    refreshStatus.className = 'refresh-status';
+                }
             }, 3000);
             
         } catch (error) {
-            console.error('Error refreshing completed events:', error);
-            refreshStatus.textContent = 'Failed to refresh completed events. Please try again.';
+            // Error handling
+            refreshStatus.textContent = error.message || 'Failed to refresh completed events';
             refreshStatus.className = 'refresh-status error';
+            console.error('Error refreshing completed events:', error);
             
-            // Clear error message after 5 seconds
+            // Clear error message after a few seconds
             setTimeout(() => {
-                refreshStatus.textContent = '';
-                refreshStatus.className = 'refresh-status';
+                if (refreshStatus) {
+                    refreshStatus.textContent = '';
+                    refreshStatus.className = 'refresh-status';
+                }
             }, 5000);
         } finally {
-            // Reset button state
             setHistoricLoadingState(false);
         }
     }
+
+    // Function to update the show more button visibility and events count display
+    function updateHistoricShowMoreButton(displayed, total) {
+        const showMoreBtn = document.getElementById('show-more-historic-btn');
+        const countDisplay = document.getElementById('historic-events-count');
+        
+        console.log(`🔍 Show More Debug: Displayed=${displayed}, Total=${total}, PerPage=${historicEventsPerPage}`);
+        
+        if (showMoreBtn && countDisplay) {
+            if (displayed < total) {
+                console.log('✅ Showing "Show more" button - more raids available');
+                showMoreBtn.style.display = 'inline-flex';
+                countDisplay.style.display = 'block';
+                countDisplay.textContent = `Showing ${displayed} of ${total} completed raids`;
+            } else {
+                console.log('❌ Hiding "Show more" button - all raids displayed');
+                showMoreBtn.style.display = 'none';
+                if (total > historicEventsPerPage) {
+                    countDisplay.style.display = 'block';
+                    countDisplay.textContent = `Showing all ${total} completed raids`;
+                } else {
+                    countDisplay.style.display = 'none';
+                }
+            }
+        } else {
+            console.log('⚠️ Show More Debug: Button or count display element not found');
+        }
+    }
     
+    // Function to show more historic events
+    function showMoreHistoricEvents() {
+        currentHistoricDisplayLimit += historicEventsPerPage;
+        renderHistoricEventsPage();
+    }
+    
+    // Add event listener for show more button
+    const showMoreHistoricBtn = document.getElementById('show-more-historic-btn');
+    if (showMoreHistoricBtn) {
+        showMoreHistoricBtn.addEventListener('click', showMoreHistoricEvents);
+    }
+
     // Add event listener for refresh button (no nested DOMContentLoaded needed)
     const refreshBtn = document.getElementById('refresh-events-btn');
     if (refreshBtn) {
