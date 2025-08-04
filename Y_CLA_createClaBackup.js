@@ -29,20 +29,18 @@ function createClaBackup() {
     console.log('📝 [CLA BACKUP] Creating backup with name: ' + backupName);
     
     var newSpreadsheet = SpreadsheetApp.create(backupName);
-    var newSheet = newSpreadsheet.getSheets()[0];
-    newSheet.setName('frost resi (Sapp)');
     
-    // Copy all data from source to new sheet
-    var sourceData = sourceSheet.getDataRange();
-    if (sourceData.getNumRows() > 0 && sourceData.getNumColumns() > 0) {
-      var values = sourceData.getValues();
-      var formatting = sourceData.getBackgrounds();
-      
-      newSheet.getRange(1, 1, values.length, values[0].length).setValues(values);
-      newSheet.getRange(1, 1, formatting.length, formatting[0].length).setBackgrounds(formatting);
-      
-      console.log('📋 [CLA BACKUP] Copied ' + values.length + ' rows and ' + values[0].length + ' columns');
+    // Copy the sheet using copyTo() method (same as working RPB backup)
+    var copiedSheet = sourceSheet.copyTo(newSpreadsheet);
+    copiedSheet.setName('frost resi (Sapp)');
+    
+    // Remove the default "Sheet1" from new spreadsheet
+    var defaultSheet = newSpreadsheet.getSheetByName('Sheet1');
+    if (defaultSheet) {
+      newSpreadsheet.deleteSheet(defaultSheet);
     }
+    
+    console.log('📋 [CLA BACKUP] Successfully copied "frost resi (Sapp)" tab using copyTo() method');
     
     // Move to specific folder
     var targetFolderId = '1YgXMDYl5GdBlO3y9MXBNeaWw2j8FvJ7W';
