@@ -32,6 +32,8 @@ class RaidLogsManager {
         this.polymorphSettings = { points_per_division: 1, polymorphs_needed: 2, max_points: 5 };
         this.powerInfusionData = [];
         this.powerInfusionSettings = { points_per_division: 1, infusions_needed: 2, max_points: 10 };
+        this.decursesData = [];
+        this.decursesSettings = { points_per_division: 1, decurses_needed: 3, max_points: 10, min_points: -10, average_decurses: 0 };
         this.playerStreaksData = [];
         this.guildMembersData = [];
         this.rewardSettings = {};
@@ -81,6 +83,7 @@ class RaidLogsManager {
                 this.fetchDemoShoutData(),
                 this.fetchPolymorphData(),
                 this.fetchPowerInfusionData(),
+                this.fetchDecursesData(),
                 this.fetchPlayerStreaksData(),
                 this.fetchGuildMembersData(),
                 this.fetchRewardSettings()
@@ -577,6 +580,35 @@ class RaidLogsManager {
         }
     }
 
+    async fetchDecursesData() {
+        console.log(`🪄 Fetching decurses data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/decurses-data/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch decurses data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch decurses data');
+            }
+            
+            this.decursesData = result.data || [];
+            this.decursesSettings = result.settings || { points_per_division: 1, decurses_needed: 3, max_points: 10, min_points: -10, average_decurses: 0 };
+            console.log(`🪄 Loaded decurses data:`, this.decursesData);
+            console.log(`🪄 Loaded decurses settings:`, this.decursesSettings);
+            
+        } catch (error) {
+            console.error('Error fetching decurses data:', error);
+            // Don't fail the whole page if decurses fails - just show empty data
+            this.decursesData = [];
+            this.decursesSettings = { points_per_division: 1, decurses_needed: 3, max_points: 10, min_points: -10, average_decurses: 0 }; // fallback
+        }
+    }
+
     async fetchPlayerStreaksData() {
         console.log(`🔥 Fetching player streaks data for event: ${this.activeEventId}`);
         
@@ -804,6 +836,7 @@ class RaidLogsManager {
         this.displayDemoShoutRankings(this.demoShoutData);
         this.displayPolymorphRankings(this.polymorphData);
         this.displayPowerInfusionRankings(this.powerInfusionData);
+        this.displayDecursesRankings(this.decursesData);
         this.updateAbilitiesHeader();
         this.updateManaPotionsHeader();
         this.updateRunesHeader();
@@ -818,6 +851,7 @@ class RaidLogsManager {
         this.updateDemoShoutHeader();
         this.updatePolymorphHeader();
         this.updatePowerInfusionHeader();
+        this.updateDecursesHeader();
         
         this.hideLoading();
         this.showContent();
@@ -2263,6 +2297,77 @@ class RaidLogsManager {
             const pointsText = points_per_division === 1 ? 'pt' : 'pts';
             const infusionsText = infusions_needed === 1 ? 'infusion' : 'infusions';
             headerElement.textContent = `Ranked by points (${points_per_division} ${pointsText} per ${infusions_needed} ${infusionsText}, max ${max_points}, excludes self-casts)`;
+        }
+    }
+
+    displayDecursesRankings(players) {
+        const container = document.getElementById('decurses-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('decurses');
+
+        // Filter out players with 0 decurses and sort by decurses used (highest first)
+        const playersWithDecurses = players.filter(player => player.decurses_used > 0)
+            .sort((a, b) => b.decurses_used - a.decurses_used);
+
+        if (playersWithDecurses.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-magic"></i>
+                    <p>Nothing to see, move along</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Get max decurses for percentage calculation
+        const maxDecurses = Math.max(...playersWithDecurses.map(p => p.decurses_used)) || 1;
+
+        container.innerHTML = playersWithDecurses.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const fillPercentage = Math.max(5, (player.decurses_used / maxDecurses) * 100); // Minimum 5% for visibility
+
+            const decursesText = `${player.decurses_used} decurses`;
+            const differenceText = player.difference_from_average >= 0 ? 
+                `+${player.difference_from_average.toFixed(1)} vs avg` : 
+                `${player.difference_from_average.toFixed(1)} vs avg`;
+            
+            // Color points based on positive/negative
+            let pointColor = '#ff6b35'; // default
+            if (player.points > 0) pointColor = '#28a745'; // green for positive
+            else if (player.points < 0) pointColor = '#dc3545'; // red for negative
+
+            const tooltipText = `${decursesText} (${differenceText}, avg: ${this.decursesSettings.average_decurses.toFixed(1)})`;
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${player.character_name}
+                        </div>
+                        <div class="character-details" title="${tooltipText}">
+                            ${this.truncateWithTooltip(`${decursesText} (${differenceText})`).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${tooltipText}">
+                        <div class="amount-value" style="color: ${pointColor}">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updateDecursesHeader() {
+        const headerElement = document.querySelector('.decurses-section .section-header p');
+        if (headerElement && this.decursesSettings) {
+            const { points_per_division, decurses_needed, max_points, min_points } = this.decursesSettings;
+            const pointsText = points_per_division === 1 ? 'pt' : 'pts';
+            const decursesText = decurses_needed === 1 ? 'decurse' : 'decurses';
+            headerElement.textContent = `Ranked by average-based points (${points_per_division} ${pointsText} per ${decurses_needed} ${decursesText} vs avg, ${min_points} to +${max_points})`;
         }
     }
 

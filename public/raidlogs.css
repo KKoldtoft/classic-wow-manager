@@ -583,6 +583,25 @@
     font-size: 1.4em;
 }
 
+/* Decurses specific styling */
+.rankings-section.decurses {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.rankings-section.decurses .section-header {
+    background: linear-gradient(135deg, #69CCF0 0%, #4a9eff 100%);
+}
+
+.rankings-section.decurses .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Decurses container specific styling */
+.decurses-container {
+    margin-top: 30px;
+}
+
 /* Polymorph & Power Infusion container specific styling */
 .polymorph-power-infusion-container {
     margin-top: 30px;

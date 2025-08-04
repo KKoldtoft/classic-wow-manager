@@ -1,0 +1,232 @@
+function populateFrostResistance() {
+  var firstPlayerNameRow = 5;
+  var firstPlayerNameColumn = 2;
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var instructionsSheet = ss.getSheetByName("Instructions");
+
+  instructionsSheet.getRange(27, 2).setValue("");
+  instructionsSheet.getRange(28, 2).setValue("");
+
+  var darkMode = false;
+  try {
+    if (shiftRangeByRows(instructionsSheet, shiftRangeByColumns(instructionsSheet, instructionsSheet.createTextFinder("^export fights$").useRegularExpression(true).findNext(), 1), 2).getValue().indexOf("yes") > -1)
+      darkMode = true;
+  } catch { }
+
+  sheet.getRange(firstPlayerNameRow, firstPlayerNameColumn, 96, 19).clearContent();
+  sheet.getRange(4, 2, 1, 1).clearContent();
+  if (darkMode) {
+    sheet.getRange(1, 1, 100, 20).setBackground("#d9d9d9");
+  } else
+    sheet.getRange(1, 1, 100, 20).setBackground("white");
+
+  var bossName = shiftRangeByColumns(sheet, sheet.createTextFinder("^select boss$").useRegularExpression(true).findNext(), 1).getValue();
+  var bossId = "1119";
+  if (bossName != null && bossName.length > 0 && bossName.indexOf("Kel'Thuzad") > -1)
+    bossId = "1114";
+  var baseUrl = "https://vanilla.warcraftlogs.com:443/v1/";
+  var api_key = shiftRangeByColumns(instructionsSheet, instructionsSheet.createTextFinder("^2.$").useRegularExpression(true).findNext(), 4).getValue().replace(/\s/g, "");
+  var reportPathOrId = shiftRangeByColumns(instructionsSheet, instructionsSheet.createTextFinder("^3.$").useRegularExpression(true).findNext(), 4).getValue();
+  var onlyFightNr = shiftRangeByColumns(sheet, sheet.createTextFinder("^boss fight id").useRegularExpression(true).findNext(), 1).getValue();
+  var includeReportTitleInSheetNames = shiftRangeByColumns(instructionsSheet, instructionsSheet.createTextFinder("^4.$").useRegularExpression(true).findNext(), 4).getValue();
+  var information = addRowsToRange(sheet, sheet.createTextFinder("^title $").useRegularExpression(true).findNext(), 2);
+  shiftRangeByColumns(sheet, information, 1).clearContent();
+  var confFrostResistanceConfig = ss.getSheetByName("frost resistance config");
+
+  var logId = "";
+  reportPathOrId = reportPathOrId.replace(".cn/", ".com/");
+  if (reportPathOrId.indexOf("tbc.warcraftlogs") > -1)
+    SpreadsheetApp.getUi().alert("This is the vanilla version of the CLA. Apparently you tried to run it for a TBC report. Please use the TBC version of the CLA for that, which you can get at https://discord.gg/nGvt5zH or https://docs.google.com/spreadsheets/d/1EJ0g1i72rJjQkP1IN2Kz0vq31EphlrT0nCworP6ZXMc");
+  if (reportPathOrId.indexOf("classic.warcraftlogs.com/reports/") > -1)
+    logId = reportPathOrId.split("classic.warcraftlogs.com/reports/")[1].split("#")[0].split("?")[0];
+  else if (reportPathOrId.indexOf("vanilla.warcraftlogs.com/reports/") > -1)
+    logId = reportPathOrId.split("vanilla.warcraftlogs.com/reports/")[1].split("#")[0].split("?")[0];
+  else if (reportPathOrId.indexOf("sod.warcraftlogs.com/reports/") > -1)
+    logId = reportPathOrId.split("sod.warcraftlogs.com/reports/")[1].split("#")[0].split("?")[0];
+  else if (reportPathOrId.indexOf("fresh.warcraftlogs.com/reports/") > -1)
+    logId = reportPathOrId.split("fresh.warcraftlogs.com/reports/")[1].split("#")[0].split("?")[0];
+  else
+    logId = reportPathOrId;
+  var apiKeyString = "?api_key=" + api_key;
+
+  var allPlayers = UrlFetchApp.fetch(baseUrl + "report/tables/casts/" + logId + apiKeyString + "&start=0&end=999999999999");
+  var allPlayersData = JSON.parse(allPlayers);
+
+  var urlAllFights = baseUrl + "report/fights/" + logId + apiKeyString;
+  var allFightsData = JSON.parse(UrlFetchApp.fetch(urlAllFights));
+  var baseSheetName = "frost resi (Sapp)";
+  if (bossName != null && bossName.length > 0 && bossName.indexOf("Kel'Thuzad") > -1)
+    baseSheetName = "frost resi (KT)";
+  if (includeReportTitleInSheetNames.indexOf("yes") > -1)
+    baseSheetName += " " + allFightsData.title;
+  try {
+    sheet.setName(baseSheetName);
+  } catch (err) {
+    try {
+      sheet.setName(baseSheetName + "_new");
+    } catch (err2) {
+      try {
+        sheet.setName(baseSheetName + "_new_new");
+      } catch (err3) {
+        sheet.setName(baseSheetName + "_new_new_new");
+      }
+    }
+  }
+
+  var returnVal = getRaidStartAndEnd(allFightsData, ss, baseUrl + "report/events/summary/" + logId + apiKeyString);
+  var zonesFound = [];
+  if (returnVal != null && returnVal.zonesFound != null)
+    zonesFound = returnVal.zonesFound;
+  var zoneTimesString = " (";
+  if (zonesFound != null && zonesFound.length > 0) {
+    zonesFound.forEach(function (raidZone, raidZoneCount) {
+      zoneTimesString += raidZone[5] + " in ";
+      if (raidZone[10] > 0) {
+        zoneTimesString += getStringForTimeStamp(raidZone[10], true) + ", ";
+      } else {
+        zoneTimesString += getStringForTimeStamp(raidZone[2] - raidZone[1], true) + ", ";
+      }
+    })
+    zoneTimesString = zoneTimesString.substr(0, zoneTimesString.length - 2);
+    if (zoneTimesString.length > 0)
+      sheet.getRange(information.getRow(), information.getColumn() + 1).setValue(allFightsData.title + zoneTimesString + ")");
+    else
+      sheet.getRange(information.getRow(), information.getColumn() + 1).setValue(allFightsData.title);
+  } else
+    SpreadsheetApp.getUi().alert("Couldn't identify any raid zones of this report --- If you think this is an error please inform shariva on Discord about this!");
+
+  var nameSet = false;
+  allFightsData.fights.forEach(function (fight, fightCount) {
+    if (fight.zoneName != null && fight.zoneName.length > 0 && !nameSet) {
+      sheet.getRange(information.getRow() + 1, information.getColumn() + 1).setValue(fight.zoneName);
+      nameSet = true;
+    }
+  })
+  sheet.getRange(information.getRow() + 2, information.getColumn() + 1).setValue(new Date(allFightsData.start));
+
+  var frostResiInfoIdsRaw = confFrostResistanceConfig.getRange(1, 1, 1000, 1).getValues();
+  var frostResiInfoIds = frostResiInfoIdsRaw.reduce(function (ar, e) {
+    if (e[0]) ar.push(e[0])
+    return ar;
+  }, []);
+
+  var frostResiInfoFRRaw = confFrostResistanceConfig.getRange(1, 2, 1000, 1).getValues();
+  var frostResiInfoFRs = frostResiInfoFRRaw.reduce(function (ar, e) {
+    if (e[0]) ar.push(e[0])
+    return ar;
+  }, []);
+
+  var fightDataArr = [];
+  var fightDataIndexArr = [];
+  var playersDone = 0;
+  var fightIDToEvaluate = "";
+  var longestFight = "";
+  var longestFightLength = 0;
+  allFightsData.fights.forEach(function (fight, fightRawCount) {
+    if (((onlyFightNr == null || onlyFightNr.toString().length == 0) && fight.boss != null && (Number(fight.boss).toString() == bossId || Number(fight.boss).toString() == "5" + bossId)) || (onlyFightNr != null && onlyFightNr.toString().length > 0 && fight.id.toString() == onlyFightNr.toString())) {
+      if (Number(fight.fightPercentage) == 100 || fight.kill == true)
+        fightIDToEvaluate = fight.id.toString();
+      else if ((fight.end_time - fight.start_time) > longestFightLength) {
+        longestFightLength = fight.end_time - fight.start_time;
+        longestFight = fight.id.toString();
+      }
+    }
+  })
+  if (fightIDToEvaluate == "" && longestFight != "")
+    fightIDToEvaluate = longestFight;
+  var rangeBoss = sheet.getRange(firstPlayerNameRow - 1, firstPlayerNameColumn);
+  if (fightIDToEvaluate == "")
+    rangeBoss.setValue("no fight found for the selected boss");
+  const allPlayersByNameAsc = sortByProperty(sortByProperty(allPlayersData.entries, "name"), "type");
+  allPlayersByNameAsc.forEach(function (playerByNameAsc, playerCountByNameAsc) {
+    if ((playerByNameAsc.type == "Druid" || playerByNameAsc.type == "Hunter" || playerByNameAsc.type == "Mage" || playerByNameAsc.type == "Priest" || playerByNameAsc.type == "Paladin" || playerByNameAsc.type == "Rogue" || playerByNameAsc.type == "Shaman" || playerByNameAsc.type == "Warlock" || playerByNameAsc.type == "Warrior") && playerByNameAsc.total > 20) {
+      var fightCount = 0;
+      allFightsData.fights.forEach(function (fight, fightRawCount) {
+        if (fight.id.toString() == fightIDToEvaluate) {
+          if (fight.kill == true)
+            rangeBoss.setValue(fight.name + " (kill in " + Math.round((fight.end_time - fight.start_time) / 1000) + "s)");
+          else
+            rangeBoss.setValue(fight.name + " (" + Math.round(Number(fight.fightPercentage) / 100) + "% wipe after " + Math.round((fight.end_time - fight.start_time) / 1000) + "s)");
+          rangeBoss.setFontWeight("bold").setHorizontalAlignment("center");
+
+          var fightData = searchEntryForId(fightDataIndexArr, fightDataArr, fight.id.toString());
+          if (fightData == "") {
+            var urlSummaryPerFight = baseUrl + "report/tables/casts/" + logId + apiKeyString + "&start=" + fight.start_time + "&end=" + fight.end_time;
+            fightData = JSON.parse(UrlFetchApp.fetch(urlSummaryPerFight));
+            fightDataArr.push(fightData);
+            fightDataIndexArr.push(fight.id.toString());
+          }
+          fightData.entries.forEach(function (player, playerCount) {
+            if (playerByNameAsc.name == player.name) {
+              var frostResistanceTotal = 0;
+              if (player.gear != null && player.gear.length > 0) {
+                player.gear.forEach(function (item, itemCount) {
+                  if (item.id != null && item.id.toString().length > 0 && item.id.toString() != "0" && item.slot != 3 && item.slot != 18) {
+                    var gearFrostResi = searchEntryForId(frostResiInfoIds, frostResiInfoFRs, item.id.toString());
+                    var enchantFrostResi = 0;
+                    if (item.permanentEnchant != null && item.permanentEnchant.toString().length > 1) {
+                      if (item.permanentEnchant.toString() == "926") {
+                        enchantFrostResi = 8;
+                      } else if (item.permanentEnchant.toString() == "1888") {
+                        enchantFrostResi = 5;
+                      } else if (item.permanentEnchant.toString() == "2682") {
+                        enchantFrostResi = 10;
+                      } else if (item.permanentEnchant.toString() == "2484") {
+                        enchantFrostResi = 5;
+                      } else if (item.permanentEnchant.toString() == "2488") {
+                        enchantFrostResi = 5;
+                      }
+                      frostResistanceTotal += enchantFrostResi;
+                    }
+                    var itemPos = 0;
+                    if (item.slot == 0 || item.slot == 1 || item.slot == 2 || item.slot == 4 || item.slot == 10 || item.slot == 11 || item.slot == 12 || item.slot == 13)
+                      itemPos = item.slot;
+                    else if (item.slot == 5)
+                      itemPos = 7;
+                    else if (item.slot == 6)
+                      itemPos = 8;
+                    else if (item.slot == 7)
+                      itemPos = 9;
+                    else if (item.slot == 8)
+                      itemPos = 5;
+                    else if (item.slot == 9)
+                      itemPos = 6;
+                    else if (item.slot == 14)
+                      itemPos = 3;
+                    else if (item.slot == 15)
+                      itemPos = 14;
+                    else if (item.slot == 16)
+                      itemPos = 15;
+                    else if (item.slot == 17)
+                      itemPos = 16;
+                    var rangeTarget = sheet.getRange(playersDone + firstPlayerNameRow, firstPlayerNameColumn + 2 + fightCount + itemPos);
+                    if (gearFrostResi != "") {
+                      frostResistanceTotal += Number(gearFrostResi);
+                      confFrostResistanceConfig.createTextFinder(item.id.toString()).useRegularExpression(true).findNext().copyTo(rangeTarget, { formatOnly: true });
+                      if (enchantFrostResi > 0)
+                        rangeTarget.setValue(item.name + " +" + enchantFrostResi + " FR");
+                      else
+                        rangeTarget.setValue(item.name);
+                    } else if (enchantFrostResi > 0) {
+                      rangeTarget.setValue(item.name + " +" + enchantFrostResi + " FR");
+                    }
+                  }
+                })
+              }
+              if (fightCount == 0) {
+                var range = sheet.getRange(playersDone + firstPlayerNameRow, firstPlayerNameColumn);
+                range.setValue(player.name);
+                range.setBackground(getColourForPlayerClass(player.type));
+                playersDone++;
+              }
+              sheet.getRange(playersDone + firstPlayerNameRow - 1, firstPlayerNameColumn + 1 + fightCount).setValue(frostResistanceTotal);
+              fightCount++;
+            }
+          })
+        }
+      })
+    }
+  })
+}

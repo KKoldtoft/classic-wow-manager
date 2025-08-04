@@ -2110,7 +2110,224 @@ app.post('/api/logs/rpb', async (req, res) => {
   }
 });
 
+// World Buffs Google Apps Script Proxy Endpoint
+app.post('/api/logs/world-buffs', async (req, res) => {
+  try {
+    const { action, logUrl } = req.body;
+    
+    if (!action) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Action is required' 
+      });
+    }
 
+    // Google Apps Script Web App URL for World Buffs
+    const worldBuffsWebAppUrl = 'https://script.google.com/macros/s/AKfycbxRPRrFzI_smMRseNOU7b7DhDRoYvN_96qUKOqfHRpCvQf-JSXDxC-3VePlRugWSkjS/exec';
+    
+    // Prepare request data
+    const requestData = { action };
+    if (logUrl) {
+      requestData.logUrl = logUrl;
+    }
+
+    console.log(`🌍 World Buffs ${action} request:`, requestData);
+    
+    // Allowed actions for World Buffs
+    const allowedActions = ['populateWorldBuffs', 'checkStatus', 'clearStatus'];
+    if (!allowedActions.includes(action)) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid action '${action}'. Must be one of: ${allowedActions.join(', ')}`
+      });
+    }
+
+    // Make request to Google Apps Script
+    const response = await axios({
+      method: 'POST',
+      url: worldBuffsWebAppUrl,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      data: requestData,
+      timeout: action === 'populateWorldBuffs' ? 120000 : 30000, // 2 min for populate, 30s for status checks
+    });
+
+    console.log(`✅ World Buffs ${action} response:`, response.data);
+
+    // Return the response from Google Apps Script
+    res.json(response.data);
+
+  } catch (error) {
+    console.error('❌ World Buffs proxy error:', error);
+    
+    if (error.code === 'ECONNABORTED') {
+      return res.status(408).json({
+        success: false,
+        error: 'World Buffs processing timed out. Please try again.'
+      });
+    }
+
+    if (error.response) {
+      // Google Apps Script returned an error
+      return res.status(error.response.status).json({
+        success: false,
+        error: error.response.data || 'Google Apps Script error'
+      });
+    }
+
+    // Network or other error
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to communicate with World Buffs service'
+    });
+  }
+});
+
+// CLA Backup Google Apps Script Proxy Endpoint
+app.post('/api/logs/cla-backup', async (req, res) => {
+  try {
+    const { action } = req.body;
+    
+    if (!action) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Action is required' 
+      });
+    }
+
+    // Same Web App URL as World Buffs (they're in the same Google Apps Script project)
+    const claBackupWebAppUrl = 'https://script.google.com/macros/s/AKfycbxRPRrFzI_smMRseNOU7b7DhDRoYvN_96qUKOqfHRpCvQf-JSXDxC-3VePlRugWSkjS/exec';
+    
+    // Prepare request data
+    const requestData = { action };
+
+    console.log(`🗄️ CLA Backup ${action} request:`, requestData);
+    
+    // Allowed actions for CLA Backup
+    const allowedActions = ['createClaBackup', 'createClaBackupWebApp', 'createClaBackupWithCheck'];
+    if (!allowedActions.includes(action)) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid action '${action}'. Must be one of: ${allowedActions.join(', ')}`
+      });
+    }
+
+    // Make request to Google Apps Script
+    const response = await axios({
+      method: 'POST',
+      url: claBackupWebAppUrl,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      data: requestData,
+      timeout: 60000, // 1 minute timeout for backup creation
+    });
+
+    console.log(`✅ CLA Backup ${action} response:`, response.data);
+
+    // Return the response from Google Apps Script
+    res.json(response.data);
+
+  } catch (error) {
+    console.error('❌ CLA Backup proxy error:', error);
+    
+    if (error.code === 'ECONNABORTED') {
+      return res.status(408).json({
+        success: false,
+        error: 'CLA Backup creation timed out. Please try again.'
+      });
+    }
+
+    if (error.response) {
+      // Google Apps Script returned an error
+      return res.status(error.response.status).json({
+        success: false,
+        error: error.response.data || 'Google Apps Script error'
+      });
+    }
+
+    // Network or other error
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to communicate with CLA Backup service'
+    });
+  }
+});
+
+// Frost Resistance Google Apps Script Proxy Endpoint
+app.post('/api/logs/frost-res', async (req, res) => {
+  try {
+    const { action, logUrl } = req.body;
+    
+    if (!action) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Action is required' 
+      });
+    }
+
+    // Frost Res Web App URL (different Google Apps Script project)
+    const frostResWebAppUrl = 'https://script.google.com/macros/s/AKfycbwM3z9P59e4BFltpN8EyIj-O_vP8--gdSCjFN1lK0bEzMIKoK6YBRFLX6RPw6Mep0dO/exec';
+    
+    // Prepare request data
+    const requestData = { action };
+    if (logUrl) {
+      requestData.logUrl = logUrl;
+    }
+
+    console.log(`🧊 Frost Res ${action} request:`, requestData);
+    
+    // Allowed actions for Frost Resistance
+    const allowedActions = ['populateFrostRes', 'checkStatus', 'clearStatus', 'createClaBackup', 'createClaBackupWebApp', 'createClaBackupWithCheck'];
+    if (!allowedActions.includes(action)) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid action '${action}'. Must be one of: ${allowedActions.join(', ')}`
+      });
+    }
+
+    // Make request to Google Apps Script
+    const response = await axios({
+      method: 'POST',
+      url: frostResWebAppUrl,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      data: requestData,
+      timeout: action === 'populateFrostRes' ? 120000 : 60000, // 2 min for populate, 1 min for backup/status
+    });
+
+    console.log(`✅ Frost Res ${action} response:`, response.data);
+
+    // Return the response from Google Apps Script
+    res.json(response.data);
+
+  } catch (error) {
+    console.error('❌ Frost Res proxy error:', error);
+    
+    if (error.code === 'ECONNABORTED') {
+      return res.status(408).json({
+        success: false,
+        error: 'Frost Resistance processing timed out. Please try again.'
+      });
+    }
+
+    if (error.response) {
+      // Google Apps Script returned an error
+      return res.status(error.response.status).json({
+        success: false,
+        error: error.response.data || 'Google Apps Script error'
+      });
+    }
+
+    // Network or other error
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to communicate with Frost Resistance service'
+    });
+  }
+});
 
 // A helper function to normalize class names to their canonical form
 const CLASS_COLORS = {
@@ -3350,6 +3567,40 @@ app.post('/api/admin/setup-database', async (req, res) => {
             )
         `);
 
+        // Create sheet_players_buffs table for storing world buffs data from archived sheets
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS sheet_players_buffs (
+                id SERIAL PRIMARY KEY,
+                sheet_import_id INTEGER REFERENCES sheet_imports(id) ON DELETE CASCADE,
+                event_id VARCHAR(255) NOT NULL,
+                character_name VARCHAR(255) NOT NULL,
+                buff_name VARCHAR(100) NOT NULL,
+                buff_value VARCHAR(50),
+                color_status VARCHAR(100),
+                background_color VARCHAR(20),
+                amount_summary VARCHAR(50),
+                score_summary VARCHAR(50),
+                row_number INTEGER,
+                column_number INTEGER,
+                analysis_type VARCHAR(50) DEFAULT 'world_buffs',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // Create sheet_players_frostres table for storing frost resistance data from archived sheets
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS sheet_players_frostres (
+                id SERIAL PRIMARY KEY,
+                sheet_import_id INTEGER REFERENCES sheet_imports(id) ON DELETE CASCADE,
+                event_id VARCHAR(255) NOT NULL,
+                character_name VARCHAR(255) NOT NULL,
+                frost_resistance VARCHAR(50),
+                row_number INTEGER,
+                analysis_type VARCHAR(50) DEFAULT 'frost_resistance',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
         // Create reward_settings table for configurable rewards and deductions
         await client.query(`
             CREATE TABLE IF NOT EXISTS reward_settings (
@@ -3461,8 +3712,45 @@ app.post('/api/admin/setup-database', async (req, res) => {
             CREATE INDEX IF NOT EXISTS idx_sheet_player_abilities_character ON sheet_player_abilities (character_name, character_class)
         `);
         await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_sheet_players_buffs_event_id ON sheet_players_buffs (event_id)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_sheet_players_buffs_character ON sheet_players_buffs (character_name, buff_name)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_sheet_players_buffs_analysis_type ON sheet_players_buffs (analysis_type)
+        `);
+
+        // Add indexes for sheet_players_frostres
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_sheet_players_frostres_event_id ON sheet_players_frostres (event_id)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_sheet_players_frostres_character ON sheet_players_frostres (character_name)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_sheet_players_frostres_analysis_type ON sheet_players_frostres (analysis_type)
+        `);
+
+        await client.query(`
             CREATE INDEX IF NOT EXISTS idx_reward_settings_type ON reward_settings (setting_type)
         `);
+        
+        // Only create analysis_type index if the column exists
+        const analysisTypeColumnExists = await client.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'rpb_tracking' AND column_name = 'analysis_type'
+        `);
+        
+        if (analysisTypeColumnExists.rows.length > 0) {
+            await client.query(`
+                CREATE INDEX IF NOT EXISTS idx_rpb_tracking_analysis_type ON rpb_tracking (analysis_type)
+            `);
+            console.log('✅ [DB SETUP] Created index on analysis_type column');
+        } else {
+            console.log('ℹ️ [DB SETUP] Skipping analysis_type index - column does not exist yet');
+        }
         
         // Fix column size for spec emotes (Discord IDs can be 17-19 chars)
         await client.query(`
@@ -3517,6 +3805,106 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 UNIQUE(event_id, log_url)
             )
         `);
+
+        // Add analysis_type column to rpb_tracking table (migration for World Buffs and Frost Resistance support)
+        console.log('🔧 [DB MIGRATION] Checking if analysis_type column exists...');
+        
+        // Check if column already exists
+        const columnCheck = await client.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'rpb_tracking' AND column_name = 'analysis_type'
+        `);
+        
+        if (columnCheck.rows.length === 0) {
+            console.log('🔧 [DB MIGRATION] Adding analysis_type column...');
+            await client.query(`
+                ALTER TABLE rpb_tracking 
+                ADD COLUMN analysis_type VARCHAR(50) DEFAULT 'rpb'
+            `);
+            console.log('✅ [DB MIGRATION] analysis_type column added successfully');
+        } else {
+            console.log('ℹ️ [DB MIGRATION] analysis_type column already exists');
+        }
+
+        // Update existing records to have 'rpb' as analysis_type if null
+        console.log('🔧 [DB MIGRATION] Updating existing records...');
+        try {
+            const updateResult = await client.query(`
+                UPDATE rpb_tracking 
+                SET analysis_type = 'rpb' 
+                WHERE analysis_type IS NULL OR analysis_type = ''
+            `);
+            console.log(`✅ [DB MIGRATION] Updated ${updateResult.rowCount} records with analysis_type = 'rpb'`);
+        } catch (e) {
+            console.error('❌ [DB MIGRATION] Error updating records:', e.message);
+            throw e;
+        }
+
+        // Make analysis_type NOT NULL after setting defaults
+        console.log('🔧 [DB MIGRATION] Setting analysis_type as NOT NULL...');
+        try {
+            await client.query(`
+                ALTER TABLE rpb_tracking 
+                ALTER COLUMN analysis_type SET NOT NULL
+            `);
+            console.log('✅ [DB MIGRATION] analysis_type set as NOT NULL');
+        } catch (e) {
+            console.log('ℹ️ [DB MIGRATION] analysis_type may already be NOT NULL:', e.message);
+        }
+
+        // Handle unique constraint migration more carefully
+        console.log('🔧 [DB MIGRATION] Checking for existing constraints...');
+        
+        // First, let's see what constraints exist
+        try {
+            const constraintCheck = await client.query(`
+                SELECT con.conname, con.contype
+                FROM pg_constraint con
+                JOIN pg_class rel ON rel.oid = con.conrelid
+                WHERE rel.relname = 'rpb_tracking' AND con.contype = 'u'
+            `);
+            console.log('📋 [DB MIGRATION] Existing unique constraints:', constraintCheck.rows);
+            
+            // Drop any existing unique constraints on this table
+            for (const constraint of constraintCheck.rows) {
+                try {
+                    await client.query(`ALTER TABLE rpb_tracking DROP CONSTRAINT IF EXISTS ${constraint.conname}`);
+                    console.log(`✅ [DB MIGRATION] Dropped constraint: ${constraint.conname}`);
+                } catch (dropError) {
+                    console.log(`ℹ️ [DB MIGRATION] Could not drop constraint ${constraint.conname}:`, dropError.message);
+                }
+            }
+        } catch (e) {
+            console.log('ℹ️ [DB MIGRATION] Error checking constraints:', e.message);
+        }
+
+        // Create new unique index with analysis_type
+        console.log('🔧 [DB MIGRATION] Creating new unique index...');
+        
+        // Verify analysis_type column exists before creating index
+        const finalColumnCheck = await client.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'rpb_tracking' AND column_name = 'analysis_type'
+        `);
+        
+        if (finalColumnCheck.rows.length > 0) {
+            try {
+                await client.query(`
+                    CREATE UNIQUE INDEX IF NOT EXISTS rpb_tracking_event_log_analysis_unique 
+                    ON rpb_tracking (event_id, log_url, analysis_type)
+                `);
+                console.log('✅ [DB MIGRATION] New unique index created successfully');
+            } catch (e) {
+                console.error('❌ [DB MIGRATION] Error creating unique index:', e.message);
+                // This might fail if there are duplicate records, which is okay for now
+                console.log('ℹ️ [DB MIGRATION] Continuing despite index creation error...');
+            }
+        } else {
+            console.error('❌ [DB MIGRATION] Cannot create index: analysis_type column does not exist!');
+            throw new Error('analysis_type column was not created successfully');
+        }
         
         // Create attendance_cache table for tracking weekly raid attendance
         await client.query(`
@@ -6722,6 +7110,144 @@ app.get('/api/power-infusion-data/:eventId', async (req, res) => {
     }
 });
 
+// Get decurses data for raid logs
+app.get('/api/decurses-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🪄 [DECURSES] Retrieving decurses data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [DECURSES] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get dynamic settings for decurses calculation
+        const settingsResult = await client.query(`
+            SELECT setting_name, setting_value
+            FROM reward_settings 
+            WHERE setting_type = 'decurses'
+        `);
+        
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            settings[row.setting_name] = parseFloat(row.setting_value);
+        });
+        
+        const pointsPerDivision = settings.points_per_division || 1;
+        const decursesNeeded = settings.decurses_needed || 3;
+        const maxPoints = settings.max_points || 10;
+        const minPoints = settings.min_points || -10;
+        
+        console.log(`🪄 [DECURSES] Using dynamic settings: points_per_division=${pointsPerDivision}, decurses_needed=${decursesNeeded}, max_points=${maxPoints}, min_points=${minPoints}`);
+        
+        // Query for "Remove Lesser Curse" usage by mages
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND ability_name = 'Remove Lesser Curse'
+            AND character_class = 'Mage'
+            ORDER BY character_name
+        `, [eventId]);
+        
+        console.log(`🪄 [DECURSES] Found ${result.rows.length} decurse records for event: ${eventId}`);
+        console.log(`🪄 [DECURSES] Raw data sample:`, result.rows.slice(0, 3));
+        
+        if (result.rows.length === 0) {
+            return res.json({ 
+                success: true, 
+                data: [],
+                eventId: eventId,
+                settings: {
+                    points_per_division: pointsPerDivision,
+                    decurses_needed: decursesNeeded,
+                    max_points: maxPoints,
+                    min_points: minPoints,
+                    average_decurses: 0
+                }
+            });
+        }
+        
+        // Parse decurse counts
+        const mageData = result.rows.map(row => {
+            const decurseMatch = row.ability_value.toString().match(/(\d+)/);
+            const decursesUsed = decurseMatch ? parseInt(decurseMatch[1]) : 0;
+            
+            return {
+                character_name: row.character_name,
+                character_class: row.character_class,
+                decurses_used: decursesUsed
+            };
+        });
+        
+        // Calculate average decurses
+        const totalDecurses = mageData.reduce((sum, mage) => sum + mage.decurses_used, 0);
+        const averageDecurses = mageData.length > 0 ? totalDecurses / mageData.length : 0;
+        
+        console.log(`🪄 [DECURSES] Average decurses: ${averageDecurses.toFixed(1)} (total: ${totalDecurses}, mages: ${mageData.length})`);
+        
+        // Calculate points for each mage based on difference from average
+        const finalData = mageData.map(mage => {
+            const differenceFromAverage = mage.decurses_used - averageDecurses;
+            
+            // Calculate points: +1 point per 3 above average, -1 point per 3 below average
+            const rawPoints = Math.floor(differenceFromAverage / decursesNeeded) * pointsPerDivision;
+            
+            // Cap at max/min points
+            const points = Math.max(minPoints, Math.min(maxPoints, rawPoints));
+            
+            return {
+                character_name: mage.character_name,
+                character_class: mage.character_class,
+                decurses_used: mage.decurses_used,
+                difference_from_average: differenceFromAverage,
+                points: points
+            };
+        }).sort((a, b) => b.decurses_used - a.decurses_used); // Sort by decurses used descending
+        
+        console.log(`🪄 [DECURSES] Processed ${finalData.length} mages with decurses`);
+        console.log(`🪄 [DECURSES] Final data sample:`, finalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                points_per_division: pointsPerDivision,
+                decurses_needed: decursesNeeded,
+                max_points: maxPoints,
+                min_points: minPoints,
+                average_decurses: averageDecurses
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [DECURSES] Error retrieving decurses data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving decurses data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // Debug endpoint for checking environment variables on Heroku (remove after debugging)
 app.get('/api/debug/env', (req, res) => {
     const googleVars = Object.keys(process.env).filter(key => key.startsWith('GOOGLE_'));
@@ -6817,41 +7343,78 @@ app.post('/api/admin/migrate-reward-settings', async (req, res) => {
 
 // --- RPB Tracking Endpoints ---
 
-// Get RPB status for an event
+// Get tracking status for an event (with optional analysis type)
 app.get('/api/rpb-tracking/:eventId', async (req, res) => {
   try {
     const { eventId } = req.params;
-    console.log(`📊 [RPB TRACKING] Getting RPB status for event: ${eventId}`);
+    const { analysisType } = req.query; // Optional query parameter
     
-    const result = await pool.query(
-      'SELECT * FROM rpb_tracking WHERE event_id = $1 ORDER BY created_at DESC LIMIT 1',
-      [eventId]
-    );
+    console.log(`📊 [TRACKING] Getting tracking status for event: ${eventId}, type: ${analysisType || 'all'}`);
+    
+    let query, params;
+    
+    if (analysisType) {
+      // Get specific analysis type
+      query = 'SELECT * FROM rpb_tracking WHERE event_id = $1 AND analysis_type = $2 ORDER BY created_at DESC LIMIT 1';
+      params = [eventId, analysisType];
+    } else {
+      // Get all analysis types for the event
+      query = 'SELECT * FROM rpb_tracking WHERE event_id = $1 ORDER BY analysis_type, created_at DESC';
+      params = [eventId];
+    }
+    
+    const result = await pool.query(query, params);
     
     if (result.rows.length === 0) {
-      console.log(`📊 [RPB TRACKING] No RPB tracking found for event: ${eventId}`);
+      console.log(`📊 [TRACKING] No tracking found for event: ${eventId}, type: ${analysisType || 'any'}`);
       return res.json({
         success: true,
-        hasRPB: false,
-        status: null
+        hasData: false,
+        data: null
       });
     }
     
-    const tracking = result.rows[0];
-    console.log(`📊 [RPB TRACKING] Found RPB tracking for event ${eventId}: ${tracking.rpb_status}`);
-    
-    res.json({
-      success: true,
-      hasRPB: true,
-      status: tracking.rpb_status,
-      logUrl: tracking.log_url,
-      completedAt: tracking.rpb_completed_at,
-      archiveUrl: tracking.archive_url,
-      archiveName: tracking.archive_name
-    });
+    if (analysisType) {
+      // Return single analysis result (backward compatibility)
+      const tracking = result.rows[0];
+      console.log(`📊 [TRACKING] Found ${analysisType} tracking for event ${eventId}: ${tracking.rpb_status}`);
+      
+      res.json({
+        success: true,
+        hasRPB: true, // Keep for backward compatibility
+        hasData: true,
+        status: tracking.rpb_status,
+        logUrl: tracking.log_url,
+        completedAt: tracking.rpb_completed_at,
+        archiveUrl: tracking.archive_url,
+        archiveName: tracking.archive_name,
+        analysisType: tracking.analysis_type
+      });
+    } else {
+      // Return all analysis types
+      console.log(`📊 [TRACKING] Found ${result.rows.length} tracking records for event ${eventId}`);
+      
+      const trackingData = {};
+      result.rows.forEach(row => {
+        trackingData[row.analysis_type] = {
+          status: row.rpb_status,
+          logUrl: row.log_url,
+          completedAt: row.rpb_completed_at,
+          archiveUrl: row.archive_url,
+          archiveName: row.archive_name,
+          analysisType: row.analysis_type
+        };
+      });
+      
+      res.json({
+        success: true,
+        hasData: true,
+        data: trackingData
+      });
+    }
     
   } catch (error) {
-    console.error('❌ [RPB TRACKING] Error getting RPB status:', error);
+    console.error('❌ [TRACKING] Error getting tracking status:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -6860,6 +7423,150 @@ app.get('/api/rpb-tracking/:eventId', async (req, res) => {
 });
 
 // --- Google Sheet Import Endpoints ---
+
+// Import World Buffs or Frost Resistance data from Google Sheet
+app.post('/api/import-world-buffs', async (req, res) => {
+  const { sheetUrl, eventId, analysisType = 'world_buffs' } = req.body;
+  
+  try {
+    
+    if (!sheetUrl || !eventId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Sheet URL and Event ID are required'
+      });
+    }
+
+    const logPrefix = analysisType === 'frost_resistance' ? '🧊 [FROST RES IMPORT]' : '🌍 [WORLD BUFFS IMPORT]';
+    console.log(`${logPrefix} Starting import for event ${eventId} from ${sheetUrl}`);
+
+    // Extract sheet ID from URL
+    const sheetIdMatch = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (!sheetIdMatch) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid Google Sheets URL format'
+      });
+    }
+
+    const sheetId = sheetIdMatch[1];
+    
+    // Try multiple CSV export methods
+    const csvUrls = [
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`,
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=0`,
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&single=true&gid=0`
+    ];
+
+    let csvResponse = null;
+    let successfulUrl = null;
+
+    for (const csvUrl of csvUrls) {
+      try {
+        console.log(`${logPrefix} Trying CSV URL: ${csvUrl}`);
+        
+        csvResponse = await axios.get(csvUrl, {
+          timeout: 30000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          },
+          validateStatus: function (status) {
+            return status >= 200 && status < 300;
+          }
+        });
+        
+        // Check if response is actually CSV (not HTML error page)
+        const contentType = csvResponse.headers['content-type'] || '';
+        if (contentType.includes('text/csv') || contentType.includes('text/plain') || 
+            !csvResponse.data.includes('<!DOCTYPE html>')) {
+          successfulUrl = csvUrl;
+          console.log(`✅ ${logPrefix} Successfully fetched CSV from: ${csvUrl}`);
+          break;
+        } else {
+          console.log(`❌ ${logPrefix} Response was HTML, not CSV from: ${csvUrl}`);
+          csvResponse = null;
+        }
+      } catch (error) {
+        console.log(`❌ ${logPrefix} Failed to fetch from ${csvUrl}: ${error.message}`);
+        continue;
+      }
+    }
+
+    if (!csvResponse) {
+      throw new Error('Unable to fetch CSV data from any of the attempted URLs. Please ensure the sheet is publicly accessible.');
+    }
+
+    const csvData = csvResponse.data;
+    console.log(`${logPrefix} Received CSV data, length: ${csvData.length} characters`);
+
+    let dbResult;
+    let sheetTitle = 'Unknown Sheet';
+
+    if (analysisType === 'frost_resistance') {
+      // Parse Frost Resistance CSV data
+      const parsedData = parseFrostResCSV(csvData, eventId, analysisType);
+      
+      // Store frost resistance data in database
+      dbResult = await storeFrostResDataInDB(parsedData, eventId, sheetUrl, sheetTitle, analysisType);
+      
+      const actionMessage = 'imported'; // Frost res doesn't have wasReplacement logic yet
+      console.log(`${logPrefix} Successfully ${actionMessage} ${dbResult.playerCount} players with frost resistance data`);
+
+      res.json({
+        success: true,
+        message: `Successfully imported ${dbResult.playerCount} players with frost resistance data`,
+        eventId: eventId,
+        sheetTitle: sheetTitle,
+        playerCount: dbResult.playerCount,
+        frostResCount: dbResult.playerCount // Use playerCount as frostResCount for consistency
+      });
+    } else {
+      // Parse World Buffs CSV data
+      const parsedData = parseWorldBuffsCSV(csvData, eventId, analysisType);
+      
+      if (!parsedData.success) {
+        return res.status(400).json(parsedData);
+      }
+
+      // Store world buffs data in database
+      dbResult = await storeWorldBuffsDataInDB(parsedData.data, eventId, sheetUrl, parsedData.sheetTitle, analysisType);
+
+      const actionMessage = dbResult.wasReplacement ? 'replaced' : 'imported';
+      console.log(`${logPrefix} Successfully ${actionMessage} ${dbResult.playerCount} players with ${dbResult.buffsCount} buff entries`);
+
+      res.json({
+        success: true,
+        message: dbResult.wasReplacement 
+          ? `Successfully replaced existing data with ${dbResult.playerCount} players and ${dbResult.buffsCount} buff entries`
+          : `Successfully imported ${dbResult.playerCount} players with ${dbResult.buffsCount} buff entries`,
+        eventId: eventId,
+        sheetTitle: parsedData.sheetTitle,
+        playerCount: dbResult.playerCount,
+        buffsCount: dbResult.buffsCount,
+        wasReplacement: dbResult.wasReplacement
+      });
+    }
+
+  } catch (error) {
+    const logPrefix = analysisType === 'frost_resistance' ? '🧊 [FROST RES IMPORT]' : '🌍 [WORLD BUFFS IMPORT]';
+    console.error(`❌ ${logPrefix} Error importing sheet:`, error);
+    
+    let errorMessage = analysisType === 'frost_resistance' ? 'Failed to import Frost Resistance data' : 'Failed to import World Buffs data';
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      errorMessage = 'Unable to connect to Google Sheets. Please check the URL and try again.';
+    } else if (error.response && error.response.status === 404) {
+      errorMessage = 'Sheet not found or not publicly accessible. Please make sure the sheet is shared publicly.';
+    } else if (error.response && error.response.status === 403) {
+      errorMessage = 'Access denied to the sheet. Please make sure the sheet is shared publicly.';
+    }
+
+    res.status(500).json({
+      success: false,
+      message: errorMessage,
+      error: error.message
+    });
+  }
+});
 
 // Import data from Google Sheet
 app.post('/api/import-sheet', async (req, res) => {
@@ -7266,6 +7973,357 @@ async function getStoredSheetData(eventId) {
   return result.rows;
 }
 
+// Helper function to parse World Buffs CSV data
+function parseWorldBuffsCSV(csvData, eventId, analysisType) {
+  try {
+    console.log(`🌍 [WORLD BUFFS PARSER] Starting CSV parsing for event ${eventId}`);
+    
+    // Split CSV into rows
+    const rows = csvData.split('\n').map(row => {
+      // Simple CSV parser - handles basic quoted fields
+      const cells = [];
+      let currentCell = '';
+      let inQuotes = false;
+      
+      for (let i = 0; i < row.length; i++) {
+        const char = row[i];
+        if (char === '"' && (i === 0 || row[i-1] === ',')) {
+          inQuotes = true;
+        } else if (char === '"' && inQuotes && (i === row.length - 1 || row[i+1] === ',')) {
+          inQuotes = false;
+        } else if (char === ',' && !inQuotes) {
+          cells.push(currentCell.trim());
+          currentCell = '';
+        } else {
+          currentCell += char;
+        }
+      }
+      cells.push(currentCell.trim());
+      return cells;
+    });
+
+    console.log(`🌍 [WORLD BUFFS PARSER] Parsed ${rows.length} rows`);
+
+    // Get sheet title from first row if available
+    let sheetTitle = 'World Buffs Analysis';
+    if (rows.length > 0 && rows[0].length > 0) {
+      sheetTitle = rows[0][0] || 'World Buffs Analysis';
+    }
+
+    // Check if we have enough rows
+    if (rows.length < 5) {
+      throw new Error('Sheet does not have enough rows. Expected at least 5 rows.');
+    }
+
+    // Get buff names from row 4 (index 3) - columns E through L (indices 4-11)
+    const buffRow = rows[3]; // Row 4 (0-indexed)
+    const buffNames = [];
+    const buffColumns = [4, 5, 6, 7, 8, 9, 10, 11]; // E, F, G, H, I, J, K, L
+    
+    buffColumns.forEach((colIndex, arrayIndex) => {
+      if (colIndex < buffRow.length && buffRow[colIndex] && buffRow[colIndex].trim() !== '') {
+        buffNames.push({
+          name: buffRow[colIndex].trim(),
+          columnIndex: colIndex
+        });
+      }
+    });
+
+    console.log(`🌍 [WORLD BUFFS PARSER] Found ${buffNames.length} buff types:`, buffNames.map(b => b.name));
+
+    // Parse player data starting from row 5 (index 4)
+    const buffData = [];
+    
+    for (let rowIndex = 4; rowIndex < rows.length; rowIndex++) {
+      const row = rows[rowIndex];
+      if (row.length === 0) continue; // Skip empty rows
+      
+      // Get player name from column B (index 1)
+      const playerName = row[1] ? row[1].trim() : '';
+      if (!playerName || playerName === '') continue; // Skip rows without player names
+      
+      // Get amount and score summaries from columns C and D (indices 2, 3)
+      const amountSummary = row[2] ? row[2].trim() : '';
+      const scoreSummary = row[3] ? row[3].trim() : '';
+      
+      console.log(`🌍 [WORLD BUFFS PARSER] Processing player: ${playerName}, Amount: ${amountSummary}, Score: ${scoreSummary}`);
+      
+      // Process each buff for this player
+      buffNames.forEach(buff => {
+        if (buff.columnIndex < row.length) {
+          const buffValue = row[buff.columnIndex] ? row[buff.columnIndex].trim() : '';
+          
+          // Determine color status based on buff value content
+          const colorStatus = determineBuffColorStatus(buffValue);
+          
+          if (buffValue !== '') {
+            buffData.push({
+              character_name: playerName,
+              buff_name: buff.name,
+              buff_value: buffValue,
+              color_status: colorStatus.status,
+              background_color: colorStatus.color,
+              amount_summary: amountSummary,
+              score_summary: scoreSummary,
+              row_number: rowIndex + 1,
+              column_number: buff.columnIndex + 1,
+              analysis_type: analysisType
+            });
+          }
+        }
+      });
+    }
+
+    console.log(`🌍 [WORLD BUFFS PARSER] Parsed ${buffData.length} buff entries`);
+
+    return {
+      success: true,
+      data: buffData,
+      sheetTitle: sheetTitle
+    };
+
+  } catch (error) {
+    console.error('❌ [WORLD BUFFS PARSER] Error parsing CSV:', error);
+    return {
+      success: false,
+      message: `Failed to parse World Buffs data: ${error.message}`
+    };
+  }
+}
+
+// Helper function for World Buffs data - simplified without color detection
+function determineBuffColorStatus(buffValue) {
+  // Just return the raw value without trying to detect colors from CSV
+  // CSV exports don't contain background color information
+  return { status: null, color: null };
+}
+
+// Parse Frost Resistance CSV data
+function parseFrostResCSV(csvData, eventId, analysisType) {
+  console.log('📊 [FROST RES PARSER] Starting to parse CSV data...');
+  
+  // Split CSV into rows with proper quoted field handling
+  const rows = csvData.split('\n').map(row => {
+    // Simple CSV parser - handles basic quoted fields
+    const cells = [];
+    let currentCell = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < row.length; i++) {
+      const char = row[i];
+      if (char === '"' && (i === 0 || row[i-1] === ',')) {
+        inQuotes = true;
+      } else if (char === '"' && inQuotes && (i === row.length - 1 || row[i+1] === ',')) {
+        inQuotes = false;
+      } else if (char === ',' && !inQuotes) {
+        cells.push(currentCell.trim());
+        currentCell = '';
+      } else {
+        currentCell += char;
+      }
+    }
+    cells.push(currentCell.trim());
+    return cells;
+  });
+  
+  const frostResData = [];
+  
+  // Process data starting from row 5 (index 4)
+  for (let rowIndex = 4; rowIndex < rows.length; rowIndex++) {
+    const row = rows[rowIndex];
+    if (!row || row.length < 3) continue;
+    
+    const playerName = row[1] ? row[1].trim() : ''; // Column B (index 1)
+    const frostResValue = row[2] ? row[2].trim() : ''; // Column C (index 2)
+    
+    if (playerName !== '' && frostResValue !== '') {
+      frostResData.push({
+        character_name: playerName,
+        frost_resistance: frostResValue,
+        row_number: rowIndex + 1,
+        analysis_type: analysisType
+      });
+      
+      console.log(`📊 [FROST RES PARSER] Row ${rowIndex + 1}: ${playerName} = ${frostResValue} FR`);
+    }
+  }
+  
+  console.log(`📊 [FROST RES PARSER] Parsed ${frostResData.length} frost resistance entries`);
+  return frostResData;
+}
+
+// Helper function to store World Buffs data in database
+async function storeWorldBuffsDataInDB(buffData, eventId, sheetUrl, sheetTitle, analysisType) {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Check if there are existing entries for this event ID and analysis type
+    const existingCheck = await client.query(`
+      SELECT COUNT(*) as count FROM sheet_imports 
+      WHERE event_id = $1 AND sheet_url = $2
+    `, [eventId, sheetUrl]);
+
+    const hasExistingData = parseInt(existingCheck.rows[0].count) > 0;
+
+    if (hasExistingData) {
+      console.log(`🗑️ [WORLD BUFFS DB] Found existing data for event ${eventId}, deleting old entries...`);
+      
+      // Delete existing buffs data for this event and analysis type
+      await client.query(`
+        DELETE FROM sheet_players_buffs 
+        WHERE event_id = $1 AND analysis_type = $2
+      `, [eventId, analysisType]);
+      
+      // Delete existing sheet imports for this event and URL
+      await client.query(`
+        DELETE FROM sheet_imports WHERE event_id = $1 AND sheet_url = $2
+      `, [eventId, sheetUrl]);
+      
+      console.log(`✅ [WORLD BUFFS DB] Successfully deleted old data for event ${eventId}`);
+    }
+
+    // Insert new sheet import record
+    const importResult = await client.query(`
+      INSERT INTO sheet_imports (event_id, sheet_url, sheet_title)
+      VALUES ($1, $2, $3)
+      RETURNING id
+    `, [eventId, sheetUrl, sheetTitle]);
+
+    const sheetImportId = importResult.rows[0].id;
+
+    // Insert new buff data
+    let buffsCount = 0;
+    const playerCounts = new Set();
+
+    for (const buff of buffData) {
+      await client.query(`
+        INSERT INTO sheet_players_buffs 
+        (sheet_import_id, event_id, character_name, buff_name, buff_value, color_status, background_color, amount_summary, score_summary, row_number, column_number, analysis_type)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `, [
+        sheetImportId,
+        eventId,
+        buff.character_name,
+        buff.buff_name,
+        buff.buff_value,
+        buff.color_status,
+        buff.background_color,
+        buff.amount_summary,
+        buff.score_summary,
+        buff.row_number,
+        buff.column_number,
+        buff.analysis_type
+      ]);
+      
+      buffsCount++;
+      playerCounts.add(buff.character_name);
+    }
+
+    await client.query('COMMIT');
+    console.log(`🌍 [WORLD BUFFS DB] Stored ${buffsCount} buff entries for ${playerCounts.size} players`);
+
+    return {
+      playerCount: playerCounts.size,
+      buffsCount: buffsCount,
+      wasReplacement: hasExistingData
+    };
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Helper function to store Frost Resistance data in database
+async function storeFrostResDataInDB(frostResData, eventId, sheetUrl, sheetTitle, analysisType) {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Check if there are existing entries for this event ID and analysis type
+    const existingCheck = await client.query(`
+      SELECT COUNT(*) as count FROM sheet_imports 
+      WHERE event_id = $1 AND sheet_url = $2
+    `, [eventId, sheetUrl]);
+
+    const hasExistingData = parseInt(existingCheck.rows[0].count) > 0;
+
+    if (hasExistingData) {
+      console.log('📊 [FROST RES STORE] Found existing data, replacing...');
+      
+      // Delete existing frost resistance data for this event and sheet
+      await client.query(`
+        DELETE FROM sheet_players_frostres 
+        WHERE event_id = $1 AND sheet_import_id IN (
+          SELECT id FROM sheet_imports WHERE event_id = $1 AND sheet_url = $2
+        )
+      `, [eventId, sheetUrl]);
+      
+      // Update existing sheet_imports record
+      const updateImport = await client.query(`
+        UPDATE sheet_imports 
+        SET imported_at = CURRENT_TIMESTAMP, sheet_title = $3
+        WHERE event_id = $1 AND sheet_url = $2
+        RETURNING id
+      `, [eventId, sheetUrl, sheetTitle]);
+      
+      var sheetImportId = updateImport.rows[0].id;
+    } else {
+      console.log('📊 [FROST RES STORE] Creating new import record...');
+      
+      // Create new sheet_imports record
+      const newImport = await client.query(`
+        INSERT INTO sheet_imports (event_id, sheet_url, sheet_title, imported_at)
+        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+        RETURNING id
+      `, [eventId, sheetUrl, sheetTitle]);
+      
+      var sheetImportId = newImport.rows[0].id;
+    }
+
+    // Insert frost resistance data
+    if (frostResData.length > 0) {
+      const insertQuery = `
+        INSERT INTO sheet_players_frostres 
+        (sheet_import_id, event_id, character_name, frost_resistance, row_number, analysis_type)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `;
+
+      for (const frostRes of frostResData) {
+        await client.query(insertQuery, [
+          sheetImportId,
+          eventId,
+          frostRes.character_name,
+          frostRes.frost_resistance,
+          frostRes.row_number,
+          frostRes.analysis_type
+        ]);
+      }
+    }
+
+    await client.query('COMMIT');
+    
+    console.log(`✅ [FROST RES STORE] Successfully stored ${frostResData.length} frost resistance entries`);
+    return {
+      success: true,
+      playerCount: frostResData.length,
+      sheetImportId: sheetImportId
+    };
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('❌ [FROST RES STORE] Error storing data:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 // Debug endpoint to check database data
 app.get('/api/debug-db/:eventId', async (req, res) => {
   try {
@@ -7334,22 +8392,23 @@ app.get('/api/debug-db/:eventId', async (req, res) => {
   }
 });
 
-// Update RPB status for an event
+// Update tracking status for an event
 app.post('/api/rpb-tracking/:eventId', async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { logUrl, status, archiveUrl, archiveName } = req.body;
+    const { logUrl, status, archiveUrl, archiveName, analysisType = 'rpb' } = req.body;
     
-    console.log(`📊 [RPB TRACKING] Updating RPB status for event ${eventId}: ${status}`);
+    console.log(`📊 [TRACKING] Updating ${analysisType} status for event ${eventId}: ${status}`);
     
     // First, try to insert a new record
     try {
       const insertResult = await pool.query(
-        `INSERT INTO rpb_tracking (event_id, log_url, rpb_status, rpb_completed_at, archive_url, archive_name)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        `INSERT INTO rpb_tracking (event_id, log_url, analysis_type, rpb_status, rpb_completed_at, archive_url, archive_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
         [
           eventId, 
           logUrl, 
+          analysisType,
           status, 
           status === 'completed' ? new Date() : null,
           archiveUrl || null,
@@ -7357,7 +8416,7 @@ app.post('/api/rpb-tracking/:eventId', async (req, res) => {
         ]
       );
       
-      console.log(`✅ [RPB TRACKING] Created new RPB tracking for event ${eventId}`);
+      console.log(`✅ [TRACKING] Created new ${analysisType} tracking for event ${eventId}`);
       return res.json({
         success: true,
         tracking: insertResult.rows[0]
@@ -7366,20 +8425,21 @@ app.post('/api/rpb-tracking/:eventId', async (req, res) => {
     } catch (insertError) {
       // If insert fails due to unique constraint, update instead
       if (insertError.code === '23505') { // unique_violation
-        console.log(`📊 [RPB TRACKING] Record exists, updating RPB tracking for event ${eventId}`);
+        console.log(`📊 [TRACKING] Record exists, updating ${analysisType} tracking for event ${eventId}`);
         
         const updateResult = await pool.query(
           `UPDATE rpb_tracking 
-           SET rpb_status = $3, 
-               rpb_completed_at = $4,
-               archive_url = COALESCE($5, archive_url),
-               archive_name = COALESCE($6, archive_name),
+           SET rpb_status = $4, 
+               rpb_completed_at = $5,
+               archive_url = COALESCE($6, archive_url),
+               archive_name = COALESCE($7, archive_name),
                updated_at = CURRENT_TIMESTAMP
-           WHERE event_id = $1 AND log_url = $2
+           WHERE event_id = $1 AND log_url = $2 AND analysis_type = $3
            RETURNING *`,
           [
             eventId, 
             logUrl, 
+            analysisType,
             status, 
             status === 'completed' ? new Date() : null,
             archiveUrl,
@@ -7387,7 +8447,7 @@ app.post('/api/rpb-tracking/:eventId', async (req, res) => {
           ]
         );
         
-        console.log(`✅ [RPB TRACKING] Updated RPB tracking for event ${eventId}`);
+        console.log(`✅ [TRACKING] Updated ${analysisType} tracking for event ${eventId}`);
         return res.json({
           success: true,
           tracking: updateResult.rows[0]
@@ -7398,7 +8458,7 @@ app.post('/api/rpb-tracking/:eventId', async (req, res) => {
     }
     
   } catch (error) {
-    console.error('❌ [RPB TRACKING] Error updating RPB status:', error);
+    console.error(`❌ [TRACKING] Error updating ${req.body.analysisType || 'rpb'} status:`, error);
     res.status(500).json({
       success: false,
       error: error.message

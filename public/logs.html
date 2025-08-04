@@ -63,16 +63,9 @@
         <div class="page-header">
         </div>
 
-        <!-- Complete Workflow Section - Now at top -->
+        <!-- Combined Workflow Section -->
         <div class="unified-workflow-section">
-            <div class="workflow-container">
-                <h3>🚀 Complete Workflow</h3>
-                <p>Run all steps automatically: RPB Analysis → Archive → Import Data</p>
-                <div class="workflow-input-container">
-                    <input type="text" id="workflowLogInput" placeholder="Enter wowlogs link for complete workflow">
-                    <button id="runCompleteWorkflowBtn" class="workflow-btn">Run Complete Workflow</button>
-                </div>
-            </div>
+            <!-- This will be moved into the workflow progress container -->
         </div>
 
         <!-- Hidden logs input section (kept for JavaScript compatibility) -->
@@ -84,11 +77,49 @@
             </div>
         </div>
 
-        <!-- Workflow Progress Indicator -->
-        <div id="workflowProgress" class="workflow-progress" style="display: none;">
-            <div class="progress-header">
-                <h3>Workflow Progress</h3>
+        <!-- World Buffs Section - Hidden -->
+        <div class="world-buffs-section" style="display: none;">
+            <div class="workflow-container">
+                <h3>🌍 World Buffs Analysis</h3>
+                <p>Populate world buffs data for the current raid</p>
+                <div class="workflow-input-container">
+                    <input type="text" id="worldBuffsLogInput" placeholder="Enter wowlogs link for world buffs analysis">
+                    <button id="runWorldBuffsBtn" class="workflow-btn">🌍 Populate World Buffs</button>
+                </div>
             </div>
+        </div>
+
+        <!-- Frost Resistance Section - Hidden -->
+        <div class="frost-res-section" style="display: none;">
+            <div class="workflow-container">
+                <h3>🧊 Frost Resistance Analysis</h3>
+                <p>Analyze frost resistance gear for Sapphiron encounters</p>
+                <div class="workflow-input-container">
+                    <input type="text" id="frostResLogInput" placeholder="Enter wowlogs link for frost resistance analysis">
+                    <button id="runFrostResBtn" class="workflow-btn">🧊 Analyze Frost Resistance</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Workflow Progress Indicator -->
+        <div id="workflowProgress" class="workflow-progress">
+            <!-- Workflow Input Section -->
+            <div class="workflow-input-section" id="workflowInputSection">
+                <div class="progress-header">
+                    <h3>🚀 Complete Workflow</h3>
+                    <p>Run all steps automatically: RPB Analysis → World Buffs → Frost Resistance (with archive & import for each)</p>
+                </div>
+                <div class="workflow-input-container">
+                    <input type="text" id="workflowLogInput" placeholder="Enter wowlogs link for complete workflow">
+                    <button id="runCompleteWorkflowBtn" class="workflow-btn-attached">Run Complete Workflow</button>
+                </div>
+            </div>
+            
+            <!-- Progress Steps (hidden initially) -->
+            <div class="progress-steps-section" id="progressStepsSection" style="display: none;">
+                <div class="progress-header">
+                    <h3>Workflow Progress</h3>
+                </div>
             <div class="progress-steps">
                 <div class="progress-step" id="step1Progress">
                     <div class="step-number">1</div>
@@ -117,15 +148,63 @@
                 <div class="progress-step" id="step4Progress">
                     <div class="step-number">4</div>
                     <div class="step-content">
-                        <div class="step-title">Import Data</div>
+                        <div class="step-title">Import RPB Data</div>
                         <div class="step-status" id="step4Status">Waiting...</div>
                     </div>
                     <div class="step-indicator" id="step4Indicator">⏳</div>
                 </div>
-            </div>
-            <div class="progress-actions" id="workflowActions" style="display: none;">
-                <button id="retryWorkflowBtn" class="btn btn-secondary">Retry Failed Step</button>
-                <button id="resetWorkflowBtn" class="btn btn-secondary">Start Over</button>
+                <div class="progress-step" id="step5Progress">
+                    <div class="step-number">5</div>
+                    <div class="step-content">
+                        <div class="step-title">World Buffs Analysis</div>
+                        <div class="step-status" id="step5Status">Waiting...</div>
+                    </div>
+                    <div class="step-indicator" id="step5Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step6Progress">
+                    <div class="step-number">6</div>
+                    <div class="step-content">
+                        <div class="step-title">Archive World Buffs</div>
+                        <div class="step-status" id="step6Status">Waiting...</div>
+                    </div>
+                    <div class="step-indicator" id="step6Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step7Progress">
+                    <div class="step-number">7</div>
+                    <div class="step-content">
+                        <div class="step-title">Import World Buffs Data</div>
+                        <div class="step-status" id="step7Status">Waiting...</div>
+                    </div>
+                    <div class="step-indicator" id="step7Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step8Progress">
+                    <div class="step-number">8</div>
+                    <div class="step-content">
+                        <div class="step-title">Frost Resistance Analysis</div>
+                        <div class="step-status" id="step8Status">Waiting...</div>
+                    </div>
+                    <div class="step-indicator" id="step8Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step9Progress">
+                    <div class="step-number">9</div>
+                    <div class="step-content">
+                        <div class="step-title">Archive Frost Resistance</div>
+                        <div class="step-status" id="step9Status">Waiting...</div>
+                    </div>
+                    <div class="step-indicator" id="step9Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step10Progress">
+                    <div class="step-number">10</div>
+                    <div class="step-content">
+                        <div class="step-title">Import Frost Resistance Data</div>
+                        <div class="step-status" id="step10Status">Waiting...</div>
+                    </div>
+                    <div class="step-indicator" id="step10Indicator">⏳</div>
+                </div>
+                <div class="progress-actions" id="workflowActions" style="display: none;">
+                    <button id="retryWorkflowBtn" class="btn btn-secondary">Retry Failed Step</button>
+                    <button id="resetWorkflowBtn" class="btn btn-secondary">Start Over</button>
+                </div>
             </div>
         </div>
 
