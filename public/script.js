@@ -831,7 +831,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.log('📅 Displaying completed events:', scheduledEvents.length);
             
             const now = new Date();
-            const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+            const oneYearAgo = new Date(now.getTime() - (365 * 24 * 60 * 60 * 1000));
             
             const historicEvents = scheduledEvents.filter(event => {
                 try {
@@ -839,14 +839,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                         return false;
                     }
                     const eventStartDate = new Date(event.startTime * 1000);
-                    return eventStartDate < now && eventStartDate >= thirtyDaysAgo;
+                    return eventStartDate < now && eventStartDate >= oneYearAgo;
                 } catch (error) {
                     return false;
                 }
             });
             
             if (historicEvents.length === 0) {
-                historicEventsList.innerHTML = '<p>No completed events found for the last 30 days.</p>';
+                historicEventsList.innerHTML = '<p>No completed events found for the last year.</p>';
                 updateHistoricShowMoreButton(0, 0);
                 return;
             }
@@ -858,23 +858,36 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Display only the limited number of events
             renderHistoricEventsPage();
         } else {
-            historicEventsList.innerHTML = '<p>No completed events found for the last 30 days.</p>';
+            historicEventsList.innerHTML = '<p>No completed events found for the last year.</p>';
             updateHistoricShowMoreButton(0, 0);
         }
     }
     
     // Function to render the current page of historic events
-    function renderHistoricEventsPage() {
+    function renderHistoricEventsPage(appendMode = false) {
         if (!historicEventsList) return;
         
-        historicEventsList.innerHTML = ''; // Clear previous content
+        let eventsToShow, startIndex;
         
-        const eventsToShow = allHistoricEvents.slice(0, currentHistoricDisplayLimit);
-        console.log(`📅 Rendering ${eventsToShow.length} of ${allHistoricEvents.length} completed events`);
+        if (appendMode) {
+            // In append mode, only render the new events
+            const previousLimit = currentHistoricDisplayLimit - historicEventsPerPage;
+            startIndex = previousLimit;
+            eventsToShow = allHistoricEvents.slice(previousLimit, currentHistoricDisplayLimit);
+            console.log(`📅 Appending ${eventsToShow.length} new completed events (${startIndex + 1}-${currentHistoricDisplayLimit} of ${allHistoricEvents.length})`);
+        } else {
+            // In replace mode, clear and render all events
+            historicEventsList.innerHTML = ''; // Clear previous content
+            startIndex = 0;
+            eventsToShow = allHistoricEvents.slice(0, currentHistoricDisplayLimit);
+            console.log(`📅 Rendering ${eventsToShow.length} of ${allHistoricEvents.length} completed events`);
+        }
         
         if (eventsToShow.length === 0) {
-            historicEventsList.innerHTML = '<p>No completed events found for the last 30 days.</p>';
-            updateHistoricShowMoreButton(0, 0);
+            if (!appendMode) {
+                historicEventsList.innerHTML = '<p>No completed events found for the last year.</p>';
+            }
+            updateHistoricShowMoreButton(currentHistoricDisplayLimit, allHistoricEvents.length);
             return;
         }
         
@@ -882,7 +895,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 try {
                     const eventDiv = document.createElement('div');
                     eventDiv.classList.add('event-panel', 'historic');
-                    eventDiv.setAttribute('data-event-index', index);
+                    eventDiv.setAttribute('data-event-index', startIndex + index);
                     
                     const eventId = event.id || 'unknown';
                     const eventTitle = event.title || 'Untitled Event';
@@ -953,7 +966,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     historicEventsList.appendChild(eventDiv);
                     
                     // Fetch scheduled duration, gold pot, and biggest item for this event with staggered delay
-                    const delay = index * 300; // 300ms delay between each request  
+                    const delay = (startIndex + index) * 300; // 300ms delay between each request  
                     fetchEventDuration(eventId, delay);
                     fetchEventGoldPot(eventId, delay + 100); // Small additional delay
                     fetchEventBiggestItem(eventId, delay + 200); // Small additional delay
@@ -963,7 +976,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         
         // Update the show more button visibility and count display
-        updateHistoricShowMoreButton(eventsToShow.length, allHistoricEvents.length);
+        updateHistoricShowMoreButton(currentHistoricDisplayLimit, allHistoricEvents.length);
     }
 
     // Refresh historic events functionality
@@ -1045,33 +1058,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         const showMoreBtn = document.getElementById('show-more-historic-btn');
         const countDisplay = document.getElementById('historic-events-count');
         
-        console.log(`🔍 Show More Debug: Displayed=${displayed}, Total=${total}, PerPage=${historicEventsPerPage}`);
-        
         if (showMoreBtn && countDisplay) {
             if (displayed < total) {
-                console.log('✅ Showing "Show more" button - more raids available');
                 showMoreBtn.style.display = 'inline-flex';
                 countDisplay.style.display = 'block';
-                countDisplay.textContent = `Showing ${displayed} of ${total} completed raids`;
+                countDisplay.textContent = `Showing ${displayed} of ${total} completed raids (1 year)`;
             } else {
-                console.log('❌ Hiding "Show more" button - all raids displayed');
                 showMoreBtn.style.display = 'none';
                 if (total > historicEventsPerPage) {
                     countDisplay.style.display = 'block';
-                    countDisplay.textContent = `Showing all ${total} completed raids`;
+                    countDisplay.textContent = `Showing all ${total} completed raids (1 year)`;
                 } else {
                     countDisplay.style.display = 'none';
                 }
             }
-        } else {
-            console.log('⚠️ Show More Debug: Button or count display element not found');
         }
     }
     
     // Function to show more historic events
     function showMoreHistoricEvents() {
         currentHistoricDisplayLimit += historicEventsPerPage;
-        renderHistoricEventsPage();
+        renderHistoricEventsPage(true); // true = append mode
     }
     
     // Add event listener for show more button

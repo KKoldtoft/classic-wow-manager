@@ -335,7 +335,7 @@ async function setCachedRaidHelperEvent(eventId, eventData) {
     }
 }
 
-async function cleanupRaidHelperEventCache(olderThanDays = 30) {
+async function cleanupRaidHelperEventCache(olderThanDays = 365) {
     try {
         const result = await pool.query(`
             DELETE FROM raid_helper_events_cache 
@@ -397,10 +397,10 @@ async function fetchHistoricEventsFromAPI() {
 
   const discordGuildId = '777268886939893821';
   const nowUnixTimestamp = Math.floor(Date.now() / 1000);
-  const thirtyDaysInSeconds = 30 * 24 * 60 * 60;
-  const pastUnixTimestamp = nowUnixTimestamp - thirtyDaysInSeconds;
+  const oneYearInSeconds = 365 * 24 * 60 * 60;
+  const pastUnixTimestamp = nowUnixTimestamp - oneYearInSeconds;
 
-  console.log('🌐 Fetching historic events from Raid-Helper API (last 30 days)...');
+      console.log('🌐 Fetching historic events from Raid-Helper API (last year)...');
 
   const response = await axios.get(
     `https://raid-helper.dev/api/v3/servers/${discordGuildId}/events`,
@@ -729,20 +729,20 @@ async function enrichEventsWithDiscordChannelNames(events) {
   return enrichedEvents;
 }
 
-// Function to filter events to historic (last 30 days) and enrich with channel names
+// Function to filter events to historic (last year) and enrich with channel names
 async function enrichHistoricEventsWithDiscordChannelNames(events) {
   console.log(`🔄 Starting historic events filtering and enrichment for ${events.length} events`);
   
-  // CRITICAL: Filter to historic events (past events, last 30 days)
+  // CRITICAL: Filter to historic events (past events, last year)
   const now = new Date();
-  const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+  const oneYearAgo = new Date(now.getTime() - (365 * 24 * 60 * 60 * 1000));
   const historicEvents = events.filter(event => {
     if (!event.startTime) return false;
     const eventStartDate = new Date(parseInt(event.startTime) * 1000);
-    return eventStartDate < now && eventStartDate >= thirtyDaysAgo;
+    return eventStartDate < now && eventStartDate >= oneYearAgo;
   }).sort((a, b) => parseInt(b.startTime) - parseInt(a.startTime)); // Sort newest first
   
-  console.log(`📊 Filtered to ${historicEvents.length} historic events (last 30 days) from ${events.length} total`);
+  console.log(`📊 Filtered to ${historicEvents.length} historic events (last year) from ${events.length} total`);
   
   // Now enrich with Discord channel names
   return await enrichEventsWithDiscordChannelNames(historicEvents);
@@ -1918,7 +1918,7 @@ app.post('/api/events/refresh', async (req, res) => {
 });
 
 // COMPLETED EVENTS API ENDPOINTS  
-// Cached endpoint to fetch completed Raid-Helper events (last 30 days)
+// Cached endpoint to fetch completed Raid-Helper events (last year)
 app.get('/api/events/historic', async (req, res) => {
   if (!req.isAuthenticated()) {
     return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
@@ -10460,7 +10460,7 @@ app.get('*', (req, res) => {
 setInterval(async () => {
     try {
         console.log('🧹 [SCHEDULED] Running periodic Raid-Helper cache cleanup...');
-        const cleanedCount = await cleanupRaidHelperEventCache(30); // Clean entries older than 30 days
+        const cleanedCount = await cleanupRaidHelperEventCache(365); // Clean entries older than 1 year
         if (cleanedCount > 0) {
             console.log(`🧹 [SCHEDULED] Cleaned up ${cleanedCount} old cache entries`);
         } else {
@@ -10478,7 +10478,7 @@ const server = app.listen(PORT, () => {
   setTimeout(async () => {
       try {
           console.log('🧹 [STARTUP] Running initial Raid-Helper cache cleanup...');
-          await cleanupRaidHelperEventCache(30);
+          await cleanupRaidHelperEventCache(365);
       } catch (error) {
           console.error('❌ [STARTUP] Error during initial cache cleanup:', error);
       }
