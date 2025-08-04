@@ -3944,7 +3944,7 @@ class WoWLogsAnalyzer {
         }
     }
 
-    async archiveRPBResults() {
+    async archiveRPBResults(logUrl = null) {
         const archiveBtn = document.getElementById('archiveRpbBtn');
         
         // Disable button and show loading state (if button exists)
@@ -3973,9 +3973,12 @@ class WoWLogsAnalyzer {
 
             if (result.success) {
                 // Update RPB tracking with archive URL
-                const logInput = document.getElementById('logInput').value;
+                // Use the provided logUrl parameter if available, otherwise fall back to DOM element
+                const finalLogUrl = logUrl || document.getElementById('logInput').value;
+                console.log('📁 [ARCHIVE] Using log URL for tracking:', finalLogUrl);
+                
                 await this.updateRPBStatus(
-                    logInput.trim(), 
+                    finalLogUrl.trim(), 
                     'completed', 
                     result.url, 
                     result.sheetName
@@ -4234,20 +4237,8 @@ class WoWLogsAnalyzer {
         this.updateWorkflowStep(3, 'active', 'Creating archive backup...', '🔄');
         
         try {
-            // Temporarily set the logInput value for the archive function
-            const logInput = document.getElementById('logInput');
-            const originalValue = logInput ? logInput.value : '';
-            if (logInput) {
-                logInput.value = logUrl;
-            }
-            
-            // Call the existing archive function
-            await this.callArchiveFunction();
-            
-            // Restore original value
-            if (logInput) {
-                logInput.value = originalValue;
-            }
+            // Call the archive function with the correct logUrl
+            await this.callArchiveFunction(logUrl);
             
             this.updateWorkflowStep(3, 'completed', 'Archive created successfully', '✅');
             console.log('✅ [WORKFLOW] Step 3 completed');
@@ -4539,7 +4530,7 @@ class WoWLogsAnalyzer {
     }
 
     // Helper function to call archive function
-    async callArchiveFunction() {
+    async callArchiveFunction(logUrl = null) {
         return new Promise((resolve, reject) => {
             // Store original handlers
             const originalShowArchiveSuccess = this.showArchiveSuccess.bind(this);
@@ -4560,8 +4551,8 @@ class WoWLogsAnalyzer {
                 reject(new Error(errorMessage));
             };
             
-            // Call the existing archive function
-            this.archiveRPBResults();
+            // Call the existing archive function with the logUrl
+            this.archiveRPBResults(logUrl);
         });
     }
 
