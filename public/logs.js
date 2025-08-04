@@ -101,9 +101,12 @@ class WoWLogsAnalyzer {
                 const logDataResponse = await fetch(`/api/log-data/${activeEventSession}`);
                 const logDataResult = await logDataResponse.json();
                 
-                if (logDataResult.success && logDataResult.logId) {
-                    logUrl = `https://classic.warcraftlogs.com/reports/${logDataResult.logId}`;
-                    console.log(`✅ [PRE-FILL] Constructed log URL from log_data: ${logUrl}`);
+                if (logDataResult.success && logDataResult.hasData && logDataResult.data && logDataResult.data.length > 0) {
+                    const logId = logDataResult.data[0]?.log_id;
+                    if (logId) {
+                        logUrl = `https://classic.warcraftlogs.com/reports/${logId}`;
+                        console.log(`✅ [PRE-FILL] Constructed log URL from log_data: ${logUrl}`);
+                    }
                 }
             }
             
