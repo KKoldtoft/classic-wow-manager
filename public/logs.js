@@ -4074,14 +4074,29 @@ class WoWLogsAnalyzer {
             this.workflowState.currentStep = 4;
             await this.runWorkflowStep4(activeEventSession);
             
-            // Skip Steps 5-10 for testing (World Buffs and Frost Resistance)
-            // Mark them as skipped in the UI
-            this.updateWorkflowStep(5, 'completed', 'Skipped for testing - use manual button', '⏭️');
-            this.updateWorkflowStep(6, 'completed', 'Skipped for testing', '⏭️');
-            this.updateWorkflowStep(7, 'completed', 'Skipped for testing', '⏭️');
-            this.updateWorkflowStep(8, 'completed', 'Skipped for testing - use manual button', '⏭️');
-            this.updateWorkflowStep(9, 'completed', 'Skipped for testing', '⏭️');
-            this.updateWorkflowStep(10, 'completed', 'Skipped for testing', '⏭️');
+            // Step 5: World Buffs Analysis (moved earlier)
+            this.workflowState.currentStep = 5;
+            await this.runWorkflowStep5(input);
+            
+            // Step 8: Frost Resistance Analysis (moved earlier)
+            this.workflowState.currentStep = 8;
+            await this.runWorkflowStep8(input);
+            
+            // Step 6: Archive World Buffs (moved later to allow Google Apps Script to complete)
+            this.workflowState.currentStep = 6;
+            await this.runWorkflowStep6(input);
+            
+            // Step 9: Archive Frost Resistance (moved later to allow Google Apps Script to complete)
+            this.workflowState.currentStep = 9;
+            await this.runWorkflowStep9(input);
+            
+            // Step 7: Import World Buffs Data (moved to end)
+            this.workflowState.currentStep = 7;
+            await this.runWorkflowStep7(activeEventSession);
+            
+            // Step 10: Import Frost Resistance Data (moved to end)
+            this.workflowState.currentStep = 10;
+            await this.runWorkflowStep10(activeEventSession);
             
             // Show completion
             await this.showWorkflowComplete();
@@ -4822,47 +4837,20 @@ class WoWLogsAnalyzer {
             
             completionMessage.innerHTML = `
                 <h4 style="margin: 0 0 1rem 0;">🎉 Complete Workflow Finished!</h4>
-                <p style="margin: 0 0 1rem 0;">Core steps (1-4) completed successfully!</p>
+                <p style="margin: 0 0 1rem 0;">All 10 steps completed successfully!</p>
                 ${archiveSection}
-                <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(255, 193, 7, 0.1); border-radius: 6px; border: 1px solid var(--warning-color, #ffc107);">
-                    <h5 style="margin: 0 0 0.5rem 0; color: var(--warning-color, #ffc107);">⚠️ Testing Mode - Manual Analysis Required:</h5>
-                    <p style="margin: 0 0 1rem 0; color: var(--text-primary, #e0e0e0);">
-                        Steps 5-10 were skipped for testing. Use the buttons below to run them manually:
-                    </p>
-                    <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-                        <button id="manualWorldBuffsBtn" class="btn btn-primary" style="min-width: 200px;">
-                            🌍 Run World Buffs Analysis
-                        </button>
-                        <button id="manualFrostResBtn" class="btn btn-primary" style="min-width: 200px;">
-                            🧊 Run Frost Resistance Analysis
-                        </button>
-                    </div>
-                    <div id="manualAnalysisResults" style="margin-top: 1rem;"></div>
-                </div>
                 <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(74, 158, 255, 0.1); border-radius: 6px;">
                     <h5 style="margin: 0 0 0.5rem 0; color: var(--primary-color, #4a9eff);">💾 Database Import Status:</h5>
                     <p style="margin: 0; color: var(--text-primary, #e0e0e0);">
                         ✅ RPB data imported successfully<br>
-                        ⏭️ World Buffs: Use manual button above<br>
-                        ⏭️ Frost Resistance: Use manual button above
+                        ✅ World Buffs data imported successfully<br>
+                        ✅ Frost Resistance data imported successfully
                     </p>
                 </div>
             `;
             
             // Insert before the Characters section
             charactersSection.parentNode.insertBefore(completionMessage, charactersSection);
-            
-            // Add event listeners for manual analysis buttons
-            const manualWorldBuffsBtn = document.getElementById('manualWorldBuffsBtn');
-            const manualFrostResBtn = document.getElementById('manualFrostResBtn');
-            
-            if (manualWorldBuffsBtn) {
-                manualWorldBuffsBtn.addEventListener('click', () => this.runManualWorldBuffsAnalysis());
-            }
-            
-            if (manualFrostResBtn) {
-                manualFrostResBtn.addEventListener('click', () => this.runManualFrostResAnalysis());
-            }
         }
         
         // Restore button and input states for next workflow
@@ -4890,126 +4878,7 @@ class WoWLogsAnalyzer {
         }
     }
 
-    // Manual analysis functions for testing
-    async runManualWorldBuffsAnalysis() {
-        const resultsDiv = document.getElementById('manualAnalysisResults');
-        const btn = document.getElementById('manualWorldBuffsBtn');
-        
-        try {
-            if (btn) {
-                btn.disabled = true;
-                btn.textContent = '🔄 Running World Buffs Analysis...';
-            }
-            
-            if (resultsDiv) {
-                resultsDiv.innerHTML = '<p style="color: var(--primary-color, #4a9eff);">🌍 Starting World Buffs analysis...</p>';
-            }
 
-            const logUrl = this.workflowState.logUrl;
-            const eventId = this.workflowState.eventId;
-            
-            // Step 5: World Buffs Analysis
-            await this.runWorkflowStep5(logUrl);
-            
-            // Step 6: Archive World Buffs (with additional delay)
-            if (resultsDiv) {
-                resultsDiv.innerHTML = '<p style="color: var(--primary-color, #4a9eff);">🌍 Analysis complete! Waiting 15 seconds before creating archive...</p>';
-            }
-            
-            // Extra delay for manual testing
-            await new Promise(resolve => setTimeout(resolve, 15000));
-            
-            await this.runWorkflowStep6(logUrl);
-            
-            // Step 7: Import World Buffs Data
-            await this.runWorkflowStep7(eventId);
-            
-            if (resultsDiv) {
-                resultsDiv.innerHTML = '<p style="color: var(--success-color, #28a745);">✅ World Buffs analysis, archive, and import completed successfully!</p>';
-            }
-            
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = '✅ World Buffs Complete';
-                btn.style.backgroundColor = 'var(--success-color, #28a745)';
-            }
-            
-        } catch (error) {
-            console.error('❌ Manual World Buffs analysis failed:', error);
-            
-            if (resultsDiv) {
-                resultsDiv.innerHTML = `<p style="color: var(--error-color, #dc3545);">❌ World Buffs analysis failed: ${error.message}</p>`;
-            }
-            
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = '❌ World Buffs Failed - Retry';
-                btn.style.backgroundColor = 'var(--error-color, #dc3545)';
-            }
-        }
-    }
-
-    async runManualFrostResAnalysis() {
-        const resultsDiv = document.getElementById('manualAnalysisResults');
-        const btn = document.getElementById('manualFrostResBtn');
-        
-        try {
-            if (btn) {
-                btn.disabled = true;
-                btn.textContent = '🔄 Running Frost Resistance Analysis...';
-            }
-            
-            if (resultsDiv) {
-                const currentContent = resultsDiv.innerHTML;
-                resultsDiv.innerHTML = currentContent + '<p style="color: var(--primary-color, #4a9eff);">🧊 Starting Frost Resistance analysis...</p>';
-            }
-
-            const logUrl = this.workflowState.logUrl;
-            const eventId = this.workflowState.eventId;
-            
-            // Step 8: Frost Resistance Analysis
-            await this.runWorkflowStep8(logUrl);
-            
-            // Step 9: Archive Frost Resistance (with additional delay)
-            if (resultsDiv) {
-                const currentContent = resultsDiv.innerHTML;
-                resultsDiv.innerHTML = currentContent + '<p style="color: var(--primary-color, #4a9eff);">🧊 Analysis complete! Waiting 15 seconds before creating archive...</p>';
-            }
-            
-            // Extra delay for manual testing
-            await new Promise(resolve => setTimeout(resolve, 15000));
-            
-            await this.runWorkflowStep9(logUrl);
-            
-            // Step 10: Import Frost Resistance Data
-            await this.runWorkflowStep10(eventId);
-            
-            if (resultsDiv) {
-                const currentContent = resultsDiv.innerHTML;
-                resultsDiv.innerHTML = currentContent + '<p style="color: var(--success-color, #28a745);">✅ Frost Resistance analysis, archive, and import completed successfully!</p>';
-            }
-            
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = '✅ Frost Resistance Complete';
-                btn.style.backgroundColor = 'var(--success-color, #28a745)';
-            }
-            
-        } catch (error) {
-            console.error('❌ Manual Frost Resistance analysis failed:', error);
-            
-            if (resultsDiv) {
-                const currentContent = resultsDiv.innerHTML;
-                resultsDiv.innerHTML = currentContent + `<p style="color: var(--error-color, #dc3545);">❌ Frost Resistance analysis failed: ${error.message}</p>`;
-            }
-            
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = '❌ Frost Resistance Failed - Retry';
-                btn.style.backgroundColor = 'var(--error-color, #dc3545)';
-            }
-        }
-    }
 
     showWorkflowError(errorMessage) {
         // Restore button and input states since workflow has failed
@@ -5366,18 +5235,7 @@ class WoWLogsAnalyzer {
                 
                 if (result.status === 'COMPLETE' || (result.status && result.status.toString().startsWith('COMPLETE'))) {
                     this.worldBuffsCompleted = true;
-                    
-                    // Add 10-second delay to ensure Google Sheets finishes saving data
-                    console.log('✅ [WORLD BUFFS] Analysis completed, waiting 10 seconds for Google Sheets to finish saving...');
-                    
-                    // Update workflow step to show waiting status
-                    if (this.workflowState && this.workflowState.currentStep > 0) {
-                        this.updateWorkflowStep(5, 'active', 'Waiting for Google Sheets to finish saving...', '⏳');
-                    }
-                    
-                    setTimeout(() => {
-                        this.showWorldBuffsComplete();
-                    }, 10000); // 10 second delay
+                    this.showWorldBuffsComplete();
                     return;
                 } else if (result.status && result.status.toString().startsWith('ERROR')) {
                     this.worldBuffsCompleted = true;
