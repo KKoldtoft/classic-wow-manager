@@ -1091,4 +1091,97 @@
         max-width: 50%;
         margin: 0 auto;
     }
+}
+
+/* Buffs Container Styles */
+.buffs-container {
+    margin-bottom: 30px;
+}
+
+.rankings-section.world-buffs-section {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.rankings-section.world-buffs-section .section-header {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.rankings-section.world-buffs-section .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Make text black inside world buffs player frames */
+.rankings-section.world-buffs-section .character-name,
+.rankings-section.world-buffs-section .character-details,
+.rankings-section.world-buffs-section .buff-count,
+.rankings-section.world-buffs-section .buff-details {
+    color: #000000 !important;
+}
+
+.rankings-section.frost-resistance-section {
+    background: linear-gradient(135deg, #e0f2ff 0%, #a0c4ff 100%);
+    border: 2px solid #4a90e2;
+}
+
+.rankings-section.frost-resistance-section .section-header {
+    background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
+    color: white;
+}
+
+.rankings-section.frost-resistance-section .amount-value {
+    color: #357abd;
+    font-weight: 600;
+}
+
+/* Buff-specific styles */
+.buff-details {
+    font-size: 0.85em;
+    color: #666;
+    margin-top: 4px;
+    line-height: 1.3;
+}
+
+.missing-buffs {
+    color: #e74c3c;
+    font-style: italic;
+}
+
+.buff-count {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.buff-count.low {
+    color: #e74c3c;
+}
+
+.buff-count.medium {
+    color: #f39c12;
+}
+
+.buff-count.high {
+    color: #27ae60;
+}
+
+/* Responsive adjustments for buffs container */
+@media (max-width: 768px) {
+    .buffs-container .rankings-section {
+        margin-bottom: 20px;
+    }
+    
+    .buff-details {
+        font-size: 0.8em;
+    }
+}
+
+/* Full width World Buffs when Frost Resistance is hidden */
+.buffs-container .rankings-section.world-buffs-section:only-child {
+    width: 100%;
+}
+
+/* Negative point styling */
+.amount-value.negative {
+    color: #e74c3c !important;
+    font-weight: 700;
 } 

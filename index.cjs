@@ -5124,6 +5124,278 @@ app.get('/api/abilities-data/:eventId', async (req, res) => {
     }
 });
 
+// Get world buffs data for raid logs
+app.get('/api/world-buffs-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🌍 [WORLD BUFFS] Retrieving world buffs data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // First, get the channel ID for this event to determine buff requirements
+        let channelId = null;
+        try {
+            const eventResult = await client.query(`
+                SELECT event_data->>'channelId' as channel_id
+                FROM raid_helper_events_cache 
+                WHERE event_id = $1
+            `, [eventId]);
+            
+            if (eventResult.rows.length > 0) {
+                channelId = eventResult.rows[0].channel_id;
+                console.log(`🌍 [WORLD BUFFS] Found channel ID: ${channelId} for event: ${eventId}`);
+            }
+        } catch (err) {
+            console.warn(`🌍 [WORLD BUFFS] Could not determine channel ID for event ${eventId}:`, err.message);
+        }
+        
+        // Base required buffs (without DMF)
+        let baseRequiredBuffs = 5; // Ony, Rend, ZG, Songflower, DM Tribute
+        if (channelId === '1202206206782091264') {
+            baseRequiredBuffs = 4; // Still 4 for this channel
+        }
+        
+        // We'll determine final required buffs after checking DMF count
+        let requiredBuffs = baseRequiredBuffs;
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_players_buffs'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [WORLD BUFFS] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [], requiredBuffs });
+        }
+        
+        // First get summary data per character (amount_summary should be the same for all buffs of a character)
+        const summaryResult = await client.query(`
+            SELECT DISTINCT ON (character_name)
+                character_name,
+                amount_summary,
+                score_summary
+            FROM sheet_players_buffs 
+            WHERE event_id = $1 
+            AND analysis_type = 'world_buffs'
+            AND amount_summary IS NOT NULL
+            ORDER BY character_name
+        `, [eventId]);
+        
+        // Then get all buff details
+        const buffsResult = await client.query(`
+            SELECT 
+                character_name,
+                buff_name,
+                buff_value,
+                color_status,
+                background_color
+            FROM sheet_players_buffs 
+            WHERE event_id = $1 
+            AND analysis_type = 'world_buffs'
+            ORDER BY character_name, buff_name
+        `, [eventId]);
+        
+        // Debug: Log actual buff names to understand the data structure
+        const uniqueBuffNames = [...new Set(buffsResult.rows.map(row => row.buff_name))];
+        console.log(`🌍 [WORLD BUFFS] Unique buff names in database:`, uniqueBuffNames);
+        
+        // Also get character class information from log_data if available
+        const classResult = await client.query(`
+            SELECT DISTINCT character_name, character_class
+            FROM log_data
+            WHERE event_id = $1
+        `, [eventId]);
+        
+        console.log(`🌍 [WORLD BUFFS] Found ${buffsResult.rows.length} buff records for event: ${eventId}`);
+        console.log(`🌍 [WORLD BUFFS] Found ${summaryResult.rows.length} characters with summary data for event: ${eventId}`);
+        console.log(`🌍 [WORLD BUFFS] Found ${classResult.rows.length} characters with class data (log_data) for event: ${eventId}`);
+        
+        // Create character class lookup
+        const characterClasses = {};
+        classResult.rows.forEach(row => {
+            characterClasses[row.character_name] = row.character_class;
+        });
+        
+        // Create character summary lookup
+        const characterSummaries = {};
+        summaryResult.rows.forEach(row => {
+            characterSummaries[row.character_name] = {
+                amount_summary: row.amount_summary,
+                score_summary: row.score_summary
+            };
+        });
+        
+        // Group by character and calculate points
+        const characterData = {};
+        
+        // Initialize characters from summary data - but only for characters who were in the raid (have log_data)
+        summaryResult.rows.forEach(row => {
+            const character_name = row.character_name;
+            
+            // Only include characters who actually participated in the raid
+            if (characterClasses[character_name]) {
+                characterData[character_name] = {
+                    character_name,
+                    character_class: characterClasses[character_name],
+                    buffs: {},
+                    total_buffs: 0,
+                    missing_buffs: [],
+                    amount_summary: row.amount_summary,
+                    score_summary: row.score_summary,
+                    points: 0
+                };
+            }
+        });
+        
+        // Add buff details
+        buffsResult.rows.forEach(row => {
+            const { character_name, buff_name, buff_value, color_status, background_color } = row;
+            
+            // Only process if we have summary data for this character
+            if (characterData[character_name]) {
+                characterData[character_name].buffs[buff_name] = {
+                    buff_value,
+                    color_status,
+                    background_color
+                };
+            }
+        });
+        
+        // First pass: Check if DMF should be included (10+ people must have it)
+        let dmfCount = 0;
+        Object.values(characterData).forEach(char => {
+            if (char.buffs['DMF']) {
+                dmfCount++;
+            }
+        });
+        
+        const includeDMF = dmfCount >= 10;
+        
+        // Update required buffs if DMF is included
+        if (includeDMF) {
+            requiredBuffs = baseRequiredBuffs + 1; // Add DMF to required count
+        }
+        
+        console.log(`🌍 [WORLD BUFFS] DMF count: ${dmfCount}, included in calculations: ${includeDMF}`);
+        console.log(`🌍 [WORLD BUFFS] Final required buffs: ${requiredBuffs} (base: ${baseRequiredBuffs}, +DMF: ${includeDMF})`);
+        
+        // Calculate points and missing buffs for each character
+        const finalData = Object.values(characterData).map(char => {
+            // Extract current buffs from amount_summary (format: "6 / 6" or "5/ 6")
+            let currentBuffs = 0;
+            if (char.amount_summary) {
+                const match = char.amount_summary.match(/^(\d+)/);
+                if (match) {
+                    currentBuffs = parseInt(match[1]) || 0;
+                }
+                // Log parsing for debugging
+                if (currentBuffs === 0) {
+                    console.log(`🌍 [WORLD BUFFS] ${char.character_name}: amount_summary="${char.amount_summary}" -> parsed buffs=${currentBuffs}`);
+                }
+            } else {
+                console.log(`🌍 [WORLD BUFFS] ${char.character_name}: No amount_summary data`);
+            }
+            
+            char.total_buffs = currentBuffs;
+            
+            // Calculate penalty points for missing buffs
+            if (currentBuffs < requiredBuffs) {
+                const missingCount = requiredBuffs - currentBuffs;
+                char.points = missingCount * -10; // -10 points per missing buff
+            } else {
+                char.points = 0; // No penalty if they have enough buffs
+            }
+            
+            // Debug: Show all buffs for this character
+            console.log(`🌍 [WORLD BUFFS] ${char.character_name} has buffs:`, Object.keys(char.buffs));
+            
+            // Determine missing buffs based on actual database buff names
+            // Group related buffs together (DM Tribute has sub-buffs)
+            let buffCategories = {
+                'Ony': ['Nef/Ony'],
+                'Rend': ['Rend'],
+                'ZG': ['ZG heart'],
+                'Songflower': ['Songflower'],
+                'DM Tribute': ['Mol\'dar', 'Fengus', 'Slip\'kik']
+            };
+            
+            // Only include DMF if 10+ people have it
+            if (includeDMF) {
+                buffCategories['DMF'] = ['DMF'];
+            }
+            
+            char.missing_buffs = [];
+            
+            // Check each buff category
+            for (const [categoryName, buffNames] of Object.entries(buffCategories)) {
+                let hasAnyBuff = false;
+                
+                // Check if player has any buff from this category
+                for (const buffName of buffNames) {
+                    if (char.buffs[buffName]) {
+                        hasAnyBuff = true;
+                        break;
+                    }
+                }
+                
+                // If no buffs from this category, mark as missing
+                if (!hasAnyBuff) {
+                    char.missing_buffs.push(categoryName);
+                }
+            }
+            
+            console.log(`🌍 [WORLD BUFFS] ${char.character_name} missing buffs:`, char.missing_buffs);
+            
+            return char;
+        });
+        
+        // Final deduplication step (ensure no character appears twice)
+        const uniqueCharacters = new Map();
+        finalData.forEach(char => {
+            if (!uniqueCharacters.has(char.character_name)) {
+                uniqueCharacters.set(char.character_name, char);
+            }
+        });
+        
+        const uniqueFinalData = Array.from(uniqueCharacters.values());
+        
+        // Sort by points (least negative first, then by total buffs)
+        uniqueFinalData.sort((a, b) => {
+            if (b.points !== a.points) {
+                return b.points - a.points; // Higher points first (less negative)
+            }
+            return b.total_buffs - a.total_buffs; // Then by total buffs
+        });
+        
+        console.log(`🌍 [WORLD BUFFS] Processed ${uniqueFinalData.length} characters with world buffs data (after deduplication)`);
+        console.log(`🌍 [WORLD BUFFS] Character names in final data:`, uniqueFinalData.map(c => c.character_name));
+        console.log(`🌍 [WORLD BUFFS] Final data sample:`, uniqueFinalData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: uniqueFinalData,
+            eventId: eventId,
+            requiredBuffs: requiredBuffs,
+            channelId: channelId
+        });
+        
+    } catch (error) {
+        console.error('❌ [WORLD BUFFS] Error retrieving world buffs data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving world buffs data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // Get reward settings
 app.get('/api/admin/reward-settings', async (req, res) => {
     let client;

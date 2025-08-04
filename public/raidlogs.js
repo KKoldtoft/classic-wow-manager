@@ -37,6 +37,9 @@ class RaidLogsManager {
         this.playerStreaksData = [];
         this.guildMembersData = [];
         this.rewardSettings = {};
+        this.worldBuffsData = [];
+        this.worldBuffsRequiredBuffs = 6;
+        this.worldBuffsChannelId = null;
         this.specData = {};
         this.initializeEventListeners();
         this.loadSpecData();
@@ -86,7 +89,8 @@ class RaidLogsManager {
                 this.fetchDecursesData(),
                 this.fetchPlayerStreaksData(),
                 this.fetchGuildMembersData(),
-                this.fetchRewardSettings()
+                this.fetchRewardSettings(),
+                this.fetchWorldBuffsData()
             ]);
             this.displayRaidLogs();
         } catch (error) {
@@ -200,6 +204,36 @@ class RaidLogsManager {
                 healing: { points_array: [80, 65, 60, 55, 40, 35, 30, 20, 15, 10] },
                 abilities: { calculation_divisor: 10, max_points: 20 }
             };
+        }
+    }
+
+    async fetchWorldBuffsData() {
+        console.log(`🌍 Fetching world buffs data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/world-buffs-data/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch world buffs data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch world buffs data');
+            }
+            
+            this.worldBuffsData = result.data || [];
+            this.worldBuffsRequiredBuffs = result.requiredBuffs || 6;
+            this.worldBuffsChannelId = result.channelId;
+            console.log(`🌍 Loaded world buffs data:`, this.worldBuffsData);
+            console.log(`🌍 Required buffs for this event: ${this.worldBuffsRequiredBuffs}`);
+            
+        } catch (error) {
+            console.error('Error fetching world buffs data:', error);
+            // Don't fail the whole page if world buffs fail - just show empty data
+            this.worldBuffsData = [];
+            this.worldBuffsRequiredBuffs = 6;
         }
     }
 
@@ -822,6 +856,7 @@ class RaidLogsManager {
         this.displayShamanHealers(healers);
         this.displayPriestHealers(healers);
         this.displayDruidHealers(healers);
+        this.displayWorldBuffsRankings(this.worldBuffsData);
         this.displayAbilitiesRankings(this.abilitiesData);
         this.displayManaPotionsRankings(this.manaPotionsData);
         this.displayRunesRankings(this.runesData);
@@ -1462,6 +1497,109 @@ class RaidLogsManager {
         if (headerElement && this.abilitiesSettings) {
             const { calculation_divisor, max_points } = this.abilitiesSettings;
             headerElement.textContent = `Ranked by calculated points (abilities used × avg targets ÷ ${calculation_divisor}, max ${max_points})`;
+        }
+    }
+
+    displayWorldBuffsRankings(players) {
+        const container = document.getElementById('world-buffs-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('world-buffs');
+
+        // Filter to only show players missing at least one buff
+        const playersWithMissingBuffs = players.filter(player => 
+            player.missing_buffs && player.missing_buffs.length > 0
+        );
+
+        // Sort players by points (highest first, least negative), then by total buffs
+        const sortedPlayers = [...playersWithMissingBuffs].sort((a, b) => {
+            if (b.points !== a.points) {
+                return b.points - a.points; // Higher points first (less negative)
+            }
+            return b.total_buffs - a.total_buffs; // Then by total buffs
+        });
+
+        // Calculate max buffs for progress bar (highest buff count in the raid)
+        const maxBuffsInRaid = Math.max(...players.map(p => p.total_buffs), 1);
+
+        if (sortedPlayers.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-magic"></i>
+                    <p>All players have their required buffs!</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Update header text based on required buffs
+        this.updateWorldBuffsHeader();
+
+        console.log(`🌍 [WORLD BUFFS] Displaying ${sortedPlayers.length} players with missing buffs (max buffs in raid: ${maxBuffsInRaid})`);
+        
+        container.innerHTML = sortedPlayers.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class || 'unknown');
+            
+            // Calculate fill percentage based on buff count vs max in raid (for progress bar)
+            const fillPercentage = Math.max(5, (player.total_buffs / maxBuffsInRaid) * 100);
+            
+            console.log(`🌍 [WORLD BUFFS] ${player.character_name}: class=${player.character_class} -> normalized=${characterClass}, buffs=${player.total_buffs}/${maxBuffsInRaid}, fill=${fillPercentage}%`);
+            
+            // Determine buff count status for styling
+            let buffCountClass = 'buff-count';
+            if (player.total_buffs < this.worldBuffsRequiredBuffs - 2) {
+                buffCountClass += ' low';
+            } else if (player.total_buffs < this.worldBuffsRequiredBuffs) {
+                buffCountClass += ' medium';
+            } else {
+                buffCountClass += ' high';
+            }
+
+            // Create missing buffs text
+            let missingBuffsText = '';
+            if (player.missing_buffs && player.missing_buffs.length > 0) {
+                const shortNames = player.missing_buffs.map(buff => {
+                    // Map category names to display names
+                    switch(buff) {
+                        case 'Ony': return 'Ony';
+                        case 'Rend': return 'Rend';
+                        case 'ZG': return 'ZG';
+                        case 'Songflower': return 'Songflower';
+                        case 'DM Tribute': return 'DM Tribute';
+                        case 'DMF': return 'DMF';
+                        default: return buff;
+                    }
+                });
+                missingBuffsText = `Missing: ${shortNames.join(', ')}`;
+            }
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name class-${characterClass}">
+                            ${player.character_name}
+                        </div>
+                        <div class="character-details">
+                            <div class="${buffCountClass}">${player.total_buffs} buffs</div>
+                            ${missingBuffsText ? `<div class="buff-details missing-buffs">${missingBuffsText}</div>` : ''}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="Points: ${player.points} (${player.points < 0 ? player.points / -10 : 0} missing buffs)">
+                        <div class="amount-value ${player.points < 0 ? 'negative' : ''}">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updateWorldBuffsHeader() {
+        const headerElement = document.getElementById('world-buffs-header-text');
+        if (headerElement && this.worldBuffsRequiredBuffs) {
+            headerElement.textContent = `Points for missing world buffs (-10 per buff below ${this.worldBuffsRequiredBuffs})`;
         }
     }
 
