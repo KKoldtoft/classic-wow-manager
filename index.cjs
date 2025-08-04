@@ -5209,6 +5209,130 @@ app.get('/api/debug/check-buffs-table/:eventId?', async (req, res) => {
     }
 });
 
+// Temporary debug endpoint to inspect Google Sheet CSV data
+app.get('/api/debug/inspect-world-buffs-sheet/:eventId', async (req, res) => {
+  let client;
+  try {
+    const { eventId } = req.params;
+    client = await pool.connect();
+    
+    // First, get the Google Sheet URL for this event
+    const trackingResult = await client.query(`
+      SELECT archive_url, log_url, status
+      FROM rpb_tracking 
+      WHERE event_id = $1 AND analysis_type = 'world_buffs'
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `, [eventId]);
+
+    if (trackingResult.rows.length === 0) {
+      return res.json({
+        success: false,
+        message: 'No world buffs tracking found for this event',
+        eventId: eventId
+      });
+    }
+
+    const sheetUrl = trackingResult.rows[0].archive_url;
+    const status = trackingResult.rows[0].status;
+    
+    // Extract sheet ID from URL
+    const sheetIdMatch = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (!sheetIdMatch) {
+      return res.json({
+        success: false,
+        message: 'Invalid Google Sheets URL format',
+        sheetUrl: sheetUrl
+      });
+    }
+
+    const sheetId = sheetIdMatch[1];
+    
+    // Try to get CSV data
+    const csvUrls = [
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`,
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=0`,
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&single=true&gid=0`
+    ];
+
+    let csvResponse = null;
+    let successfulUrl = null;
+
+    for (const url of csvUrls) {
+      try {
+        console.log(`🔍 [DEBUG SHEET] Trying CSV URL: ${url}`);
+        csvResponse = await axios.get(url, { timeout: 30000 });
+        successfulUrl = url;
+        break;
+      } catch (error) {
+        console.log(`🔍 [DEBUG SHEET] Failed URL ${url}:`, error.message);
+        continue;
+      }
+    }
+
+    if (!csvResponse) {
+      return res.json({
+        success: false,
+        message: 'Unable to fetch CSV data from any URL',
+        sheetUrl: sheetUrl,
+        triedUrls: csvUrls
+      });
+    }
+
+    const csvData = csvResponse.data;
+    
+    // Parse first few rows to understand structure
+    const rows = csvData.split('\n').slice(0, 15); // First 15 rows only
+    const parsedRows = rows.map((row, index) => {
+      const cells = row.split(',').map(cell => cell.trim().replace(/"/g, ''));
+      return {
+        rowNumber: index + 1,
+        cellCount: cells.length,
+        cells: cells.slice(0, 12) // First 12 columns only
+      };
+    });
+
+    // Check for player names in column B (index 1)
+    const playerNames = [];
+    for (let i = 4; i < Math.min(rows.length, 20); i++) { // Check rows 5-20
+      const cells = rows[i].split(',').map(cell => cell.trim().replace(/"/g, ''));
+      if (cells.length > 1 && cells[1] && cells[1].trim() !== '') {
+        playerNames.push({
+          row: i + 1,
+          name: cells[1].trim(),
+          amountSummary: cells[2] || '',
+          scoreSummary: cells[3] || ''
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      debug: {
+        eventId: eventId,
+        sheetUrl: sheetUrl,
+        status: status,
+        successfulCsvUrl: successfulUrl,
+        csvLength: csvData.length,
+        totalRows: csvData.split('\n').length,
+        firstFifteenRows: parsedRows,
+        playersFound: playerNames.length,
+        playerSample: playerNames.slice(0, 5)
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [DEBUG SHEET] Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error inspecting sheet',
+      error: error.message
+    });
+  } finally {
+    if (client) client.release();
+  }
+});
+
 // Get world buffs data for raid logs
 app.get('/api/world-buffs-data/:eventId', async (req, res) => {
     const { eventId } = req.params;
