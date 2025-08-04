@@ -5155,9 +5155,11 @@ app.get('/api/world-buffs-data/:eventId', async (req, res) => {
         }
         
         // Base required buffs (without DMF)
-        let baseRequiredBuffs = 5; // Ony, Rend, ZG, Songflower, DM Tribute
+        let baseRequiredBuffs = 5; // Default: Ony, Rend, ZG, Songflower, DM Tribute
         if (channelId === '1202206206782091264') {
-            baseRequiredBuffs = 4; // Still 4 for this channel
+            baseRequiredBuffs = 4; // 4 buffs for this channel
+        } else if (channelId === '1184627341893316649' || channelId === '1195562433926934658') {
+            baseRequiredBuffs = 6; // 6 buffs for these channels
         }
         
         // We'll determine final required buffs after checking DMF count
@@ -5384,7 +5386,8 @@ app.get('/api/world-buffs-data/:eventId', async (req, res) => {
             data: uniqueFinalData,
             eventId: eventId,
             requiredBuffs: requiredBuffs,
-            channelId: channelId
+            channelId: channelId,
+            includeDMF: includeDMF
         });
         
     } catch (error) {

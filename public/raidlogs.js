@@ -226,14 +226,17 @@ class RaidLogsManager {
             this.worldBuffsData = result.data || [];
             this.worldBuffsRequiredBuffs = result.requiredBuffs || 6;
             this.worldBuffsChannelId = result.channelId;
+            this.worldBuffsIncludeDMF = result.includeDMF || false;
             console.log(`🌍 Loaded world buffs data:`, this.worldBuffsData);
             console.log(`🌍 Required buffs for this event: ${this.worldBuffsRequiredBuffs}`);
+            console.log(`🌍 Include DMF in missing buffs: ${this.worldBuffsIncludeDMF}`);
             
         } catch (error) {
             console.error('Error fetching world buffs data:', error);
             // Don't fail the whole page if world buffs fail - just show empty data
             this.worldBuffsData = [];
             this.worldBuffsRequiredBuffs = 6;
+            this.worldBuffsIncludeDMF = false;
         }
     }
 
@@ -1505,9 +1508,9 @@ class RaidLogsManager {
         const section = container.closest('.rankings-section');
         section.classList.add('world-buffs');
 
-        // Filter to only show players missing at least one buff
+        // Filter to only show players with fewer than 6 buffs
         const playersWithMissingBuffs = players.filter(player => 
-            player.missing_buffs && player.missing_buffs.length > 0
+            player.total_buffs < 6
         );
 
         // Sort players by points (highest first, least negative), then by total buffs
@@ -1525,7 +1528,7 @@ class RaidLogsManager {
             container.innerHTML = `
                 <div class="rankings-empty">
                     <i class="fas fa-magic"></i>
-                    <p>All players have their required buffs!</p>
+                    <p>All players have 6+ buffs!</p>
                 </div>
             `;
             return;
@@ -1558,19 +1561,30 @@ class RaidLogsManager {
             // Create missing buffs text
             let missingBuffsText = '';
             if (player.missing_buffs && player.missing_buffs.length > 0) {
-                const shortNames = player.missing_buffs.map(buff => {
-                    // Map category names to display names
-                    switch(buff) {
-                        case 'Ony': return 'Ony';
-                        case 'Rend': return 'Rend';
-                        case 'ZG': return 'ZG';
-                        case 'Songflower': return 'Songflower';
-                        case 'DM Tribute': return 'DM Tribute';
-                        case 'DMF': return 'DMF';
-                        default: return buff;
-                    }
-                });
-                missingBuffsText = `Missing: ${shortNames.join(', ')}`;
+                const shortNames = player.missing_buffs
+                    .filter(buff => {
+                        // Only show DMF as missing if at least 10 players have it
+                        if (buff === 'DMF') {
+                            return this.worldBuffsIncludeDMF;
+                        }
+                        return true;
+                    })
+                    .map(buff => {
+                        // Map category names to display names
+                        switch(buff) {
+                            case 'Ony': return 'Ony';
+                            case 'Rend': return 'Rend';
+                            case 'ZG': return 'ZG';
+                            case 'Songflower': return 'Songflower';
+                            case 'DM Tribute': return 'DM Tribute';
+                            case 'DMF': return 'DMF';
+                            default: return buff;
+                        }
+                    });
+                
+                if (shortNames.length > 0) {
+                    missingBuffsText = `Missing: ${shortNames.join(', ')}`;
+                }
             }
 
             return `
