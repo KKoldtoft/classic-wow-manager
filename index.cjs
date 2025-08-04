@@ -2196,7 +2196,7 @@ app.post('/api/logs/cla-backup', async (req, res) => {
       });
     }
 
-    // Same Web App URL as World Buffs (they're in the same Google Apps Script project)
+    // World Buffs backup - calls the World Buffs spreadsheet (with updated backup code)
     const claBackupWebAppUrl = 'https://script.google.com/macros/s/AKfycbxRPRrFzI_smMRseNOU7b7DhDRoYvN_96qUKOqfHRpCvQf-JSXDxC-3VePlRugWSkjS/exec';
     
     // Prepare request data
@@ -2267,7 +2267,7 @@ app.post('/api/logs/frost-res', async (req, res) => {
       });
     }
 
-    // Frost Res Web App URL (different Google Apps Script project)
+    // Frost Resistance backup - calls the Frost Resistance spreadsheet (with updated backup code)
     const frostResWebAppUrl = 'https://script.google.com/macros/s/AKfycbwM3z9P59e4BFltpN8EyIj-O_vP8--gdSCjFN1lK0bEzMIKoK6YBRFLX6RPw6Mep0dO/exec';
     
     // Prepare request data
