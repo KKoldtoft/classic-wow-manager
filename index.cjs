@@ -5124,6 +5124,91 @@ app.get('/api/abilities-data/:eventId', async (req, res) => {
     }
 });
 
+// Debug endpoint to check table existence and data
+app.get('/api/debug/check-buffs-table/:eventId?', async (req, res) => {
+    const { eventId } = req.params;
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_players_buffs'
+            );
+        `);
+        
+        let result = {
+            tableExists: tableCheck.rows[0].exists,
+            totalRows: 0,
+            eventRows: 0,
+            sampleData: [],
+            uniqueEventIds: [],
+            uniqueBuffNames: []
+        };
+        
+        if (result.tableExists) {
+            // Count total rows
+            const totalCount = await client.query('SELECT COUNT(*) as count FROM sheet_players_buffs');
+            result.totalRows = parseInt(totalCount.rows[0].count);
+            
+            // Get unique event IDs
+            const eventIds = await client.query(`
+                SELECT DISTINCT event_id, COUNT(*) as row_count 
+                FROM sheet_players_buffs 
+                WHERE analysis_type = 'world_buffs'
+                GROUP BY event_id 
+                ORDER BY row_count DESC 
+                LIMIT 10
+            `);
+            result.uniqueEventIds = eventIds.rows;
+            
+            // Get unique buff names
+            const buffNames = await client.query(`
+                SELECT DISTINCT buff_name, COUNT(*) as count 
+                FROM sheet_players_buffs 
+                WHERE analysis_type = 'world_buffs'
+                GROUP BY buff_name 
+                ORDER BY count DESC
+            `);
+            result.uniqueBuffNames = buffNames.rows;
+            
+            // If eventId provided, get specific data
+            if (eventId) {
+                const eventData = await client.query(`
+                    SELECT COUNT(*) as count 
+                    FROM sheet_players_buffs 
+                    WHERE event_id = $1 AND analysis_type = 'world_buffs'
+                `, [eventId]);
+                result.eventRows = parseInt(eventData.rows[0].count);
+                
+                // Get sample data for this event
+                const sampleData = await client.query(`
+                    SELECT character_name, buff_name, amount_summary, score_summary
+                    FROM sheet_players_buffs 
+                    WHERE event_id = $1 AND analysis_type = 'world_buffs'
+                    ORDER BY character_name, buff_name
+                    LIMIT 20
+                `, [eventId]);
+                result.sampleData = sampleData.rows;
+            }
+        }
+        
+        res.json({ success: true, debug: result });
+        
+    } catch (error) {
+        console.error('❌ Debug check error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // Get world buffs data for raid logs
 app.get('/api/world-buffs-data/:eventId', async (req, res) => {
     const { eventId } = req.params;
