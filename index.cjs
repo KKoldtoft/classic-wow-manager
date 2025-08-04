@@ -5288,6 +5288,7 @@ app.get('/api/world-buffs-data/:eventId', async (req, res) => {
         
         console.log(`🌍 [WORLD BUFFS] DMF count: ${dmfCount}, included in calculations: ${includeDMF}`);
         console.log(`🌍 [WORLD BUFFS] Final required buffs: ${requiredBuffs} (base: ${baseRequiredBuffs}, +DMF: ${includeDMF})`);
+        console.log(`🌍 [WORLD BUFFS] Characters with DMF:`, Object.keys(characterData).filter(name => characterData[name].buffs['DMF']));
         
         // Calculate points and missing buffs for each character
         const finalData = Object.values(characterData).map(char => {
@@ -5380,6 +5381,7 @@ app.get('/api/world-buffs-data/:eventId', async (req, res) => {
         console.log(`🌍 [WORLD BUFFS] Processed ${uniqueFinalData.length} characters with world buffs data (after deduplication)`);
         console.log(`🌍 [WORLD BUFFS] Character names in final data:`, uniqueFinalData.map(c => c.character_name));
         console.log(`🌍 [WORLD BUFFS] Final data sample:`, uniqueFinalData.slice(0, 2));
+        console.log(`🌍 [WORLD BUFFS] API Response - includeDMF: ${includeDMF}, requiredBuffs: ${requiredBuffs}`);
         
         res.json({ 
             success: true, 

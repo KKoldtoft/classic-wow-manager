@@ -1561,10 +1561,12 @@ class RaidLogsManager {
             // Create missing buffs text
             let missingBuffsText = '';
             if (player.missing_buffs && player.missing_buffs.length > 0) {
+                console.log(`🌍 [FRONTEND] ${player.character_name} has missing_buffs:`, player.missing_buffs, 'includeDMF:', this.worldBuffsIncludeDMF);
                 const shortNames = player.missing_buffs
                     .filter(buff => {
                         // Only show DMF as missing if at least 10 players have it
                         if (buff === 'DMF') {
+                            console.log(`🌍 [FRONTEND] Player ${player.character_name} missing DMF, includeDMF: ${this.worldBuffsIncludeDMF}`);
                             return this.worldBuffsIncludeDMF;
                         }
                         return true;
