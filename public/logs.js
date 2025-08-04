@@ -5233,7 +5233,18 @@ class WoWLogsAnalyzer {
                 
                 if (result.status === 'COMPLETE' || (result.status && result.status.toString().startsWith('COMPLETE'))) {
                     this.worldBuffsCompleted = true;
-                    this.showWorldBuffsComplete();
+                    
+                    // Add 10-second delay to ensure Google Sheets finishes saving data
+                    console.log('✅ [WORLD BUFFS] Analysis completed, waiting 10 seconds for Google Sheets to finish saving...');
+                    
+                    // Update workflow step to show waiting status
+                    if (this.workflowState && this.workflowState.currentStep > 0) {
+                        this.updateWorkflowStep(5, 'active', 'Waiting for Google Sheets to finish saving...', '⏳');
+                    }
+                    
+                    setTimeout(() => {
+                        this.showWorldBuffsComplete();
+                    }, 10000); // 10 second delay
                     return;
                 } else if (result.status && result.status.toString().startsWith('ERROR')) {
                     this.worldBuffsCompleted = true;
