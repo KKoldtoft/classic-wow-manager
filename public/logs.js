@@ -556,6 +556,10 @@ class WoWLogsAnalyzer {
         document.getElementById('loadingIndicator').style.display = 'block';
         document.getElementById('errorDisplay').style.display = 'none';
         document.getElementById('logData').style.display = 'none';
+        const charactersContainer = document.getElementById('charactersContainer');
+        if (charactersContainer) charactersContainer.style.display = 'none';
+        const otherLogData = document.getElementById('otherLogData');
+        if (otherLogData) otherLogData.style.display = 'none';
     }
 
     hideLoading() {
@@ -567,12 +571,18 @@ class WoWLogsAnalyzer {
         document.getElementById('errorMessage').textContent = message;
         document.getElementById('errorDisplay').style.display = 'block';
         document.getElementById('logData').style.display = 'none';
+        const charactersContainer = document.getElementById('charactersContainer');
+        if (charactersContainer) charactersContainer.style.display = 'none';
+        const otherLogData = document.getElementById('otherLogData');
+        if (otherLogData) otherLogData.style.display = 'none';
     }
 
     showData() {
         this.hideLoading();
         document.getElementById('errorDisplay').style.display = 'none';
         document.getElementById('logData').style.display = 'block';
+        document.getElementById('charactersContainer').style.display = 'block';
+        document.getElementById('otherLogData').style.display = 'block';
     }
 
     async makeApiCall(endpoint) {
@@ -3096,7 +3106,29 @@ class WoWLogsAnalyzer {
         console.log(`✅ Updated row ${rowId} to show confirmed match: ${characterName}`);
         
         // Update roster validation in real-time
-        setTimeout(() => this.updateRosterValidation(), 100);
+        setTimeout(() => {
+            this.updateRosterValidation();
+            this.updateWorkflowStep1Status();
+        }, 100);
+    }
+
+    // Real-time update for workflow step 1 status
+    updateWorkflowStep1Status() {
+        // Only update if we're currently in workflow mode and step 1 has been started
+        const step1Element = document.getElementById('step1Progress');
+        if (!step1Element || !step1Element.classList.contains('completed')) {
+            return; // Don't update if step 1 hasn't started or completed yet
+        }
+
+        const unmatchedCount = this.countUnmatchedPlayers();
+        
+        if (unmatchedCount > 0) {
+            const unmatchedPlayers = this.getUnmatchedPlayersList();
+            const playerList = unmatchedPlayers.slice(0, 3).join(', ') + (unmatchedPlayers.length > 3 ? `, and ${unmatchedPlayers.length - 3} more` : '');
+            this.updateWorkflowStep(1, 'completed', `⚠️ ${unmatchedCount} players not matched: ${playerList}`, '⚠️');
+        } else {
+            this.updateWorkflowStep(1, 'completed', 'All players matched successfully', '✅');
+        }
     }
 
     showPlayerSearchModal(rowId, logsName, logsClass) {
@@ -3800,6 +3832,10 @@ class WoWLogsAnalyzer {
         `;
         document.getElementById('errorDisplay').style.display = 'none';
         document.getElementById('logData').style.display = 'none';
+        const charactersContainer = document.getElementById('charactersContainer');
+        if (charactersContainer) charactersContainer.style.display = 'none';
+        const otherLogData = document.getElementById('otherLogData');
+        if (otherLogData) otherLogData.style.display = 'none';
     }
 
     updateRPBProgressByTime(elapsedMs, progressPercent) {
@@ -4243,7 +4279,24 @@ class WoWLogsAnalyzer {
             
             if (!archiveUrl) {
                 console.error('❌ [WORKFLOW] Step 4: No archive URL found in tracking table');
-                throw new Error('No archive URL found from previous steps. Check that step 3 (archive) completed successfully.');
+                
+                // Try to wait a bit and retry once in case the archive step is still finishing
+                console.log('🔄 [WORKFLOW] Step 4: Waiting 3 seconds and retrying...');
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                
+                const retryArchiveUrl = await this.getArchiveUrlFromTracking(eventId);
+                console.log('🔍 [WORKFLOW] Step 4: Retry - Archive URL found:', retryArchiveUrl);
+                
+                if (!retryArchiveUrl) {
+                    throw new Error('No archive URL found from previous steps. Check that step 3 (archive) completed successfully.');
+                }
+                
+                // Use the retry URL and complete the step
+                console.log('📥 [WORKFLOW] Step 4: Calling import function with retry URL:', retryArchiveUrl);
+                await this.callImportFunction(retryArchiveUrl, eventId);
+                this.updateWorkflowStep(4, 'completed', 'Data imported successfully', '✅');
+                console.log('✅ [WORKFLOW] Step 4 completed');
+                return;
             }
 
             // Call the import function
