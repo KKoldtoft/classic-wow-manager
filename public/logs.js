@@ -5075,7 +5075,8 @@ class WoWLogsAnalyzer {
         try {
             console.log('🚀 [WORLD BUFFS] Starting world buffs processing for:', logUrl);
             
-            const response = await fetch('/api/logs/world-buffs', {
+            // Start the processing without waiting for completion to avoid Heroku timeout
+            const processingPromise = fetch('/api/logs/world-buffs', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -5086,13 +5087,35 @@ class WoWLogsAnalyzer {
                 })
             });
 
-            const result = await response.json();
-            
-            if (!result.success) {
-                throw new Error('Failed to start processing: ' + result.error);
+            // Set a reasonable timeout for the initial request
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Request timeout - continuing with polling')), 25000) // 25 seconds
+            );
+
+            try {
+                // Try to get the response, but don't wait too long
+                const response = await Promise.race([processingPromise, timeoutPromise]);
+                const result = await response.json();
+                
+                if (!result.success) {
+                    console.warn('⚠️ [WORLD BUFFS] Initial request returned error, will continue polling:', result.error);
+                } else {
+                    console.log('✅ [WORLD BUFFS] Processing started successfully');
+                }
+            } catch (error) {
+                // If the initial request times out or fails, that's okay - the processing might still be running
+                if (error.message.includes('timeout') || error.message.includes('503') || error.message.includes('Service Unavailable')) {
+                    console.log('⚠️ [WORLD BUFFS] Initial request timed out (likely Heroku timeout), continuing with polling...');
+                    // Update workflow status to indicate we're handling the timeout gracefully
+                    if (this.workflowState && this.workflowState.currentStep === 5) {
+                        this.updateWorkflowStep(5, 'active', 'Processing (handling server timeout)...', '🔄', true);
+                    }
+                } else {
+                    console.log('⚠️ [WORLD BUFFS] Initial request failed, continuing with polling...', error.message);
+                }
             }
             
-            console.log('✅ [WORLD BUFFS] Processing started');
+            console.log('✅ [WORLD BUFFS] Processing initiated, will poll for completion');
             
         } catch (error) {
             console.error('❌ [WORLD BUFFS] Error starting processing:', error);
@@ -5493,7 +5516,8 @@ class WoWLogsAnalyzer {
         try {
             console.log('🚀 [FROST RES] Starting frost resistance processing...');
             
-            const response = await fetch('/api/logs/frost-res', {
+            // Start the processing without waiting for completion to avoid Heroku timeout
+            const processingPromise = fetch('/api/logs/frost-res', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -5504,13 +5528,35 @@ class WoWLogsAnalyzer {
                 })
             });
 
-            const result = await response.json();
-            
-            if (!result.success) {
-                throw new Error(result.error || 'Failed to start frost resistance processing');
+            // Set a reasonable timeout for the initial request
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Request timeout - continuing with polling')), 25000) // 25 seconds
+            );
+
+            try {
+                // Try to get the response, but don't wait too long
+                const response = await Promise.race([processingPromise, timeoutPromise]);
+                const result = await response.json();
+                
+                if (!result.success) {
+                    console.warn('⚠️ [FROST RES] Initial request returned error, will continue polling:', result.error);
+                } else {
+                    console.log('✅ [FROST RES] Processing started successfully');
+                }
+            } catch (error) {
+                // If the initial request times out or fails, that's okay - the processing might still be running
+                if (error.message.includes('timeout') || error.message.includes('503') || error.message.includes('Service Unavailable')) {
+                    console.log('⚠️ [FROST RES] Initial request timed out (likely Heroku timeout), continuing with polling...');
+                    // Update workflow status to indicate we're handling the timeout gracefully
+                    if (this.workflowState && this.workflowState.currentStep === 8) {
+                        this.updateWorkflowStep(8, 'active', 'Processing (handling server timeout)...', '🔄', true);
+                    }
+                } else {
+                    console.log('⚠️ [FROST RES] Initial request failed, continuing with polling...', error.message);
+                }
             }
             
-            console.log('✅ [FROST RES] Processing started');
+            console.log('✅ [FROST RES] Processing initiated, will poll for completion');
             
         } catch (error) {
             console.error('❌ [FROST RES] Error starting processing:', error);
