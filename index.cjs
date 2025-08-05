@@ -2123,7 +2123,7 @@ app.post('/api/logs/world-buffs', async (req, res) => {
     }
 
     // Google Apps Script Web App URL for World Buffs
-    const worldBuffsWebAppUrl = 'https://script.google.com/macros/s/AKfycbxRPRrFzI_smMRseNOU7b7DhDRoYvN_96qUKOqfHRpCvQf-JSXDxC-3VePlRugWSkjS/exec';
+    const worldBuffsWebAppUrl = 'https://script.google.com/macros/s/AKfycbzWt1cz9sZRLDNx4RNaUJ4XSpSdk3sg_iOSD-R5fai6ZnIsJcYF3-B3gPtuRjrJLQ/exec';
     
     // Prepare request data
     const requestData = { action };
@@ -2197,7 +2197,7 @@ app.post('/api/logs/cla-backup', async (req, res) => {
     }
 
     // World Buffs backup - calls the World Buffs spreadsheet (with updated backup code)
-    const claBackupWebAppUrl = 'https://script.google.com/macros/s/AKfycbxRPRrFzI_smMRseNOU7b7DhDRoYvN_96qUKOqfHRpCvQf-JSXDxC-3VePlRugWSkjS/exec';
+    const claBackupWebAppUrl = 'https://script.google.com/macros/s/AKfycbzWt1cz9sZRLDNx4RNaUJ4XSpSdk3sg_iOSD-R5fai6ZnIsJcYF3-B3gPtuRjrJLQ/exec';
     
     // Prepare request data
     const requestData = { action };

@@ -4344,7 +4344,7 @@ class WoWLogsAnalyzer {
             const response = await fetch('/api/logs/cla-backup', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'createClaBackupWithCheck' })
+                body: JSON.stringify({ action: 'createClaBackupWebApp' })
             });
 
             if (!response.ok) {
@@ -4432,7 +4432,7 @@ class WoWLogsAnalyzer {
             const response = await fetch('/api/logs/frost-res', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'createClaBackupWithCheck' })
+                body: JSON.stringify({ action: 'createClaBackupWebApp' })
             });
 
             if (!response.ok) {
@@ -5409,7 +5409,7 @@ class WoWLogsAnalyzer {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    action: 'createClaBackupWithCheck'
+                    action: 'createClaBackupWebApp'
                 })
             });
 
@@ -5869,7 +5869,7 @@ class WoWLogsAnalyzer {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    action: 'createClaBackupWithCheck'
+                    action: 'createClaBackupWebApp'
                 })
             });
 
