@@ -4512,6 +4512,12 @@ class WoWLogsAnalyzer {
 
             const result = await response.json();
             if (!result.success) {
+                // Check if this is a "no data" scenario - skip gracefully
+                if (result.error && result.error.includes('No player data found in source sheet')) {
+                    console.log('⏭️ [WORKFLOW] Step 8: No Frost Resistance data found, skipping archive step');
+                    this.updateWorkflowStep(8, 'skipped', 'No Frost Resistance data found, skipped', '⏭️');
+                    return; // Skip this step gracefully
+                }
                 throw new Error(result.error || 'Unknown backup error');
             }
 
@@ -4533,6 +4539,14 @@ class WoWLogsAnalyzer {
         this.updateWorkflowStep(11, 'active', 'Importing Frost Resistance to database...', '🔄');
         
         try {
+            // Check if Step 8 was skipped (no frost resistance data)
+            const step8Element = document.getElementById('step8Progress');
+            if (step8Element && step8Element.classList.contains('skipped')) {
+                console.log('⏭️ [WORKFLOW] Step 11: Step 8 was skipped (no data), skipping import');
+                this.updateWorkflowStep(11, 'skipped', 'No Frost Resistance data to import, skipped', '⏭️');
+                return; // Skip this step gracefully
+            }
+
             // Get Frost Resistance archive URL from tracking
             const archiveUrl = await this.getArchiveUrlFromTracking(eventId, 'frost_resistance');
             if (!archiveUrl) {
