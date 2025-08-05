@@ -7623,17 +7623,21 @@ app.post('/api/admin/migrate-reward-settings', async (req, res) => {
 
 // --- RPB Tracking Endpoints ---
 
-// Get tracking status for an event (with optional analysis type)
+// Get tracking status for an event (with optional analysis type and logUrl)
 app.get('/api/rpb-tracking/:eventId', async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { analysisType } = req.query; // Optional query parameter
+    const { analysisType, logUrl } = req.query; // Optional query parameters
     
-    console.log(`📊 [TRACKING] Getting tracking status for event: ${eventId}, type: ${analysisType || 'all'}`);
+    console.log(`📊 [TRACKING] Getting tracking status for event: ${eventId}, type: ${analysisType || 'all'}, logUrl: ${logUrl || 'any'}`);
     
     let query, params;
     
-    if (analysisType) {
+    if (analysisType && logUrl) {
+      // Get specific analysis type and logUrl
+      query = 'SELECT * FROM rpb_tracking WHERE event_id = $1 AND analysis_type = $2 AND log_url = $3 ORDER BY created_at DESC LIMIT 1';
+      params = [eventId, analysisType, logUrl];
+    } else if (analysisType) {
       // Get specific analysis type
       query = 'SELECT * FROM rpb_tracking WHERE event_id = $1 AND analysis_type = $2 ORDER BY created_at DESC LIMIT 1';
       params = [eventId, analysisType];

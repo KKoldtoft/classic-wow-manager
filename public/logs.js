@@ -4111,7 +4111,7 @@ class WoWLogsAnalyzer {
             
             // Step 4: Import RPB Data
             this.workflowState.currentStep = 4;
-            await this.runWorkflowStep4(activeEventSession);
+            await this.runWorkflowStep4(activeEventSession, input);
             
             // Step 5: World Buffs Analysis (moved earlier)
             this.workflowState.currentStep = 5;
@@ -4258,14 +4258,14 @@ class WoWLogsAnalyzer {
         }
     }
 
-    async runWorkflowStep4(eventId) {
+    async runWorkflowStep4(eventId, logUrl = null) {
         console.log('📥 [WORKFLOW] Step 4: Importing data...');
-        console.log('🔍 [WORKFLOW] Step 4: Looking for archive URL for event:', eventId);
+        console.log('🔍 [WORKFLOW] Step 4: Looking for archive URL for event:', eventId, 'logUrl:', logUrl);
         this.updateWorkflowStep(4, 'active', 'Importing data to database...', '🔄');
         
         try {
-            // Get the archive URL from RPB tracking
-            const archiveUrl = await this.getArchiveUrlFromTracking(eventId);
+            // Get the archive URL from RPB tracking with specific logUrl
+            const archiveUrl = await this.getArchiveUrlFromTracking(eventId, 'rpb', logUrl);
             console.log('🔍 [WORKFLOW] Step 4: Archive URL found:', archiveUrl);
             
             if (!archiveUrl) {
@@ -4275,7 +4275,7 @@ class WoWLogsAnalyzer {
                 console.log('🔄 [WORKFLOW] Step 4: Waiting 3 seconds and retrying...');
                 await new Promise(resolve => setTimeout(resolve, 3000));
                 
-                const retryArchiveUrl = await this.getArchiveUrlFromTracking(eventId);
+                const retryArchiveUrl = await this.getArchiveUrlFromTracking(eventId, 'rpb', logUrl);
                 console.log('🔍 [WORKFLOW] Step 4: Retry - Archive URL found:', retryArchiveUrl);
                 
                 if (!retryArchiveUrl) {
@@ -4557,10 +4557,14 @@ class WoWLogsAnalyzer {
     }
 
     // Helper function to get archive URL from tracking
-    async getArchiveUrlFromTracking(eventId, analysisType = 'rpb') {
+    async getArchiveUrlFromTracking(eventId, analysisType = 'rpb', logUrl = null) {
         try {
-            console.log('🔍 [TRACKING] Fetching archive URL for event:', eventId, 'type:', analysisType);
-            const response = await fetch(`/api/rpb-tracking/${eventId}?analysisType=${analysisType}`);
+            console.log('🔍 [TRACKING] Fetching archive URL for event:', eventId, 'type:', analysisType, 'logUrl:', logUrl);
+            let url = `/api/rpb-tracking/${eventId}?analysisType=${analysisType}`;
+            if (logUrl) {
+                url += `&logUrl=${encodeURIComponent(logUrl)}`;
+            }
+            const response = await fetch(url);
             console.log('🔍 [TRACKING] Response status:', response.status);
             
             if (response.ok) {
@@ -5068,7 +5072,7 @@ class WoWLogsAnalyzer {
                     // Fall through to run remaining steps
                 case 4:
                     this.workflowState.currentStep = 4;
-                    await this.runWorkflowStep4(eventId);
+                    await this.runWorkflowStep4(eventId, logUrl);
                     // Fall through to run remaining steps
                 case 5:
                     this.workflowState.currentStep = 5;
