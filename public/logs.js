@@ -5195,6 +5195,11 @@ class WoWLogsAnalyzer {
             const result = await response.json();
             
             if (!result.success) {
+                // If clearStatus is not supported, just log a warning and continue
+                if (result.error && result.error.includes('Unknown action: clearStatus')) {
+                    console.log('⚠️ [WORLD BUFFS] clearStatus not supported in current Google Apps Script version, skipping...');
+                    return;
+                }
                 throw new Error('Failed to clear status: ' + result.error);
             }
             
