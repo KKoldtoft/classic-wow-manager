@@ -1871,6 +1871,12 @@
     background: rgba(220, 53, 69, 0.1);
 }
 
+.progress-step.skipped {
+    border-left-color: #6c757d;
+    background: rgba(108, 117, 125, 0.1);
+    opacity: 0.7;
+}
+
 /* Progress bar styles for long-running steps */
 .progress-step.active.with-progress {
     position: relative;
@@ -1924,6 +1930,10 @@
     background: var(--error-color, #dc3545);
 }
 
+.progress-step.skipped .step-number {
+    background: #6c757d;
+}
+
 .step-content {
     flex: 1;
 }
@@ -1950,6 +1960,10 @@
 
 .progress-step.error .step-status {
     color: var(--error-color, #dc3545);
+}
+
+.progress-step.skipped .step-status {
+    color: #6c757d;
 }
 
 .step-indicator {
@@ -2103,4 +2117,91 @@
     background: rgba(0, 123, 255, 0.15);
     border-radius: 4px;
     pointer-events: none;
+}
+
+/* Workflow Step Checkboxes */
+.workflow-steps-checkboxes {
+    margin-top: 20px;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.workflow-steps-checkboxes h4 {
+    margin: 0 0 16px 0;
+    color: #495057;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.checkbox-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.checkbox-item {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 6px;
+    transition: background-color 0.2s ease;
+    background: white;
+    border: 1px solid #dee2e6;
+}
+
+.checkbox-item:hover {
+    background: #f8f9fa;
+    border-color: #5865F2;
+}
+
+.checkbox-item input[type="checkbox"] {
+    margin: 0 10px 0 0;
+    width: 16px;
+    height: 16px;
+    accent-color: #5865F2;
+    cursor: pointer;
+}
+
+.checkbox-label {
+    font-size: 13px;
+    color: #495057;
+    user-select: none;
+    cursor: pointer;
+    flex: 1;
+}
+
+.checkbox-item input[type="checkbox"]:checked + .checkbox-label {
+    color: #2d3748;
+    font-weight: 500;
+}
+
+.checkbox-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.checkbox-actions .btn {
+    font-size: 12px;
+    padding: 6px 12px;
+}
+
+/* Responsive checkbox styles */
+@media (max-width: 768px) {
+    .checkbox-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .checkbox-actions {
+        justify-content: center;
+    }
+
+    .checkbox-actions .btn {
+        flex: 1;
+        max-width: 120px;
+    }
 } 

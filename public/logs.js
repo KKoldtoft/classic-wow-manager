@@ -492,6 +492,15 @@ class WoWLogsAnalyzer {
             this.resetWorkflow();
         });
 
+        // Checkbox control buttons
+        document.getElementById('selectAllStepsBtn').addEventListener('click', () => {
+            this.selectAllWorkflowSteps();
+        });
+
+        document.getElementById('deselectAllStepsBtn').addEventListener('click', () => {
+            this.deselectAllWorkflowSteps();
+        });
+
         // ====================================
         // WORLD BUFFS EVENT LISTENERS
         // ====================================
@@ -4098,44 +4107,92 @@ class WoWLogsAnalyzer {
 
         try {
             // Step 1: Confirm Logs
-            this.workflowState.currentStep = 1;
-            await this.runWorkflowStep1(input);
+            if (this.isStepEnabled(1)) {
+                this.workflowState.currentStep = 1;
+                await this.runWorkflowStep1(input);
+            } else {
+                this.updateWorkflowStep(1, 'skipped', 'Skipped by user', '⏭️');
+            }
             
-            // Step 2: Run RPB Analysis
-            this.workflowState.currentStep = 2;
-            await this.runWorkflowStep2(input);
+            // Step 2: RPB Analysis
+            if (this.isStepEnabled(2)) {
+                this.workflowState.currentStep = 2;
+                await this.runWorkflowStep2(input);
+            } else {
+                this.updateWorkflowStep(2, 'skipped', 'Skipped by user', '⏭️');
+            }
             
-            // Step 3: Archive RPB Results
-            this.workflowState.currentStep = 3;
-            await this.runWorkflowStep3(input);
+            // Step 3: World Buffs Analysis
+            if (this.isStepEnabled(3)) {
+                this.workflowState.currentStep = 3;
+                await this.runWorkflowStep3(input);
+            } else {
+                this.updateWorkflowStep(3, 'skipped', 'Skipped by user', '⏭️');
+            }
             
-            // Step 4: Import RPB Data
-            this.workflowState.currentStep = 4;
-            await this.runWorkflowStep4(activeEventSession, input);
+            // Step 4: Frost Resistance Analysis
+            if (this.isStepEnabled(4)) {
+                this.workflowState.currentStep = 4;
+                await this.runWorkflowStep4(input);
+            } else {
+                this.updateWorkflowStep(4, 'skipped', 'Skipped by user', '⏭️');
+            }
             
-            // Step 5: World Buffs Analysis (moved earlier)
-            this.workflowState.currentStep = 5;
-            await this.runWorkflowStep5(input);
+            // Step 5: Waiting 2 Minutes
+            if (this.isStepEnabled(5)) {
+                this.workflowState.currentStep = 5;
+                await this.runWorkflowStepWait();
+            } else {
+                this.updateWorkflowStep(5, 'skipped', 'Skipped by user', '⏭️');
+            }
             
-            // Step 8: Frost Resistance Analysis (moved earlier)
-            this.workflowState.currentStep = 8;
-            await this.runWorkflowStep8(input);
+            // Step 6: Archive RPB sheet
+            if (this.isStepEnabled(6)) {
+                this.workflowState.currentStep = 6;
+                await this.runWorkflowStep6(input);
+            } else {
+                this.updateWorkflowStep(6, 'skipped', 'Skipped by user', '⏭️');
+            }
             
-            // Step 6: Archive World Buffs (moved later to allow Google Apps Script to complete)
-            this.workflowState.currentStep = 6;
-            await this.runWorkflowStep6(input);
+            // Step 7: Archive World Buffs sheet
+            if (this.isStepEnabled(7)) {
+                this.workflowState.currentStep = 7;
+                await this.runWorkflowStep7(input);
+            } else {
+                this.updateWorkflowStep(7, 'skipped', 'Skipped by user', '⏭️');
+            }
             
-            // Step 9: Archive Frost Resistance (moved later to allow Google Apps Script to complete)
-            this.workflowState.currentStep = 9;
-            await this.runWorkflowStep9(input);
+            // Step 8: Archive Frost Resistance sheet
+            if (this.isStepEnabled(8)) {
+                this.workflowState.currentStep = 8;
+                await this.runWorkflowStep8(input);
+            } else {
+                this.updateWorkflowStep(8, 'skipped', 'Skipped by user', '⏭️');
+            }
             
-            // Step 7: Import World Buffs Data (moved to end)
-            this.workflowState.currentStep = 7;
-            await this.runWorkflowStep7(activeEventSession);
+            // Step 9: Import RPB data to database
+            if (this.isStepEnabled(9)) {
+                this.workflowState.currentStep = 9;
+                await this.runWorkflowStep9(activeEventSession, input);
+            } else {
+                this.updateWorkflowStep(9, 'skipped', 'Skipped by user', '⏭️');
+            }
             
-            // Step 10: Import Frost Resistance Data (moved to end)
-            this.workflowState.currentStep = 10;
-            await this.runWorkflowStep10(activeEventSession);
+            // Step 10: Import World Buffs data to database
+            if (this.isStepEnabled(10)) {
+                this.workflowState.currentStep = 10;
+                await this.runWorkflowStep10(activeEventSession);
+            } else {
+                this.updateWorkflowStep(10, 'skipped', 'Skipped by user', '⏭️');
+            }
+            
+            // Step 11: Import Frost Resistance data to database
+            if (this.isStepEnabled(11)) {
+                this.workflowState.currentStep = 11;
+                await this.runWorkflowStep11(activeEventSession);
+            } else {
+                this.updateWorkflowStep(11, 'skipped', 'Skipped by user', '⏭️');
+            }
             
             // Show completion
             await this.showWorkflowComplete();
@@ -4232,20 +4289,21 @@ class WoWLogsAnalyzer {
         }
     }
 
-    async runWorkflowStep3(logUrl) {
-        console.log('📁 [WORKFLOW] Step 3: Archiving results...');
-        this.updateWorkflowStep(3, 'active', 'Creating archive backup...', '🔄');
+    // Step 6: Archive RPB Results
+    async runWorkflowStep6(logUrl) {
+        console.log('📁 [WORKFLOW] Step 6: Archiving RPB results...');
+        this.updateWorkflowStep(6, 'active', 'Creating archive backup...', '🔄');
         
         try {
             // Call the archive function with the correct logUrl
             await this.callArchiveFunction(logUrl);
             
-            this.updateWorkflowStep(3, 'completed', 'Archive created successfully', '✅');
-            console.log('✅ [WORKFLOW] Step 3 completed');
+            this.updateWorkflowStep(6, 'completed', 'Archive created successfully', '✅');
+            console.log('✅ [WORKFLOW] Step 6 completed');
             
         } catch (error) {
-            console.error('❌ [WORKFLOW] Step 3 failed:', error);
-            this.updateWorkflowStep(3, 'error', 'Archive failed - continuing anyway', '⚠️');
+            console.error('❌ [WORKFLOW] Step 6 failed:', error);
+            this.updateWorkflowStep(6, 'error', 'Archive failed - continuing anyway', '⚠️');
             
             // Add a skip option and continue instead of failing the entire workflow
             console.log('⚠️ [WORKFLOW] Archive failed, but continuing to import step...');
@@ -4258,59 +4316,60 @@ class WoWLogsAnalyzer {
         }
     }
 
-    async runWorkflowStep4(eventId, logUrl = null) {
-        console.log('📥 [WORKFLOW] Step 4: Importing data...');
-        console.log('🔍 [WORKFLOW] Step 4: Looking for archive URL for event:', eventId, 'logUrl:', logUrl);
-        this.updateWorkflowStep(4, 'active', 'Importing data to database...', '🔄');
+    // Step 9: Import RPB Data
+    async runWorkflowStep9(eventId, logUrl = null) {
+        console.log('📥 [WORKFLOW] Step 9: Importing RPB data...');
+        console.log('🔍 [WORKFLOW] Step 9: Looking for archive URL for event:', eventId, 'logUrl:', logUrl);
+        this.updateWorkflowStep(9, 'active', 'Importing data to database...', '🔄');
         
         try {
             // Get the archive URL from RPB tracking with specific logUrl
             const archiveUrl = await this.getArchiveUrlFromTracking(eventId, 'rpb', logUrl);
-            console.log('🔍 [WORKFLOW] Step 4: Archive URL found:', archiveUrl);
+            console.log('🔍 [WORKFLOW] Step 9: Archive URL found:', archiveUrl);
             
             if (!archiveUrl) {
-                console.error('❌ [WORKFLOW] Step 4: No archive URL found in tracking table');
+                console.error('❌ [WORKFLOW] Step 9: No archive URL found in tracking table');
                 
                 // Try to wait a bit and retry once in case the archive step is still finishing
-                console.log('🔄 [WORKFLOW] Step 4: Waiting 3 seconds and retrying...');
+                console.log('🔄 [WORKFLOW] Step 9: Waiting 3 seconds and retrying...');
                 await new Promise(resolve => setTimeout(resolve, 3000));
                 
                 const retryArchiveUrl = await this.getArchiveUrlFromTracking(eventId, 'rpb', logUrl);
-                console.log('🔍 [WORKFLOW] Step 4: Retry - Archive URL found:', retryArchiveUrl);
+                console.log('🔍 [WORKFLOW] Step 9: Retry - Archive URL found:', retryArchiveUrl);
                 
                 if (!retryArchiveUrl) {
-                    throw new Error('No archive URL found from previous steps. Check that step 3 (archive) completed successfully.');
+                    throw new Error('No archive URL found from previous steps. Check that step 6 (archive) completed successfully.');
                 }
                 
                 // Use the retry URL and complete the step
-                console.log('📥 [WORKFLOW] Step 4: Calling import function with retry URL:', retryArchiveUrl);
+                console.log('📥 [WORKFLOW] Step 9: Calling import function with retry URL:', retryArchiveUrl);
                 await this.callImportFunction(retryArchiveUrl, eventId);
-                this.updateWorkflowStep(4, 'completed', 'Data imported successfully', '✅');
-                console.log('✅ [WORKFLOW] Step 4 completed');
+                this.updateWorkflowStep(9, 'completed', 'Data imported successfully', '✅');
+                console.log('✅ [WORKFLOW] Step 9 completed');
                 return;
             }
 
             // Call the import function
-            console.log('📥 [WORKFLOW] Step 4: Calling import function with URL:', archiveUrl);
+            console.log('📥 [WORKFLOW] Step 9: Calling import function with URL:', archiveUrl);
             await this.callImportFunction(archiveUrl, eventId);
             
-            this.updateWorkflowStep(4, 'completed', 'Data imported successfully', '✅');
-            console.log('✅ [WORKFLOW] Step 4 completed');
+            this.updateWorkflowStep(9, 'completed', 'Data imported successfully', '✅');
+            console.log('✅ [WORKFLOW] Step 9 completed');
             
         } catch (error) {
-            console.error('❌ [WORKFLOW] Step 4 detailed error:', error);
-            this.updateWorkflowStep(4, 'error', `Import failed: ${error.message}`, '❌');
+            console.error('❌ [WORKFLOW] Step 9 detailed error:', error);
+            this.updateWorkflowStep(9, 'error', `Import failed: ${error.message}`, '❌');
             throw error;
         }
     }
 
-    // Step 5: World Buffs Analysis
-    async runWorkflowStep5(logUrl) {
-        console.log('🌍 [WORKFLOW] Step 5: World Buffs Analysis...');
-        this.updateWorkflowStep(5, 'active', 'Running World Buffs analysis...', '🔄', true);
+    // Step 3: World Buffs Analysis
+    async runWorkflowStep3(logUrl) {
+        console.log('🌍 [WORKFLOW] Step 3: World Buffs Analysis...');
+        this.updateWorkflowStep(3, 'active', 'Running World Buffs analysis...', '🔄', true);
         
         // Start progress tracking for 2 minutes
-        const progressTimer = this.startStepProgressTimer(5, 2 * 60 * 1000); // 2 minutes
+        const progressTimer = this.startStepProgressTimer(3, 2 * 60 * 1000); // 2 minutes
         
         try {
             // Clear previous status
@@ -4324,20 +4383,26 @@ class WoWLogsAnalyzer {
             
             // Clear progress timer and complete the step
             clearInterval(progressTimer);
-            this.completeStepWithProgressAnimation(5, 'World Buffs analysis completed');
-            console.log('✅ [WORKFLOW] Step 5 completed');
+            this.completeStepWithProgressAnimation(3, 'World Buffs analysis completed');
+            console.log('✅ [WORKFLOW] Step 3 completed');
             
         } catch (error) {
             clearInterval(progressTimer);
-            this.updateWorkflowStep(5, 'error', `World Buffs analysis failed: ${error.message}`, '❌');
+            this.updateWorkflowStep(3, 'error', `World Buffs analysis failed: ${error.message}`, '❌');
             throw error;
         }
     }
 
-    // Step 6: Archive World Buffs
-    async runWorkflowStep6(logUrl) {
-        console.log('📁 [WORKFLOW] Step 6: Archiving World Buffs...');
-        this.updateWorkflowStep(6, 'active', 'Creating World Buffs archive...', '🔄');
+    // Step 7: Archive World Buffs
+    async runWorkflowStep7(logUrl) {
+        console.log('📁 [WORKFLOW] Step 7: Archiving World Buffs...');
+        this.updateWorkflowStep(7, 'active', 'Waiting for data save...', '⏳');
+        
+        // Add 20-second delay to ensure Google Sheets has saved all data
+        console.log('⏰ [STEP 7] Waiting 20 seconds for Google Sheets to save data...');
+        await new Promise(resolve => setTimeout(resolve, 20000));
+        
+        this.updateWorkflowStep(7, 'active', 'Creating World Buffs archive...', '🔄');
         
         try {
             // Call World Buffs backup function
@@ -4359,19 +4424,19 @@ class WoWLogsAnalyzer {
             // Store archive URL in database
             await this.storeWorldBuffsArchiveUrl(result, logUrl, this.workflowState.eventId);
             
-            this.updateWorkflowStep(6, 'completed', 'World Buffs archive created', '✅');
-            console.log('✅ [WORKFLOW] Step 6 completed');
+            this.updateWorkflowStep(7, 'completed', 'World Buffs archive created', '✅');
+            console.log('✅ [WORKFLOW] Step 7 completed');
             
         } catch (error) {
-            this.updateWorkflowStep(6, 'error', `World Buffs archive failed: ${error.message}`, '❌');
+            this.updateWorkflowStep(7, 'error', `World Buffs archive failed: ${error.message}`, '❌');
             throw error;
         }
     }
 
-    // Step 7: Import World Buffs Data
-    async runWorkflowStep7(eventId) {
-        console.log('📥 [WORKFLOW] Step 7: Importing World Buffs data...');
-        this.updateWorkflowStep(7, 'active', 'Importing World Buffs to database...', '🔄');
+    // Step 10: Import World Buffs Data
+    async runWorkflowStep10(eventId) {
+        console.log('📥 [WORKFLOW] Step 10: Importing World Buffs data...');
+        this.updateWorkflowStep(10, 'active', 'Importing World Buffs to database...', '🔄');
         
         try {
             // Get World Buffs archive URL from tracking  
@@ -4383,22 +4448,22 @@ class WoWLogsAnalyzer {
             // Import World Buffs data
             await this.importWorldBuffsData(archiveUrl);
             
-            this.updateWorkflowStep(7, 'completed', 'World Buffs data imported', '✅');
-            console.log('✅ [WORKFLOW] Step 7 completed');
+            this.updateWorkflowStep(10, 'completed', 'World Buffs data imported', '✅');
+            console.log('✅ [WORKFLOW] Step 10 completed');
             
         } catch (error) {
-            this.updateWorkflowStep(7, 'error', `World Buffs import failed: ${error.message}`, '❌');
+            this.updateWorkflowStep(10, 'error', `World Buffs import failed: ${error.message}`, '❌');
             throw error;
         }
     }
 
-    // Step 8: Frost Resistance Analysis
-    async runWorkflowStep8(logUrl) {
-        console.log('🧊 [WORKFLOW] Step 8: Frost Resistance Analysis...');
-        this.updateWorkflowStep(8, 'active', 'Running Frost Resistance analysis...', '🔄', true);
+    // Step 4: Frost Resistance Analysis
+    async runWorkflowStep4(logUrl) {
+        console.log('🧊 [WORKFLOW] Step 4: Frost Resistance Analysis...');
+        this.updateWorkflowStep(4, 'active', 'Running Frost Resistance analysis...', '🔄', true);
         
         // Start progress tracking for 2 minutes
-        const progressTimer = this.startStepProgressTimer(8, 2 * 60 * 1000); // 2 minutes
+        const progressTimer = this.startStepProgressTimer(4, 2 * 60 * 1000); // 2 minutes
         
         try {
             // Clear previous status
@@ -4412,20 +4477,26 @@ class WoWLogsAnalyzer {
             
             // Clear progress timer and complete the step
             clearInterval(progressTimer);
-            this.completeStepWithProgressAnimation(8, 'Frost Resistance analysis completed');
-            console.log('✅ [WORKFLOW] Step 8 completed');
+            this.completeStepWithProgressAnimation(4, 'Frost Resistance analysis completed');
+            console.log('✅ [WORKFLOW] Step 4 completed');
             
         } catch (error) {
             clearInterval(progressTimer);
-            this.updateWorkflowStep(8, 'error', `Frost Resistance analysis failed: ${error.message}`, '❌');
+            this.updateWorkflowStep(4, 'error', `Frost Resistance analysis failed: ${error.message}`, '❌');
             throw error;
         }
     }
 
-    // Step 9: Archive Frost Resistance
-    async runWorkflowStep9(logUrl) {
-        console.log('📁 [WORKFLOW] Step 9: Archiving Frost Resistance...');
-        this.updateWorkflowStep(9, 'active', 'Creating Frost Resistance archive...', '🔄');
+    // Step 8: Archive Frost Resistance
+    async runWorkflowStep8(logUrl) {
+        console.log('📁 [WORKFLOW] Step 8: Archiving Frost Resistance...');
+        this.updateWorkflowStep(8, 'active', 'Waiting for data save...', '⏳');
+        
+        // Add 20-second delay for Frost Resistance (complex gear analysis takes longer)
+        console.log('⏰ [STEP 8] Waiting 20 seconds for Google Sheets to save Frost Resistance data...');
+        await new Promise(resolve => setTimeout(resolve, 20000));
+        
+        this.updateWorkflowStep(8, 'active', 'Creating Frost Resistance archive...', '🔄');
         
         try {
             // Call Frost Resistance backup function
@@ -4447,19 +4518,19 @@ class WoWLogsAnalyzer {
             // Store archive URL in database
             await this.storeFrostResArchiveUrl(result, logUrl, this.workflowState.eventId);
             
-            this.updateWorkflowStep(9, 'completed', 'Frost Resistance archive created', '✅');
-            console.log('✅ [WORKFLOW] Step 9 completed');
+            this.updateWorkflowStep(8, 'completed', 'Frost Resistance archive created', '✅');
+            console.log('✅ [WORKFLOW] Step 8 completed');
             
         } catch (error) {
-            this.updateWorkflowStep(9, 'error', `Frost Resistance archive failed: ${error.message}`, '❌');
+            this.updateWorkflowStep(8, 'error', `Frost Resistance archive failed: ${error.message}`, '❌');
             throw error;
         }
     }
 
-    // Step 10: Import Frost Resistance Data
-    async runWorkflowStep10(eventId) {
-        console.log('📥 [WORKFLOW] Step 10: Importing Frost Resistance data...');
-        this.updateWorkflowStep(10, 'active', 'Importing Frost Resistance to database...', '🔄');
+    // Step 11: Import Frost Resistance Data
+    async runWorkflowStep11(eventId) {
+        console.log('📥 [WORKFLOW] Step 11: Importing Frost Resistance data...');
+        this.updateWorkflowStep(11, 'active', 'Importing Frost Resistance to database...', '🔄');
         
         try {
             // Get Frost Resistance archive URL from tracking
@@ -4471,13 +4542,48 @@ class WoWLogsAnalyzer {
             // Import Frost Resistance data
             await this.importFrostResData(archiveUrl);
             
-            this.updateWorkflowStep(10, 'completed', 'Frost Resistance data imported', '✅');
-            console.log('✅ [WORKFLOW] Step 10 completed');
+            this.updateWorkflowStep(11, 'completed', 'Frost Resistance data imported', '✅');
+            console.log('✅ [WORKFLOW] Step 11 completed');
             
         } catch (error) {
-            this.updateWorkflowStep(10, 'error', `Frost Resistance import failed: ${error.message}`, '❌');
+            this.updateWorkflowStep(11, 'error', `Frost Resistance import failed: ${error.message}`, '❌');
             throw error;
         }
+    }
+
+    // NEW Step 5: Waiting 2 Minutes
+    async runWorkflowStepWait() {
+        console.log('⏰ [WORKFLOW] Step 5: Waiting 2 minutes for Google Sheets to save data...');
+        this.updateWorkflowStep(5, 'active', 'Waiting for Google Sheets to save data...', '⏳', true);
+        
+        const totalWaitTime = 2 * 60 * 1000; // 2 minutes in milliseconds
+        const updateInterval = 1000; // Update every second
+        let elapsed = 0;
+        
+        return new Promise((resolve) => {
+            const timer = setInterval(() => {
+                elapsed += updateInterval;
+                const percentage = (elapsed / totalWaitTime) * 100;
+                
+                // Update progress
+                this.updateWorkflowStepProgress(5, percentage);
+                
+                // Update status text with remaining time
+                const remainingSeconds = Math.ceil((totalWaitTime - elapsed) / 1000);
+                const minutes = Math.floor(remainingSeconds / 60);
+                const seconds = remainingSeconds % 60;
+                const timeText = minutes > 0 ? `${minutes}:${seconds.toString().padStart(2, '0')}` : `${seconds}s`;
+                
+                this.updateWorkflowStep(5, 'active', `Waiting for data save... ${timeText} remaining`, '⏳', true);
+                
+                if (elapsed >= totalWaitTime) {
+                    clearInterval(timer);
+                    this.updateWorkflowStep(5, 'completed', 'Wait completed - data should be fully saved', '✅');
+                    console.log('✅ [WORKFLOW] Step 5 completed - 2 minute wait finished');
+                    resolve();
+                }
+            }, updateInterval);
+        });
     }
 
     // Helper function to wait for RPB completion
@@ -4691,7 +4797,7 @@ class WoWLogsAnalyzer {
         
         if (stepDiv && statusDiv && indicatorDiv) {
             // Remove all state classes
-            stepDiv.classList.remove('active', 'completed', 'error', 'waiting', 'with-progress');
+            stepDiv.classList.remove('active', 'completed', 'error', 'waiting', 'skipped', 'with-progress');
             
             // Add new state class
             if (state !== 'waiting') {
@@ -4852,6 +4958,9 @@ class WoWLogsAnalyzer {
         const eventId = this.workflowState.eventId;
         const archiveUrls = await this.getAllArchiveUrls(eventId);
         
+        // Verify imported data
+        const importedData = await this.verifyImportedData(eventId);
+        
         // Find the Characters section to insert completion message above it
         const charactersSection = document.querySelector('#logData .data-section');
         if (charactersSection) {
@@ -4883,22 +4992,44 @@ class WoWLogsAnalyzer {
                 </div>
             ` : '';
             
-            completionMessage.innerHTML = `
-                <h4 style="margin: 0 0 1rem 0;">🎉 Complete Workflow Finished!</h4>
-                <p style="margin: 0 0 1rem 0;">All 10 steps completed successfully!</p>
-                ${archiveSection}
+            const dataVerificationSection = importedData.success ? `
                 <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(74, 158, 255, 0.1); border-radius: 6px;">
-                    <h5 style="margin: 0 0 0.5rem 0; color: var(--primary-color, #4a9eff);">💾 Database Import Status:</h5>
+                    <h5 style="margin: 0 0 0.5rem 0; color: var(--primary-color, #4a9eff);">💾 Database Import Verification:</h5>
                     <p style="margin: 0; color: var(--text-primary, #e0e0e0);">
-                        ✅ RPB data imported successfully<br>
-                        ✅ World Buffs data imported successfully<br>
-                        ✅ Frost Resistance data imported successfully
+                        ✅ RPB data: ${importedData.counts.rpb} records imported<br>
+                        ✅ World Buffs data: ${importedData.counts.worldBuffs} records imported<br>
+                        ✅ Frost Resistance data: ${importedData.counts.frostResistance} records imported
+                    </p>
+                    <button id="showImportedDataBtn" class="btn btn-secondary" style="margin-top: 1rem;">
+                        📊 View Imported Data
+                    </button>
+                </div>
+            ` : `
+                <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(220, 53, 69, 0.1); border-radius: 6px;">
+                    <h5 style="margin: 0 0 0.5rem 0; color: var(--error-color, #dc3545);">⚠️ Data Verification Failed:</h5>
+                    <p style="margin: 0; color: var(--text-primary, #e0e0e0);">
+                        Could not verify imported data. Check console for details.
                     </p>
                 </div>
             `;
             
+            completionMessage.innerHTML = `
+                <h4 style="margin: 0 0 1rem 0;">🎉 Complete Workflow Finished!</h4>
+                <p style="margin: 0 0 1rem 0;">All steps completed successfully!</p>
+                ${archiveSection}
+                ${dataVerificationSection}
+            `;
+            
             // Insert before the Characters section
             charactersSection.parentNode.insertBefore(completionMessage, charactersSection);
+            
+            // Add event listener for showing imported data
+            const showDataBtn = document.getElementById('showImportedDataBtn');
+            if (showDataBtn && importedData.success) {
+                showDataBtn.addEventListener('click', () => {
+                    this.displayImportedDataTables(importedData.data);
+                });
+            }
         }
         
         // Restore button and input states for next workflow
@@ -4924,6 +5055,123 @@ class WoWLogsAnalyzer {
             const retryBtn = document.getElementById('retryWorkflowBtn');
             if (retryBtn) retryBtn.style.display = 'none';
         }
+    }
+
+    async verifyImportedData(eventId) {
+        try {
+            console.log(`🔍 [VERIFY] Fetching imported data for event: ${eventId}`);
+            
+            const response = await fetch(`/api/logs/verify-import/${eventId}`);
+            const result = await response.json();
+            
+            if (result.success) {
+                console.log('✅ [VERIFY] Data verification successful:', result.counts);
+                return result;
+            } else {
+                console.error('❌ [VERIFY] Data verification failed:', result.error);
+                return { success: false, error: result.error };
+            }
+            
+        } catch (error) {
+            console.error('❌ [VERIFY] Error verifying imported data:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    displayImportedDataTables(data) {
+        // Create modal overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'imported-data-overlay';
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        `;
+        
+        // Create modal content
+        const modal = document.createElement('div');
+        modal.className = 'imported-data-modal';
+        modal.style.cssText = `
+            background: #2c2f33;
+            border-radius: 8px;
+            max-width: 90vw;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 20px;
+            color: #fff;
+        `;
+        
+        modal.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3 style="margin: 0; color: #4a9eff;">📊 Imported Data Verification</h3>
+                <button id="closeImportedDataModal" style="background: none; border: none; color: #fff; font-size: 24px; cursor: pointer;">&times;</button>
+            </div>
+            
+            <div style="display: grid; gap: 20px;">
+                ${this.createDataTable('📊 RPB Data', data.rpb, ['character_name', 'character_class', 'ability_name', 'ability_value'])}
+                ${this.createDataTable('🌍 World Buffs Data', data.worldBuffs, ['character_name', 'buff_name', 'buff_value', 'color_status', 'analysis_type'])}
+                ${this.createDataTable('🧊 Frost Resistance Data', data.frostResistance, ['character_name', 'frost_resistance', 'analysis_type'])}
+            </div>
+        `;
+        
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+        
+        // Add event listeners
+        const closeBtn = modal.querySelector('#closeImportedDataModal');
+        const closeModal = () => document.body.removeChild(overlay);
+        
+        closeBtn.addEventListener('click', closeModal);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeModal();
+        });
+    }
+
+    createDataTable(title, data, columns) {
+        if (!data || data.length === 0) {
+            return `
+                <div style="background: #36393f; padding: 15px; border-radius: 6px;">
+                    <h4 style="margin: 0 0 10px 0; color: #4a9eff;">${title}</h4>
+                    <p style="margin: 0; color: #b9bbbe;">No data imported</p>
+                </div>
+            `;
+        }
+        
+        const headers = columns.map(col => 
+            col.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+        ).join('</th><th style="padding: 8px; border-bottom: 1px solid #4f545c;">');
+        
+        const rows = data.slice(0, 10).map(row => 
+            columns.map(col => row[col] || '-').join('</td><td style="padding: 8px; border-bottom: 1px solid #40444b;">')
+        ).join('</td></tr><tr><td style="padding: 8px; border-bottom: 1px solid #40444b;">');
+        
+        return `
+            <div style="background: #36393f; padding: 15px; border-radius: 6px;">
+                <h4 style="margin: 0 0 10px 0; color: #4a9eff;">${title} (${data.length} records, showing first 10)</h4>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                        <thead>
+                            <tr style="background: #4f545c;">
+                                <th style="padding: 8px; border-bottom: 1px solid #4f545c;">${headers}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #40444b;">${rows}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
     }
 
 
@@ -5031,6 +5279,29 @@ class WoWLogsAnalyzer {
             logUrl: null,
             eventId: null
         };
+    }
+
+    selectAllWorkflowSteps() {
+        for (let i = 1; i <= 11; i++) {
+            const checkbox = document.getElementById(`step${i}Checkbox`);
+            if (checkbox) {
+                checkbox.checked = true;
+            }
+        }
+    }
+
+    deselectAllWorkflowSteps() {
+        for (let i = 1; i <= 11; i++) {
+            const checkbox = document.getElementById(`step${i}Checkbox`);
+            if (checkbox) {
+                checkbox.checked = false;
+            }
+        }
+    }
+
+    isStepEnabled(stepNumber) {
+        const checkbox = document.getElementById(`step${stepNumber}Checkbox`);
+        return checkbox ? checkbox.checked : true; // Default to true if checkbox not found
     }
 
     // Enhanced retry mechanism that can continue from failed step
@@ -5268,50 +5539,58 @@ class WoWLogsAnalyzer {
         const pollIntervalMs = 3000; // 3 seconds
         const startTime = Date.now();
 
-        const checkStatus = async () => {
-            if (this.worldBuffsCompleted) return;
-
-            const elapsedMs = Date.now() - startTime;
-
-            try {
-                const response = await fetch('/api/logs/world-buffs', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        action: 'checkStatus'
-                    })
-                });
-
-                const result = await response.json();
-                
-                if (result.status === 'COMPLETE' || (result.status && result.status.toString().startsWith('COMPLETE'))) {
-                    this.worldBuffsCompleted = true;
-                    this.showWorldBuffsComplete();
+        return new Promise((resolve, reject) => {
+            const checkStatus = async () => {
+                if (this.worldBuffsCompleted) {
+                    resolve();
                     return;
-                } else if (result.status && result.status.toString().startsWith('ERROR')) {
-                    this.worldBuffsCompleted = true;
-                    throw new Error(result.status);
                 }
 
-                // Continue polling if still processing
-                if (elapsedMs < maxDurationMs) {
-                    setTimeout(checkStatus, pollIntervalMs);
-                } else {
+                const elapsedMs = Date.now() - startTime;
+
+                try {
+                    const response = await fetch('/api/logs/world-buffs', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            action: 'checkStatus'
+                        })
+                    });
+
+                    const result = await response.json();
+                    
+                    if (result.status === 'COMPLETE' || (result.status && result.status.toString().startsWith('COMPLETE'))) {
+                        this.worldBuffsCompleted = true;
+                        this.showWorldBuffsComplete();
+                        resolve();
+                        return;
+                    } else if (result.status && result.status.toString().startsWith('ERROR')) {
+                        this.worldBuffsCompleted = true;
+                        reject(new Error(result.status));
+                        return;
+                    }
+
+                    // Continue polling if still processing
+                    if (elapsedMs < maxDurationMs) {
+                        setTimeout(checkStatus, pollIntervalMs);
+                    } else {
+                        this.worldBuffsCompleted = true;
+                        reject(new Error('World Buffs analysis timed out after 2 minutes'));
+                    }
+
+                } catch (error) {
                     this.worldBuffsCompleted = true;
-                    throw new Error('World Buffs analysis timed out after 2 minutes');
+                    console.error('❌ [WORLD BUFFS] Status check failed:', error);
+                    this.showWorldBuffsError(error.message);
+                    reject(error);
                 }
+            };
 
-            } catch (error) {
-                this.worldBuffsCompleted = true;
-                console.error('❌ [WORLD BUFFS] Status check failed:', error);
-                this.showWorldBuffsError(error.message);
-            }
-        };
-
-        // Start checking immediately
-        checkStatus();
+            // Start checking immediately
+            checkStatus();
+        });
     }
 
     showWorldBuffsComplete() {
@@ -5509,8 +5788,8 @@ class WoWLogsAnalyzer {
                 body: JSON.stringify({
                     logUrl: logId,
                     status: 'completed',
-                    archiveUrl: archiveResult.backupUrl,
-                    archiveName: archiveResult.backupName,
+                    archiveUrl: archiveResult.backupUrl || archiveResult.archiveUrl,
+                    archiveName: archiveResult.backupName || archiveResult.archiveName,
                     analysisType: 'world_buffs'
                 })
             });
@@ -5710,54 +5989,61 @@ class WoWLogsAnalyzer {
         const startTime = Date.now();
         const timeoutMs = 2 * 60 * 1000; // 2 minutes timeout
         
-        const checkStatus = async () => {
-            try {
-                const response = await fetch('/api/logs/frost-res', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        action: 'checkStatus'
-                    })
-                });
+        return new Promise((resolve, reject) => {
+            const checkStatus = async () => {
+                try {
+                    const response = await fetch('/api/logs/frost-res', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            action: 'checkStatus'
+                        })
+                    });
 
-                const result = await response.json();
-                
-                if (!result.success) {
-                    throw new Error(result.error || 'Failed to check status');
+                    const result = await response.json();
+                    
+                    if (!result.success) {
+                        reject(new Error(result.error || 'Failed to check status'));
+                        return;
+                    }
+                    
+                    const status = result.status || 'PENDING';
+                    console.log('📊 [FROST RES] Current status:', status);
+                    
+                    if (status === 'COMPLETE') {
+                        this.showFrostResComplete();
+                        resolve();
+                        return;
+                    } else if (status.toString().startsWith('ERROR')) {
+                        reject(new Error(status.replace('ERROR: ', '') || 'Frost resistance processing failed'));
+                        return;
+                    } else if (Date.now() - startTime > timeoutMs) {
+                        reject(new Error('Frost resistance processing timed out'));
+                        return;
+                    } else {
+                        // Continue polling
+                        setTimeout(checkStatus, 3000); // Check every 3 seconds
+                    }
+                    
+                } catch (error) {
+                    console.error('❌ [FROST RES] Status polling error:', error);
+                    this.showFrostResError(error.message || 'Frost resistance processing failed');
+                    
+                    // Re-enable button
+                    const button = document.getElementById('runFrostResBtn');
+                    if (button) {
+                        button.disabled = false;
+                        button.innerHTML = '🧊 Analyze Frost Resistance';
+                    }
+                    reject(error);
                 }
-                
-                const status = result.status || 'PENDING';
-                console.log('📊 [FROST RES] Current status:', status);
-                
-                if (status === 'COMPLETE') {
-                    this.showFrostResComplete();
-                    return;
-                } else if (status.toString().startsWith('ERROR')) {
-                    throw new Error(status.replace('ERROR: ', '') || 'Frost resistance processing failed');
-                } else if (Date.now() - startTime > timeoutMs) {
-                    throw new Error('Frost resistance processing timed out');
-                } else {
-                    // Continue polling
-                    setTimeout(checkStatus, 3000); // Check every 3 seconds
-                }
-                
-            } catch (error) {
-                console.error('❌ [FROST RES] Status polling error:', error);
-                this.showFrostResError(error.message || 'Frost resistance processing failed');
-                
-                // Re-enable button
-                const button = document.getElementById('runFrostResBtn');
-                if (button) {
-                    button.disabled = false;
-                    button.innerHTML = '🧊 Analyze Frost Resistance';
-                }
-            }
-        };
+            };
 
-        // Start checking immediately
-        checkStatus();
+            // Start checking immediately
+            checkStatus();
+        });
     }
 
     showFrostResComplete() {
@@ -5969,8 +6255,8 @@ class WoWLogsAnalyzer {
                 body: JSON.stringify({
                     logUrl: logId,
                     status: 'completed',
-                    archiveUrl: archiveResult.backupUrl,
-                    archiveName: archiveResult.backupName,
+                    archiveUrl: archiveResult.backupUrl || archiveResult.archiveUrl,
+                    archiveName: archiveResult.backupName || archiveResult.archiveName,
                     analysisType: 'frost_resistance'
                 })
             });

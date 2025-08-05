@@ -1,20 +1,32 @@
 /**
- * Frost Resistance Google Apps Script
+ * COMPLETE Frost Resistance Google Apps Script - Analysis + Backup
  * 
- * This script populates frost resistance data in the "frost resi (Sapp)" tab
- * and provides status monitoring through the Instructions tab F11 cell.
- * 
- * Deploy this as a web app with permissions for anyone to execute.
+ * This script includes both frost resistance analysis AND backup functionality.
+ * Deploy this single file to your Frost Resistance Google Sheet.
  */
 
 // Configuration
-const SPREADSHEET_ID = '1WHKNLm4C1JhdY417iQvUNxPLUBifdUQNqGereQc6JNg';
+const SPREADSHEET_ID = '1GF-0vKjP8qMwYgzfQd9zF1P7UpU8pcdEfikpyJT6Nx8';
 const FROST_RES_TAB_NAME = 'frost resi (Sapp)';
 const INSTRUCTIONS_TAB_NAME = 'Instructions';
 const STATUS_CELL = 'F11'; // Cell for status monitoring
 
 /**
- * Main doPost function - handles incoming requests for both Frost Res and Backup actions
+ * doGet function - handles GET requests (for web app validation)
+ */
+function doGet(e) {
+  return ContentService
+    .createTextOutput(JSON.stringify({
+      success: true,
+      message: 'Frost Resistance CLA Web App is running',
+      timestamp: new Date().toISOString(),
+      availableActions: ['populateFrostRes', 'checkStatus', 'clearStatus', 'createClaBackup', 'createClaBackupWebApp']
+    }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Main doPost function - handles ALL requests (Analysis + Backup)
  */
 function doPost(e) {
   try {
@@ -38,7 +50,7 @@ function doPost(e) {
 
     let result;
     switch (action) {
-      // Frost Resistance actions
+      // Frost Resistance Analysis actions
       case 'populateFrostRes':
         result = handlePopulateFrostRes(logUrl);
         break;
@@ -81,6 +93,10 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 }
+
+// ==============================================
+// ANALYSIS FUNCTIONS
+// ==============================================
 
 /**
  * Handle clearing the status cell
@@ -163,7 +179,7 @@ function handlePopulateFrostRes(logUrl) {
     // Set status to PROCESSING
     setStatus('PROCESSING');
     
-    // Get the spreadsheet and frost res sheet
+    // Get the spreadsheet and frost resistance sheet
     const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
     const frostResSheet = spreadsheet.getSheetByName(FROST_RES_TAB_NAME);
     
@@ -213,6 +229,280 @@ function setStatus(status) {
     console.error('❌ [FROST RES] Error setting status:', error);
   }
 }
+
+// ==============================================
+// BACKUP FUNCTIONS  
+// ==============================================
+
+/**
+ * Web app compatible function that creates CLA backup and returns JSON response
+ */
+function createClaBackupWebApp() {
+  try {
+    // Get current date and format it as dd-mm-yyyy
+    var currentDate = new Date();
+    var day = Utilities.formatDate(currentDate, Session.getScriptTimeZone(), 'dd');
+    var month = Utilities.formatDate(currentDate, Session.getScriptTimeZone(), 'MM');
+    var year = Utilities.formatDate(currentDate, Session.getScriptTimeZone(), 'yyyy');
+    var formattedDate = day + '-' + month + '-' + year;
+    
+    // Create new spreadsheet name
+    var newSheetName = 'CLA - Frost Res - ' + formattedDate;
+    
+    // Get current spreadsheet and the frost resistance tab
+    var currentSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    var sourceSheet = currentSpreadsheet.getSheetByName('frost resi (Sapp)');
+    
+    if (!sourceSheet) {
+      return {
+        success: false,
+        error: 'Could not find "frost resi (Sapp)" tab in current spreadsheet'
+      };
+    }
+    
+    // Add validation: Check if source sheet has player data
+    console.log('🔍 [BACKUP] Validating frost resistance source sheet data...');
+    var dataRange = sourceSheet.getDataRange();
+    var rowCount = dataRange.getNumRows();
+    var playerDataStart = 5; // Players start at row 5
+    
+    // Check for player data with retry (since timing can vary)
+    var playerDataExists = false;
+    if (rowCount > playerDataStart) {
+      for (var i = playerDataStart; i <= Math.min(playerDataStart + 5, rowCount); i++) {
+        var playerName = sourceSheet.getRange(i, 2).getValue();
+        if (playerName && playerName.toString().trim().length > 0) {
+          playerDataExists = true;
+          break;
+        }
+      }
+    }
+    
+    if (!playerDataExists) {
+      console.warn('⚠️ [BACKUP] No player data found initially. Waiting 5 seconds and retrying...');
+      
+      // Wait 5 seconds and try again (longer for frost resistance)
+      Utilities.sleep(5000);
+      
+      for (var i = playerDataStart; i <= Math.min(playerDataStart + 5, rowCount); i++) {
+        var playerName = sourceSheet.getRange(i, 2).getValue();
+        if (playerName && playerName.toString().trim().length > 0) {
+          playerDataExists = true;
+          break;
+        }
+      }
+      
+      if (!playerDataExists) {
+        console.warn('⚠️ [BACKUP] Still no player data found after retry. Analysis may not be complete yet.');
+        return {
+          success: false,
+          error: 'No player data found in source sheet. Analysis may not be complete.'
+        };
+      }
+    }
+    
+    console.log('✅ [BACKUP] Frost resistance source sheet has player data. Proceeding with backup.');
+    
+    Logger.log('Found "frost resi (Sapp)" tab, creating backup...');
+    
+    // Create new spreadsheet
+    var newSpreadsheet = SpreadsheetApp.create(newSheetName);
+    Logger.log('Created new spreadsheet: ' + newSheetName);
+    
+    // Copy the frost resistance tab to the new spreadsheet
+    var copiedSheet = sourceSheet.copyTo(newSpreadsheet);
+    copiedSheet.setName('frost resi (Sapp)');
+    Logger.log('Copied "frost resi (Sapp)" tab to new spreadsheet');
+    
+    // Remove the default "Sheet1" from new spreadsheet
+    var defaultSheet = newSpreadsheet.getSheetByName('Ark1');
+    if (defaultSheet) {
+      newSpreadsheet.deleteSheet(defaultSheet);
+    }
+    
+    // Move to specific folder
+    var targetFolderId = '1s3vf73brH783FfDlJLXYsAjDSJTU65tx';
+    var newFile = DriveApp.getFileById(newSpreadsheet.getId());
+    var targetFolder = DriveApp.getFolderById(targetFolderId);
+    
+    targetFolder.addFile(newFile);
+    DriveApp.getRootFolder().removeFile(newFile);
+    
+    var result = {
+      success: true,
+      message: 'CLA Frost Resistance backup created successfully',
+      archiveName: newSheetName,
+      archiveUrl: newSpreadsheet.getUrl(),
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log('✅ [CLA BACKUP] Success:', JSON.stringify(result));
+    return result;
+    
+  } catch (error) {
+    console.error('❌ [CLA BACKUP] Error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Standard backup function - creates backup of frost resistance tab
+ */
+function createClaBackup() {
+  try {
+    console.log('🗄️ [CLA BACKUP] Starting CLA Frost Resistance backup creation...');
+    
+    // Get current spreadsheet and the frost resistance tab
+    var currentSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    var sourceSheet = currentSpreadsheet.getSheetByName('frost resi (Sapp)');
+    
+    if (!sourceSheet) {
+      throw new Error('Source sheet "frost resi (Sapp)" not found');
+    }
+    
+    // Create new spreadsheet
+    var currentDate = new Date();
+    var backupName = 'CLA - Frost Res - ' + formatDateForFilename(currentDate);
+    console.log('📝 [CLA BACKUP] Creating backup with name: ' + backupName);
+    
+    var newSpreadsheet = SpreadsheetApp.create(backupName);
+    
+    // Copy the sheet using copyTo() method
+    var copiedSheet = sourceSheet.copyTo(newSpreadsheet);
+    copiedSheet.setName('frost resi (Sapp)');
+    
+    // Remove the default "Sheet1" from new spreadsheet
+    var defaultSheet = newSpreadsheet.getSheetByName('Sheet1');
+    if (defaultSheet) {
+      newSpreadsheet.deleteSheet(defaultSheet);
+    }
+    
+    console.log('📋 [CLA BACKUP] Successfully copied "frost resi (Sapp)" tab using copyTo() method');
+    
+    // Move to specific folder - Updated to new Google account folder
+    var targetFolderId = '1s3vf73brH783FfDlJLXYsAjDSJTU65tx';
+    var newFile = DriveApp.getFileById(newSpreadsheet.getId());
+    var targetFolder = DriveApp.getFolderById(targetFolderId);
+    
+    // Move file to target folder
+    var parents = newFile.getParents();
+    while (parents.hasNext()) {
+      var parent = parents.next();
+      parent.removeFile(newFile);
+    }
+    targetFolder.addFile(newFile);
+    
+    // Make the sheet publicly readable for import
+    try {
+      newFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      console.log('🔗 [CLA BACKUP] Set sheet to publicly viewable');
+      
+      // Test the CSV export URL immediately
+      var testCsvUrl = 'https://docs.google.com/spreadsheets/d/' + newSpreadsheet.getId() + '/export?format=csv';
+      console.log('🧪 [CLA BACKUP] CSV export URL: ' + testCsvUrl);
+      
+      // Try to fetch our own CSV to verify it works
+      try {
+        var testResponse = UrlFetchApp.fetch(testCsvUrl, {
+          method: 'GET',
+          muteHttpExceptions: true
+        });
+        console.log('🧪 [CLA BACKUP] CSV test response status: ' + testResponse.getResponseCode());
+        if (testResponse.getResponseCode() === 200) {
+          var csvContent = testResponse.getContentText();
+          console.log('✅ [CLA BACKUP] CSV export working, content length: ' + csvContent.length);
+          console.log('📝 [CLA BACKUP] First 200 chars: ' + csvContent.substring(0, 200));
+        } else {
+          console.log('❌ [CLA BACKUP] CSV test failed with status: ' + testResponse.getResponseCode());
+        }
+      } catch (csvTestError) {
+        console.log('❌ [CLA BACKUP] CSV test error: ' + csvTestError);
+      }
+      
+    } catch (shareError) {
+      console.log('⚠️ [CLA BACKUP] Could not set public sharing (will try anyway):', shareError);
+    }
+    
+    console.log('✅ [CLA BACKUP] Backup created successfully: ' + newSpreadsheet.getUrl());
+    
+    return {
+      success: true,
+      message: 'CLA - Frost Resistance backup created successfully',
+      backupUrl: newSpreadsheet.getUrl(),
+      backupName: backupName,
+      timestamp: currentDate.toISOString()
+    };
+    
+  } catch (error) {
+    console.error('❌ [CLA BACKUP] Error creating backup:', error);
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+/**
+ * Backup function with additional checks and validation
+ */
+function createClaBackupWithCheck() {
+  try {
+    console.log('🔍 [CLA BACKUP] Starting backup with validation checks...');
+    
+    // Check if source sheet exists and has data
+    var sourceSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    var sourceSheet = sourceSpreadsheet.getSheetByName('frost resi (Sapp)');
+    
+    if (!sourceSheet) {
+      throw new Error('Source sheet "frost resi (Sapp)" not found');
+    }
+    
+    var dataRange = sourceSheet.getDataRange();
+    var rowCount = dataRange.getNumRows();
+    var colCount = dataRange.getNumColumns();
+    
+    console.log('📊 [CLA BACKUP] Source sheet has ' + rowCount + ' rows and ' + colCount + ' columns');
+    
+    if (rowCount < 5) {
+      console.warn('⚠️ [CLA BACKUP] Warning: Source sheet has very few rows (' + rowCount + ')');
+    }
+    
+    // Proceed with backup
+    var result = createClaBackup();
+    
+    if (result.success) {
+      result.sourceRows = rowCount;
+      result.sourceCols = colCount;
+      console.log('✅ [CLA BACKUP] Backup with checks completed successfully');
+    }
+    
+    return result;
+    
+  } catch (error) {
+    console.error('❌ [CLA BACKUP] Backup with checks error:', error);
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+/**
+ * Helper function to format date for filename
+ */
+function formatDateForFilename(date) {
+  var day = ('0' + date.getDate()).slice(-2);
+  var month = ('0' + (date.getMonth() + 1)).slice(-2);
+  var year = date.getFullYear();
+  return day + '-' + month + '-' + year;
+}
+
+// ==============================================
+// ANALYSIS IMPLEMENTATION 
+// ==============================================
 
 /**
  * Main function to populate frost resistance data
@@ -503,30 +793,8 @@ function populateFrostResistance(frostResSheet, logUrl) {
   }
 }
 
-/**
- * Test function for local development
- */
-function testPopulateFrostRes() {
-  try {
-    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const frostResSheet = spreadsheet.getSheetByName(FROST_RES_TAB_NAME);
-    
-    if (!frostResSheet) {
-      throw new Error(`Frost Resistance sheet "${FROST_RES_TAB_NAME}" not found`);
-    }
-    
-    // For testing, you can add a test log URL here
-    const testLogUrl = "3RHMnKDFV2ZPaGbX";
-    populateFrostResistance(frostResSheet, testLogUrl);
-    console.log('✅ Test completed successfully');
-    
-  } catch (error) {
-    console.error('❌ Test failed:', error);
-  }
-}
-
 // ==============================================
-// HELPER FUNCTIONS (from original script)
+// HELPER FUNCTIONS
 // ==============================================
 
 function shiftRangeByRows(sheet, range, rowCount) {

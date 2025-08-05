@@ -2123,7 +2123,7 @@ app.post('/api/logs/world-buffs', async (req, res) => {
     }
 
     // Google Apps Script Web App URL for World Buffs
-    const worldBuffsWebAppUrl = 'https://script.google.com/macros/s/AKfycbzWt1cz9sZRLDNx4RNaUJ4XSpSdk3sg_iOSD-R5fai6ZnIsJcYF3-B3gPtuRjrJLQ/exec';
+    const worldBuffsWebAppUrl = 'https://script.google.com/macros/s/AKfycbzQsvkeJ_CCrEHgRM4COkR5uF9b7SFQ1aIKSCG3SkWLEsu8C37Z0e1UJGNUqp54piTb5A/exec';
     
     // Prepare request data
     const requestData = { action };
@@ -2197,7 +2197,7 @@ app.post('/api/logs/cla-backup', async (req, res) => {
     }
 
     // World Buffs backup - calls the World Buffs spreadsheet (with updated backup code)
-    const claBackupWebAppUrl = 'https://script.google.com/macros/s/AKfycbzWt1cz9sZRLDNx4RNaUJ4XSpSdk3sg_iOSD-R5fai6ZnIsJcYF3-B3gPtuRjrJLQ/exec';
+    const claBackupWebAppUrl = 'https://script.google.com/macros/s/AKfycbzQsvkeJ_CCrEHgRM4COkR5uF9b7SFQ1aIKSCG3SkWLEsu8C37Z0e1UJGNUqp54piTb5A/exec';
     
     // Prepare request data
     const requestData = { action };
@@ -2268,7 +2268,7 @@ app.post('/api/logs/frost-res', async (req, res) => {
     }
 
     // Frost Resistance backup - calls the Frost Resistance spreadsheet (with updated backup code)
-    const frostResWebAppUrl = 'https://script.google.com/macros/s/AKfycbwM3z9P59e4BFltpN8EyIj-O_vP8--gdSCjFN1lK0bEzMIKoK6YBRFLX6RPw6Mep0dO/exec';
+    const frostResWebAppUrl = 'https://script.google.com/macros/s/AKfycbz4Zp2dA4gED4qFAbBcPOqYTBfQbWP0znPULUgo-thTe41yh2KXIIl8dvbBjA9o5p45RQ/exec';
     
     // Prepare request data
     const requestData = { action };
@@ -6224,20 +6224,10 @@ app.post('/api/logs/rpb-archive', async (req, res) => {
     console.log('🔍 [RPB ARCHIVE] Environment check - NODE_ENV:', process.env.NODE_ENV);
     
     try {
-        // Get the Google Apps Script URL from environment variables
-        const scriptUrl = process.env.GOOGLE_APPS_SCRIPT_URL;
+        // HARDCODED URL to bypass whatever parsing issue is happening
+        const scriptUrl = 'https://script.google.com/macros/s/AKfycbyilOtCQnVteduqKoRPSE0VNAne9tVPkQezaePajGMUiAiMNKmpn0flIdNBgL8tx5Eo/exec';
         
-        if (!scriptUrl) {
-            console.error('❌ [RPB ARCHIVE] GOOGLE_APPS_SCRIPT_URL not configured in environment');
-            console.log('🔍 [RPB ARCHIVE] Available env vars starting with GOOGLE_:', 
-                Object.keys(process.env).filter(key => key.startsWith('GOOGLE_')));
-            return res.status(500).json({
-                success: false,
-                error: 'Google Apps Script URL not configured. Please check Heroku environment variables.'
-            });
-        }
-        
-        console.log('🔄 [RPB ARCHIVE] Calling Google Apps Script:', scriptUrl.substring(0, 50) + '...');
+        console.log('🔄 [RPB ARCHIVE] Using hardcoded URL:', scriptUrl.substring(0, 50) + '...');
         
         // Make the request to Google Apps Script with timeout
         const controller = new AbortController();
@@ -7638,8 +7628,8 @@ app.get('/api/rpb-tracking/:eventId', async (req, res) => {
       query = 'SELECT * FROM rpb_tracking WHERE event_id = $1 AND analysis_type = $2 AND log_url = $3 ORDER BY created_at DESC LIMIT 1';
       params = [eventId, analysisType, logUrl];
     } else if (analysisType) {
-      // Get specific analysis type
-      query = 'SELECT * FROM rpb_tracking WHERE event_id = $1 AND analysis_type = $2 ORDER BY created_at DESC LIMIT 1';
+      // Get specific analysis type (most recent first)
+      query = 'SELECT * FROM rpb_tracking WHERE event_id = $1 AND analysis_type = $2 ORDER BY created_at DESC, id DESC LIMIT 1';
       params = [eventId, analysisType];
     } else {
       // Get all analysis types for the event
@@ -7648,6 +7638,21 @@ app.get('/api/rpb-tracking/:eventId', async (req, res) => {
     }
     
     const result = await pool.query(query, params);
+    
+    // Debug: Show all matching records
+    if (analysisType === 'world_buffs') {
+      console.log(`🔍 [TRACKING DEBUG] Found ${result.rows.length} world_buffs records for event ${eventId}:`);
+      result.rows.forEach((row, index) => {
+        console.log(`🔍 [TRACKING DEBUG] Record ${index + 1}:`, {
+          id: row.id,
+          log_url: row.log_url,
+          archive_url: row.archive_url,
+          archive_name: row.archive_name,
+          created_at: row.created_at,
+          rpb_status: row.rpb_status
+        });
+      });
+    }
     
     if (result.rows.length === 0) {
       console.log(`📊 [TRACKING] No tracking found for event: ${eventId}, type: ${analysisType || 'any'}`);
@@ -7735,11 +7740,12 @@ app.post('/api/import-world-buffs', async (req, res) => {
 
     const sheetId = sheetIdMatch[1];
     
-    // Try multiple CSV export methods
+    // Try multiple CSV export methods (ordered to try more flexible options first)
     const csvUrls = [
-      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`,
-      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=0`,
-      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&single=true&gid=0`
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`, // Gets first sheet with data
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&single=true`, // Single sheet export
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=0`, // Specifically first tab
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&single=true&gid=0` // Single sheet, first tab
     ];
 
     let csvResponse = null;
@@ -7750,13 +7756,14 @@ app.post('/api/import-world-buffs', async (req, res) => {
         console.log(`${logPrefix} Trying CSV URL: ${csvUrl}`);
         
         csvResponse = await axios.get(csvUrl, {
-          timeout: 30000,
+          timeout: 60000, // Increased to 60 seconds
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
           },
           validateStatus: function (status) {
             return status >= 200 && status < 300;
-          }
+          },
+          maxRedirects: 5
         });
         
         // Check if response is actually CSV (not HTML error page)
@@ -7782,6 +7789,8 @@ app.post('/api/import-world-buffs', async (req, res) => {
 
     const csvData = csvResponse.data;
     console.log(`${logPrefix} Received CSV data, length: ${csvData.length} characters`);
+    console.log(`${logPrefix} First 500 characters of CSV data:`, csvData.substring(0, 500));
+    console.log(`${logPrefix} CSV data (first 10 lines):`, csvData.split('\n').slice(0, 10));
 
     let dbResult;
     let sheetTitle = 'Unknown Sheet';
@@ -7877,11 +7886,12 @@ app.post('/api/import-sheet', async (req, res) => {
 
     const sheetId = sheetIdMatch[1];
     
-    // Try multiple CSV export methods
+    // Try multiple CSV export methods (ordered to try more flexible options first)
     const csvUrls = [
-      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`,
-      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=0`,
-      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&single=true&gid=0`
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`, // Gets first sheet with data
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&single=true`, // Single sheet export
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=0`, // Specifically first tab
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&single=true&gid=0` // Single sheet, first tab
     ];
 
     let csvResponse = null;
@@ -7892,13 +7902,14 @@ app.post('/api/import-sheet', async (req, res) => {
         console.log(`📊 [SHEET IMPORT] Trying CSV URL: ${csvUrl}`);
         
         csvResponse = await axios.get(csvUrl, {
-          timeout: 30000,
+          timeout: 60000, // Increased to 60 seconds
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
           },
           validateStatus: function (status) {
             return status >= 200 && status < 300;
-          }
+          },
+          maxRedirects: 5
         });
         
         // Check if response is actually CSV (not HTML error page)
@@ -10726,6 +10737,100 @@ app.post('/api/admin/background-darken', async (req, res) => {
 // Serve attendance page
 app.get('/attendance', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'attendance.html'));
+});
+
+// API endpoint to verify imported data
+app.get('/api/logs/verify-import/:eventId', async (req, res) => {
+    try {
+        const { eventId } = req.params;
+        
+        console.log(`🔍 [VERIFY] Checking imported data for event: ${eventId}`);
+        
+        // Query for World Buffs data
+        const worldBuffsQuery = `
+            SELECT character_name, buff_name, buff_value, color_status, analysis_type
+            FROM sheet_players_buffs 
+            WHERE event_id = $1 AND analysis_type = 'world_buffs'
+            ORDER BY character_name ASC
+            LIMIT 50
+        `;
+        
+        // Query for Frost Resistance data  
+        const frostResQuery = `
+            SELECT character_name, frost_resistance, analysis_type
+            FROM sheet_players_frostres 
+            WHERE event_id = $1 AND analysis_type = 'frost_resistance'
+            ORDER BY character_name ASC
+            LIMIT 50
+        `;
+        
+        // Query for RPB data
+        const rpbQuery = `
+            SELECT character_name, character_class, ability_name, ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            ORDER BY character_name ASC
+            LIMIT 50
+        `;
+        
+        const [worldBuffsResult, frostResResult, rpbResult] = await Promise.all([
+            pool.query(worldBuffsQuery, [eventId]),
+            pool.query(frostResQuery, [eventId]),
+            pool.query(rpbQuery, [eventId])
+        ]);
+        
+        res.json({
+            success: true,
+            eventId: eventId,
+            data: {
+                worldBuffs: worldBuffsResult.rows,
+                frostResistance: frostResResult.rows,
+                rpb: rpbResult.rows
+            },
+            counts: {
+                worldBuffs: worldBuffsResult.rows.length,
+                frostResistance: frostResResult.rows.length,
+                rpb: rpbResult.rows.length
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [VERIFY] Error fetching imported data:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Quick fix endpoint to update wrong archive URL
+app.post('/api/fix-archive-url/:eventId', async (req, res) => {
+    try {
+        const { eventId } = req.params;
+        const { correctUrl, analysisType = 'world_buffs' } = req.body;
+        
+        console.log(`🔧 [FIX] Updating ${analysisType} archive URL for event ${eventId} to: ${correctUrl}`);
+        
+        const result = await pool.query(
+            `UPDATE rpb_tracking 
+             SET archive_url = $1, 
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE event_id = $2 AND analysis_type = $3`,
+            [correctUrl, eventId, analysisType]
+        );
+        
+        if (result.rowCount > 0) {
+            console.log(`✅ [FIX] Updated ${result.rowCount} record(s)`);
+            res.json({ success: true, updatedRows: result.rowCount });
+        } else {
+            console.log(`❌ [FIX] No records found to update`);
+            res.json({ success: false, message: 'No records found to update' });
+        }
+        
+    } catch (error) {
+        console.error('❌ [FIX] Error updating archive URL:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 // This route will handle both the root path ('/') AND any other unmatched paths,
