@@ -1016,6 +1016,10 @@
     color: #9b59b6;
 }
 
+.stat-card.total-points .stat-icon {
+    color: #f39c12;
+}
+
 .stat-value {
     font-size: 1.8em;
     font-weight: 700;
@@ -1815,15 +1819,58 @@ body.raid-active .scroll-target {
     transition: background-color 0.2s ease;
     font-size: 0.9em;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    margin: 2px;
 }
 
 .player-dropdown-item:hover,
 .player-dropdown-item.selected {
-    background: var(--secondary-bg, #2a2a2a);
+    background: rgba(255, 255, 255, 0.2) !important;
 }
 
 .player-dropdown-item:last-child {
     border-bottom: none;
+}
+
+/* Class-specific background colors for dropdown items */
+.player-dropdown-item.class-warrior {
+    background: rgba(199, 156, 110, 0.3);
+}
+
+.player-dropdown-item.class-paladin {
+    background: rgba(245, 140, 186, 0.3);
+}
+
+.player-dropdown-item.class-hunter {
+    background: rgba(171, 212, 115, 0.3);
+}
+
+.player-dropdown-item.class-rogue {
+    background: rgba(255, 245, 105, 0.3);
+}
+
+.player-dropdown-item.class-priest {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.player-dropdown-item.class-shaman {
+    background: rgba(0, 112, 222, 0.3);
+}
+
+.player-dropdown-item.class-mage {
+    background: rgba(105, 204, 240, 0.3);
+}
+
+.player-dropdown-item.class-warlock {
+    background: rgba(148, 130, 201, 0.3);
+}
+
+.player-dropdown-item.class-druid {
+    background: rgba(255, 125, 10, 0.3);
+}
+
+.player-dropdown-item.class-unknown {
+    background: rgba(156, 163, 175, 0.3);
 }
 
 .player-class {
@@ -1896,93 +1943,133 @@ body.raid-active .scroll-target {
     transform: translateY(-1px);
 }
 
-/* Table Styles */
-.manual-rewards-table-container {
-    overflow-x: auto;
-}
-
-.manual-rewards-table {
-    width: 100%;
-    border-collapse: collapse;
-    background: var(--card-bg, #1e1e1e);
-    border-radius: 8px;
-    overflow: hidden;
-}
-
-.manual-rewards-table th {
-    background: var(--secondary-bg, #2a2a2a);
-    color: var(--text-primary, #e0e0e0);
-    padding: 12px 15px;
-    text-align: left;
-    font-weight: 600;
-    font-size: 0.9em;
-    border-bottom: 2px solid var(--border-color, #3a3a3a);
-}
-
-.manual-rewards-table td {
-    padding: 12px 15px;
+/* Manual Rewards Rankings Items */
+.manual-rewards-section .ranking-item {
+    display: flex;
+    align-items: center;
+    padding: 15px 25px;
     border-bottom: 1px solid var(--border-color, #3a3a3a);
-    color: var(--text-primary, #e0e0e0);
-    font-size: 1.1em;
+    transition: background-color 0.2s ease;
+    position: relative;
 }
 
-.manual-rewards-table tr:hover {
-    background: var(--secondary-bg, #2a2a2a);
+.manual-rewards-section .ranking-item:hover {
+    background-color: var(--secondary-bg, #2a2a2a);
 }
 
-.manual-rewards-table tr:last-child td {
+.manual-rewards-section .ranking-item:last-child {
     border-bottom: none;
 }
 
-/* Player Name with Class Colors */
-.player-name-cell {
+/* Manual Rewards Position */
+.manual-rewards-section .ranking-position {
     display: flex;
     align-items: center;
-    gap: 8px;
-}
-
-.player-name {
-    font-weight: 600;
-}
-
-.player-name.class-warrior { color: #C79C6E; }
-.player-name.class-paladin { color: #F58CBA; }
-.player-name.class-hunter { color: #ABD473; }
-.player-name.class-rogue { color: #FFF569; }
-.player-name.class-priest { color: #FFFFFF; }
-.player-name.class-shaman { color: #0070DE; }
-.player-name.class-mage { color: #69CCF0; }
-.player-name.class-warlock { color: #9482C9; }
-.player-name.class-druid { color: #FF7D0A; }
-
-/* Points Display */
-.points-cell {
+    justify-content: center;
+    width: 20px;
+    flex-shrink: 0;
     font-weight: 700;
-    font-size: 1.6em;
-}
-
-.points-positive {
-    color: #ff6b35;
-}
-
-.points-negative {
-    color: #e74c3c;
-}
-
-.points-zero {
+    font-size: 1.2em;
     color: var(--text-secondary, #a0a0a0);
 }
 
-/* Actions Column */
-.actions-column {
-    width: 120px;
-    text-align: center;
+/* Manual Rewards Character Info */
+.manual-rewards-section .character-info {
+    flex: 1;
+    margin-left: 20px;
+    padding: 8px;
+    border-radius: 6px;
+    position: relative;
 }
 
-.actions-cell {
+/* Class-specific background colors for manual rewards */
+.manual-rewards-section .character-info.class-warrior {
+    background: linear-gradient(to right, #C79C6E var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-paladin {
+    background: linear-gradient(to right, #F58CBA var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-hunter {
+    background: linear-gradient(to right, #ABD473 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-rogue {
+    background: linear-gradient(to right, #FFF569 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-priest {
+    background: linear-gradient(to right, #FFFFFF var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-shaman {
+    background: linear-gradient(to right, #0070DE var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-mage {
+    background: linear-gradient(to right, #69CCF0 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-warlock {
+    background: linear-gradient(to right, #9482C9 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-druid {
+    background: linear-gradient(to right, #FF7D0A var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-unknown {
+    background: linear-gradient(to right, var(--secondary-bg, #2a2a2a) var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-name {
+    font-weight: 600;
+    font-size: 1.1em;
+    margin-bottom: 4px;
+    color: #000 !important;
+}
+
+.manual-rewards-section .character-details {
+    font-size: 0.9em;
+    color: #000 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: help;
+}
+
+/* Manual Rewards Performance Amount */
+.manual-rewards-section .performance-amount {
+    text-align: right;
+    flex-shrink: 0;
+    min-width: 60px;
+    cursor: help;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.manual-rewards-section .amount-value {
+    font-size: 1.6em;
+    font-weight: 700;
+    color: var(--text-primary, #e0e0e0);
+}
+
+.manual-rewards-section .amount-value.positive {
+    color: #28a745;
+}
+
+.manual-rewards-section .amount-value.negative {
+    color: #dc3545;
+}
+
+/* Action buttons for manual rewards */
+.manual-rewards-actions {
     display: flex;
     gap: 5px;
-    justify-content: center;
+    margin-left: 15px;
+    flex-shrink: 0;
 }
 
 /* Messages */

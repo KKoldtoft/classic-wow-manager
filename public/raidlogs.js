@@ -1153,6 +1153,9 @@ class RaidLogsManager {
         
         // Update WoW Logs card
         this.updateWoWLogsCard();
+        
+        // Update Total Points card
+        this.updateTotalPointsCard();
     }
 
     updateRPBArchiveCard() {
@@ -1240,6 +1243,175 @@ class RaidLogsManager {
             // Keep button disabled
             button.disabled = true;
             detail.textContent = 'No logs available';
+        }
+    }
+
+    updateTotalPointsCard() {
+        const valueElement = document.getElementById('total-points-value');
+        
+        if (!valueElement) return;
+        
+        try {
+            // Calculate total points using the formula:
+            // (Number of players in raid) × 100 + (all positive values) - (all negative values)
+            
+            // Get number of players from log data
+            const numberOfPlayers = this.logData ? this.logData.length : 0;
+            
+            // Base points = number of players × 100
+            const basePoints = numberOfPlayers * 100;
+            
+            // Calculate points from all rankings on the page
+            let positivePoints = 0;
+            let negativePoints = 0;
+            
+            // Add points from damage rankings
+            if (this.logData && this.rewardSettings.damage && this.rewardSettings.damage.points_array) {
+                const damagePoints = this.rewardSettings.damage.points_array;
+                for (let i = 0; i < Math.min(this.logData.length, damagePoints.length); i++) {
+                    positivePoints += damagePoints[i];
+                }
+            }
+            
+            // Add points from healing rankings
+            if (this.logData && this.rewardSettings.healing && this.rewardSettings.healing.points_array) {
+                const healingPoints = this.rewardSettings.healing.points_array;
+                const healers = this.logData.filter(player => 
+                    player.role_detected === 'healer' || player.healing_amount > player.damage_amount
+                );
+                for (let i = 0; i < Math.min(healers.length, healingPoints.length); i++) {
+                    positivePoints += healingPoints[i];
+                }
+            }
+            
+            // Add points from abilities
+            if (this.abilitiesData && this.abilitiesSettings) {
+                this.abilitiesData.forEach(player => {
+                    if (player.points > 0) positivePoints += player.points;
+                    else if (player.points < 0) negativePoints += Math.abs(player.points);
+                });
+            }
+            
+            // Add points from mana potions
+            if (this.manaPotionsData && this.manaPotionsSettings) {
+                this.manaPotionsData.forEach(player => {
+                    if (player.points > 0) positivePoints += player.points;
+                });
+            }
+            
+            // Add points from runes
+            if (this.runesData && this.runesSettings) {
+                this.runesData.forEach(player => {
+                    if (player.points > 0) positivePoints += player.points;
+                });
+            }
+            
+            // Add points from interrupts
+            if (this.interruptsData && this.interruptsSettings) {
+                this.interruptsData.forEach(player => {
+                    if (player.points > 0) positivePoints += player.points;
+                });
+            }
+            
+            // Add points from disarms
+            if (this.disarmsData && this.disarmsSettings) {
+                this.disarmsData.forEach(player => {
+                    if (player.points > 0) positivePoints += player.points;
+                });
+            }
+            
+            // Add points from sunder armor
+            if (this.sunderData && this.sunderSettings && this.sunderSettings.point_ranges) {
+                this.sunderData.forEach(player => {
+                    if (player.points > 0) positivePoints += player.points;
+                    else if (player.points < 0) negativePoints += Math.abs(player.points);
+                });
+            }
+            
+            // Add points from curses
+            if (this.curseData && this.curseSettings) {
+                this.curseData.forEach(player => {
+                    if (player.points > 0) positivePoints += player.points;
+                });
+            }
+            
+            // Add points from curse shadow
+            if (this.curseShadowData && this.curseShadowSettings) {
+                this.curseShadowData.forEach(player => {
+                    if (player.points > 0) positivePoints += player.points;
+                });
+            }
+            
+            // Add points from curse elements
+            if (this.curseElementsData && this.curseElementsSettings) {
+                this.curseElementsData.forEach(player => {
+                    if (player.points > 0) positivePoints += player.points;
+                });
+            }
+            
+            // Add points from faerie fire
+            if (this.faerieFireData && this.faerieFireSettings) {
+                this.faerieFireData.forEach(player => {
+                    if (player.points > 0) positivePoints += player.points;
+                });
+            }
+            
+            // Add points from scorch
+            if (this.scorchData && this.scorchSettings) {
+                this.scorchData.forEach(player => {
+                    if (player.points > 0) positivePoints += player.points;
+                });
+            }
+            
+            // Add points from demoralizing shout
+            if (this.demoShoutData && this.demoShoutSettings) {
+                this.demoShoutData.forEach(player => {
+                    if (player.points > 0) positivePoints += player.points;
+                });
+            }
+            
+            // Add points from polymorph
+            if (this.polymorphData && this.polymorphSettings) {
+                this.polymorphData.forEach(player => {
+                    if (player.points > 0) positivePoints += player.points;
+                });
+            }
+            
+            // Add points from power infusion
+            if (this.powerInfusionData && this.powerInfusionSettings) {
+                this.powerInfusionData.forEach(player => {
+                    if (player.points > 0) positivePoints += player.points;
+                });
+            }
+            
+            // Add points from decurses
+            if (this.decursesData && this.decursesSettings) {
+                this.decursesData.forEach(player => {
+                    if (player.points > 0) positivePoints += player.points;
+                    else if (player.points < 0) negativePoints += Math.abs(player.points);
+                });
+            }
+            
+            // Add points from manual rewards/deductions
+            if (this.manualRewardsData) {
+                this.manualRewardsData.forEach(entry => {
+                    const points = parseFloat(entry.points);
+                    if (points > 0) positivePoints += points;
+                    else if (points < 0) negativePoints += Math.abs(points);
+                });
+            }
+            
+            // Calculate final total
+            const totalPoints = basePoints + positivePoints - negativePoints;
+            
+            // Display the result
+            valueElement.textContent = this.formatNumber(totalPoints);
+            
+            console.log(`📊 [TOTAL POINTS] Base: ${basePoints}, Positive: ${positivePoints}, Negative: ${negativePoints}, Total: ${totalPoints}`);
+            
+        } catch (error) {
+            console.error('❌ [TOTAL POINTS] Error calculating total points:', error);
+            valueElement.textContent = '--';
         }
     }
 
@@ -3560,14 +3732,14 @@ class RaidLogsManager {
     }
     
     populateManualRewardsTable() {
-        const tbody = document.getElementById('manual-rewards-tbody');
+        const listContainer = document.getElementById('manual-rewards-list');
         const noEntriesMessage = document.getElementById('no-entries-message');
         const hasManagementRole = this.currentUser?.hasManagementRole || false;
         
-        if (!tbody) return;
+        if (!listContainer) return;
         
-        // Clear existing rows
-        tbody.innerHTML = '';
+        // Clear existing items
+        listContainer.innerHTML = '';
         
         if (this.manualRewardsData.length === 0) {
             if (noEntriesMessage) noEntriesMessage.style.display = 'block';
@@ -3576,50 +3748,59 @@ class RaidLogsManager {
         
         if (noEntriesMessage) noEntriesMessage.style.display = 'none';
         
-        this.manualRewardsData.forEach(entry => {
-            const row = this.createManualRewardRow(entry, hasManagementRole);
-            tbody.appendChild(row);
+        this.manualRewardsData.forEach((entry, index) => {
+            const rankingItem = this.createManualRewardItem(entry, index + 1, hasManagementRole);
+            listContainer.appendChild(rankingItem);
         });
     }
     
-    createManualRewardRow(entry, hasManagementRole) {
-        const row = document.createElement('tr');
+    createManualRewardItem(entry, position, hasManagementRole) {
+        const rankingItem = document.createElement('div');
+        rankingItem.className = 'ranking-item';
         
-        // Player Name Cell
-        const playerCell = document.createElement('td');
-        playerCell.className = 'player-name-cell';
+        // Position
+        const positionDiv = document.createElement('div');
+        positionDiv.className = 'ranking-position';
+        positionDiv.textContent = position;
         
-        const playerNameSpan = document.createElement('span');
-        playerNameSpan.textContent = entry.player_name;
-        playerNameSpan.className = `player-name ${entry.player_class ? `class-${this.normalizeClassName(entry.player_class)}` : ''}`;
+        // Character Info
+        const characterInfo = document.createElement('div');
+        characterInfo.className = `character-info ${entry.player_class ? `class-${this.normalizeClassName(entry.player_class)}` : 'class-unknown'}`;
         
-        playerCell.appendChild(playerNameSpan);
+        // Character Name
+        const characterName = document.createElement('div');
+        characterName.className = 'character-name';
+        characterName.textContent = entry.player_name;
         
-        // Description Cell
-        const descriptionCell = document.createElement('td');
-        descriptionCell.textContent = entry.description;
+        // Character Details (description)
+        const characterDetails = document.createElement('div');
+        characterDetails.className = 'character-details';
+        characterDetails.textContent = entry.description;
+        characterDetails.title = entry.description; // Tooltip for full text
         
-        // Points Cell
-        const pointsCell = document.createElement('td');
-        pointsCell.className = 'points-cell';
+        characterInfo.appendChild(characterName);
+        characterInfo.appendChild(characterDetails);
         
-        const pointsSpan = document.createElement('span');
+        // Performance Amount (Points)
+        const performanceAmount = document.createElement('div');
+        performanceAmount.className = 'performance-amount';
+        
+        const amountValue = document.createElement('div');
+        amountValue.className = 'amount-value';
         const points = parseFloat(entry.points);
-        pointsSpan.textContent = points > 0 ? `+${points}` : points.toString();
+        amountValue.textContent = points > 0 ? `+${points}` : points.toString();
         
         if (points > 0) {
-            pointsSpan.className = 'points-positive';
+            amountValue.classList.add('positive');
         } else if (points < 0) {
-            pointsSpan.className = 'points-negative';
-        } else {
-            pointsSpan.className = 'points-zero';
+            amountValue.classList.add('negative');
         }
         
-        pointsCell.appendChild(pointsSpan);
+        performanceAmount.appendChild(amountValue);
         
-        // Actions Cell (only for management users)
-        const actionsCell = document.createElement('td');
-        actionsCell.className = 'actions-cell';
+        // Actions (only for management users)
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'manual-rewards-actions';
         
         if (hasManagementRole) {
             const editBtn = document.createElement('button');
@@ -3632,17 +3813,19 @@ class RaidLogsManager {
             deleteBtn.innerHTML = '<i class="fas fa-trash"></i> Delete';
             deleteBtn.onclick = () => this.deleteEntry(entry);
             
-            actionsCell.appendChild(editBtn);
-            actionsCell.appendChild(deleteBtn);
+            actionsDiv.appendChild(editBtn);
+            actionsDiv.appendChild(deleteBtn);
         }
         
-        // Append all cells
-        row.appendChild(playerCell);
-        row.appendChild(descriptionCell);
-        row.appendChild(pointsCell);
-        row.appendChild(actionsCell);
+        // Append all elements
+        rankingItem.appendChild(positionDiv);
+        rankingItem.appendChild(characterInfo);
+        rankingItem.appendChild(performanceAmount);
+        if (hasManagementRole) {
+            rankingItem.appendChild(actionsDiv);
+        }
         
-        return row;
+        return rankingItem;
     }
     
     handlePlayerSearch(searchTerm) {
@@ -3670,7 +3853,7 @@ class RaidLogsManager {
         
         players.forEach((player, index) => {
             const item = document.createElement('div');
-            item.className = 'player-dropdown-item';
+            item.className = `player-dropdown-item ${player.player_class ? `class-${this.normalizeClassName(player.player_class)}` : 'class-unknown'}`;
             if (index === 0) item.classList.add('selected');
             
             const nameSpan = document.createElement('span');
@@ -3816,6 +3999,9 @@ class RaidLogsManager {
             this.populateManualRewardsTable();
             this.clearForm();
             
+            // Update total points card
+            this.updateTotalPointsCard();
+            
         } catch (error) {
             console.error('❌ [MANUAL REWARDS] Error saving entry:', error);
             alert('Failed to save entry. Please try again.');
@@ -3873,6 +4059,9 @@ class RaidLogsManager {
             // Refresh data and display
             await this.fetchManualRewardsData();
             this.populateManualRewardsTable();
+            
+            // Update total points card
+            this.updateTotalPointsCard();
             
         } catch (error) {
             console.error('❌ [MANUAL REWARDS] Error deleting entry:', error);

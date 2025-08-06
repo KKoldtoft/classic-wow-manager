@@ -163,6 +163,14 @@
                             </div>
                             <div class="stat-detail" id="rpb-archive-detail">Loading...</div>
                         </div>
+
+                        <!-- Total Points -->
+                        <div class="stat-card total-points">
+                            <i class="fas fa-coins stat-icon"></i>
+                            <div class="stat-label">Total Points</div>
+                            <div class="stat-value" id="total-points-value">--</div>
+                            <div class="stat-detail">Base + rewards - deductions</div>
+                        </div>
                     </div>
 
                 <!-- Wall of Shame Panel -->
@@ -238,26 +246,14 @@
                         </div>
                     </div>
                     
-                    <!-- Entries Table -->
-                    <div class="manual-rewards-table-container">
-                        <table class="manual-rewards-table" id="manual-rewards-table">
-                            <thead>
-                                <tr>
-                                    <th>Player</th>
-                                    <th>Description</th>
-                                    <th>Points</th>
-                                    <th class="actions-column" id="actions-header" style="display: none;">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="manual-rewards-tbody">
-                                <!-- Entries will be populated here -->
-                            </tbody>
-                        </table>
-                        
-                        <div class="no-entries-message" id="no-entries-message" style="display: none;">
-                            <i class="fas fa-inbox"></i>
-                            <p>No manual rewards or deductions have been added yet.</p>
-                        </div>
+                    <!-- Entries List -->
+                    <div class="rankings-list" id="manual-rewards-list">
+                        <!-- Manual rewards entries will be populated here -->
+                    </div>
+                    
+                    <div class="no-entries-message" id="no-entries-message" style="display: none;">
+                        <i class="fas fa-inbox"></i>
+                        <p>No manual rewards or deductions have been added yet.</p>
                     </div>
                     
                     <!-- Access Denied Message (for non-management users) -->

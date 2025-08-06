@@ -6468,7 +6468,7 @@ app.get('/api/manual-rewards/:eventId', async (req, res) => {
                 updated_at
             FROM manual_rewards_deductions 
             WHERE event_id = $1 
-            ORDER BY created_at DESC
+            ORDER BY created_at ASC
         `, [eventId]);
         
         console.log(`⚖️ [MANUAL REWARDS] Found ${result.rows.length} manual entries for event: ${eventId}`);
