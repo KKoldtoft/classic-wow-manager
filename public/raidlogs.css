@@ -1442,6 +1442,8 @@
     gap: 0;
     white-space: nowrap;
     position: relative;
+    border: solid 1px #ffffff;
+    border-radius: 12px;
 }
 
 /* Animated highlight slider */
@@ -1457,7 +1459,6 @@
     z-index: 1;
     opacity: 0;
     width: 0;
-    box-shadow: 0 2px 8px rgba(88, 101, 242, 0.3);
 }
 
 /* Individual navigation buttons - piano style */
@@ -1719,5 +1720,347 @@ body.raid-active .scroll-target {
     .wall-of-shame-dashboard .stat-icon {
         font-size: 1.6em;
         margin-bottom: 8px;
+    }
+}
+
+/* Manual Rewards and Deductions Panel Styles */
+.manual-rewards-section {
+    background: var(--card-bg, #1e1e1e);
+    border: 1px solid var(--border-color, #3a3a3a);
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    margin: 0 auto 30px auto;
+    max-width: 1200px;
+    overflow: hidden;
+}
+
+.manual-rewards-section .section-header {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    color: white;
+    padding: 20px 25px;
+    text-align: center;
+}
+
+.manual-rewards-content {
+    padding: 20px;
+}
+
+/* Form Styles */
+.manual-rewards-form {
+    background: var(--secondary-bg, #2a2a2a);
+    border: 1px solid var(--border-color, #3a3a3a);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr auto;
+    gap: 15px;
+    align-items: end;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.form-group label {
+    color: var(--text-primary, #e0e0e0);
+    font-weight: 600;
+    margin-bottom: 5px;
+    font-size: 0.9em;
+}
+
+.form-group input {
+    background: var(--card-bg, #1e1e1e);
+    border: 1px solid var(--border-color, #3a3a3a);
+    border-radius: 6px;
+    color: var(--text-primary, #e0e0e0);
+    padding: 8px 12px;
+    font-size: 0.9em;
+    transition: border-color 0.2s ease;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: #8b5cf6;
+    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+}
+
+/* Player Search Dropdown */
+.player-search-container {
+    position: relative;
+}
+
+.player-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--card-bg, #1e1e1e);
+    border: 1px solid var(--border-color, #3a3a3a);
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 1000;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.player-dropdown-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    font-size: 0.9em;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.player-dropdown-item:hover,
+.player-dropdown-item.selected {
+    background: var(--secondary-bg, #2a2a2a);
+}
+
+.player-dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.player-class {
+    font-size: 0.8em;
+    opacity: 0.7;
+    margin-left: 8px;
+}
+
+/* Form Actions */
+.form-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.btn-add, .btn-cancel, .btn-edit, .btn-delete {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.9em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-add {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+}
+
+.btn-add:hover {
+    background: linear-gradient(135deg, #059669, #047857);
+    transform: translateY(-1px);
+}
+
+.btn-cancel {
+    background: linear-gradient(135deg, #6b7280, #4b5563);
+    color: white;
+}
+
+.btn-cancel:hover {
+    background: linear-gradient(135deg, #4b5563, #374151);
+    transform: translateY(-1px);
+}
+
+.btn-edit {
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    color: white;
+    padding: 6px 12px;
+    font-size: 0.8em;
+}
+
+.btn-edit:hover {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    transform: translateY(-1px);
+}
+
+.btn-delete {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+    padding: 6px 12px;
+    font-size: 0.8em;
+}
+
+.btn-delete:hover {
+    background: linear-gradient(135deg, #dc2626, #b91c1c);
+    transform: translateY(-1px);
+}
+
+/* Table Styles */
+.manual-rewards-table-container {
+    overflow-x: auto;
+}
+
+.manual-rewards-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card-bg, #1e1e1e);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.manual-rewards-table th {
+    background: var(--secondary-bg, #2a2a2a);
+    color: var(--text-primary, #e0e0e0);
+    padding: 12px 15px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.9em;
+    border-bottom: 2px solid var(--border-color, #3a3a3a);
+}
+
+.manual-rewards-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid var(--border-color, #3a3a3a);
+    color: var(--text-primary, #e0e0e0);
+    font-size: 1.1em;
+}
+
+.manual-rewards-table tr:hover {
+    background: var(--secondary-bg, #2a2a2a);
+}
+
+.manual-rewards-table tr:last-child td {
+    border-bottom: none;
+}
+
+/* Player Name with Class Colors */
+.player-name-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.player-name {
+    font-weight: 600;
+}
+
+.player-name.class-warrior { color: #C79C6E; }
+.player-name.class-paladin { color: #F58CBA; }
+.player-name.class-hunter { color: #ABD473; }
+.player-name.class-rogue { color: #FFF569; }
+.player-name.class-priest { color: #FFFFFF; }
+.player-name.class-shaman { color: #0070DE; }
+.player-name.class-mage { color: #69CCF0; }
+.player-name.class-warlock { color: #9482C9; }
+.player-name.class-druid { color: #FF7D0A; }
+
+/* Points Display */
+.points-cell {
+    font-weight: 700;
+    font-size: 1.6em;
+}
+
+.points-positive {
+    color: #ff6b35;
+}
+
+.points-negative {
+    color: #e74c3c;
+}
+
+.points-zero {
+    color: var(--text-secondary, #a0a0a0);
+}
+
+/* Actions Column */
+.actions-column {
+    width: 120px;
+    text-align: center;
+}
+
+.actions-cell {
+    display: flex;
+    gap: 5px;
+    justify-content: center;
+}
+
+/* Messages */
+.no-entries-message, .access-denied-message, .loading-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-secondary, #a0a0a0);
+}
+
+.no-entries-message i, .access-denied-message i, .loading-state i {
+    font-size: 2em;
+    margin-bottom: 15px;
+    opacity: 0.6;
+}
+
+.access-denied-message {
+    color: #ef4444;
+}
+
+.access-denied-message i {
+    color: #ef4444;
+}
+
+/* Date Display */
+.date-cell {
+    font-size: 0.8em;
+    color: var(--text-secondary, #a0a0a0);
+}
+
+/* Created By Display */
+.created-by-cell {
+    font-size: 0.9em;
+    color: var(--text-secondary, #a0a0a0);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .form-grid {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+    
+    .form-actions {
+        grid-column: 1;
+        justify-content: flex-start;
+    }
+    
+    .manual-rewards-table {
+        font-size: 0.8em;
+    }
+    
+    .manual-rewards-table th,
+    .manual-rewards-table td {
+        padding: 8px 10px;
+    }
+    
+    .actions-cell {
+        flex-direction: column;
+        gap: 3px;
+    }
+    
+    .btn-edit, .btn-delete {
+        padding: 4px 8px;
+        font-size: 0.7em;
+    }
+}
+
+@media (max-width: 480px) {
+    .manual-rewards-content {
+        padding: 15px;
+    }
+    
+    .manual-rewards-form {
+        padding: 15px;
+    }
+    
+    .manual-rewards-table th,
+    .manual-rewards-table td {
+        padding: 6px 8px;
     }
 } 

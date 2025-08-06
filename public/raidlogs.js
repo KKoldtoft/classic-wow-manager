@@ -50,6 +50,11 @@ class RaidLogsManager {
         this.navOriginalTop = 0;
         this.isScrolling = false;
         this.scrollTimeout = null;
+        this.manualRewardsData = [];
+        this.playersData = [];
+        this.currentUser = null;
+        this.isEditingEntry = false;
+        this.editingEntryId = null;
         this.initializeEventListeners();
         this.loadSpecData();
         this.loadRaidLogsData();
@@ -71,6 +76,9 @@ class RaidLogsManager {
         
         // Initialize floating navigation
         this.initializeFloatingNavigation();
+        
+        // Initialize manual rewards functionality
+        this.initializeManualRewards();
     }
 
     setupPageNavigationButtons() {
@@ -405,9 +413,12 @@ class RaidLogsManager {
                 this.fetchWorldBuffsData(),
                 this.fetchFrostResistanceData(),
                 this.fetchWorldBuffsArchiveUrl(),
-                this.fetchFrostResistanceArchiveUrl()
+                this.fetchFrostResistanceArchiveUrl(),
+                this.fetchManualRewardsData(),
+                this.fetchCurrentUser()
             ]);
             this.displayRaidLogs();
+            this.displayManualRewards();
             
             // Update the original position now that content is loaded
             setTimeout(() => {
@@ -3389,6 +3400,517 @@ class RaidLogsManager {
             valueElement.className = 'stat-value';
             detailElement.textContent = 'No friendly damage data';
         }
+    }
+
+    // --- Manual Rewards and Deductions Methods ---
+    
+    initializeManualRewards() {
+        console.log('⚖️ [MANUAL REWARDS] Initializing manual rewards functionality');
+        
+        // Initialize event listeners for the form
+        this.setupManualRewardsEventListeners();
+    }
+    
+    setupManualRewardsEventListeners() {
+        // Player name input and dropdown
+        const playerNameInput = document.getElementById('player-name-input');
+        const playerDropdown = document.getElementById('player-dropdown');
+        
+        if (playerNameInput) {
+            playerNameInput.addEventListener('input', (e) => {
+                this.handlePlayerSearch(e.target.value);
+            });
+            
+            playerNameInput.addEventListener('keydown', (e) => {
+                this.handlePlayerSearchKeydown(e);
+            });
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.player-search-container')) {
+                    playerDropdown.style.display = 'none';
+                }
+            });
+        }
+        
+        // Add entry button
+        const addEntryBtn = document.getElementById('add-entry-btn');
+        if (addEntryBtn) {
+            addEntryBtn.addEventListener('click', () => {
+                this.handleAddEntry();
+            });
+        }
+        
+        // Cancel edit button
+        const cancelEditBtn = document.getElementById('cancel-edit-btn');
+        if (cancelEditBtn) {
+            cancelEditBtn.addEventListener('click', () => {
+                this.cancelEdit();
+            });
+        }
+        
+        // Form inputs for real-time validation
+        const inputs = ['player-name-input', 'description-input', 'points-input'];
+        inputs.forEach(inputId => {
+            const input = document.getElementById(inputId);
+            if (input) {
+                input.addEventListener('input', () => {
+                    this.validateForm();
+                });
+            }
+        });
+    }
+    
+    async fetchCurrentUser() {
+        console.log('👤 [MANUAL REWARDS] Fetching current user info');
+        
+        try {
+            const response = await fetch('/user');
+            if (response.ok) {
+                this.currentUser = await response.json();
+                console.log('👤 [MANUAL REWARDS] Current user:', this.currentUser);
+            } else {
+                console.log('👤 [MANUAL REWARDS] User not logged in');
+                this.currentUser = null;
+            }
+        } catch (error) {
+            console.error('❌ [MANUAL REWARDS] Error fetching user:', error);
+            this.currentUser = null;
+        }
+    }
+    
+    async fetchManualRewardsData() {
+        if (!this.activeEventId) {
+            console.log('⚖️ [MANUAL REWARDS] No active event ID, skipping manual rewards fetch');
+            return;
+        }
+        
+        console.log(`⚖️ [MANUAL REWARDS] Fetching manual rewards for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/manual-rewards/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch manual rewards: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            this.manualRewardsData = result.data || [];
+            
+            console.log(`⚖️ [MANUAL REWARDS] Loaded ${this.manualRewardsData.length} manual entries`);
+            
+            // Also fetch player list for the dropdown
+            await this.fetchPlayersForDropdown();
+            
+        } catch (error) {
+            console.error('❌ [MANUAL REWARDS] Error fetching manual rewards:', error);
+            this.manualRewardsData = [];
+        }
+    }
+    
+    async fetchPlayersForDropdown() {
+        if (!this.activeEventId) return;
+        
+        console.log(`👥 [MANUAL REWARDS] Fetching players for dropdown for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/manual-rewards/${this.activeEventId}/players`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch players: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            this.playersData = result.data || [];
+            
+            console.log(`👥 [MANUAL REWARDS] Loaded ${this.playersData.length} players for dropdown`);
+            
+        } catch (error) {
+            console.error('❌ [MANUAL REWARDS] Error fetching players:', error);
+            this.playersData = [];
+        }
+    }
+    
+    displayManualRewards() {
+        console.log('⚖️ [MANUAL REWARDS] Displaying manual rewards panel');
+        
+        const hasManagementRole = this.currentUser?.hasManagementRole || false;
+        
+        // Show/hide elements based on management role
+        const form = document.getElementById('manual-rewards-form');
+        const actionsHeader = document.getElementById('actions-header');
+        const accessDeniedMessage = document.getElementById('access-denied-message');
+        const manualRewardsContent = document.getElementById('manual-rewards-content');
+        
+        if (hasManagementRole) {
+            console.log('⚖️ [MANUAL REWARDS] User has management role, showing full interface');
+            if (form) form.style.display = 'block';
+            if (actionsHeader) actionsHeader.style.display = 'table-cell';
+            if (accessDeniedMessage) accessDeniedMessage.style.display = 'none';
+            if (manualRewardsContent) manualRewardsContent.style.display = 'block';
+            
+            this.populateManualRewardsTable();
+        } else {
+            console.log('⚖️ [MANUAL REWARDS] User does not have management role, showing read-only view');
+            if (form) form.style.display = 'none';
+            if (actionsHeader) actionsHeader.style.display = 'none';
+            if (accessDeniedMessage) accessDeniedMessage.style.display = 'block';
+            if (manualRewardsContent) manualRewardsContent.style.display = 'none';
+        }
+    }
+    
+    populateManualRewardsTable() {
+        const tbody = document.getElementById('manual-rewards-tbody');
+        const noEntriesMessage = document.getElementById('no-entries-message');
+        const hasManagementRole = this.currentUser?.hasManagementRole || false;
+        
+        if (!tbody) return;
+        
+        // Clear existing rows
+        tbody.innerHTML = '';
+        
+        if (this.manualRewardsData.length === 0) {
+            if (noEntriesMessage) noEntriesMessage.style.display = 'block';
+            return;
+        }
+        
+        if (noEntriesMessage) noEntriesMessage.style.display = 'none';
+        
+        this.manualRewardsData.forEach(entry => {
+            const row = this.createManualRewardRow(entry, hasManagementRole);
+            tbody.appendChild(row);
+        });
+    }
+    
+    createManualRewardRow(entry, hasManagementRole) {
+        const row = document.createElement('tr');
+        
+        // Player Name Cell
+        const playerCell = document.createElement('td');
+        playerCell.className = 'player-name-cell';
+        
+        const playerNameSpan = document.createElement('span');
+        playerNameSpan.textContent = entry.player_name;
+        playerNameSpan.className = `player-name ${entry.player_class ? `class-${this.normalizeClassName(entry.player_class)}` : ''}`;
+        
+        playerCell.appendChild(playerNameSpan);
+        
+        // Description Cell
+        const descriptionCell = document.createElement('td');
+        descriptionCell.textContent = entry.description;
+        
+        // Points Cell
+        const pointsCell = document.createElement('td');
+        pointsCell.className = 'points-cell';
+        
+        const pointsSpan = document.createElement('span');
+        const points = parseFloat(entry.points);
+        pointsSpan.textContent = points > 0 ? `+${points}` : points.toString();
+        
+        if (points > 0) {
+            pointsSpan.className = 'points-positive';
+        } else if (points < 0) {
+            pointsSpan.className = 'points-negative';
+        } else {
+            pointsSpan.className = 'points-zero';
+        }
+        
+        pointsCell.appendChild(pointsSpan);
+        
+        // Actions Cell (only for management users)
+        const actionsCell = document.createElement('td');
+        actionsCell.className = 'actions-cell';
+        
+        if (hasManagementRole) {
+            const editBtn = document.createElement('button');
+            editBtn.className = 'btn-edit';
+            editBtn.innerHTML = '<i class="fas fa-edit"></i> Edit';
+            editBtn.onclick = () => this.editEntry(entry);
+            
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn-delete';
+            deleteBtn.innerHTML = '<i class="fas fa-trash"></i> Delete';
+            deleteBtn.onclick = () => this.deleteEntry(entry);
+            
+            actionsCell.appendChild(editBtn);
+            actionsCell.appendChild(deleteBtn);
+        }
+        
+        // Append all cells
+        row.appendChild(playerCell);
+        row.appendChild(descriptionCell);
+        row.appendChild(pointsCell);
+        row.appendChild(actionsCell);
+        
+        return row;
+    }
+    
+    handlePlayerSearch(searchTerm) {
+        const dropdown = document.getElementById('player-dropdown');
+        if (!dropdown) return;
+        
+        if (!searchTerm.trim()) {
+            dropdown.style.display = 'none';
+            return;
+        }
+        
+        const filteredPlayers = this.playersData.filter(player => 
+            player.player_name.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+        
+        this.populatePlayerDropdown(filteredPlayers);
+        dropdown.style.display = filteredPlayers.length > 0 ? 'block' : 'none';
+    }
+    
+    populatePlayerDropdown(players) {
+        const dropdown = document.getElementById('player-dropdown');
+        if (!dropdown) return;
+        
+        dropdown.innerHTML = '';
+        
+        players.forEach((player, index) => {
+            const item = document.createElement('div');
+            item.className = 'player-dropdown-item';
+            if (index === 0) item.classList.add('selected');
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = player.player_name;
+            nameSpan.className = `player-name ${player.player_class ? `class-${this.normalizeClassName(player.player_class)}` : ''}`;
+            
+            const classSpan = document.createElement('span');
+            classSpan.className = 'player-class';
+            classSpan.textContent = player.player_class ? `(${player.player_class})` : '';
+            
+            item.appendChild(nameSpan);
+            item.appendChild(classSpan);
+            
+            item.onclick = () => this.selectPlayer(player);
+            
+            dropdown.appendChild(item);
+        });
+    }
+    
+    handlePlayerSearchKeydown(e) {
+        const dropdown = document.getElementById('player-dropdown');
+        if (!dropdown || dropdown.style.display === 'none') return;
+        
+        const items = dropdown.querySelectorAll('.player-dropdown-item');
+        const currentSelected = dropdown.querySelector('.player-dropdown-item.selected');
+        let selectedIndex = Array.from(items).indexOf(currentSelected);
+        
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+                this.updateDropdownSelection(items, selectedIndex);
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                selectedIndex = Math.max(selectedIndex - 1, 0);
+                this.updateDropdownSelection(items, selectedIndex);
+                break;
+            case 'Enter':
+                e.preventDefault();
+                if (currentSelected) {
+                    currentSelected.click();
+                }
+                break;
+            case 'Escape':
+                e.preventDefault();
+                dropdown.style.display = 'none';
+                break;
+        }
+    }
+    
+    updateDropdownSelection(items, selectedIndex) {
+        items.forEach((item, index) => {
+            if (index === selectedIndex) {
+                item.classList.add('selected');
+            } else {
+                item.classList.remove('selected');
+            }
+        });
+    }
+    
+    selectPlayer(player) {
+        const playerNameInput = document.getElementById('player-name-input');
+        const dropdown = document.getElementById('player-dropdown');
+        
+        if (playerNameInput) {
+            playerNameInput.value = player.player_name;
+            playerNameInput.dataset.selectedPlayerId = player.discord_id || '';
+            playerNameInput.dataset.selectedPlayerClass = player.player_class || '';
+        }
+        
+        if (dropdown) {
+            dropdown.style.display = 'none';
+        }
+        
+        this.validateForm();
+    }
+    
+    validateForm() {
+        const playerNameInput = document.getElementById('player-name-input');
+        const descriptionInput = document.getElementById('description-input');
+        const pointsInput = document.getElementById('points-input');
+        const addBtn = document.getElementById('add-entry-btn');
+        
+        if (!playerNameInput || !descriptionInput || !pointsInput || !addBtn) return;
+        
+        const isValid = 
+            playerNameInput.value.trim() !== '' &&
+            descriptionInput.value.trim() !== '' &&
+            pointsInput.value !== '' &&
+            !isNaN(parseFloat(pointsInput.value));
+        
+        addBtn.disabled = !isValid;
+        addBtn.textContent = this.isEditingEntry ? 'Update Entry' : 'Add Entry';
+    }
+    
+    async handleAddEntry() {
+        const playerNameInput = document.getElementById('player-name-input');
+        const descriptionInput = document.getElementById('description-input');
+        const pointsInput = document.getElementById('points-input');
+        
+        if (!playerNameInput || !descriptionInput || !pointsInput) return;
+        
+        const entryData = {
+            player_name: playerNameInput.value.trim(),
+            player_class: playerNameInput.dataset.selectedPlayerClass || null,
+            discord_id: playerNameInput.dataset.selectedPlayerId || null,
+            description: descriptionInput.value.trim(),
+            points: parseFloat(pointsInput.value)
+        };
+        
+        console.log('⚖️ [MANUAL REWARDS] Adding/updating entry:', entryData);
+        
+        try {
+            let response;
+            if (this.isEditingEntry) {
+                response = await fetch(`/api/manual-rewards/${this.activeEventId}/${this.editingEntryId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(entryData)
+                });
+            } else {
+                response = await fetch(`/api/manual-rewards/${this.activeEventId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(entryData)
+                });
+            }
+            
+            if (!response.ok) {
+                throw new Error(`Failed to save entry: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            console.log('✅ [MANUAL REWARDS] Entry saved successfully:', result);
+            
+            // Refresh data and display
+            await this.fetchManualRewardsData();
+            this.populateManualRewardsTable();
+            this.clearForm();
+            
+        } catch (error) {
+            console.error('❌ [MANUAL REWARDS] Error saving entry:', error);
+            alert('Failed to save entry. Please try again.');
+        }
+    }
+    
+    editEntry(entry) {
+        console.log('✏️ [MANUAL REWARDS] Editing entry:', entry);
+        
+        const playerNameInput = document.getElementById('player-name-input');
+        const descriptionInput = document.getElementById('description-input');
+        const pointsInput = document.getElementById('points-input');
+        const addBtn = document.getElementById('add-entry-btn');
+        const cancelBtn = document.getElementById('cancel-edit-btn');
+        
+        if (playerNameInput) {
+            playerNameInput.value = entry.player_name;
+            playerNameInput.dataset.selectedPlayerId = entry.discord_id || '';
+            playerNameInput.dataset.selectedPlayerClass = entry.player_class || '';
+        }
+        if (descriptionInput) descriptionInput.value = entry.description;
+        if (pointsInput) pointsInput.value = entry.points;
+        
+        this.isEditingEntry = true;
+        this.editingEntryId = entry.id;
+        
+        if (addBtn) addBtn.textContent = 'Update Entry';
+        if (cancelBtn) cancelBtn.style.display = 'inline-flex';
+        
+        // Scroll to form
+        const form = document.getElementById('manual-rewards-form');
+        if (form) {
+            form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+    
+    async deleteEntry(entry) {
+        if (!confirm(`Are you sure you want to delete this entry?\n\nPlayer: ${entry.player_name}\nDescription: ${entry.description}\nPoints: ${entry.points}`)) {
+            return;
+        }
+        
+        console.log('🗑️ [MANUAL REWARDS] Deleting entry:', entry);
+        
+        try {
+            const response = await fetch(`/api/manual-rewards/${this.activeEventId}/${entry.id}`, {
+                method: 'DELETE'
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to delete entry: ${response.status}`);
+            }
+            
+            console.log('✅ [MANUAL REWARDS] Entry deleted successfully');
+            
+            // Refresh data and display
+            await this.fetchManualRewardsData();
+            this.populateManualRewardsTable();
+            
+        } catch (error) {
+            console.error('❌ [MANUAL REWARDS] Error deleting entry:', error);
+            alert('Failed to delete entry. Please try again.');
+        }
+    }
+    
+    cancelEdit() {
+        console.log('↩️ [MANUAL REWARDS] Cancelling edit');
+        
+        this.isEditingEntry = false;
+        this.editingEntryId = null;
+        
+        const addBtn = document.getElementById('add-entry-btn');
+        const cancelBtn = document.getElementById('cancel-edit-btn');
+        
+        if (addBtn) addBtn.textContent = 'Add Entry';
+        if (cancelBtn) cancelBtn.style.display = 'none';
+        
+        this.clearForm();
+    }
+    
+    clearForm() {
+        const playerNameInput = document.getElementById('player-name-input');
+        const descriptionInput = document.getElementById('description-input');
+        const pointsInput = document.getElementById('points-input');
+        const dropdown = document.getElementById('player-dropdown');
+        
+        if (playerNameInput) {
+            playerNameInput.value = '';
+            playerNameInput.dataset.selectedPlayerId = '';
+            playerNameInput.dataset.selectedPlayerClass = '';
+        }
+        if (descriptionInput) descriptionInput.value = '';
+        if (pointsInput) pointsInput.value = '';
+        if (dropdown) dropdown.style.display = 'none';
+        
+        this.validateForm();
     }
 }
 

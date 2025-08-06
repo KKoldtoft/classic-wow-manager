@@ -201,6 +201,79 @@
                 </div>
             </div>
 
+            <!-- Manual Rewards and Deductions Panel -->
+            <div class="manual-rewards-section scroll-target" id="manual-rewards-section">
+                <div class="section-header">
+                    <h2><i class="fas fa-balance-scale"></i> Manual Rewards and Deductions</h2>
+                    <p>Manually add rewards or deductions for raid participants</p>
+                </div>
+                
+                <!-- Management Role Required Content -->
+                <div class="manual-rewards-content" id="manual-rewards-content">
+                    <!-- Add New Entry Form (only visible to management role) -->
+                    <div class="manual-rewards-form" id="manual-rewards-form" style="display: none;">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="player-name-input">Player Name</label>
+                                <div class="player-search-container">
+                                    <input type="text" id="player-name-input" placeholder="Type to search players..." autocomplete="off">
+                                    <div class="player-dropdown" id="player-dropdown" style="display: none;"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="description-input">Description</label>
+                                <input type="text" id="description-input" placeholder="Reason for reward/deduction">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="points-input">Points</label>
+                                <input type="number" id="points-input" placeholder="Enter points (negative for deductions)" step="0.01">
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="button" class="btn-add" id="add-entry-btn">Add Entry</button>
+                                <button type="button" class="btn-cancel" id="cancel-edit-btn" style="display: none;">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Entries Table -->
+                    <div class="manual-rewards-table-container">
+                        <table class="manual-rewards-table" id="manual-rewards-table">
+                            <thead>
+                                <tr>
+                                    <th>Player</th>
+                                    <th>Description</th>
+                                    <th>Points</th>
+                                    <th class="actions-column" id="actions-header" style="display: none;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="manual-rewards-tbody">
+                                <!-- Entries will be populated here -->
+                            </tbody>
+                        </table>
+                        
+                        <div class="no-entries-message" id="no-entries-message" style="display: none;">
+                            <i class="fas fa-inbox"></i>
+                            <p>No manual rewards or deductions have been added yet.</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Access Denied Message (for non-management users) -->
+                    <div class="access-denied-message" id="access-denied-message" style="display: none;">
+                        <i class="fas fa-lock"></i>
+                        <p>Management role required to view and manage manual rewards/deductions.</p>
+                    </div>
+                    
+                    <!-- Loading State -->
+                    <div class="loading-state" id="manual-rewards-loading" style="display: none;">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>Loading manual rewards data...</p>
+                    </div>
+                </div>
+            </div>
+
             <!-- God Gamer Section -->
             <div class="rankings-container god-gamer-container scroll-target" id="god-gamer-container">
                 <!-- God Gamer DPS Section -->

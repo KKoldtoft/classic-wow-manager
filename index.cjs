@@ -3959,6 +3959,22 @@ app.post('/api/admin/setup-database', async (req, res) => {
             ALTER TABLE channel_backgrounds 
             ADD COLUMN IF NOT EXISTS cloudinary_public_id VARCHAR(255)
         `);
+
+        // Create manual_rewards_deductions table for storing manual rewards and deductions
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS manual_rewards_deductions (
+                id SERIAL PRIMARY KEY,
+                event_id VARCHAR(255) NOT NULL,
+                player_name VARCHAR(255) NOT NULL,
+                player_class VARCHAR(50),
+                discord_id VARCHAR(255),
+                description TEXT NOT NULL,
+                points DECIMAL(10,2) NOT NULL,
+                created_by VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
         
         // Create indexes for attendance_cache
         await client.query(`
@@ -3974,6 +3990,14 @@ app.post('/api/admin/setup-database', async (req, res) => {
         // Create index for channel_backgrounds
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_channel_backgrounds_channel_name ON channel_backgrounds (channel_name)
+        `);
+        
+        // Create indexes for manual_rewards_deductions
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_manual_rewards_event_id ON manual_rewards_deductions (event_id)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_manual_rewards_player ON manual_rewards_deductions (player_name, event_id)
         `);
         
         res.json({ 
@@ -6403,6 +6427,340 @@ app.get('/api/raid-helper/events/:eventId', async (req, res) => {
                 message: error.message
             });
         }
+    }
+});
+
+// --- Manual Rewards and Deductions API Endpoints ---
+// Get manual rewards/deductions for an event
+app.get('/api/manual-rewards/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`⚖️ [MANUAL REWARDS] Retrieving manual rewards/deductions for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'manual_rewards_deductions'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [MANUAL REWARDS] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get manual rewards/deductions for this event
+        const result = await client.query(`
+            SELECT 
+                id,
+                player_name,
+                player_class,
+                discord_id,
+                description,
+                points,
+                created_by,
+                created_at,
+                updated_at
+            FROM manual_rewards_deductions 
+            WHERE event_id = $1 
+            ORDER BY created_at DESC
+        `, [eventId]);
+        
+        console.log(`⚖️ [MANUAL REWARDS] Found ${result.rows.length} manual entries for event: ${eventId}`);
+        
+        res.json({ 
+            success: true, 
+            data: result.rows,
+            eventId: eventId
+        });
+        
+    } catch (error) {
+        console.error('❌ [MANUAL REWARDS] Error retrieving manual rewards/deductions:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving manual rewards/deductions',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Add manual reward/deduction entry
+app.post('/api/manual-rewards/:eventId', requireManagement, async (req, res) => {
+    const { eventId } = req.params;
+    const { player_name, player_class, discord_id, description, points } = req.body;
+    const createdBy = req.user?.id || 'unknown';
+    
+    console.log(`⚖️ [MANUAL REWARDS] Adding entry for event: ${eventId}, player: ${player_name}, points: ${points}`);
+    
+    if (!player_name || !description || points === undefined || points === null) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Missing required fields: player_name, description, and points are required' 
+        });
+    }
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'manual_rewards_deductions'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [MANUAL REWARDS] Table does not exist');
+            return res.status(500).json({ 
+                success: false, 
+                message: 'Manual rewards table does not exist. Please run database setup first.' 
+            });
+        }
+        
+        // Insert new entry
+        const result = await client.query(`
+            INSERT INTO manual_rewards_deductions 
+            (event_id, player_name, player_class, discord_id, description, points, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING *
+        `, [eventId, player_name, player_class, discord_id, description, points, createdBy]);
+        
+        const newEntry = result.rows[0];
+        console.log(`✅ [MANUAL REWARDS] Created entry with ID: ${newEntry.id}`);
+        
+        res.json({ 
+            success: true, 
+            data: newEntry,
+            message: 'Manual reward/deduction added successfully'
+        });
+        
+    } catch (error) {
+        console.error('❌ [MANUAL REWARDS] Error adding manual entry:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error adding manual reward/deduction',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Update manual reward/deduction entry
+app.put('/api/manual-rewards/:eventId/:entryId', requireManagement, async (req, res) => {
+    const { eventId, entryId } = req.params;
+    const { player_name, player_class, discord_id, description, points } = req.body;
+    
+    console.log(`⚖️ [MANUAL REWARDS] Updating entry ${entryId} for event: ${eventId}`);
+    
+    if (!player_name || !description || points === undefined || points === null) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Missing required fields: player_name, description, and points are required' 
+        });
+    }
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'manual_rewards_deductions'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [MANUAL REWARDS] Table does not exist');
+            return res.status(500).json({ 
+                success: false, 
+                message: 'Manual rewards table does not exist. Please run database setup first.' 
+            });
+        }
+        
+        // Update entry
+        const result = await client.query(`
+            UPDATE manual_rewards_deductions 
+            SET player_name = $1, player_class = $2, discord_id = $3, description = $4, points = $5, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $6 AND event_id = $7
+            RETURNING *
+        `, [player_name, player_class, discord_id, description, points, entryId, eventId]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Manual entry not found' 
+            });
+        }
+        
+        const updatedEntry = result.rows[0];
+        console.log(`✅ [MANUAL REWARDS] Updated entry ID: ${updatedEntry.id}`);
+        
+        res.json({ 
+            success: true, 
+            data: updatedEntry,
+            message: 'Manual reward/deduction updated successfully'
+        });
+        
+    } catch (error) {
+        console.error('❌ [MANUAL REWARDS] Error updating manual entry:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error updating manual reward/deduction',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Delete manual reward/deduction entry
+app.delete('/api/manual-rewards/:eventId/:entryId', requireManagement, async (req, res) => {
+    const { eventId, entryId } = req.params;
+    
+    console.log(`⚖️ [MANUAL REWARDS] Deleting entry ${entryId} for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'manual_rewards_deductions'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [MANUAL REWARDS] Table does not exist');
+            return res.status(500).json({ 
+                success: false, 
+                message: 'Manual rewards table does not exist. Please run database setup first.' 
+            });
+        }
+        
+        // Delete entry
+        const result = await client.query(`
+            DELETE FROM manual_rewards_deductions 
+            WHERE id = $1 AND event_id = $2
+            RETURNING *
+        `, [entryId, eventId]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Manual entry not found' 
+            });
+        }
+        
+        const deletedEntry = result.rows[0];
+        console.log(`✅ [MANUAL REWARDS] Deleted entry ID: ${deletedEntry.id}`);
+        
+        res.json({ 
+            success: true, 
+            data: deletedEntry,
+            message: 'Manual reward/deduction deleted successfully'
+        });
+        
+    } catch (error) {
+        console.error('❌ [MANUAL REWARDS] Error deleting manual entry:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error deleting manual reward/deduction',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get player list for dropdown (from current raid participants)
+app.get('/api/manual-rewards/:eventId/players', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`👥 [MANUAL REWARDS] Getting player list for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        let players = [];
+        
+        // Try to get players from log_data first
+        const logTableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'log_data'
+            );
+        `);
+        
+        if (logTableCheck.rows[0].exists) {
+            const logResult = await client.query(`
+                SELECT DISTINCT 
+                    character_name as player_name,
+                    character_class as player_class,
+                    discord_id
+                FROM log_data 
+                WHERE event_id = $1 
+                ORDER BY character_name
+            `, [eventId]);
+            
+            players = logResult.rows;
+            console.log(`👥 [MANUAL REWARDS] Found ${players.length} players from log_data`);
+        }
+        
+        // If no players from log_data, try confirmed logs
+        if (players.length === 0) {
+            const confirmedTableCheck = await client.query(`
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'player_confirmed_logs'
+                );
+            `);
+            
+            if (confirmedTableCheck.rows[0].exists) {
+                const confirmedResult = await client.query(`
+                    SELECT DISTINCT 
+                        character_name as player_name,
+                        character_class as player_class,
+                        discord_id
+                    FROM player_confirmed_logs 
+                    WHERE raid_id = $1 
+                    ORDER BY character_name
+                `, [eventId]);
+                
+                players = confirmedResult.rows;
+                console.log(`👥 [MANUAL REWARDS] Found ${players.length} players from confirmed logs`);
+            }
+        }
+        
+        res.json({ 
+            success: true, 
+            data: players,
+            eventId: eventId
+        });
+        
+    } catch (error) {
+        console.error('❌ [MANUAL REWARDS] Error getting player list:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error getting player list',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
     }
 });
 
