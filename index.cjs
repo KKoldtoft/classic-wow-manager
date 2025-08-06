@@ -5124,8 +5124,129 @@ app.get('/api/abilities-data/:eventId', async (req, res) => {
     }
 });
 
-
-
+// Get shame data for Wall of Shame (deaths, avoidable damage, friendly damage)
+app.get('/api/shame-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`💀 [SHAME] Retrieving shame data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [SHAME] Table does not exist, returning empty data');
+            return res.json({ success: true, data: {} });
+        }
+        
+        // Query for shame-related abilities
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_name,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND ability_name IN (
+                '# of deaths in total (just on trash)',
+                'Total avoidable damage taken',
+                'Damage to hostile players (counts as done to self)'
+            )
+            ORDER BY character_name, ability_name
+        `, [eventId]);
+        
+        console.log(`💀 [SHAME] Found ${result.rows.length} shame records for event: ${eventId}`);
+        
+        // Process the results to find the worst performers
+        const shameData = {};
+        const deathsData = [];
+        const avoidableDamageData = [];
+        const friendlyDamageData = [];
+        
+        result.rows.forEach(row => {
+            const { character_name, character_class, ability_name, ability_value } = row;
+            
+            switch (ability_name) {
+                case '# of deaths in total (just on trash)':
+                    // Parse format like "3 (1)" - total deaths (trash deaths)
+                    const deathMatch = ability_value.toString().match(/^(\d+)(?:\s*\((\d+)\))?/);
+                    if (deathMatch) {
+                        const totalDeaths = parseInt(deathMatch[1]) || 0;
+                        if (totalDeaths > 0) {
+                            deathsData.push({
+                                character_name,
+                                character_class,
+                                ability_value: ability_value.toString(),
+                                total_deaths: totalDeaths
+                            });
+                        }
+                    }
+                    break;
+                    
+                case 'Total avoidable damage taken':
+                    const avoidableDamage = parseInt(ability_value) || 0;
+                    if (avoidableDamage > 0) {
+                        avoidableDamageData.push({
+                            character_name,
+                            character_class,
+                            ability_value: avoidableDamage
+                        });
+                    }
+                    break;
+                    
+                case 'Damage to hostile players (counts as done to self)':
+                    const friendlyDamage = parseInt(ability_value) || 0;
+                    if (friendlyDamage > 0) {
+                        friendlyDamageData.push({
+                            character_name,
+                            character_class,
+                            ability_value: friendlyDamage
+                        });
+                    }
+                    break;
+            }
+        });
+        
+        // Find the worst performers
+        if (deathsData.length > 0) {
+            shameData.most_deaths = deathsData.sort((a, b) => b.total_deaths - a.total_deaths)[0];
+        }
+        
+        if (avoidableDamageData.length > 0) {
+            shameData.most_avoidable_damage = avoidableDamageData.sort((a, b) => b.ability_value - a.ability_value)[0];
+        }
+        
+        if (friendlyDamageData.length > 0) {
+            shameData.most_friendly_damage = friendlyDamageData.sort((a, b) => b.ability_value - a.ability_value)[0];
+        }
+        
+        console.log(`💀 [SHAME] Processed shame data:`, shameData);
+        
+        res.json({ 
+            success: true, 
+            data: shameData
+        });
+        
+    } catch (error) {
+        console.error('❌ [SHAME] Error retrieving shame data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving shame data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
 
 // Get world buffs data for raid logs
 app.get('/api/world-buffs-data/:eventId', async (req, res) => {

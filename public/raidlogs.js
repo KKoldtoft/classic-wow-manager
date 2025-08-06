@@ -45,6 +45,11 @@ class RaidLogsManager {
         this.worldBuffsArchiveUrl = null;
         this.frostResistanceArchiveUrl = null;
         this.specData = {};
+        this.floatingNav = null;
+        this.sectionObserver = null;
+        this.navOriginalTop = 0;
+        this.isScrolling = false;
+        this.scrollTimeout = null;
         this.initializeEventListeners();
         this.loadSpecData();
         this.loadRaidLogsData();
@@ -60,6 +65,12 @@ class RaidLogsManager {
 
         // Add click handlers for page navigation buttons
         this.setupPageNavigationButtons();
+        
+        // Set up stats panel toggle buttons
+        this.setupStatsPanelToggle();
+        
+        // Initialize floating navigation
+        this.initializeFloatingNavigation();
     }
 
     setupPageNavigationButtons() {
@@ -80,6 +91,279 @@ class RaidLogsManager {
             };
             attendanceButton.title = 'View full Regular Attendance page';
         }
+    }
+
+    setupStatsPanelToggle() {
+        // Set up toggle functionality for stats panel
+        const toggleButtons = document.querySelectorAll('.stats-toggle-btn');
+        const dashboardPanel = document.getElementById('dashboard-panel');
+        const shamePanel = document.getElementById('shame-panel');
+
+        toggleButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetPanel = button.getAttribute('data-panel');
+                
+                // Remove active class from all buttons
+                toggleButtons.forEach(btn => btn.classList.remove('active'));
+                // Add active class to clicked button
+                button.classList.add('active');
+                
+                // Hide all panels
+                dashboardPanel.style.display = 'none';
+                shamePanel.style.display = 'none';
+                
+                // Show the selected panel
+                if (targetPanel === 'dashboard') {
+                    dashboardPanel.style.display = 'grid';
+                } else if (targetPanel === 'shame') {
+                    shamePanel.style.display = 'grid';
+                }
+            });
+        });
+    }
+
+    initializeFloatingNavigation() {
+        this.floatingNav = document.getElementById('floating-nav');
+        if (!this.floatingNav) return;
+
+        // Setup navigation button click handlers
+        const navButtons = this.floatingNav.querySelectorAll('.nav-btn');
+        navButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                e.preventDefault();
+                const targetId = button.getAttribute('data-target');
+                this.scrollToSection(targetId);
+            });
+        });
+
+        // Setup scroll listener for active highlighting only
+        this.setupScrollListener();
+        
+        // Setup intersection observer for section highlighting
+        this.setupSectionObserver();
+        
+        // Initialize highlight position
+        this.initializeHighlight();
+        
+        // Store the original position
+        this.storeOriginalPosition();
+    }
+
+    setupScrollListener() {
+        let lastScrollTime = 0;
+        
+        // Handle manual scroll interruption during programmatic scrolling
+        const handleManualScroll = () => {
+            const now = Date.now();
+            
+            // Only set isScrolling flag if we're actually in a programmatic scroll
+            if (this.isScrolling && (now - lastScrollTime) > 50) {
+                // Manual scroll detected during programmatic scroll
+                this.isScrolling = false;
+                if (this.scrollTimeout) {
+                    clearTimeout(this.scrollTimeout);
+                    this.scrollTimeout = null;
+                }
+            }
+            lastScrollTime = now;
+        };
+
+        // Listen for scroll events (for manual scroll detection)
+        window.addEventListener('scroll', handleManualScroll, { passive: true });
+    }
+
+    setupSectionObserver() {
+        // Clean up existing observer
+        if (this.sectionObserver) {
+            this.sectionObserver.disconnect();
+        }
+
+        const options = {
+            root: null,
+            rootMargin: '-20% 0px -60% 0px',
+            threshold: 0.1
+        };
+
+        this.sectionObserver = new IntersectionObserver((entries) => {
+            // Don't update during programmatic scrolling
+            if (this.isScrolling) return;
+            
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    this.updateActiveNavButton(entry.target.id);
+                }
+            });
+        }, options);
+
+        // Observe all scroll target sections
+        const sections = document.querySelectorAll('.scroll-target');
+        sections.forEach(section => {
+            this.sectionObserver.observe(section);
+        });
+    }
+
+    updateActiveNavButton(sectionId) {
+        const navButtons = this.floatingNav.querySelectorAll('.nav-btn');
+        let activeButton = null;
+        
+        navButtons.forEach(button => {
+            const targetId = button.getAttribute('data-target');
+            if (targetId === sectionId) {
+                button.classList.add('active');
+                activeButton = button;
+            } else {
+                button.classList.remove('active');
+            }
+        });
+        
+        if (activeButton) {
+            // Use synchronized animation during scrolling
+            const duration = this.isScrolling ? 800 : null;
+            this.animateHighlight(activeButton, duration);
+        }
+    }
+
+    animateHighlight(activeButton, duration = null) {
+        const navButtonsContainer = this.floatingNav.querySelector('.nav-buttons');
+        
+        // Get button position and dimensions
+        const buttonRect = activeButton.getBoundingClientRect();
+        const containerRect = navButtonsContainer.getBoundingClientRect();
+        
+        const leftOffset = buttonRect.left - containerRect.left;
+        const width = buttonRect.width;
+        
+        // Temporarily override transition duration if specified
+        if (duration) {
+            navButtonsContainer.style.setProperty('--highlight-transition-duration', `${duration}ms`);
+        }
+        
+        // Use CSS custom properties to animate the highlight
+        navButtonsContainer.style.setProperty('--highlight-left', `${leftOffset}px`);
+        navButtonsContainer.style.setProperty('--highlight-width', `${width}px`);
+        
+        // Update the pseudo-element styles
+        if (!navButtonsContainer.dataset.hasHighlight) {
+            navButtonsContainer.dataset.hasHighlight = 'true';
+            // Add dynamic styles for the highlight
+            const style = document.createElement('style');
+            style.textContent = `
+                .nav-buttons[data-has-highlight="true"]::before {
+                    opacity: 1;
+                    left: var(--highlight-left, 8px);
+                    width: var(--highlight-width, 0px);
+                    transition: all var(--highlight-transition-duration, 0.8s) cubic-bezier(0.4, 0, 0.2, 1);
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        // Reset duration override after animation
+        if (duration) {
+            setTimeout(() => {
+                navButtonsContainer.style.removeProperty('--highlight-transition-duration');
+            }, duration + 100);
+        }
+    }
+
+    scrollToSection(targetId) {
+        const targetSection = document.getElementById(targetId);
+        if (!targetSection) return;
+
+        let scrollTarget = targetSection;
+
+        // Handle special case for DPS/HPS button
+        if (targetId === 'god-gamer-container') {
+            const dpsSection = document.querySelector('.god-gamer-dps-section');
+            const healerSection = document.querySelector('.god-gamer-healer-section');
+            
+            // Check if God Gamer sections are visible
+            const godGamerVisible = (dpsSection && dpsSection.style.display !== 'none') || 
+                                   (healerSection && healerSection.style.display !== 'none');
+            
+            // If God Gamer sections are not visible, scroll to main DPS/Healers section instead
+            if (!godGamerVisible) {
+                const mainRankingsContainer = document.querySelector('.rankings-container:not([class*="-container"])');
+                if (mainRankingsContainer) {
+                    scrollTarget = mainRankingsContainer;
+                }
+            }
+        }
+
+        // Calculate target position accounting for nav height
+        const targetRect = scrollTarget.getBoundingClientRect();
+        const currentScroll = window.pageYOffset;
+        const navHeight = this.floatingNav.offsetHeight;
+        const offset = 120; // Additional offset for spacing (100px more than before)
+        
+        const targetPosition = currentScroll + targetRect.top - navHeight - offset;
+        
+        // Update active button immediately with synchronized animation
+        this.updateActiveNavButton(targetId);
+        
+        // Smooth scroll with custom easing
+        this.smoothScrollTo(targetPosition, 800);
+    }
+
+    smoothScrollTo(targetPosition, duration = 800) {
+        const startPosition = window.pageYOffset;
+        const distance = targetPosition - startPosition;
+        let start = null;
+
+        // Set scrolling state to prevent intersection observer interference
+        this.isScrolling = true;
+        
+        // Clear any existing scroll timeout
+        if (this.scrollTimeout) {
+            clearTimeout(this.scrollTimeout);
+        }
+
+        // Easing function (ease-in-out cubic)
+        const easeInOutCubic = (t) => {
+            return t < 0.5 ? 4 * t * t * t : (t - 1) * (2 * t - 2) * (2 * t - 2) + 1;
+        };
+
+        const step = (timestamp) => {
+            if (!start) start = timestamp;
+            const progress = Math.min((timestamp - start) / duration, 1);
+            const easedProgress = easeInOutCubic(progress);
+            
+            window.scrollTo(0, startPosition + distance * easedProgress);
+            
+            if (progress < 1) {
+                requestAnimationFrame(step);
+            } else {
+                // Scroll complete - re-enable intersection observer after a small delay
+                this.scrollTimeout = setTimeout(() => {
+                    this.isScrolling = false;
+                }, 200);
+            }
+        };
+
+        requestAnimationFrame(step);
+    }
+
+    initializeHighlight() {
+        // Find the initially active button and set up highlight
+        const activeButton = this.floatingNav.querySelector('.nav-btn.active');
+        if (activeButton) {
+            this.animateHighlight(activeButton);
+        }
+    }
+
+    storeOriginalPosition() {
+        // Store the original Y position of the nav for scroll calculations
+        // Make sure the nav is in its static position first
+        this.floatingNav.classList.remove('floating', 'attached');
+        this.floatingNav.style.top = '';
+        
+        // Force a reflow to ensure proper positioning
+        this.floatingNav.offsetHeight;
+        
+        const rect = this.floatingNav.getBoundingClientRect();
+        this.navOriginalTop = rect.top + window.pageYOffset;
+        
+        console.log('Stored nav original position:', this.navOriginalTop);
     }
 
     async loadRaidLogsData() {
@@ -114,6 +398,7 @@ class RaidLogsManager {
                 this.fetchPolymorphData(),
                 this.fetchPowerInfusionData(),
                 this.fetchDecursesData(),
+                this.fetchShameData(),
                 this.fetchPlayerStreaksData(),
                 this.fetchGuildMembersData(),
                 this.fetchRewardSettings(),
@@ -123,6 +408,11 @@ class RaidLogsManager {
                 this.fetchFrostResistanceArchiveUrl()
             ]);
             this.displayRaidLogs();
+            
+            // Update the original position now that content is loaded
+            setTimeout(() => {
+                this.storeOriginalPosition();
+            }, 100);
         } catch (error) {
             console.error('Error loading raid logs data:', error);
             this.showError('Failed to load raid logs data');
@@ -757,6 +1047,32 @@ class RaidLogsManager {
         }
     }
 
+    async fetchShameData() {
+        console.log(`💀 Fetching shame data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/shame-data/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch shame data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch shame data');
+            }
+            
+            this.shameData = result.data || {};
+            console.log(`💀 Loaded shame data:`, this.shameData);
+            
+        } catch (error) {
+            console.error('Error fetching shame data:', error);
+            // Don't fail the whole page if shame data fails - just show empty data
+            this.shameData = {};
+        }
+    }
+
     async fetchPlayerStreaksData() {
         console.log(`🔥 Fetching player streaks data for event: ${this.activeEventId}`);
         
@@ -1004,6 +1320,7 @@ class RaidLogsManager {
         this.updateDecursesHeader();
         this.updateFrostResistanceHeader();
         this.updateArchiveButtons();
+        this.displayWallOfShame();
         
         this.hideLoading();
         this.showContent();
@@ -2964,6 +3281,114 @@ class RaidLogsManager {
         
         // Fallback for when spec isn't found in spec data
         return `<i class="fas fa-question-circle spec-icon unknown-spec" style="color: #ffa500;" title="Unknown spec: ${specName}"></i>`;
+    }
+
+    displayWallOfShame() {
+        console.log('💀 Displaying Wall of Shame');
+        
+        // Update the shame data regardless - the toggle button will show/hide
+        this.updateMostDeathsCard();
+        this.updateMostTrashDeathsCard();
+        this.updateMostAvoidableDamageCard();
+        this.updateMostFriendlyDamageCard();
+        
+        // Show or hide the shame toggle button based on data availability
+        const shameToggleBtn = document.querySelector('.stats-toggle-btn[data-panel="shame"]');
+        if (this.shameData && Object.keys(this.shameData).length > 0) {
+            if (shameToggleBtn) {
+                shameToggleBtn.style.display = 'block';
+            }
+        } else {
+            if (shameToggleBtn) {
+                shameToggleBtn.style.display = 'none';
+            }
+        }
+    }
+
+    updateMostDeathsCard() {
+        const valueElement = document.getElementById('most-deaths-value');
+        const detailElement = document.getElementById('most-deaths-detail');
+        
+        if (this.shameData.most_deaths) {
+            const player = this.shameData.most_deaths;
+            const characterClass = this.normalizeClassName(player.character_class);
+            
+            valueElement.textContent = player.character_name;
+            // Apply class color to the player name
+            valueElement.className = `stat-value class-${characterClass}`;
+            
+            // Extract total deaths from the ability_value (format: "3 (1)")
+            const totalDeaths = player.ability_value ? player.ability_value.split(' ')[0] : '0';
+            detailElement.textContent = `${totalDeaths} total deaths`;
+        } else {
+            valueElement.textContent = '--';
+            valueElement.className = 'stat-value';
+            detailElement.textContent = 'No death data';
+        }
+    }
+
+    updateMostTrashDeathsCard() {
+        const valueElement = document.getElementById('most-trash-deaths-value');
+        const detailElement = document.getElementById('most-trash-deaths-detail');
+        
+        if (this.shameData.most_deaths) {
+            const player = this.shameData.most_deaths;
+            const characterClass = this.normalizeClassName(player.character_class);
+            
+            valueElement.textContent = player.character_name;
+            // Apply class color to the player name
+            valueElement.className = `stat-value class-${characterClass}`;
+            
+            // Extract trash deaths from the ability_value (format: "3 (1)")
+            const trashDeaths = player.ability_value ? player.ability_value.match(/\((\d+)\)/)?.[1] || '0' : '0';
+            detailElement.textContent = `${trashDeaths} trash deaths`;
+        } else {
+            valueElement.textContent = '--';
+            valueElement.className = 'stat-value';
+            detailElement.textContent = 'No trash death data';
+        }
+    }
+
+    updateMostAvoidableDamageCard() {
+        const valueElement = document.getElementById('most-avoidable-damage-value');
+        const detailElement = document.getElementById('most-avoidable-damage-detail');
+        
+        if (this.shameData.most_avoidable_damage) {
+            const player = this.shameData.most_avoidable_damage;
+            const characterClass = this.normalizeClassName(player.character_class);
+            
+            valueElement.textContent = player.character_name;
+            // Apply class color to the player name
+            valueElement.className = `stat-value class-${characterClass}`;
+            
+            const damage = this.formatNumber(player.ability_value || 0);
+            detailElement.textContent = `${damage} avoidable damage`;
+        } else {
+            valueElement.textContent = '--';
+            valueElement.className = 'stat-value';
+            detailElement.textContent = 'No avoidable damage data';
+        }
+    }
+
+    updateMostFriendlyDamageCard() {
+        const valueElement = document.getElementById('most-friendly-damage-value');
+        const detailElement = document.getElementById('most-friendly-damage-detail');
+        
+        if (this.shameData.most_friendly_damage) {
+            const player = this.shameData.most_friendly_damage;
+            const characterClass = this.normalizeClassName(player.character_class);
+            
+            valueElement.textContent = player.character_name;
+            // Apply class color to the player name
+            valueElement.className = `stat-value class-${characterClass}`;
+            
+            const damage = this.formatNumber(player.ability_value || 0);
+            detailElement.textContent = `${damage} friendly damage`;
+        } else {
+            valueElement.textContent = '--';
+            valueElement.className = 'stat-value';
+            detailElement.textContent = 'No friendly damage data';
+        }
     }
 }
 
