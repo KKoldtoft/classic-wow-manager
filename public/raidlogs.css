@@ -128,6 +128,8 @@
     margin-bottom: 30px;
     overflow: hidden;
     flex: 1;
+    display: flex;
+    flex-direction: column;
 }
 
 /* Container for side-by-side sections */
@@ -168,6 +170,9 @@
 /* Rankings list */
 .rankings-list {
     padding: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
 }
 
 .ranking-item {
@@ -1119,20 +1124,7 @@
     color: #000000 !important;
 }
 
-.rankings-section.frost-resistance-section {
-    background: linear-gradient(135deg, #e0f2ff 0%, #a0c4ff 100%);
-    border: 2px solid #4a90e2;
-}
-
-.rankings-section.frost-resistance-section .section-header {
-    background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
-    color: white;
-}
-
-.rankings-section.frost-resistance-section .amount-value {
-    color: #357abd;
-    font-weight: 600;
-}
+/* Frost resistance section uses standard styling like other panels */
 
 /* Buff-specific styles */
 .buff-details {
@@ -1184,4 +1176,157 @@
 .amount-value.negative {
     color: #e74c3c !important;
     font-weight: 700;
+}
+
+/* Frost Resistance specific styles */
+.frost-res-amount {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #000000; /* Black text */
+}
+
+.frost-res-amount.very-low {
+    color: #000000; /* Black text */
+}
+
+.frost-res-amount.low {
+    color: #000000; /* Black text */
+}
+
+.frost-res-amount.good {
+    color: #000000; /* Black text */
+}
+
+.frost-res-details {
+    font-size: 0.75rem;
+    color: #000000; /* Black text */
+    margin-top: 2px;
+}
+
+.rankings-section.frost-resistance-section .character-info {
+    position: relative;
+    overflow: hidden;
+}
+
+.rankings-section.frost-resistance-section .character-info::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: var(--fill-percentage, 0%);
+    opacity: 0.15;
+    z-index: 0;
+    transition: width 0.3s ease;
+}
+
+/* Class-specific background colors for frost resistance progress bars */
+.rankings-section.frost-resistance-section .character-info.class-warrior::before {
+    background: linear-gradient(90deg, #C79C6E, rgba(199, 156, 110, 0.3));
+}
+
+.rankings-section.frost-resistance-section .character-info.class-paladin::before {
+    background: linear-gradient(90deg, #F58CBA, rgba(245, 140, 186, 0.3));
+}
+
+.rankings-section.frost-resistance-section .character-info.class-hunter::before {
+    background: linear-gradient(90deg, #ABD473, rgba(171, 212, 115, 0.3));
+}
+
+.rankings-section.frost-resistance-section .character-info.class-rogue::before {
+    background: linear-gradient(90deg, #FFF569, rgba(255, 245, 105, 0.3));
+}
+
+.rankings-section.frost-resistance-section .character-info.class-priest::before {
+    background: linear-gradient(90deg, #FFFFFF, rgba(255, 255, 255, 0.3));
+}
+
+.rankings-section.frost-resistance-section .character-info.class-shaman::before {
+    background: linear-gradient(90deg, #0070DE, rgba(0, 112, 222, 0.3));
+}
+
+.rankings-section.frost-resistance-section .character-info.class-mage::before {
+    background: linear-gradient(90deg, #69CCF0, rgba(105, 204, 240, 0.3));
+}
+
+.rankings-section.frost-resistance-section .character-info.class-warlock::before {
+    background: linear-gradient(90deg, #9482C9, rgba(148, 130, 201, 0.3));
+}
+
+.rankings-section.frost-resistance-section .character-info.class-druid::before {
+    background: linear-gradient(90deg, #FF7D0A, rgba(255, 125, 10, 0.3));
+}
+
+.rankings-section.frost-resistance-section .character-info.class-unknown::before {
+    background: linear-gradient(90deg, #9ca3af, rgba(156, 163, 175, 0.3));
+}
+
+.rankings-section.frost-resistance-section .character-name,
+.rankings-section.frost-resistance-section .character-details {
+    position: relative;
+    z-index: 1;
+}
+
+.rankings-section.frost-resistance-section .character-name {
+    color: #000000 !important; /* Force black text for character names */
+}
+
+/* Integrated archive button styling for World Buffs and Frost Resistance panels */
+.integrated-archive-button {
+    background: linear-gradient(135deg, #5865F2, #4752C4);
+    color: white;
+    padding: 16px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    user-select: none;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+    margin-top: auto;
+}
+
+.integrated-archive-button:hover:not(.disabled) {
+    background: linear-gradient(135deg, #4752C4, #3C4296);
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.integrated-archive-button:active:not(.disabled) {
+    transform: translateY(1px);
+    box-shadow: inset 0 3px 10px rgba(0, 0, 0, 0.2);
+}
+
+.integrated-archive-button.disabled {
+    background: linear-gradient(135deg, #555, #666);
+    cursor: not-allowed;
+    opacity: 0.6;
+    color: #aaa;
+}
+
+.integrated-archive-button i {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
+.integrated-archive-button span {
+    font-weight: 500;
+}
+
+/* Add subtle animation on hover */
+.integrated-archive-button:hover:not(.disabled)::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    transition: left 0.5s ease;
+    left: 100%;
 } 

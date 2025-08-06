@@ -40,6 +40,10 @@ class RaidLogsManager {
         this.worldBuffsData = [];
         this.worldBuffsRequiredBuffs = 6;
         this.worldBuffsChannelId = null;
+        this.frostResistanceData = [];
+        this.maxFrostResistance = 0;
+        this.worldBuffsArchiveUrl = null;
+        this.frostResistanceArchiveUrl = null;
         this.specData = {};
         this.initializeEventListeners();
         this.loadSpecData();
@@ -53,6 +57,29 @@ class RaidLogsManager {
                 this.loadRaidLogsData();
             }
         });
+
+        // Add click handlers for page navigation buttons
+        this.setupPageNavigationButtons();
+    }
+
+    setupPageNavigationButtons() {
+        // Guild Members page button
+        const guildMembersButton = document.getElementById('guild-members-page-button');
+        if (guildMembersButton) {
+            guildMembersButton.onclick = () => {
+                window.location.href = '/guild-members';
+            };
+            guildMembersButton.title = 'View full Guild Members page';
+        }
+
+        // Regular Attendance page button
+        const attendanceButton = document.getElementById('attendance-page-button');
+        if (attendanceButton) {
+            attendanceButton.onclick = () => {
+                window.location.href = '/attendance';
+            };
+            attendanceButton.title = 'View full Regular Attendance page';
+        }
     }
 
     async loadRaidLogsData() {
@@ -90,7 +117,10 @@ class RaidLogsManager {
                 this.fetchPlayerStreaksData(),
                 this.fetchGuildMembersData(),
                 this.fetchRewardSettings(),
-                this.fetchWorldBuffsData()
+                this.fetchWorldBuffsData(),
+                this.fetchFrostResistanceData(),
+                this.fetchWorldBuffsArchiveUrl(),
+                this.fetchFrostResistanceArchiveUrl()
             ]);
             this.displayRaidLogs();
         } catch (error) {
@@ -237,6 +267,87 @@ class RaidLogsManager {
             this.worldBuffsData = [];
             this.worldBuffsRequiredBuffs = 6;
             this.worldBuffsIncludeDMF = false;
+        }
+    }
+
+    async fetchFrostResistanceData() {
+        console.log(`🧊 Fetching frost resistance data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/frost-resistance-data/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch frost resistance data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch frost resistance data');
+            }
+            
+            this.frostResistanceData = result.data || [];
+            this.maxFrostResistance = result.maxFrostResistance || 0;
+            console.log(`🧊 Loaded frost resistance data:`, this.frostResistanceData);
+            console.log(`🧊 Max frost resistance: ${this.maxFrostResistance}`);
+            
+        } catch (error) {
+            console.error('Error fetching frost resistance data:', error);
+            // Don't fail the whole page if frost resistance fails - just show empty data
+            this.frostResistanceData = [];
+            this.maxFrostResistance = 0;
+        }
+    }
+
+    async fetchWorldBuffsArchiveUrl() {
+        console.log(`🌍 Fetching world buffs archive URL for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/rpb-tracking/${this.activeEventId}?analysisType=world_buffs`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch world buffs archive URL: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success && result.hasData && result.archiveUrl) {
+                this.worldBuffsArchiveUrl = result.archiveUrl;
+                console.log(`🌍 Loaded world buffs archive URL: ${this.worldBuffsArchiveUrl}`);
+            } else {
+                console.log(`🌍 No world buffs archive URL found for event: ${this.activeEventId}`);
+                this.worldBuffsArchiveUrl = null;
+            }
+            
+        } catch (error) {
+            console.error('Error fetching world buffs archive URL:', error);
+            this.worldBuffsArchiveUrl = null;
+        }
+    }
+
+    async fetchFrostResistanceArchiveUrl() {
+        console.log(`🧊 Fetching frost resistance archive URL for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/rpb-tracking/${this.activeEventId}?analysisType=frost_resistance`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch frost resistance archive URL: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success && result.hasData && result.archiveUrl) {
+                this.frostResistanceArchiveUrl = result.archiveUrl;
+                console.log(`🧊 Loaded frost resistance archive URL: ${this.frostResistanceArchiveUrl}`);
+            } else {
+                console.log(`🧊 No frost resistance archive URL found for event: ${this.activeEventId}`);
+                this.frostResistanceArchiveUrl = null;
+            }
+            
+        } catch (error) {
+            console.error('Error fetching frost resistance archive URL:', error);
+            this.frostResistanceArchiveUrl = null;
         }
     }
 
@@ -860,6 +971,7 @@ class RaidLogsManager {
         this.displayPriestHealers(healers);
         this.displayDruidHealers(healers);
         this.displayWorldBuffsRankings(this.worldBuffsData);
+        this.displayFrostResistanceRankings(this.frostResistanceData);
         this.displayAbilitiesRankings(this.abilitiesData);
         this.displayManaPotionsRankings(this.manaPotionsData);
         this.displayRunesRankings(this.runesData);
@@ -890,6 +1002,8 @@ class RaidLogsManager {
         this.updatePolymorphHeader();
         this.updatePowerInfusionHeader();
         this.updateDecursesHeader();
+        this.updateFrostResistanceHeader();
+        this.updateArchiveButtons();
         
         this.hideLoading();
         this.showContent();
@@ -1616,6 +1730,141 @@ class RaidLogsManager {
         const headerElement = document.getElementById('world-buffs-header-text');
         if (headerElement && this.worldBuffsRequiredBuffs) {
             headerElement.textContent = `Points for missing world buffs (-10 per buff below ${this.worldBuffsRequiredBuffs})`;
+        }
+    }
+
+    displayFrostResistanceRankings(players) {
+        const container = document.getElementById('frost-resistance-list');
+        if (!container) return;
+        
+        const section = container.closest('.rankings-section');
+        section.classList.add('frost-resistance-section');
+
+        // Show the section if we have data
+        if (players.length > 0) {
+            section.style.display = 'block';
+        } else {
+            section.style.display = 'none';
+            return;
+        }
+
+        // Filter out players with 0 points for display, but keep all players for progress calculations
+        const playersToDisplay = players.filter(player => player.points !== 0);
+        
+        // Use all players (including 0-point players) to calculate max frost resistance for progress bars
+        const maxFrostResForProgress = Math.max(...players.map(p => p.frost_resistance), 1);
+        
+        console.log(`🧊 [FROST RESISTANCE] Total DPS players: ${players.length}, Displaying: ${playersToDisplay.length} (excluding 0-point players)`);
+        console.log(`🧊 [FROST RESISTANCE] Max frost resistance for progress bars: ${maxFrostResForProgress}`);
+        
+        if (playersToDisplay.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-snowflake"></i>
+                    <p>All DPS players have adequate frost resistance!</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = playersToDisplay.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class || 'unknown');
+            
+            // Recalculate progress percentage using all players' max frost resistance (including 0-point players)
+            const fillPercentage = Math.max(5, maxFrostResForProgress > 0 ? Math.round((player.frost_resistance / maxFrostResForProgress) * 100) : 0);
+            
+            console.log(`🧊 [FROST RESISTANCE] ${player.character_name}: class=${player.character_class} -> normalized=${characterClass}, frost_res=${player.frost_resistance}, fill=${fillPercentage}%, type=${player.dps_type}`);
+            
+            // Determine frost resistance status for styling
+            let frostResClass = 'frost-res-amount';
+            const isPhysical = player.dps_type === 'physical';
+            const isCaster = player.dps_type === 'caster';
+            
+            if (isPhysical) {
+                if (player.frost_resistance < 80) {
+                    frostResClass += ' very-low';
+                } else if (player.frost_resistance < 130) {
+                    frostResClass += ' low';
+                } else {
+                    frostResClass += ' good';
+                }
+            } else if (isCaster) {
+                if (player.frost_resistance < 80) {
+                    frostResClass += ' very-low';
+                } else if (player.frost_resistance < 150) {
+                    frostResClass += ' low';
+                } else {
+                    frostResClass += ' good';
+                }
+            }
+
+            // Create DPS type and threshold info
+            const thresholdInfo = isPhysical ? 
+                `Physical DPS (130+ recommended)` : 
+                `Caster DPS (150+ recommended)`;
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name class-${characterClass}">
+                            ${player.character_name}
+                        </div>
+                        <div class="character-details">
+                            <div class="${frostResClass}">${player.frost_resistance} frost resistance</div>
+                            <div class="frost-res-details">${thresholdInfo}</div>
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="Points: ${player.points} (${player.dps_type} DPS)">
+                        <div class="amount-value ${player.points < 0 ? 'negative' : ''}">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updateFrostResistanceHeader() {
+        const headerElement = document.getElementById('frost-resistance-header-text');
+        if (headerElement) {
+            headerElement.textContent = `Points for frost resistance (Physical: -5 <130, -10 <80 | Caster: -5 <150, -10 <80)`;
+        }
+    }
+
+    updateArchiveButtons() {
+        // Update World Buffs archive button
+        const worldBuffsButton = document.getElementById('world-buffs-archive-button');
+        if (worldBuffsButton) {
+            if (this.worldBuffsArchiveUrl) {
+                worldBuffsButton.classList.remove('disabled');
+                worldBuffsButton.onclick = () => window.open(this.worldBuffsArchiveUrl, '_blank');
+                worldBuffsButton.title = 'View archived World Buffs sheet';
+                console.log(`🌍 World Buffs archive button enabled with URL: ${this.worldBuffsArchiveUrl}`);
+            } else {
+                worldBuffsButton.classList.add('disabled');
+                worldBuffsButton.onclick = null;
+                worldBuffsButton.title = 'No archived World Buffs sheet found for this event';
+                console.log(`🌍 World Buffs archive button disabled - no URL found`);
+            }
+        }
+
+        // Update Frost Resistance archive button
+        const frostResButton = document.getElementById('frost-resistance-archive-button');
+        if (frostResButton) {
+            if (this.frostResistanceArchiveUrl) {
+                frostResButton.classList.remove('disabled');
+                frostResButton.onclick = () => window.open(this.frostResistanceArchiveUrl, '_blank');
+                frostResButton.title = 'View archived Frost Resistance sheet';
+                console.log(`🧊 Frost Resistance archive button enabled with URL: ${this.frostResistanceArchiveUrl}`);
+            } else {
+                frostResButton.classList.add('disabled');
+                frostResButton.onclick = null;
+                frostResButton.title = 'No archived Frost Resistance sheet found for this event';
+                console.log(`🧊 Frost Resistance archive button disabled - no URL found`);
+            }
         }
     }
 

@@ -5404,6 +5404,156 @@ app.get('/api/world-buffs-data/:eventId', async (req, res) => {
     }
 });
 
+// Get frost resistance data for raid logs
+app.get('/api/frost-resistance-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🧊 [FROST RESISTANCE] Retrieving frost resistance data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if frost resistance table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_players_frostres'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [FROST RESISTANCE] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get frost resistance data
+        const frostResResult = await client.query(`
+            SELECT 
+                character_name,
+                frost_resistance
+            FROM sheet_players_frostres 
+            WHERE event_id = $1 
+            AND analysis_type = 'frost_resistance'
+            ORDER BY character_name
+        `, [eventId]);
+        
+        // Get character class and role information from log_data
+        const logDataResult = await client.query(`
+            SELECT DISTINCT 
+                character_name, 
+                character_class,
+                role_detected
+            FROM log_data
+            WHERE event_id = $1
+        `, [eventId]);
+        
+        console.log(`🧊 [FROST RESISTANCE] Found ${frostResResult.rows.length} frost resistance records for event: ${eventId}`);
+        console.log(`🧊 [FROST RESISTANCE] Found ${logDataResult.rows.length} characters with role/class data for event: ${eventId}`);
+        
+        // Create lookup maps
+        const characterData = {};
+        logDataResult.rows.forEach(row => {
+            characterData[row.character_name] = {
+                character_class: row.character_class,
+                role_detected: row.role_detected
+            };
+        });
+        
+        // Process frost resistance data
+        const processedData = [];
+        let maxFrostRes = 0;
+        
+        frostResResult.rows.forEach(row => {
+            const characterName = row.character_name;
+            const frostRes = parseInt(row.frost_resistance) || 0;
+            const logData = characterData[characterName];
+            
+            // Skip if no log data (not in raid) or if tank/healer
+            if (!logData || 
+                logData.role_detected === 'tank' || 
+                logData.role_detected === 'healer') {
+                return;
+            }
+            
+            // Only include DPS players
+            if (logData.role_detected === 'dps') {
+                const characterClass = logData.character_class?.toLowerCase();
+                
+                // Determine if physical or caster DPS
+                const physicalClasses = ['warrior', 'rogue', 'hunter'];
+                const casterClasses = ['mage', 'warlock', 'priest', 'shaman'];
+                
+                let dpsType = null;
+                let points = 0;
+                
+                if (physicalClasses.includes(characterClass)) {
+                    dpsType = 'physical';
+                    if (frostRes < 80) {
+                        points = -10;
+                    } else if (frostRes < 130) {
+                        points = -5;
+                    }
+                } else if (casterClasses.includes(characterClass)) {
+                    dpsType = 'caster';
+                    if (frostRes < 80) {
+                        points = -10;
+                    } else if (frostRes < 150) {
+                        points = -5;
+                    }
+                }
+                
+                if (dpsType) {
+                    maxFrostRes = Math.max(maxFrostRes, frostRes);
+                    
+                    processedData.push({
+                        character_name: characterName,
+                        character_class: logData.character_class,
+                        role_detected: logData.role_detected,
+                        frost_resistance: frostRes,
+                        dps_type: dpsType,
+                        points: points
+                    });
+                }
+            }
+        });
+        
+        // Add progress percentage for visual bars
+        processedData.forEach(char => {
+            char.progress_percentage = maxFrostRes > 0 ? Math.round((char.frost_resistance / maxFrostRes) * 100) : 0;
+        });
+        
+        // Sort by points (highest first), then by frost resistance (highest first)
+        processedData.sort((a, b) => {
+            if (b.points !== a.points) {
+                return b.points - a.points; // Higher points first (less negative)
+            }
+            return b.frost_resistance - a.frost_resistance; // Then by frost resistance
+        });
+        
+        console.log(`🧊 [FROST RESISTANCE] Processed ${processedData.length} DPS characters with frost resistance data`);
+        console.log(`🧊 [FROST RESISTANCE] Max frost resistance: ${maxFrostRes}`);
+        console.log(`🧊 [FROST RESISTANCE] Sample data:`, processedData.slice(0, 2));
+        
+        res.json({ 
+            success: true, 
+            data: processedData,
+            eventId: eventId,
+            maxFrostResistance: maxFrostRes
+        });
+        
+    } catch (error) {
+        console.error('❌ [FROST RESISTANCE] Error retrieving frost resistance data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving frost resistance data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // Get reward settings
 app.get('/api/admin/reward-settings', async (req, res) => {
     let client;
