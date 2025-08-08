@@ -7421,29 +7421,93 @@ app.post('/api/admin/create-templates-table', async (req, res) => {
             console.log('⚠️ [ADMIN] icon_url column might already exist in templates table:', error.message);
         }
 
-        // Insert default templates if they don't exist
-        console.log('🔧 [ADMIN] Checking and inserting default templates...');
-        const templatesCheck = await client.query('SELECT COUNT(*) FROM manual_rewards_deductions_templates');
-        const templateCount = parseInt(templatesCheck.rows[0].count);
-        
-        if (templateCount === 0) {
-            console.log('📝 [ADMIN] Inserting default template data...');
-            await client.query(`
-                INSERT INTO manual_rewards_deductions_templates (description, points, player_name, icon_url) VALUES
-                ('Main Tank', 100, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg'),
-                ('Off Tank 1', 80, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg'),
-                ('Off Tank 2', 50, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg'),
-                ('Off Tank 3', 30, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg')
-            `);
-            console.log('✅ [ADMIN] Default templates inserted successfully!');
+        // Prefer importing from CSV shipped with the repo so Heroku matches localhost
+        const csvPath = path.join(__dirname, 'manual_rewards_deductions_templates.csv');
+        let importedCount = 0;
+
+        // Start a transaction for deterministic results
+        await client.query('BEGIN');
+
+        if (fs.existsSync(csvPath)) {
+            console.log('📄 [ADMIN] Found CSV for templates at:', csvPath);
+            const csvRaw = fs.readFileSync(csvPath, 'utf8');
+            const lines = csvRaw.split(/\r?\n/).filter(l => l.trim().length > 0);
+            if (lines.length > 1) {
+                // Remove header
+                lines.shift();
+
+                // Clear current table content to mirror local
+                await client.query('TRUNCATE TABLE manual_rewards_deductions_templates RESTART IDENTITY');
+
+                const parseCsvLine = (line) => {
+                    const result = [];
+                    let current = '';
+                    let inQuotes = false;
+                    for (let i = 0; i < line.length; i++) {
+                        const ch = line[i];
+                        if (ch === '"') {
+                            if (inQuotes && line[i + 1] === '"') {
+                                current += '"';
+                                i++;
+                            } else {
+                                inQuotes = !inQuotes;
+                            }
+                        } else if (ch === ',' && !inQuotes) {
+                            result.push(current);
+                            current = '';
+                        } else {
+                            current += ch;
+                        }
+                    }
+                    result.push(current);
+                    return result.map(v => v.replace(/^\"|\"$/g, ''));
+                };
+
+                for (const line of lines) {
+                    const cols = parseCsvLine(line);
+                    if (cols.length < 7) continue; // skip malformed
+                    const [id, description, points, player_name, created_at, updated_at, icon_url] = cols;
+                    await client.query(
+                        `INSERT INTO manual_rewards_deductions_templates (id, description, points, player_name, created_at, updated_at, icon_url)
+                         VALUES ($1,$2,$3,$4,$5,$6,$7)
+                         ON CONFLICT (id) DO UPDATE SET description = EXCLUDED.description, points = EXCLUDED.points, player_name = EXCLUDED.player_name, icon_url = EXCLUDED.icon_url, updated_at = EXCLUDED.updated_at`,
+                        [id ? parseInt(id, 10) : null, description, parseFloat(points), player_name || null, created_at || null, updated_at || null, icon_url || null]
+                    );
+                    importedCount++;
+                }
+
+                // Ensure the serial sequence is aligned after explicit id inserts
+                await client.query(`SELECT setval(pg_get_serial_sequence('manual_rewards_deductions_templates','id'), COALESCE((SELECT MAX(id) FROM manual_rewards_deductions_templates), 1), true)`);
+                console.log(`✅ [ADMIN] Imported ${importedCount} templates from CSV`);
+            } else {
+                console.log('⚠️ [ADMIN] CSV appears empty beyond header; skipping import.');
+            }
         } else {
-            console.log(`📋 [ADMIN] Found ${templateCount} existing templates, skipping insertion`);
+            console.log('⚠️ [ADMIN] CSV not found; falling back to default seed set.');
+            const templatesCheck = await client.query('SELECT COUNT(*) FROM manual_rewards_deductions_templates');
+            const templateCount = parseInt(templatesCheck.rows[0].count);
+            if (templateCount === 0) {
+                await client.query(`
+                    INSERT INTO manual_rewards_deductions_templates (description, points, player_name, icon_url) VALUES
+                    ('Main Tank', 100, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg'),
+                    ('Off Tank 1', 80, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg'),
+                    ('Off Tank 2', 50, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg'),
+                    ('Off Tank 3', 30, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg')
+                `);
+                importedCount = 4;
+                console.log('✅ [ADMIN] Default templates inserted.');
+            } else {
+                importedCount = templateCount;
+                console.log(`📋 [ADMIN] Found ${templateCount} existing templates, no changes.`);
+            }
         }
-        
+
+        await client.query('COMMIT');
+
         res.json({ 
             success: true, 
-            message: 'Templates table created and populated successfully!',
-            templatesCount: templateCount === 0 ? 4 : templateCount
+            message: 'Templates table created and populated successfully from CSV.',
+            templatesCount: importedCount
         });
         
     } catch (error) {
