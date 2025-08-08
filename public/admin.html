@@ -258,6 +258,7 @@
                 <button class="btn" onclick="loadAllUsers()">Load All Users</button>
                 <button class="btn" onclick="loadRosterStats()">Load Roster Statistics</button>
                 <button class="btn danger" onclick="setupDatabase()">Setup Database</button>
+                <button class="btn" onclick="createTemplatesTable()">Create Templates Table</button>
                 <button class="btn danger" onclick="showManagementTools()">Management Tools</button>
                 <div id="management-data"></div>
             </div>
@@ -675,6 +676,8 @@
                                 <li><strong>Reward settings table created/updated</strong> 🏆</li>
                                 <li><strong>Channel backgrounds table created/updated</strong> 🖼️</li>
                                 <li><strong>Manual rewards/deductions table created/updated</strong> ⚖️</li>
+                                <li><strong>Manual rewards templates table created/updated</strong> 📋</li>
+                                <li><strong>Player role mapping table created/updated (with primary_role calculation)</strong> 🎯</li>
                                 <li><strong>Background blur setting added</strong> 🌫️</li>
                     <li><strong>Background darken setting added</strong> 🌙</li>
                     <li><strong>Text shadows added to event cards</strong> ✨</li>
@@ -695,6 +698,57 @@
                 managementData.innerHTML = `
                     <div style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 20px; border-radius: 8px; color: #721c24; margin-top: 15px;">
                         <h4 style="color: #721c24; margin-bottom: 10px;">❌ Database Setup Failed</h4>
+                        <p style="margin: 0;">Network error occurred. Please try again.</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function createTemplatesTable() {
+            if (!confirm('This will create the manual rewards templates table with default tank role templates. Continue?')) {
+                return;
+            }
+            
+            const managementData = document.getElementById('management-data');
+            managementData.innerHTML = '<div class="loading">Creating templates table...</div>';
+            
+            try {
+                const response = await fetch('/api/admin/create-templates-table', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    managementData.innerHTML = `
+                        <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 8px; color: #155724; margin-top: 15px;">
+                            <h4 style="color: #155724; margin-bottom: 10px;">✅ Templates Table Created Successfully!</h4>
+                            <p style="margin: 0;">${data.message}</p>
+                            <ul style="margin-top: 10px;">
+                                <li><strong>Templates table created/updated</strong> 📋</li>
+                                <li><strong>Templates index created</strong> 🔍</li>
+                                <li><strong>Default tank role templates added (${data.templatesCount} templates)</strong> 🛡️</li>
+                                <li>Main Tank (100 pts)</li>
+                                <li>Off Tank 1 (80 pts)</li>
+                                <li>Off Tank 2 (50 pts)</li>
+                                <li>Off Tank 3 (30 pts)</li>
+                            </ul>
+                            <p style="margin-top: 10px; font-weight: bold;">✅ You can now use "Add from templates" on the raid logs page!</p>
+                        </div>
+                    `;
+                } else {
+                    managementData.innerHTML = `
+                        <div style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 20px; border-radius: 8px; color: #721c24; margin-top: 15px;">
+                            <h4 style="color: #721c24; margin-bottom: 10px;">❌ Templates Table Creation Failed</h4>
+                            <p style="margin: 0;">Error: ${data.message || 'Unknown error occurred'}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error creating templates table:', error);
+                managementData.innerHTML = `
+                    <div style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 20px; border-radius: 8px; color: #721c24; margin-top: 15px;">
+                        <h4 style="color: #721c24; margin-bottom: 10px;">❌ Templates Table Creation Failed</h4>
                         <p style="margin: 0;">Network error occurred. Please try again.</p>
                     </div>
                 `;

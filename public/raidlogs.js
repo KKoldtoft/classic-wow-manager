@@ -34,6 +34,8 @@ class RaidLogsManager {
         this.powerInfusionSettings = { points_per_division: 1, infusions_needed: 2, max_points: 10 };
         this.decursesData = [];
         this.decursesSettings = { points_per_division: 1, decurses_needed: 3, max_points: 10, min_points: -10, average_decurses: 0 };
+        this.voidDamageData = [];
+        this.voidDamageSettings = { void_blast_penalty: -10, void_zone_penalty: -5 };
         this.playerStreaksData = [];
         this.guildMembersData = [];
         this.rewardSettings = {};
@@ -55,6 +57,19 @@ class RaidLogsManager {
         this.currentUser = null;
         this.isEditingEntry = false;
         this.editingEntryId = null;
+        this.primaryRoles = null;
+        // Discord class icon emote IDs (fallback when spec icon is missing)
+        this.classIconEmotes = {
+            'warrior': '579532030153588739',
+            'paladin': '579532029906124840',
+            'hunter': '579532029880827924',
+            'rogue': '579532030086217748',
+            'priest': '637564323442720768',
+            'shaman': '579532030056857600',
+            'mage': '579532030161977355',
+            'warlock': '579532029851336716',
+            'druid': '579532029675438081'
+        };
         this.initializeEventListeners();
         this.loadSpecData();
         this.loadRaidLogsData();
@@ -195,12 +210,18 @@ class RaidLogsManager {
         this.sectionObserver = new IntersectionObserver((entries) => {
             // Don't update during programmatic scrolling
             if (this.isScrolling) return;
-            
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    this.updateActiveNavButton(entry.target.id);
+
+            // Pick the entry with the largest intersection ratio to reduce churn
+            let bestEntry = null;
+            for (const entry of entries) {
+                if (!entry.isIntersecting) continue;
+                if (!bestEntry || entry.intersectionRatio > bestEntry.intersectionRatio) {
+                    bestEntry = entry;
                 }
-            });
+            }
+            if (bestEntry) {
+                this.updateActiveNavButton(bestEntry.target.id);
+            }
         }, options);
 
         // Observe all scroll target sections
@@ -211,6 +232,8 @@ class RaidLogsManager {
     }
 
     updateActiveNavButton(sectionId) {
+        if (this.currentActiveSectionId === sectionId) return;
+        this.currentActiveSectionId = sectionId;
         const navButtons = this.floatingNav.querySelectorAll('.nav-btn');
         let activeButton = null;
         
@@ -415,7 +438,9 @@ class RaidLogsManager {
                 this.fetchWorldBuffsArchiveUrl(),
                 this.fetchFrostResistanceArchiveUrl(),
                 this.fetchManualRewardsData(),
-                this.fetchCurrentUser()
+                this.fetchCurrentUser(),
+                this.fetchPrimaryRoles().then(roles => this.primaryRoles = roles),
+                this.fetchVoidDamageData()
             ]);
             this.displayRaidLogs();
             this.displayManualRewards();
@@ -1058,6 +1083,70 @@ class RaidLogsManager {
         }
     }
 
+    async fetchPrimaryRoles() {
+        if (!this.activeEventId) {
+            console.log('🎯 [PRIMARY ROLES] No active event ID');
+            return null;
+        }
+
+        try {
+            console.log(`🎯 [PRIMARY ROLES] Fetching primary roles for event: ${this.activeEventId}`);
+            const response = await fetch(`/api/player-role-mapping/${this.activeEventId}/primary-roles`);
+            
+            if (!response.ok) {
+                console.log(`🎯 [PRIMARY ROLES] No primary roles data available (${response.status})`);
+                return null;
+            }
+            
+            const data = await response.json();
+            
+            if (data.success && data.primaryRoles) {
+                console.log(`✅ [PRIMARY ROLES] Loaded ${data.count} primary roles`);
+                return data.primaryRoles;
+            } else {
+                console.log('🎯 [PRIMARY ROLES] No primary roles in response');
+                return null;
+            }
+        } catch (error) {
+            console.error('❌ [PRIMARY ROLES] Error fetching primary roles:', error);
+            return null;
+        }
+    }
+
+    async fetchVoidDamageData() {
+        if (!this.activeEventId) {
+            console.log('💜 [VOID DAMAGE] No active event ID');
+            return;
+        }
+
+        try {
+            console.log(`💜 [VOID DAMAGE] Fetching void damage data for event: ${this.activeEventId}`);
+            const response = await fetch(`/api/void-damage/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                console.log(`💜 [VOID DAMAGE] No void damage data available (${response.status})`);
+                this.voidDamageData = [];
+                return;
+            }
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                this.voidDamageData = data.data || [];
+                if (data.settings) {
+                    this.voidDamageSettings = { ...this.voidDamageSettings, ...data.settings };
+                }
+                console.log(`✅ [VOID DAMAGE] Loaded ${this.voidDamageData.length} players with void damage`);
+            } else {
+                console.log('💜 [VOID DAMAGE] Failed to load void damage data');
+                this.voidDamageData = [];
+            }
+        } catch (error) {
+            console.error('❌ [VOID DAMAGE] Error fetching void damage data:', error);
+            this.voidDamageData = [];
+        }
+    }
+
     async fetchShameData() {
         console.log(`💀 Fetching shame data for event: ${this.activeEventId}`);
         
@@ -1466,6 +1555,8 @@ class RaidLogsManager {
         this.displayGodGamerHealer(godGamerHealer);
         this.displayDamageRankings(damageDealer);
         this.displayHealerRankings(healers);
+        this.displayTooLowDamageRankings(damageDealer);
+        this.displayTooLowHealingRankings(healers);
         this.displayShamanHealers(healers);
         this.displayPriestHealers(healers);
         this.displayDruidHealers(healers);
@@ -1485,7 +1576,8 @@ class RaidLogsManager {
         this.displayDemoShoutRankings(this.demoShoutData);
         this.displayPolymorphRankings(this.polymorphData);
         this.displayPowerInfusionRankings(this.powerInfusionData);
-        this.displayDecursesRankings(this.decursesData);
+                    this.displayDecursesRankings(this.decursesData);
+            this.displayVoidDamageRankings(this.voidDamageData);
         this.updateAbilitiesHeader();
         this.updateManaPotionsHeader();
         this.updateRunesHeader();
@@ -1500,7 +1592,8 @@ class RaidLogsManager {
         this.updateDemoShoutHeader();
         this.updatePolymorphHeader();
         this.updatePowerInfusionHeader();
-        this.updateDecursesHeader();
+                    this.updateDecursesHeader();
+            this.updateVoidDamageHeader();
         this.updateFrostResistanceHeader();
         this.updateArchiveButtons();
         this.displayWallOfShame();
@@ -1551,7 +1644,7 @@ class RaidLogsManager {
                         <span class="ranking-number">#${position}</span>
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%">
-                        <div class="character-name">${player.character_name}</div>
+                        <div class="character-name">${this.getClassIconHtml(player.character_class)}${player.character_name}</div>
                         <div class="character-details" title="${player.player_streak} consecutive weeks">
                             ${player.player_streak} weeks
                         </div>
@@ -1593,7 +1686,7 @@ class RaidLogsManager {
                         <span class="ranking-number">#${position}</span>
                     </div>
                                          <div class="character-info class-${characterClass}" style="--fill-percentage: 100%">
-                         <div class="character-name">${player.character_name}</div>
+                         <div class="character-name">${this.getClassIconHtml(player.character_class)}${player.character_name}</div>
                          <div class="character-details" title="Guild member: ${player.guild_character_name}">
                              Guild Member
                          </div>
@@ -1887,6 +1980,212 @@ class RaidLogsManager {
         }).join('');
     }
 
+    displayTooLowDamageRankings(players) {
+        const container = document.getElementById('too-low-damage-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('too-low-damage');
+
+        // Get active fight time in seconds (convert from minutes)
+        const activeFightTimeSeconds = (this.raidStats.stats && this.raidStats.stats.activeFightTime) 
+            ? this.raidStats.stats.activeFightTime * 60 
+            : null;
+
+        if (!activeFightTimeSeconds) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <p>Active fight time not available</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Filter players by primary role - only show DPS players
+        let filteredPlayers = players;
+        if (this.primaryRoles) {
+            console.log(`🎯 [TOO LOW DAMAGE] Filtering ${players.length} players by primary role`);
+            filteredPlayers = players.filter(player => {
+                const playerName = player.character_name.toLowerCase();
+                const primaryRole = this.primaryRoles[playerName];
+                const isDPS = primaryRole === 'dps';
+                
+                if (!isDPS && primaryRole) {
+                    console.log(`🚫 [TOO LOW DAMAGE] Excluding ${player.character_name} (primary role: ${primaryRole})`);
+                }
+                
+                return isDPS;
+            });
+            console.log(`✅ [TOO LOW DAMAGE] Filtered to ${filteredPlayers.length} DPS players`);
+        } else {
+            console.log('⚠️ [TOO LOW DAMAGE] No primary roles data available, showing all players');
+        }
+
+        // Calculate DPS and filter players with penalty points
+        const playersWithPenalties = filteredPlayers.map(player => {
+            const damage = parseFloat(player.damage_amount) || 0;
+            const dps = damage / activeFightTimeSeconds;
+            
+            let points = 0;
+            if (dps < 150) {
+                points = -100;
+            } else if (dps < 200) {
+                points = -50;
+            } else if (dps < 250) {
+                points = -25;
+            }
+
+            return {
+                ...player,
+                dps: dps,
+                points: points
+            };
+        }).filter(player => player.points < 0) // Only show players with penalties
+          .sort((a, b) => a.dps - b.dps); // Sort by DPS ascending (worst first)
+
+        if (playersWithPenalties.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-thumbs-up"></i>
+                    <p>All damage dealers have adequate DPS!</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Get max DPS for percentage calculation (use highest DPS even if it's low)
+        const maxDPS = Math.max(...playersWithPenalties.map(p => p.dps), 1);
+
+        container.innerHTML = playersWithPenalties.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const formattedDamage = this.formatNumber(parseInt(player.damage_amount) || 0);
+            const fillPercentage = Math.max(5, (player.dps / maxDPS) * 100); // Minimum 5% for visibility
+            
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${this.getSpecIconHtml(player.spec_name, player.character_class)}${player.character_name}
+                        </div>
+                        <div class="character-details" title="${formattedDamage} damage (${player.dps.toFixed(1)} DPS)">
+                            ${this.truncateWithTooltip(`${player.dps.toFixed(1)} DPS`).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${player.dps.toFixed(1)} damage per second">
+                        <div class="amount-value negative">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    displayTooLowHealingRankings(players) {
+        const container = document.getElementById('too-low-healing-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('too-low-healing');
+
+        // Get active fight time in seconds (convert from minutes)
+        const activeFightTimeSeconds = (this.raidStats.stats && this.raidStats.stats.activeFightTime) 
+            ? this.raidStats.stats.activeFightTime * 60 
+            : null;
+
+        if (!activeFightTimeSeconds) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <p>Active fight time not available</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Filter players by primary role - only show healer players
+        let filteredPlayers = players;
+        if (this.primaryRoles) {
+            console.log(`🎯 [TOO LOW HEALING] Filtering ${players.length} players by primary role`);
+            filteredPlayers = players.filter(player => {
+                const playerName = player.character_name.toLowerCase();
+                const primaryRole = this.primaryRoles[playerName];
+                const isHealer = primaryRole === 'healer';
+                
+                if (!isHealer && primaryRole) {
+                    console.log(`🚫 [TOO LOW HEALING] Excluding ${player.character_name} (primary role: ${primaryRole})`);
+                }
+                
+                return isHealer;
+            });
+            console.log(`✅ [TOO LOW HEALING] Filtered to ${filteredPlayers.length} healer players`);
+        } else {
+            console.log('⚠️ [TOO LOW HEALING] No primary roles data available, showing all players');
+        }
+
+        // Calculate HPS and filter players with penalty points
+        const playersWithPenalties = filteredPlayers.map(player => {
+            const healing = parseFloat(player.healing_amount) || 0;
+            const hps = healing / activeFightTimeSeconds;
+            
+            let points = 0;
+            if (hps < 85) {
+                points = -100;
+            } else if (hps < 100) {
+                points = -50;
+            } else if (hps < 125) {
+                points = -25;
+            }
+
+            return {
+                ...player,
+                hps: hps,
+                points: points
+            };
+        }).filter(player => player.points < 0) // Only show players with penalties
+          .sort((a, b) => a.hps - b.hps); // Sort by HPS ascending (worst first)
+
+        if (playersWithPenalties.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-thumbs-up"></i>
+                    <p>All healers have adequate HPS!</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Get max HPS for percentage calculation (use highest HPS even if it's low)
+        const maxHPS = Math.max(...playersWithPenalties.map(p => p.hps), 1);
+
+        container.innerHTML = playersWithPenalties.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const formattedHealing = this.formatNumber(parseInt(player.healing_amount) || 0);
+            const fillPercentage = Math.max(5, (player.hps / maxHPS) * 100); // Minimum 5% for visibility
+            
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${this.getSpecIconHtml(player.spec_name, player.character_class)}${player.character_name}
+                        </div>
+                        <div class="character-details" title="${formattedHealing} healing (${player.hps.toFixed(1)} HPS)">
+                            ${this.truncateWithTooltip(`${player.hps.toFixed(1)} HPS`).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${player.hps.toFixed(1)} healing per second">
+                        <div class="amount-value negative">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
     displayShamanHealers(healers) {
         const container = document.getElementById('shaman-healers-list');
         const section = container.closest('.rankings-section');
@@ -1912,7 +2211,6 @@ class RaidLogsManager {
 
         container.innerHTML = shamanHealers.map((player, index) => {
             const position = index + 1;
-            const trophyHtml = this.getTrophyHtml(position);
             const characterClass = this.normalizeClassName(player.character_class);
             const formattedHealing = this.formatNumber(parseInt(player.healing_amount) || 0);
             const playerHealing = parseInt(player.healing_amount) || 0;
@@ -1922,8 +2220,7 @@ class RaidLogsManager {
             return `
                 <div class="ranking-item">
                     <div class="ranking-position">
-                        ${trophyHtml}
-                        ${position <= 3 ? '' : `<span class="ranking-number">#${position}</span>`}
+                        <span class="ranking-number">#${position}</span>
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
@@ -1967,7 +2264,6 @@ class RaidLogsManager {
 
         container.innerHTML = priestHealers.map((player, index) => {
             const position = index + 1;
-            const trophyHtml = this.getTrophyHtml(position);
             const characterClass = this.normalizeClassName(player.character_class);
             const formattedHealing = this.formatNumber(parseInt(player.healing_amount) || 0);
             const playerHealing = parseInt(player.healing_amount) || 0;
@@ -1977,8 +2273,7 @@ class RaidLogsManager {
             return `
                 <div class="ranking-item">
                     <div class="ranking-position">
-                        ${trophyHtml}
-                        ${position <= 3 ? '' : `<span class="ranking-number">#${position}</span>`}
+                        <span class="ranking-number">#${position}</span>
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
@@ -2022,7 +2317,6 @@ class RaidLogsManager {
 
         container.innerHTML = druidHealers.map((player, index) => {
             const position = index + 1;
-            const trophyHtml = this.getTrophyHtml(position);
             const characterClass = this.normalizeClassName(player.character_class);
             const formattedHealing = this.formatNumber(parseInt(player.healing_amount) || 0);
             const playerHealing = parseInt(player.healing_amount) || 0;
@@ -2032,8 +2326,7 @@ class RaidLogsManager {
             return `
                 <div class="ranking-item">
                     <div class="ranking-position">
-                        ${trophyHtml}
-                        ${position <= 3 ? '' : `<span class="ranking-number">#${position}</span>`}
+                        <span class="ranking-number">#${position}</span>
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
@@ -2094,7 +2387,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details" title="${abilitiesText}">
                             ${this.truncateWithTooltip(abilitiesText).displayText}
@@ -2210,7 +2503,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name class-${characterClass}">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details">
                             <div class="${buffCountClass}">${player.total_buffs} buffs</div>
@@ -2240,8 +2533,28 @@ class RaidLogsManager {
         const section = container.closest('.rankings-section');
         section.classList.add('frost-resistance-section');
 
+        // Filter players by primary role - only show DPS players
+        let filteredPlayers = players;
+        if (this.primaryRoles) {
+            console.log(`🧊 [FROST RESISTANCE] Filtering ${players.length} players by primary role`);
+            filteredPlayers = players.filter(player => {
+                const playerName = player.character_name.toLowerCase();
+                const primaryRole = this.primaryRoles[playerName];
+                const isDPS = primaryRole === 'dps';
+                
+                if (!isDPS && primaryRole) {
+                    console.log(`🚫 [FROST RESISTANCE] Excluding ${player.character_name} (primary role: ${primaryRole})`);
+                }
+                
+                return isDPS;
+            });
+            console.log(`✅ [FROST RESISTANCE] Filtered to ${filteredPlayers.length} DPS players`);
+        } else {
+            console.log('⚠️ [FROST RESISTANCE] No primary roles data available, showing all players');
+        }
+
         // Show the section if we have data
-        if (players.length > 0) {
+        if (filteredPlayers.length > 0) {
             section.style.display = 'block';
         } else {
             section.style.display = 'none';
@@ -2249,12 +2562,12 @@ class RaidLogsManager {
         }
 
         // Filter out players with 0 points for display, but keep all players for progress calculations
-        const playersToDisplay = players.filter(player => player.points !== 0);
+        const playersToDisplay = filteredPlayers.filter(player => player.points !== 0);
         
-        // Use all players (including 0-point players) to calculate max frost resistance for progress bars
-        const maxFrostResForProgress = Math.max(...players.map(p => p.frost_resistance), 1);
+        // Use all filtered players (including 0-point players) to calculate max frost resistance for progress bars
+        const maxFrostResForProgress = Math.max(...filteredPlayers.map(p => p.frost_resistance), 1);
         
-        console.log(`🧊 [FROST RESISTANCE] Total DPS players: ${players.length}, Displaying: ${playersToDisplay.length} (excluding 0-point players)`);
+        console.log(`🧊 [FROST RESISTANCE] Total DPS players: ${filteredPlayers.length}, Displaying: ${playersToDisplay.length} (excluding 0-point players)`);
         console.log(`🧊 [FROST RESISTANCE] Max frost resistance for progress bars: ${maxFrostResForProgress}`);
         
         if (playersToDisplay.length === 0) {
@@ -2311,7 +2624,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name class-${characterClass}">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details">
                             <div class="${frostResClass}">${player.frost_resistance} frost resistance</div>
@@ -2402,7 +2715,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details" title="${player.potions_used} potions used (${player.extra_potions} above threshold)">
                             ${this.truncateWithTooltip(`${player.potions_used} potions used (${player.extra_potions} above threshold)`).displayText}
@@ -2466,7 +2779,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details" title="${runesText} (${player.total_runes} total)">
                             ${this.truncateWithTooltip(`${runesText} (${player.total_runes} total)`).displayText}
@@ -2527,7 +2840,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details" title="${interruptsText}">
                             ${this.truncateWithTooltip(interruptsText).displayText}
@@ -2588,7 +2901,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details" title="${disarmsText}">
                             ${this.truncateWithTooltip(disarmsText).displayText}
@@ -2655,7 +2968,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details" title="${sunderText}">
                             ${this.truncateWithTooltip(sunderText).displayText}
@@ -2727,7 +3040,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details" title="${uptimeText}">
                             ${this.truncateWithTooltip(uptimeText).displayText}
@@ -2791,7 +3104,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details" title="${uptimeText}">
                             ${this.truncateWithTooltip(uptimeText).displayText}
@@ -2855,7 +3168,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details" title="${uptimeText}">
                             ${this.truncateWithTooltip(uptimeText).displayText}
@@ -2919,7 +3232,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details" title="${uptimeText}">
                             ${this.truncateWithTooltip(uptimeText).displayText}
@@ -2983,7 +3296,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details" title="${scorchText}">
                             ${this.truncateWithTooltip(scorchText).displayText}
@@ -3047,7 +3360,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details" title="${demoShoutText}">
                             ${this.truncateWithTooltip(demoShoutText).displayText}
@@ -3106,7 +3419,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details" title="${polymorphText}">
                             ${this.truncateWithTooltip(polymorphText).displayText}
@@ -3178,7 +3491,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details" title="${tooltipText}">
                             ${this.truncateWithTooltip(infusionText).displayText}
@@ -3249,7 +3562,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${player.character_name}
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
                         <div class="character-details" title="${tooltipText}">
                             ${this.truncateWithTooltip(`${decursesText} (${differenceText})`).displayText}
@@ -3271,6 +3584,73 @@ class RaidLogsManager {
             const pointsText = points_per_division === 1 ? 'pt' : 'pts';
             const decursesText = decurses_needed === 1 ? 'decurse' : 'decurses';
             headerElement.textContent = `Ranked by average-based points (${points_per_division} ${pointsText} per ${decurses_needed} ${decursesText} vs avg, ${min_points} to +${max_points})`;
+        }
+    }
+
+    displayVoidDamageRankings(players) {
+        const container = document.getElementById('void-damage-list');
+        const section = container.closest('.rankings-section');
+        section.classList.add('void-damage');
+
+        if (!players || players.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-shield-alt"></i>
+                    <p>No players took avoidable void damage!</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Get max void damage for percentage calculation
+        const maxVoidDamage = Math.max(...players.map(p => p.total_void_damage), 1);
+
+        container.innerHTML = players.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const formattedDamage = this.formatNumber(player.total_void_damage);
+            const fillPercentage = Math.max(5, (player.total_void_damage / maxVoidDamage) * 100);
+            
+            // Show breakdown of void damage types
+            const damageBreakdown = [];
+            if (player.void_blast_damage > 0) {
+                damageBreakdown.push(`Void Blast: ${this.formatNumber(player.void_blast_damage)}`);
+            }
+            if (player.void_zone_damage > 0) {
+                damageBreakdown.push(`Void Zone: ${this.formatNumber(player.void_zone_damage)}`);
+            }
+            const breakdownText = damageBreakdown.join(', ');
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${this.getSpecIconHtml(player.spec_name, player.character_class)}${player.character_name}
+                        </div>
+                        <div class="character-details" title="${formattedDamage} void damage">
+                            ${formattedDamage} damage
+                        </div>
+                        <div class="void-details" title="${breakdownText}">
+                            ${this.truncateWithTooltip(breakdownText, 30).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="${player.total_void_damage.toLocaleString()} void damage taken">
+                        <div class="amount-value negative">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updateVoidDamageHeader() {
+        const headerElement = document.querySelector('.void-damage-section .section-header p');
+        if (headerElement && this.voidDamageSettings) {
+            const { void_blast_penalty, void_zone_penalty } = this.voidDamageSettings;
+            headerElement.textContent = `Players who took damage from Void Blast (${void_blast_penalty} pts) or Void Zone (${void_zone_penalty} pts)`;
         }
     }
 
@@ -3441,29 +3821,37 @@ class RaidLogsManager {
         return 'unknown';
     }
 
+    // Fallback: return class icon based on character class
+    getClassIconHtml(characterClass) {
+        const canonicalClass = this.getCanonicalClass(characterClass);
+        const emoteId = this.classIconEmotes[canonicalClass];
+        if (emoteId) {
+            return `<img src="https://cdn.discordapp.com/emojis/${emoteId}.png" class="spec-icon" alt="${canonicalClass}" width="20" height="20" loading="lazy" decoding="async">`;
+        }
+        return `<i class="fas fa-user-circle spec-icon unknown-spec" style="color: #aaa;" title="${canonicalClass}"></i>`;
+    }
+
     getSpecIconHtml(specName, characterClass) {
-        // Handle null or undefined spec names with red stop icon
-        if (!specName || specName === 'null' || specName === null) {
-            return `<i class="fas fa-stop-circle spec-icon null-spec" style="color: #ff4444;" title="No spec data"></i>`;
+        // Priority 1: roster override spec emote if available
+        if (specName && specName !== 'null') {
+            const player = this.logData.find(p =>
+                p.character_class === characterClass &&
+                p.spec_name === specName &&
+                p.roster_spec_emote
+            );
+            if (player && player.roster_spec_emote) {
+                return `<img src="https://cdn.discordapp.com/emojis/${player.roster_spec_emote}.png" class="spec-icon" alt="${specName}" width="20" height="20" loading="lazy" decoding="async">`;
+            }
+
+            // Priority 2: spec icon from SPEC_DATA mapping
+            const iconUrl = this.getSpecIconUrl(specName, characterClass);
+            if (iconUrl) {
+                return `<img src="${iconUrl}" class="spec-icon" alt="${specName}" width="20" height="20" loading="lazy" decoding="async">`;
+            }
         }
-        
-        // For players with roster spec emotes, use those first
-        const player = this.logData.find(p => 
-            p.character_class === characterClass && 
-            p.spec_name === specName && 
-            p.roster_spec_emote
-        );
-        if (player && player.roster_spec_emote) {
-            return `<img src="https://cdn.discordapp.com/emojis/${player.roster_spec_emote}.png" class="spec-icon" alt="${specName}">`;
-        }
-        
-        const iconUrl = this.getSpecIconUrl(specName, characterClass);
-        if (iconUrl) {
-            return `<img src="${iconUrl}" class="spec-icon" alt="${specName}">`;
-        }
-        
-        // Fallback for when spec isn't found in spec data
-        return `<i class="fas fa-question-circle spec-icon unknown-spec" style="color: #ffa500;" title="Unknown spec: ${specName}"></i>`;
+
+        // Priority 3: fall back to class icon so every player has an icon
+        return this.getClassIconHtml(characterClass);
     }
 
     displayWallOfShame() {
@@ -3597,6 +3985,16 @@ class RaidLogsManager {
                 this.handlePlayerSearchKeydown(e);
             });
             
+            // Reposition dropdown on focus to handle edit mode vs add mode differences
+            playerNameInput.addEventListener('focus', () => {
+                setTimeout(() => {
+                    const dropdown = document.getElementById('player-dropdown');
+                    if (dropdown && dropdown.style.display === 'block') {
+                        this.positionDropdown();
+                    }
+                }, 50); // Small delay to ensure any form transformations are applied
+            });
+            
             // Close dropdown when clicking outside
             document.addEventListener('click', (e) => {
                 if (!e.target.closest('.player-search-container')) {
@@ -3620,6 +4018,46 @@ class RaidLogsManager {
                 this.cancelEdit();
             });
         }
+
+        // Add templates button
+        const addTemplatesBtn = document.getElementById('add-templates-btn');
+        if (addTemplatesBtn) {
+            addTemplatesBtn.addEventListener('click', () => {
+                this.handleAddFromTemplates();
+            });
+        }
+
+        // Grouped template buttons
+        const add4HTanksBtn = document.getElementById('add-templates-4h-tanks-btn');
+        if (add4HTanksBtn) {
+            add4HTanksBtn.addEventListener('click', () => {
+                this.handleAddFromTemplates([5,6,7,8]);
+            });
+        }
+        const addRazMcBtn = document.getElementById('add-templates-raz-mc-btn');
+        if (addRazMcBtn) {
+            addRazMcBtn.addEventListener('click', () => {
+                this.handleAddFromTemplates([9,10]);
+            });
+        }
+        const addPullerBtn = document.getElementById('add-templates-puller-btn');
+        if (addPullerBtn) {
+            addPullerBtn.addEventListener('click', () => {
+                this.handleAddFromTemplates([11]);
+            });
+        }
+        const addGluthKiteBtn = document.getElementById('add-templates-gluth-kite-btn');
+        if (addGluthKiteBtn) {
+            addGluthKiteBtn.addEventListener('click', () => {
+                this.handleAddFromTemplates([12]);
+            });
+        }
+        const addSummonersBtn = document.getElementById('add-templates-summoners-btn');
+        if (addSummonersBtn) {
+            addSummonersBtn.addEventListener('click', () => {
+                this.handleAddFromTemplates([13,14,15]);
+            });
+        }
         
         // Form inputs for real-time validation
         const inputs = ['player-name-input', 'description-input', 'points-input'];
@@ -3631,6 +4069,17 @@ class RaidLogsManager {
                 });
             }
         });
+        
+        // Reposition dropdown on scroll/resize to maintain correct position
+        const repositionDropdown = () => {
+            const dropdown = document.getElementById('player-dropdown');
+            if (dropdown && dropdown.style.display === 'block') {
+                this.positionDropdown();
+            }
+        };
+        
+        window.addEventListener('scroll', repositionDropdown);
+        window.addEventListener('resize', repositionDropdown);
     }
     
     async fetchCurrentUser() {
@@ -3714,9 +4163,12 @@ class RaidLogsManager {
         const accessDeniedMessage = document.getElementById('access-denied-message');
         const manualRewardsContent = document.getElementById('manual-rewards-content');
         
+        const templatesSection = document.getElementById('manual-rewards-templates');
+
         if (hasManagementRole) {
             console.log('⚖️ [MANUAL REWARDS] User has management role, showing full interface');
             if (form) form.style.display = 'block';
+            if (templatesSection) templatesSection.style.display = 'block';
             if (actionsHeader) actionsHeader.style.display = 'table-cell';
             if (accessDeniedMessage) accessDeniedMessage.style.display = 'none';
             if (manualRewardsContent) manualRewardsContent.style.display = 'block';
@@ -3725,6 +4177,7 @@ class RaidLogsManager {
         } else {
             console.log('⚖️ [MANUAL REWARDS] User does not have management role, showing read-only view');
             if (form) form.style.display = 'none';
+            if (templatesSection) templatesSection.style.display = 'none';
             if (actionsHeader) actionsHeader.style.display = 'none';
             if (accessDeniedMessage) accessDeniedMessage.style.display = 'block';
             if (manualRewardsContent) manualRewardsContent.style.display = 'none';
@@ -3758,10 +4211,32 @@ class RaidLogsManager {
         const rankingItem = document.createElement('div');
         rankingItem.className = 'ranking-item';
         
-        // Position
+        // Check if this is a template entry (empty player name)
+        const isTemplateEntry = !entry.player_name || entry.player_name.trim() === '';
+        const hasIcon = entry.icon_url && entry.icon_url.trim() !== '';
+        
+        if (isTemplateEntry) {
+            rankingItem.classList.add('template-entry');
+        }
+        
+        if (hasIcon) {
+            rankingItem.classList.add('has-template-icon');
+        }
+        
+        // Position or Icon
         const positionDiv = document.createElement('div');
         positionDiv.className = 'ranking-position';
-        positionDiv.textContent = position;
+        
+        // Use icon for template entries, position number for regular entries
+        if (isTemplateEntry && entry.icon_url) {
+            positionDiv.innerHTML = `<img src="${entry.icon_url}" alt="Template Icon" class="template-icon" title="${entry.description}">`;
+        } else if (entry.icon_url) {
+            // Entry has player name but originated from template, keep the icon
+            positionDiv.innerHTML = `<img src="${entry.icon_url}" alt="Template Icon" class="template-icon" title="${entry.description}">`;
+        } else {
+            // Regular manual entry, use position number
+            positionDiv.textContent = position;
+        }
         
         // Character Info
         const characterInfo = document.createElement('div');
@@ -3770,7 +4245,13 @@ class RaidLogsManager {
         // Character Name
         const characterName = document.createElement('div');
         characterName.className = 'character-name';
-        characterName.textContent = entry.player_name;
+        
+        if (isTemplateEntry) {
+            characterName.innerHTML = '<em>Click Edit to assign player</em>';
+            characterName.classList.add('needs-player');
+        } else {
+            characterName.textContent = entry.player_name;
+        }
         
         // Character Details (description)
         const characterDetails = document.createElement('div');
@@ -3832,8 +4313,34 @@ class RaidLogsManager {
         const dropdown = document.getElementById('player-dropdown');
         if (!dropdown) return;
         
+        console.log('🔍 [PLAYER SEARCH] Search term:', searchTerm);
+        console.log('🔍 [PLAYER SEARCH] Players data length:', this.playersData?.length || 0);
+        
         if (!searchTerm.trim()) {
             dropdown.style.display = 'none';
+            return;
+        }
+        
+        // Ensure playersData exists and is an array
+        if (!this.playersData || !Array.isArray(this.playersData)) {
+            console.warn('⚠️ [PLAYER SEARCH] Players data not available, attempting to fetch...');
+            
+            // Show loading state in dropdown
+            dropdown.innerHTML = '<div style="padding: 8px; color: #888; font-style: italic;">Loading players...</div>';
+            dropdown.style.display = 'block';
+            this.positionDropdown();
+            
+            this.fetchPlayersForDropdown().then(() => {
+                // Retry search after fetching data
+                if (this.playersData && Array.isArray(this.playersData)) {
+                    this.handlePlayerSearch(searchTerm);
+                } else {
+                    dropdown.innerHTML = '<div style="padding: 8px; color: #888; font-style: italic;">No players available</div>';
+                }
+            }).catch(error => {
+                console.error('❌ [PLAYER SEARCH] Failed to fetch players:', error);
+                dropdown.innerHTML = '<div style="padding: 8px; color: #888; font-style: italic;">Error loading players</div>';
+            });
             return;
         }
         
@@ -3841,8 +4348,16 @@ class RaidLogsManager {
             player.player_name.toLowerCase().includes(searchTerm.toLowerCase())
         );
         
+        console.log('🔍 [PLAYER SEARCH] Filtered players:', filteredPlayers.length);
+        
         this.populatePlayerDropdown(filteredPlayers);
-        dropdown.style.display = filteredPlayers.length > 0 ? 'block' : 'none';
+        
+        if (filteredPlayers.length > 0) {
+            this.positionDropdown(); // Reposition when showing
+            dropdown.style.display = 'block';
+        } else {
+            dropdown.style.display = 'none';
+        }
     }
     
     populatePlayerDropdown(players) {
@@ -3850,6 +4365,9 @@ class RaidLogsManager {
         if (!dropdown) return;
         
         dropdown.innerHTML = '';
+        
+        // Position the dropdown below the input field using fixed positioning
+        this.positionDropdown();
         
         players.forEach((player, index) => {
             const item = document.createElement('div');
@@ -3871,6 +4389,11 @@ class RaidLogsManager {
             
             dropdown.appendChild(item);
         });
+    }
+    
+    positionDropdown() {
+        // Let CSS handle positioning naturally with position: absolute
+        console.log('🔍 [DROPDOWN] Using CSS positioning (position: absolute)');
     }
     
     handlePlayerSearchKeydown(e) {
@@ -4031,10 +4554,33 @@ class RaidLogsManager {
         if (addBtn) addBtn.textContent = 'Update Entry';
         if (cancelBtn) cancelBtn.style.display = 'inline-flex';
         
-        // Scroll to form
+        // Highlight form and scroll to it
         const form = document.getElementById('manual-rewards-form');
         if (form) {
+            // Add highlight class
+            form.classList.add('form-active');
+            
+            // Scroll to form
             form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            // Focus on player name input after scroll completes
+            setTimeout(() => {
+                if (playerNameInput) {
+                    playerNameInput.focus();
+                    // Select existing text for easy replacement if it's empty or placeholder text
+                    if (!entry.player_name || entry.player_name.trim() === '') {
+                        playerNameInput.select();
+                    }
+                    
+                    // Reposition dropdown after form transformation settles
+                    setTimeout(() => {
+                        const dropdown = document.getElementById('player-dropdown');
+                        if (dropdown && dropdown.style.display === 'block') {
+                            this.positionDropdown();
+                        }
+                    }, 100);
+                }
+            }, 500); // Wait for scroll animation to complete
         }
     }
     
@@ -4077,9 +4623,15 @@ class RaidLogsManager {
         
         const addBtn = document.getElementById('add-entry-btn');
         const cancelBtn = document.getElementById('cancel-edit-btn');
+        const form = document.getElementById('manual-rewards-form');
         
         if (addBtn) addBtn.textContent = 'Add Entry';
         if (cancelBtn) cancelBtn.style.display = 'none';
+        
+        // Remove form highlight
+        if (form) {
+            form.classList.remove('form-active');
+        }
         
         this.clearForm();
     }
@@ -4089,6 +4641,7 @@ class RaidLogsManager {
         const descriptionInput = document.getElementById('description-input');
         const pointsInput = document.getElementById('points-input');
         const dropdown = document.getElementById('player-dropdown');
+        const form = document.getElementById('manual-rewards-form');
         
         if (playerNameInput) {
             playerNameInput.value = '';
@@ -4099,7 +4652,89 @@ class RaidLogsManager {
         if (pointsInput) pointsInput.value = '';
         if (dropdown) dropdown.style.display = 'none';
         
+        // Remove form highlight when clearing
+        if (form) {
+            form.classList.remove('form-active');
+        }
+        
+        // Reset editing state
+        this.isEditingEntry = false;
+        this.editingEntryId = null;
+        
+        // Reset button states
+        const addBtn = document.getElementById('add-entry-btn');
+        const cancelBtn = document.getElementById('cancel-edit-btn');
+        if (addBtn) addBtn.textContent = 'Add Entry';
+        if (cancelBtn) cancelBtn.style.display = 'none';
+        
         this.validateForm();
+    }
+
+    async handleAddFromTemplates(templateIds = null) {
+        console.log('📋 [TEMPLATES] Adding entries from templates');
+        
+        if (!this.activeEventId) {
+            console.error('❌ [TEMPLATES] No active event ID');
+            alert('Please select an event first');
+            return;
+        }
+
+        const addTemplatesBtn = document.getElementById('add-templates-btn');
+        const groupButtons = [
+            document.getElementById('add-templates-4h-tanks-btn'),
+            document.getElementById('add-templates-raz-mc-btn'),
+            document.getElementById('add-templates-puller-btn'),
+            document.getElementById('add-templates-gluth-kite-btn'),
+            document.getElementById('add-templates-summoners-btn')
+        ].filter(Boolean);
+        
+        try {
+            // Disable button during operation
+            if (addTemplatesBtn) {
+                addTemplatesBtn.disabled = true;
+                addTemplatesBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Adding...';
+            }
+            groupButtons.forEach(btn => { btn.disabled = true; });
+
+            console.log(`📋 [TEMPLATES] Fetching templates for event: ${this.activeEventId}`);
+            
+            const response = await fetch(`/api/manual-rewards/${this.activeEventId}/from-templates`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: templateIds && Array.isArray(templateIds) ? JSON.stringify({ templateIds }) : undefined
+            });
+
+            const result = await response.json();
+            console.log('📋 [TEMPLATES] Templates response:', result);
+
+            if (result.success) {
+                console.log(`✅ [TEMPLATES] Successfully added ${result.templatesInserted} template entries`);
+                
+                // Show success message
+                alert(`Successfully added ${result.templatesInserted} template entries! Click "Edit" on each entry to assign player names.`);
+                
+                // Refresh the manual rewards data
+                await this.fetchManualRewardsData();
+                this.populateManualRewardsTable();
+                
+            } else {
+                console.error('❌ [TEMPLATES] Failed to add templates:', result.message);
+                alert(`Failed to add templates: ${result.message}`);
+            }
+
+        } catch (error) {
+            console.error('❌ [TEMPLATES] Error adding templates:', error);
+            alert('Error adding templates. Please try again.');
+        } finally {
+            // Re-enable button
+            if (addTemplatesBtn) {
+                addTemplatesBtn.disabled = false;
+                addTemplatesBtn.innerHTML = '<i class="fas fa-clipboard-list"></i> Add from templates';
+            }
+            groupButtons.forEach(btn => { btn.disabled = false; });
+        }
     }
 }
 

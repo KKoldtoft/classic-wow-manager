@@ -397,6 +397,16 @@ class WoWLogsAnalyzer {
                     roleDetected = roleInfo.role;
                     roleSource = roleInfo.source;
                     specName = roleInfo.specName;
+                } else {
+                    // Check for fallback entries by character name
+                    const fallbackKey = `fallback_${playerName.toLowerCase()}`;
+                    if (roleMap[fallbackKey]) {
+                        const roleInfo = roleMap[fallbackKey];
+                        roleDetected = roleInfo.role;
+                        roleSource = roleInfo.source;
+                        specName = roleInfo.specName;
+                        // Don't set discordId for fallback entries
+                    }
                 }
                 
                 logData.push({
@@ -427,12 +437,492 @@ class WoWLogsAnalyzer {
             
             if (result.success) {
                 console.log(`✅ [STORE DATA] Successfully stored log data: ${result.message}`);
+                
+                // Now populate the player_role_mapping table with detailed event role data
+                await this.storePlayerRoleMappingToDatabase(activeEventSession, roleMap, logData);
+                
+                // Show the role mapping button and display results
+                this.showRoleMappingButton();
+                await this.displayRoleMappingResults(activeEventSession);
+                
             } else {
                 console.error('❌ [STORE DATA] Failed to store log data:', result.message);
             }
             
         } catch (error) {
             console.error('❌ [STORE DATA] Error storing log data:', error);
+        }
+    }
+
+    async storePlayerRoleMappingToDatabase(eventId, roleMap, logData) {
+        try {
+            console.log(`🎯 [ROLE MAPPING] Storing player role mapping for event: ${eventId}`);
+            
+            // Prepare role mapping data
+            const roleMappingData = [];
+            
+            // Process each player from log data
+            logData.forEach(player => {
+                const playerMapping = {
+                    player_name: player.characterName,
+                    character_class: player.characterClass,
+                    discord_id: player.discordId,
+                    event_id: eventId,
+                    warcraft_logs_role: null,
+                    raid_helper_role: null,
+                    managed_roster_role: null,
+                    warcraft_logs_role_event_1: null,
+                    warcraft_logs_role_event_2: null,
+                    warcraft_logs_role_event_3: null,
+                    warcraft_logs_role_event_4: null,
+                    warcraft_logs_role_event_5: null,
+                    warcraft_logs_role_event_6: null,
+                    warcraft_logs_role_event_7: null,
+                    warcraft_logs_role_event_8: null,
+                    warcraft_logs_role_event_9: null,
+                    warcraft_logs_role_event_10: null,
+                    warcraft_logs_role_event_11: null,
+                    warcraft_logs_role_event_12: null,
+                    warcraft_logs_role_event_13: null,
+                    warcraft_logs_role_event_14: null,
+                    warcraft_logs_role_event_15: null,
+                    warcraft_logs_role_event_16: null,
+                    warcraft_logs_role_event_17: null,
+                    warcraft_logs_role_event_18: null,
+                    warcraft_logs_role_event_19: null,
+                    warcraft_logs_role_event_20: null,
+                    primary_role: null
+                };
+                
+                // Find role information for this player
+                if (player.discordId && roleMap[player.discordId]) {
+                    const roleInfo = roleMap[player.discordId];
+                    
+                    // Assign based on source
+                    switch (roleInfo.source) {
+                        case 'warcraftlogs_composition':
+                            playerMapping.warcraft_logs_role = roleInfo.role;
+                            break;
+                        case 'spec_override':
+                            playerMapping.managed_roster_role = roleInfo.role;
+                            break;
+                        case 'raid_helper_spec':
+                        case 'raid_helper_role':
+                            playerMapping.raid_helper_role = roleInfo.role;
+                            break;
+                        case 'default':
+                            // For default assignments, we'll put it in raid_helper as fallback
+                            playerMapping.raid_helper_role = roleInfo.role;
+                            break;
+                    }
+                } else if (player.roleDetected) {
+                    // Fallback players (those with fallback_ keys)
+                    const fallbackKey = `fallback_${player.characterName.toLowerCase()}`;
+                    if (roleMap[fallbackKey]) {
+                        playerMapping.raid_helper_role = roleMap[fallbackKey].role;
+                    }
+                }
+                
+                // Add individual event role data from Warcraft Logs
+                if (this.eventRolesData) {
+                    for (let i = 1; i <= 20; i++) {
+                        const eventKey = `warcraft_logs_role_event_${i}`;
+                        if (this.eventRolesData[eventKey] && this.eventRolesData[eventKey][player.characterName]) {
+                            playerMapping[eventKey] = this.eventRolesData[eventKey][player.characterName].role;
+                        }
+                    }
+                }
+                
+                // Calculate primary role based on all available role data
+                playerMapping.primary_role = this.calculatePrimaryRole(playerMapping);
+                
+                roleMappingData.push(playerMapping);
+            });
+            
+            console.log(`🎯 [ROLE MAPPING] Prepared ${roleMappingData.length} role mapping records`);
+            
+            // Send to backend
+            const response = await fetch(`/api/player-role-mapping/${eventId}/store`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ roleMappingData })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                console.log(`✅ [ROLE MAPPING] Successfully stored role mapping: ${result.message}`);
+            } else {
+                console.error('❌ [ROLE MAPPING] Failed to store role mapping:', result.message);
+            }
+            
+        } catch (error) {
+            console.error('❌ [ROLE MAPPING] Error storing role mapping:', error);
+        }
+    }
+
+    calculatePrimaryRole(playerMapping) {
+        console.log(`🎯 [PRIMARY ROLE] Calculating for ${playerMapping.player_name}`);
+        
+        // Collect all role data
+        const rosterRole = playerMapping.managed_roster_role;
+        const raidHelperRole = playerMapping.raid_helper_role;
+        const warcraftLogsRole = playerMapping.warcraft_logs_role;
+        
+        // Collect event roles (1-20)
+        const eventRoles = [];
+        for (let i = 1; i <= 20; i++) {
+            const eventRole = playerMapping[`warcraft_logs_role_event_${i}`];
+            if (eventRole) {
+                eventRoles.push(eventRole);
+            }
+        }
+        
+        console.log(`🎯 [PRIMARY ROLE] ${playerMapping.player_name}: roster=${rosterRole}, helper=${raidHelperRole}, wc=${warcraftLogsRole}, events=[${eventRoles.join(', ')}]`);
+        
+        // Rule 1: If roster role is "tank", always give tank as primary
+        if (rosterRole && rosterRole.toLowerCase() === 'tank') {
+            console.log(`✅ [PRIMARY ROLE] ${playerMapping.player_name}: tank (roster override)`);
+            return 'tank';
+        }
+        
+        // Rule 2: If they have tank for 2 or more events, give tank as primary
+        const tankEventCount = eventRoles.filter(role => role && role.toLowerCase() === 'tank').length;
+        if (tankEventCount >= 2) {
+            console.log(`✅ [PRIMARY ROLE] ${playerMapping.player_name}: tank (${tankEventCount} events)`);
+            return 'tank';
+        }
+        
+        // Collect all unique roles from all sources
+        const allRoles = [rosterRole, raidHelperRole, warcraftLogsRole, ...eventRoles]
+            .filter(role => role && role.trim() !== '') // Remove null/empty values
+            .map(role => role.toLowerCase());
+        
+        const uniqueRoles = [...new Set(allRoles)];
+        console.log(`🎯 [PRIMARY ROLE] ${playerMapping.player_name}: unique roles = [${uniqueRoles.join(', ')}]`);
+        
+        // Rule 3: If only one unique role across everything, use that
+        if (uniqueRoles.length === 1) {
+            console.log(`✅ [PRIMARY ROLE] ${playerMapping.player_name}: ${uniqueRoles[0]} (only role)`);
+            return uniqueRoles[0];
+        }
+        
+        // Rule 4: If only DPS and Healer, count which is more frequent
+        if (uniqueRoles.length === 2 && 
+            uniqueRoles.includes('dps') && 
+            uniqueRoles.includes('healer')) {
+            
+            const dpsCount = allRoles.filter(role => role === 'dps').length;
+            const healerCount = allRoles.filter(role => role === 'healer').length;
+            
+            const primaryRole = dpsCount > healerCount ? 'dps' : 'healer';
+            console.log(`✅ [PRIMARY ROLE] ${playerMapping.player_name}: ${primaryRole} (dps=${dpsCount}, healer=${healerCount})`);
+            return primaryRole;
+        }
+        
+        // Rule 5: Priority order - tank > healer > dps
+        if (uniqueRoles.includes('tank')) {
+            console.log(`✅ [PRIMARY ROLE] ${playerMapping.player_name}: tank (priority)`);
+            return 'tank';
+        }
+        if (uniqueRoles.includes('healer')) {
+            console.log(`✅ [PRIMARY ROLE] ${playerMapping.player_name}: healer (priority)`);
+            return 'healer';
+        }
+        if (uniqueRoles.includes('dps')) {
+            console.log(`✅ [PRIMARY ROLE] ${playerMapping.player_name}: dps (priority)`);
+            return 'dps';
+        }
+        
+        // Fallback: use the first available role or default to dps
+        const fallbackRole = allRoles[0] || 'dps';
+        console.log(`🔄 [PRIMARY ROLE] ${playerMapping.player_name}: ${fallbackRole} (fallback)`);
+        return fallbackRole;
+    }
+
+    async displayRoleMappingResults(eventId) {
+        try {
+            console.log(`🎯 [ROLE MAPPING] Fetching stored role mapping for event: ${eventId}`);
+            
+            // Fetch the stored role mapping data
+            const response = await fetch(`/api/player-role-mapping/${eventId}`);
+            const result = await response.json();
+            
+            if (result.success && result.data) {
+                this.showRoleMappingModal(result.data, eventId);
+            } else {
+                console.error('❌ [ROLE MAPPING] Failed to fetch role mapping:', result.message);
+                this.showRoleMappingError(result.message || 'Unknown error', eventId);
+            }
+            
+        } catch (error) {
+            console.error('❌ [ROLE MAPPING] Error fetching role mapping:', error);
+            this.showRoleMappingError('Database connection error. Please run Setup Database from Admin panel to add missing columns.', eventId);
+        }
+    }
+
+    showRoleMappingModal(mappingData, eventId) {
+        // Create modal overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'role-mapping-modal-overlay';
+        overlay.innerHTML = `
+            <div class="role-mapping-modal">
+                <div class="role-mapping-header">
+                    <h3>🎯 Role Mapping Results - Event ${eventId}</h3>
+                    <button class="role-mapping-close">&times;</button>
+                </div>
+                <div class="role-mapping-content">
+                    <div class="role-mapping-tabs">
+                        <button class="tab-btn active" data-tab="database">Database Results</button>
+                        <button class="tab-btn" data-tab="endpoints">Raw Endpoint Data</button>
+                    </div>
+                    
+                    <div class="tab-content">
+                        <div class="tab-pane active" id="database-tab">
+                            <div class="role-mapping-table-container">
+                                ${this.createRoleMappingTable(mappingData)}
+                            </div>
+                        </div>
+                        
+                        <div class="tab-pane" id="endpoints-tab">
+                            <div class="endpoint-data-container">
+                                ${this.createEndpointDataDisplay()}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Add event listeners
+        overlay.querySelector('.role-mapping-close').addEventListener('click', () => {
+            document.body.removeChild(overlay);
+        });
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                document.body.removeChild(overlay);
+            }
+        });
+
+        // Tab switching
+        overlay.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tabName = btn.dataset.tab;
+                
+                // Update active tab button
+                overlay.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                // Update active tab pane
+                overlay.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
+                overlay.querySelector(`#${tabName}-tab`).classList.add('active');
+            });
+        });
+
+        document.body.appendChild(overlay);
+    }
+
+    showRoleMappingError(errorMessage, eventId) {
+        // Create error modal overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'role-mapping-modal-overlay';
+        overlay.innerHTML = `
+            <div class="role-mapping-modal" style="height: auto; max-height: 600px;">
+                <div class="role-mapping-header">
+                    <h3>⚠️ Role Mapping Error - Event ${eventId}</h3>
+                    <button class="role-mapping-close">&times;</button>
+                </div>
+                <div class="role-mapping-content" style="padding: 30px;">
+                    <div class="error-message">
+                        <h4>🔧 Database Setup Required</h4>
+                        <p><strong>Error:</strong> ${errorMessage}</p>
+                        <p>The role mapping table needs to be updated with new columns for events 6-20.</p>
+                        
+                        <div class="solution-steps">
+                            <h5>📋 Solution Steps:</h5>
+                            <ol>
+                                <li>Go to the <strong>Admin Panel</strong></li>
+                                <li>Click the <strong>"Setup Database"</strong> button</li>
+                                <li>Wait for the success message</li>
+                                <li>Return here and try again</li>
+                            </ol>
+                        </div>
+                        
+                        <div class="quick-action">
+                            <a href="/admin.html" target="_blank" class="btn-success" style="display: inline-block; padding: 12px 20px; text-decoration: none; margin-top: 15px;">
+                                🔧 Open Admin Panel
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Add event listeners
+        overlay.querySelector('.role-mapping-close').addEventListener('click', () => {
+            document.body.removeChild(overlay);
+        });
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                document.body.removeChild(overlay);
+            }
+        });
+
+        document.body.appendChild(overlay);
+    }
+
+    createRoleMappingTable(mappingData) {
+        if (!mappingData || mappingData.length === 0) {
+            return '<p>No role mapping data found for this event.</p>';
+        }
+
+        let tableHTML = `
+            <div class="role-mapping-summary">
+                <h4>📊 Summary: ${mappingData.length} players with role mappings</h4>
+            </div>
+            <div class="table-scroll-container">
+                <table class="role-mapping-table">
+                    <thead>
+                        <tr>
+                            <th>Player Name</th>
+                            <th>Class</th>
+                            <th>Discord ID</th>
+                            <th>WC Logs Role</th>
+                            <th>Raid Helper Role</th>
+                            <th>Roster Role</th>
+                            <th>🎯 Primary Role</th>
+                            <th>Event 1</th>
+                            <th>Event 2</th>
+                            <th>Event 3</th>
+                            <th>Event 4</th>
+                            <th>Event 5</th>
+                            <th>Event 6</th>
+                            <th>Event 7</th>
+                            <th>Event 8</th>
+                            <th>Event 9</th>
+                            <th>Event 10</th>
+                            <th>Event 11</th>
+                            <th>Event 12</th>
+                            <th>Event 13</th>
+                            <th>Event 14</th>
+                            <th>Event 15</th>
+                            <th>Event 16</th>
+                            <th>Event 17</th>
+                            <th>Event 18</th>
+                            <th>Event 19</th>
+                            <th>Event 20</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        mappingData.forEach(player => {
+            const formatRole = (role) => role ? `<span class="role-badge role-${role}">${role}</span>` : '<span class="role-empty">-</span>';
+            const formatDiscordId = (id) => id ? id.substring(0, 8) + '...' : '<span class="discord-empty">No ID</span>';
+
+            tableHTML += `
+                <tr>
+                    <td class="player-name">${player.player_name}</td>
+                    <td class="player-class class-${player.character_class?.toLowerCase() || 'unknown'}">${player.character_class || 'Unknown'}</td>
+                    <td class="discord-id">${formatDiscordId(player.discord_id)}</td>
+                    <td>${formatRole(player.warcraft_logs_role)}</td>
+                    <td>${formatRole(player.raid_helper_role)}</td>
+                    <td>${formatRole(player.managed_roster_role)}</td>
+                    <td><strong>${formatRole(player.primary_role)}</strong></td>
+                    <td>${formatRole(player.warcraft_logs_role_event_1)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_2)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_3)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_4)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_5)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_6)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_7)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_8)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_9)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_10)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_11)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_12)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_13)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_14)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_15)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_16)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_17)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_18)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_19)}</td>
+                    <td>${formatRole(player.warcraft_logs_role_event_20)}</td>
+                </tr>
+            `;
+        });
+
+        tableHTML += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        return tableHTML;
+    }
+
+    createEndpointDataDisplay() {
+        let endpointHTML = '<div class="endpoint-sections">';
+        
+        // Raw endpoint data from Warcraft Logs
+        if (this.rawEndpointData) {
+            endpointHTML += `
+                <div class="endpoint-section">
+                    <h4>🔍 Warcraft Logs Summary Endpoint Data</h4>
+                    <div class="endpoint-data-scroll">
+                        <pre>${JSON.stringify(this.rawEndpointData, null, 2)}</pre>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Event roles data
+        if (this.eventRolesData) {
+            endpointHTML += `
+                <div class="endpoint-section">
+                    <h4>🎯 Processed Event Roles Data</h4>
+                    <div class="endpoint-data-scroll">
+                        <pre>${JSON.stringify(this.eventRolesData, null, 2)}</pre>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Last fights data if available
+        if (this.lastFightsData) {
+            endpointHTML += `
+                <div class="endpoint-section">
+                    <h4>⚔️ Fights Endpoint Data</h4>
+                    <div class="endpoint-data-scroll">
+                        <pre>${JSON.stringify(this.lastFightsData, null, 2)}</pre>
+                    </div>
+                </div>
+            `;
+        }
+
+        endpointHTML += '</div>';
+        
+        if (!this.rawEndpointData && !this.eventRolesData) {
+            endpointHTML = '<p>No raw endpoint data available. Run log analysis first to populate this data.</p>';
+        }
+
+        return endpointHTML;
+    }
+
+    getActiveEventSession() {
+        // Get the active event session from localStorage or other source
+        return localStorage.getItem('activeEventSession');
+    }
+
+    showRoleMappingButton() {
+        const button = document.getElementById('showRoleMappingBtn');
+        if (button) {
+            button.style.display = 'inline-block';
         }
     }
 
@@ -499,6 +989,16 @@ class WoWLogsAnalyzer {
 
         document.getElementById('deselectAllStepsBtn').addEventListener('click', () => {
             this.deselectAllWorkflowSteps();
+        });
+
+        // Role mapping button click
+        document.getElementById('showRoleMappingBtn').addEventListener('click', () => {
+            const eventId = this.getActiveEventSession();
+            if (eventId) {
+                this.displayRoleMappingResults(eventId);
+            } else {
+                alert('No active event session found. Please run log analysis first.');
+            }
         });
 
         // ====================================
@@ -705,6 +1205,97 @@ class WoWLogsAnalyzer {
         }
     }
 
+    // NEW: Parse roles from Warcraft Logs composition data (PRIMARY SOURCE)
+    parseWarcraftLogsCompositionRoles(summaryDataArray, raidHelperData) {
+        const roleMap = {};
+        const eventRoles = {}; // Store roles for each individual event
+        const rawEndpointData = {}; // Store raw endpoint data for debugging
+        
+        if (!summaryDataArray || summaryDataArray.length === 0) {
+            console.log('🎯 [WARCRAFT LOGS] No summary data available for composition role parsing');
+            return { roleMap, eventRoles, rawEndpointData };
+        }
+
+        console.log(`🎯 [WARCRAFT LOGS] Processing composition data from ${summaryDataArray.length} events/fights`);
+        
+        // Create a lookup map from character name to Discord ID using Raid-Helper data
+        const nameToDiscordId = {};
+        if (raidHelperData && raidHelperData.signUps) {
+            raidHelperData.signUps.forEach(signup => {
+                if (signup.status === 'primary' && signup.name) {
+                    nameToDiscordId[signup.name.toLowerCase()] = signup.userId;
+                }
+            });
+        }
+
+        // Process ALL events, not just the first one
+        summaryDataArray.forEach((fightData, eventIndex) => {
+            const eventKey = `warcraft_logs_role_event_${eventIndex + 1}`;
+            eventRoles[eventKey] = {};
+            rawEndpointData[eventKey] = {
+                fight: fightData.fight || {},
+                summary: fightData.summary || {},
+                fightName: fightData.fight?.name || `Fight ${eventIndex + 1}`,
+                startTime: fightData.fight?.start_time || null,
+                endTime: fightData.fight?.end_time || null
+            };
+
+            if (!fightData || !fightData.summary || !fightData.summary.composition) {
+                console.log(`🎯 [WARCRAFT LOGS] No composition data in event ${eventIndex + 1}`);
+                return;
+            }
+
+            console.log(`🎯 [WARCRAFT LOGS] Processing event ${eventIndex + 1}/${summaryDataArray.length}: ${fightData.fight?.name || 'Unknown Fight'}`);
+            const composition = fightData.summary.composition;
+
+            composition.forEach(player => {
+                if (!player.name || !player.specs || player.specs.length === 0) {
+                    return;
+                }
+
+                // Get the first spec's role (there might be multiple specs, use first one)
+                const primarySpec = player.specs[0];
+                if (!primarySpec || !primarySpec.role) {
+                    return;
+                }
+
+                // Try to find Discord ID by matching character name
+                const discordId = nameToDiscordId[player.name.toLowerCase()];
+                
+                // Store event-specific role data (even without Discord ID for debugging)
+                eventRoles[eventKey][player.name] = {
+                    role: primarySpec.role,
+                    specName: primarySpec.spec || 'Unknown',
+                    discordId: discordId || null,
+                    fightName: fightData.fight?.name || `Fight ${eventIndex + 1}`
+                };
+
+                if (!discordId) {
+                    console.log(`🎯 [WARCRAFT LOGS] No Discord ID found for ${player.name} in event ${eventIndex + 1}, storing anyway for analysis`);
+                    return;
+                }
+
+                // For primary role map, use first occurrence or prioritize tank/healer roles
+                if (!roleMap[discordId] || (primarySpec.role !== 'dps' && roleMap[discordId].role === 'dps')) {
+                    roleMap[discordId] = {
+                        role: primarySpec.role,
+                        specName: primarySpec.spec || null,
+                        className: null, // Will be filled from other sources if needed
+                        roleName: null,
+                        isConfirmed: true,
+                        source: 'warcraftlogs_composition'
+                    };
+                    console.log(`✅ [WARCRAFT LOGS] ${player.name}: ${primarySpec.role} (${primarySpec.spec || 'unknown spec'}) from event ${eventIndex + 1}`);
+                }
+            });
+
+            console.log(`🎯 [WARCRAFT LOGS] Event ${eventIndex + 1}: Found ${Object.keys(eventRoles[eventKey]).length} player roles`);
+        });
+
+        console.log(`🎯 [WARCRAFT LOGS] Total: ${Object.keys(roleMap).length} unique players mapped across ${Object.keys(eventRoles).length} events`);
+        return { roleMap, eventRoles, rawEndpointData };
+    }
+
     parseRaidHelperRoles(raidHelperData, rosterData = null) {
         if (!raidHelperData || !raidHelperData.signUps) {
             return {};
@@ -761,7 +1352,7 @@ class WoWLogsAnalyzer {
                 className: className,
                 roleName: roleName,
                 isConfirmed: true,
-                source: specOverrides[userId] ? 'spec_override' : (specName ? 'spec_based' : 'role_based')
+                source: specOverrides[userId] ? 'spec_override' : (specName ? 'raid_helper_spec' : 'raid_helper_role')
             };
             
             if (!isLargeRoster) {
@@ -892,18 +1483,26 @@ class WoWLogsAnalyzer {
     createRoleSourceLegend() {
         return `
             <div class="role-source-legend">
-                <h4>Role Detection Sources:</h4>
+                <h4>Role Detection Sources (Priority Order):</h4>
+                <div class="legend-item">
+                    <span class="legend-dot" style="background-color: #dc3545;"></span>
+                    Warcraft Logs Composition (PRIMARY - from actual log data)
+                </div>
                 <div class="legend-item">
                     <span class="legend-dot" style="background-color: #28a745;"></span>
                     Roster Override (Managed rosters with custom specs)
                 </div>
                 <div class="legend-item">
                     <span class="legend-dot" style="background-color: #007bff;"></span>
-                    Spec-based (Determined from player's talent specialization)
+                    Raid-Helper Spec (Determined from Raid-Helper specialization)
                 </div>
                 <div class="legend-item">
                     <span class="legend-dot" style="background-color: #ffc107;"></span>
-                    Role-based (Fallback using Raid-Helper role assignment)
+                    Raid-Helper Role (Fallback using Raid-Helper role assignment)
+                </div>
+                <div class="legend-item">
+                    <span class="legend-dot" style="background-color: #6c757d;"></span>
+                    Default DPS (Final fallback for unmatched players)
                 </div>
                 <div class="legend-item">
                     <span style="opacity: 0.7;">🔍</span>
@@ -931,8 +1530,11 @@ class WoWLogsAnalyzer {
                 title += ` (${specName})`;
             }
             if (source) {
-                const sourceText = source === 'spec_override' ? 'Roster Override' : 
-                                 source === 'spec_based' ? 'Spec-based' : 'Role-based';
+                const sourceText = source === 'warcraftlogs_composition' ? 'Warcraft Logs Composition' :
+                                 source === 'spec_override' ? 'Roster Override' : 
+                                 source === 'raid_helper_spec' ? 'Raid-Helper Spec' : 
+                                 source === 'raid_helper_role' ? 'Raid-Helper Role' :
+                                 source === 'default' ? 'Default DPS' : 'Unknown';
                 title += ` - ${sourceText}`;
             }
         } else {
@@ -943,9 +1545,11 @@ class WoWLogsAnalyzer {
         let sourceIndicator = '';
         if (source && isConfirmed) {
             const sourceColors = {
-                'spec_override': '#28a745',    // Green for roster override
-                'spec_based': '#007bff',       // Blue for spec-based  
-                'role_based': '#ffc107'        // Yellow for role fallback
+                'warcraftlogs_composition': '#dc3545',  // Red for Warcraft Logs (primary)
+                'spec_override': '#28a745',            // Green for roster override
+                'raid_helper_spec': '#007bff',         // Blue for Raid-Helper spec  
+                'raid_helper_role': '#ffc107',         // Yellow for Raid-Helper role
+                'default': '#6c757d'                   // Gray for default fallback
             };
             const sourceColor = sourceColors[source] || '#6c757d';
             sourceIndicator = `<span class="source-dot" style="background-color: ${sourceColor};"></span>`;
@@ -1161,7 +1765,45 @@ class WoWLogsAnalyzer {
             console.log('Fetching roster data for spec overrides...');
             const rosterDataForSpecs = await this.fetchRosterData();
             
-            const roleMap = this.parseRaidHelperRoles(raidHelperData, rosterDataForSpecs);
+            // NEW: Primary role assignment from Warcraft Logs composition data
+            console.log('🎯 [ROLE ASSIGNMENT] Using NEW priority: Warcraft Logs Composition → Raid-Helper → Default DPS');
+            const { roleMap: warcraftLogsRoleMap, eventRoles, rawEndpointData } = this.parseWarcraftLogsCompositionRoles(summaryDataArray, raidHelperData);
+            const raidHelperRoleMap = this.parseRaidHelperRoles(raidHelperData, rosterDataForSpecs);
+            
+            // Store the detailed event role data for database storage and display
+            this.eventRolesData = eventRoles;
+            this.rawEndpointData = rawEndpointData;
+            this.lastFightsData = fightsData; // Store fights data for endpoint display
+            
+            // Merge role maps with priority: Warcraft Logs (primary) → Raid-Helper (fallback)
+            const roleMap = { ...raidHelperRoleMap, ...warcraftLogsRoleMap };
+            
+            // Add default DPS role for any players found in logs but not in either system
+            if (fightsData.friendlies) {
+                fightsData.friendlies.forEach(friendly => {
+                    // Check if this player has a role assigned already
+                    const hasRole = Object.values(roleMap).some(role => 
+                        role.characterName && role.characterName.toLowerCase() === friendly.name.toLowerCase()
+                    );
+                    
+                    if (!hasRole && friendly.name) {
+                        // Create a fallback entry with player name for matching
+                        const fallbackDiscordId = `fallback_${friendly.name.toLowerCase()}`;
+                        roleMap[fallbackDiscordId] = {
+                            role: 'dps',
+                            specName: null,
+                            className: friendly.type || 'Unknown',
+                            roleName: null,
+                            isConfirmed: false,
+                            source: 'default',
+                            characterName: friendly.name // Add character name for matching
+                        };
+                        console.log(`🎯 [FALLBACK] ${friendly.name}: dps (default) - Source: default`);
+                    }
+                });
+            }
+            
+            console.log(`🎯 [ROLE ASSIGNMENT] Final role map: ${Object.keys(warcraftLogsRoleMap).length} from Warcraft Logs, ${Object.keys(raidHelperRoleMap).length} from Raid-Helper, ${Object.keys(roleMap).length} total players`);
 
             // Store the data
             this.currentLogData = {

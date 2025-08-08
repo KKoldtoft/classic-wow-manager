@@ -218,6 +218,31 @@
                 
                 <!-- Management Role Required Content -->
                 <div class="manual-rewards-content" id="manual-rewards-content">
+                    <!-- Templates Actions (only visible to management role) -->
+                    <div class="manual-rewards-templates" id="manual-rewards-templates" style="display: none;">
+                        <div class="templates-actions">
+                            <button type="button" class="btn-templates" id="add-templates-btn">
+                                <i class="fas fa-clipboard-list"></i> Add from templates
+                            </button>
+                            <button type="button" class="btn-templates" id="add-templates-4h-tanks-btn">
+                                <i class="fas fa-shield-alt"></i> 4H tanks
+                            </button>
+                            <button type="button" class="btn-templates" id="add-templates-raz-mc-btn">
+                                <i class="fas fa-brain"></i> Raz MC
+                            </button>
+                            <button type="button" class="btn-templates" id="add-templates-puller-btn">
+                                <i class="fas fa-bullseye"></i> Puller
+                            </button>
+                            <button type="button" class="btn-templates" id="add-templates-gluth-kite-btn">
+                                <i class="fas fa-dog"></i> Gluth kite
+                            </button>
+                            <button type="button" class="btn-templates" id="add-templates-summoners-btn">
+                                <i class="fas fa-door-open"></i> Summoners
+                            </button>
+                            <span class="templates-info">Quick-add selected template groups. Edit entries to assign player names.</span>
+                        </div>
+                    </div>
+
                     <!-- Add New Entry Form (only visible to management role) -->
                     <div class="manual-rewards-form" id="manual-rewards-form" style="display: none;">
                         <div class="form-grid">
@@ -355,6 +380,31 @@
                 </div>
             </div>
 
+            <!-- Low Performance Section -->
+            <div class="rankings-container low-performance-container">
+                <!-- Too Low Damage Section -->
+                <div class="rankings-section too-low-damage-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-arrow-down"></i> Too Low Damage</h2>
+                        <p>DPS players (primary role) with very low DPS (damage per second)</p>
+                    </div>
+                    <div class="rankings-list" id="too-low-damage-list">
+                        <!-- Too low damage rankings will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Too Low Healing Section -->
+                <div class="rankings-section too-low-healing-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-arrow-down"></i> Too Low Healing</h2>
+                        <p>Healer players (primary role) with very low HPS (healing per second)</p>
+                    </div>
+                    <div class="rankings-list" id="too-low-healing-list">
+                        <!-- Too low healing rankings will be populated here -->
+                    </div>
+                </div>
+            </div>
+
             <!-- World Buffs and Frost Resistance Section -->
             <div class="rankings-container buffs-container scroll-target" id="buffs-container">
                 <!-- World Buffs Section -->
@@ -376,7 +426,7 @@
                 <div class="rankings-section frost-resistance-section" style="display: none;">
                     <div class="section-header">
                         <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_frost_frostarmor.jpg" alt="Frost Resistance" style="width: 24px; height: 24px; margin-right: 8px;"> Frost Resistance</h2>
-                        <p id="frost-resistance-header-text">Points for frost resistance gear</p>
+                        <p id="frost-resistance-header-text">Points for frost resistance gear (DPS players only)</p>
                     </div>
                     <div class="rankings-list" id="frost-resistance-list">
                         <!-- Frost resistance rankings will be populated here -->
@@ -586,6 +636,17 @@
                     </div>
                     <div class="rankings-list" id="decurses-list">
                         <!-- Decurses rankings will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Void Damage Section -->
+                <div class="rankings-section void-damage-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_shadowwordpain.jpg" alt="Void Damage" style="width: 24px; height: 24px; margin-right: 8px;"> Avoidable Void Damage</h2>
+                        <p>Players who took damage from Void Blast (-10 pts) or Void Zone (-5 pts)</p>
+                    </div>
+                    <div class="rankings-list" id="void-damage-list">
+                        <!-- Void damage rankings will be populated here -->
                     </div>
                 </div>
             </div>

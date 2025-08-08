@@ -3971,10 +3971,54 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 description TEXT NOT NULL,
                 points DECIMAL(10,2) NOT NULL,
                 created_by VARCHAR(255) NOT NULL,
+                icon_url VARCHAR(500),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
+
+        // Add icon_url column to existing manual_rewards_deductions table if it doesn't exist
+        try {
+            await client.query(`
+                ALTER TABLE manual_rewards_deductions 
+                ADD COLUMN IF NOT EXISTS icon_url VARCHAR(500)
+            `);
+            console.log('✅ [SETUP] Added icon_url column to manual_rewards_deductions (if missing)');
+        } catch (error) {
+            console.log('⚠️ [SETUP] icon_url column might already exist:', error.message);
+        }
+
+        // Create manual_rewards_deductions_templates table for storing template rewards
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS manual_rewards_deductions_templates (
+                id SERIAL PRIMARY KEY,
+                description TEXT NOT NULL,
+                points DECIMAL(10,2) NOT NULL,
+                player_name VARCHAR(255),
+                icon_url VARCHAR(500),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // Insert default templates if they don't exist
+        console.log('🔧 [SETUP] Checking and inserting default templates...');
+        const templatesCheck = await client.query('SELECT COUNT(*) FROM manual_rewards_deductions_templates');
+        const templateCount = parseInt(templatesCheck.rows[0].count);
+        
+        if (templateCount === 0) {
+            console.log('📝 [SETUP] Inserting default template data...');
+            await client.query(`
+                INSERT INTO manual_rewards_deductions_templates (description, points, player_name, icon_url) VALUES
+                ('Main Tank', 100, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg'),
+                ('Off Tank 1', 80, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg'),
+                ('Off Tank 2', 50, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg'),
+                ('Off Tank 3', 30, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg')
+            `);
+            console.log('✅ [SETUP] Default templates inserted successfully!');
+        } else {
+            console.log(`📋 [SETUP] Found ${templateCount} existing templates, skipping insertion`);
+        }
         
         // Create indexes for attendance_cache
         await client.query(`
@@ -3998,6 +4042,85 @@ app.post('/api/admin/setup-database', async (req, res) => {
         `);
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_manual_rewards_player ON manual_rewards_deductions (player_name, event_id)
+        `);
+
+        // Create indexes for manual_rewards_deductions_templates
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_templates_description ON manual_rewards_deductions_templates (description)
+        `);
+        
+        // Create player_role_mapping table for comprehensive role tracking across multiple sources
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS player_role_mapping (
+                id SERIAL PRIMARY KEY,
+                player_name VARCHAR(255) NOT NULL,
+                character_class VARCHAR(50),
+                discord_id VARCHAR(255),
+                event_id VARCHAR(255) NOT NULL,
+                warcraft_logs_role VARCHAR(50),
+                raid_helper_role VARCHAR(50),
+                managed_roster_role VARCHAR(50),
+                warcraft_logs_role_event_1 VARCHAR(50),
+                warcraft_logs_role_event_2 VARCHAR(50),
+                warcraft_logs_role_event_3 VARCHAR(50),
+                warcraft_logs_role_event_4 VARCHAR(50),
+                warcraft_logs_role_event_5 VARCHAR(50),
+                warcraft_logs_role_event_6 VARCHAR(50),
+                warcraft_logs_role_event_7 VARCHAR(50),
+                warcraft_logs_role_event_8 VARCHAR(50),
+                warcraft_logs_role_event_9 VARCHAR(50),
+                warcraft_logs_role_event_10 VARCHAR(50),
+                warcraft_logs_role_event_11 VARCHAR(50),
+                warcraft_logs_role_event_12 VARCHAR(50),
+                warcraft_logs_role_event_13 VARCHAR(50),
+                warcraft_logs_role_event_14 VARCHAR(50),
+                warcraft_logs_role_event_15 VARCHAR(50),
+                warcraft_logs_role_event_16 VARCHAR(50),
+                warcraft_logs_role_event_17 VARCHAR(50),
+                warcraft_logs_role_event_18 VARCHAR(50),
+                warcraft_logs_role_event_19 VARCHAR(50),
+                warcraft_logs_role_event_20 VARCHAR(50),
+                primary_role VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(player_name, event_id)
+            )
+        `);
+        
+        // Add missing columns for existing tables (migration for events 6-20)
+        console.log('🔄 [SETUP] Adding missing event columns if they don\'t exist...');
+        for (let i = 6; i <= 20; i++) {
+            try {
+                await client.query(`
+                    ALTER TABLE player_role_mapping 
+                    ADD COLUMN IF NOT EXISTS warcraft_logs_role_event_${i} VARCHAR(50)
+                `);
+                console.log(`✅ [SETUP] Added column warcraft_logs_role_event_${i} (if missing)`);
+            } catch (error) {
+                console.log(`⚠️ [SETUP] Column warcraft_logs_role_event_${i} might already exist:`, error.message);
+            }
+        }
+        
+        // Add primary_role column if it doesn't exist
+        try {
+            await client.query(`
+                ALTER TABLE player_role_mapping 
+                ADD COLUMN IF NOT EXISTS primary_role VARCHAR(50)
+            `);
+            console.log(`✅ [SETUP] Added primary_role column (if missing)`);
+        } catch (error) {
+            console.log(`⚠️ [SETUP] primary_role column might already exist:`, error.message);
+        }
+        
+        // Create indexes for player_role_mapping
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_player_role_mapping_event_id ON player_role_mapping (event_id)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_player_role_mapping_discord_id ON player_role_mapping (discord_id)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_player_role_mapping_player_class ON player_role_mapping (player_name, character_class)
         `);
         
         res.json({ 
@@ -4653,6 +4776,313 @@ app.post('/api/log-data/:eventId/store', async (req, res) => {
         res.status(500).json({ 
             success: false, 
             message: 'Error storing log data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Store player role mapping data for an event
+app.post('/api/player-role-mapping/:eventId/store', async (req, res) => {
+    const { eventId } = req.params;
+    const { roleMappingData } = req.body;
+    
+    console.log(`🎯 [ROLE MAPPING] Storing role mapping for event: ${eventId}`);
+    console.log(`🎯 [ROLE MAPPING] Received ${roleMappingData?.length || 0} role mapping records`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // First, clear existing data for this event
+        await client.query('DELETE FROM player_role_mapping WHERE event_id = $1', [eventId]);
+        console.log(`🗑️ [ROLE MAPPING] Cleared existing role mapping for event: ${eventId}`);
+        
+        if (!roleMappingData || roleMappingData.length === 0) {
+            return res.json({ success: true, message: 'No role mapping data to store' });
+        }
+        
+        // Insert new role mapping data
+        for (const mapping of roleMappingData) {
+            await client.query(`
+                INSERT INTO player_role_mapping (
+                    player_name, character_class, discord_id, event_id,
+                    warcraft_logs_role, raid_helper_role, managed_roster_role,
+                    warcraft_logs_role_event_1, warcraft_logs_role_event_2, warcraft_logs_role_event_3, 
+                    warcraft_logs_role_event_4, warcraft_logs_role_event_5, warcraft_logs_role_event_6,
+                    warcraft_logs_role_event_7, warcraft_logs_role_event_8, warcraft_logs_role_event_9,
+                    warcraft_logs_role_event_10, warcraft_logs_role_event_11, warcraft_logs_role_event_12,
+                    warcraft_logs_role_event_13, warcraft_logs_role_event_14, warcraft_logs_role_event_15,
+                    warcraft_logs_role_event_16, warcraft_logs_role_event_17, warcraft_logs_role_event_18,
+                    warcraft_logs_role_event_19, warcraft_logs_role_event_20, primary_role
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+                ON CONFLICT (player_name, event_id) 
+                DO UPDATE SET
+                    character_class = EXCLUDED.character_class,
+                    discord_id = EXCLUDED.discord_id,
+                    warcraft_logs_role = EXCLUDED.warcraft_logs_role,
+                    raid_helper_role = EXCLUDED.raid_helper_role,
+                    managed_roster_role = EXCLUDED.managed_roster_role,
+                    warcraft_logs_role_event_1 = EXCLUDED.warcraft_logs_role_event_1,
+                    warcraft_logs_role_event_2 = EXCLUDED.warcraft_logs_role_event_2,
+                    warcraft_logs_role_event_3 = EXCLUDED.warcraft_logs_role_event_3,
+                    warcraft_logs_role_event_4 = EXCLUDED.warcraft_logs_role_event_4,
+                    warcraft_logs_role_event_5 = EXCLUDED.warcraft_logs_role_event_5,
+                    warcraft_logs_role_event_6 = EXCLUDED.warcraft_logs_role_event_6,
+                    warcraft_logs_role_event_7 = EXCLUDED.warcraft_logs_role_event_7,
+                    warcraft_logs_role_event_8 = EXCLUDED.warcraft_logs_role_event_8,
+                    warcraft_logs_role_event_9 = EXCLUDED.warcraft_logs_role_event_9,
+                    warcraft_logs_role_event_10 = EXCLUDED.warcraft_logs_role_event_10,
+                    warcraft_logs_role_event_11 = EXCLUDED.warcraft_logs_role_event_11,
+                    warcraft_logs_role_event_12 = EXCLUDED.warcraft_logs_role_event_12,
+                    warcraft_logs_role_event_13 = EXCLUDED.warcraft_logs_role_event_13,
+                    warcraft_logs_role_event_14 = EXCLUDED.warcraft_logs_role_event_14,
+                    warcraft_logs_role_event_15 = EXCLUDED.warcraft_logs_role_event_15,
+                    warcraft_logs_role_event_16 = EXCLUDED.warcraft_logs_role_event_16,
+                    warcraft_logs_role_event_17 = EXCLUDED.warcraft_logs_role_event_17,
+                    warcraft_logs_role_event_18 = EXCLUDED.warcraft_logs_role_event_18,
+                    warcraft_logs_role_event_19 = EXCLUDED.warcraft_logs_role_event_19,
+                    warcraft_logs_role_event_20 = EXCLUDED.warcraft_logs_role_event_20,
+                    primary_role = EXCLUDED.primary_role,
+                    updated_at = CURRENT_TIMESTAMP
+            `, [
+                mapping.player_name,
+                mapping.character_class,
+                mapping.discord_id,
+                eventId,
+                mapping.warcraft_logs_role,
+                mapping.raid_helper_role,
+                mapping.managed_roster_role,
+                mapping.warcraft_logs_role_event_1,
+                mapping.warcraft_logs_role_event_2,
+                mapping.warcraft_logs_role_event_3,
+                mapping.warcraft_logs_role_event_4,
+                mapping.warcraft_logs_role_event_5,
+                mapping.warcraft_logs_role_event_6,
+                mapping.warcraft_logs_role_event_7,
+                mapping.warcraft_logs_role_event_8,
+                mapping.warcraft_logs_role_event_9,
+                mapping.warcraft_logs_role_event_10,
+                mapping.warcraft_logs_role_event_11,
+                mapping.warcraft_logs_role_event_12,
+                mapping.warcraft_logs_role_event_13,
+                mapping.warcraft_logs_role_event_14,
+                mapping.warcraft_logs_role_event_15,
+                mapping.warcraft_logs_role_event_16,
+                mapping.warcraft_logs_role_event_17,
+                mapping.warcraft_logs_role_event_18,
+                mapping.warcraft_logs_role_event_19,
+                mapping.warcraft_logs_role_event_20,
+                mapping.primary_role
+            ]);
+        }
+        
+        console.log(`✅ [ROLE MAPPING] Successfully stored ${roleMappingData.length} role mapping records`);
+        res.json({ 
+            success: true, 
+            message: `Stored role mapping for ${roleMappingData.length} players`,
+            eventId: eventId
+        });
+        
+    } catch (error) {
+        console.error('❌ [ROLE MAPPING] Error storing role mapping:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error storing role mapping data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Retrieve player role mapping data for an event
+app.get('/api/player-role-mapping/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🎯 [ROLE MAPPING] Retrieving role mapping for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check which columns exist first to build a safe query
+        const columnCheck = await client.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'player_role_mapping' 
+            AND column_name LIKE 'warcraft_logs_role_event_%'
+            ORDER BY column_name
+        `);
+        
+        const existingEventColumns = columnCheck.rows.map(row => row.column_name);
+        console.log(`🔍 [ROLE MAPPING] Found existing event columns: ${existingEventColumns.join(', ')}`);
+        
+        // Build dynamic SELECT query with only existing columns
+        const baseColumns = `
+            player_name,
+            character_class,
+            discord_id,
+            warcraft_logs_role,
+            raid_helper_role,
+            managed_roster_role,
+            warcraft_logs_role_event_1,
+            warcraft_logs_role_event_2,
+            warcraft_logs_role_event_3,
+            warcraft_logs_role_event_4,
+            warcraft_logs_role_event_5,
+            primary_role
+        `;
+        
+        const additionalEventColumns = existingEventColumns
+            .filter(col => !['warcraft_logs_role_event_1', 'warcraft_logs_role_event_2', 'warcraft_logs_role_event_3', 'warcraft_logs_role_event_4', 'warcraft_logs_role_event_5'].includes(col))
+            .join(',\n                ');
+        
+        const allColumns = additionalEventColumns ? 
+            `${baseColumns},\n                ${additionalEventColumns},\n                created_at,\n                updated_at` :
+            `${baseColumns},\n                created_at,\n                updated_at`;
+        
+        console.log(`🎯 [ROLE MAPPING] Using columns: ${allColumns.replace(/\s+/g, ' ')}`);
+        
+        const result = await client.query(`
+            SELECT ${allColumns}
+            FROM player_role_mapping 
+            WHERE event_id = $1
+            ORDER BY player_name
+        `, [eventId]);
+        
+        console.log(`📖 [ROLE MAPPING] Found ${result.rows.length} role mapping records`);
+        
+        res.json({ 
+            success: true, 
+            data: result.rows,
+            eventId: eventId,
+            count: result.rows.length
+        });
+        
+    } catch (error) {
+        console.error('❌ [ROLE MAPPING] Error retrieving role mapping:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving role mapping data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get primary roles for an event (for filtering too-low performance panels)
+app.get('/api/player-role-mapping/:eventId/primary-roles', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🎯 [PRIMARY ROLES] Fetching primary roles for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Get primary roles for all players in this event
+        const result = await client.query(`
+            SELECT 
+                player_name,
+                primary_role
+            FROM player_role_mapping 
+            WHERE event_id = $1 
+            AND primary_role IS NOT NULL
+            ORDER BY player_name
+        `, [eventId]);
+        
+        // Convert to a map for easy lookup
+        const primaryRoles = {};
+        result.rows.forEach(row => {
+            primaryRoles[row.player_name.toLowerCase()] = row.primary_role.toLowerCase();
+        });
+        
+        console.log(`📖 [PRIMARY ROLES] Found ${result.rows.length} players with primary roles`);
+        
+        res.json({ 
+            success: true, 
+            primaryRoles: primaryRoles,
+            eventId: eventId,
+            count: result.rows.length
+        });
+        
+    } catch (error) {
+        console.error('❌ [PRIMARY ROLES] Error fetching primary roles:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error fetching primary roles',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Void damage tracking endpoint (Void Blast and Void Zone)
+app.get('/api/void-damage/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Query for void damage taken from specific abilities
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                SUM(CASE WHEN ability_name = 'Void Blast (Shadow Fissure)' THEN CAST(ability_value AS INTEGER) ELSE 0 END) as void_blast_damage,
+                SUM(CASE WHEN ability_name = 'Void Zone (Void Zone)' THEN CAST(ability_value AS INTEGER) ELSE 0 END) as void_zone_damage,
+                SUM(CAST(ability_value AS INTEGER)) as total_void_damage,
+                COUNT(*) as void_hits
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND (ability_name = 'Void Blast (Shadow Fissure)' OR ability_name = 'Void Zone (Void Zone)')
+            AND ability_value ~ '^[0-9]+$'
+            GROUP BY character_name, character_class
+            ORDER BY total_void_damage DESC
+        `, [eventId]);
+        
+        // Calculate points (-10 for Void Blast, -5 for Void Zone)
+        const voidDamageData = result.rows.map(row => {
+            const voidBlastDamage = parseInt(row.void_blast_damage) || 0;
+            const voidZoneDamage = parseInt(row.void_zone_damage) || 0;
+            
+            let points = 0;
+            if (voidBlastDamage > 0) points -= 10; // -10 for Void Blast
+            if (voidZoneDamage > 0) points -= 5;   // -5 for Void Zone
+            
+            return {
+                character_name: row.character_name,
+                character_class: row.character_class,
+                void_blast_damage: voidBlastDamage,
+                void_zone_damage: voidZoneDamage,
+                total_void_damage: parseInt(row.total_void_damage) || 0,
+                void_hits: parseInt(row.void_hits) || 0,
+                points: points
+            };
+        });
+        
+        console.log(`💜 [VOID DAMAGE] Found ${voidDamageData.length} players who took void damage`);
+        
+        res.json({
+            success: true,
+            data: voidDamageData,
+            settings: {
+                void_blast_penalty: -10,
+                void_zone_penalty: -5,
+                abilities: ['Void Blast (Shadow Fissure)', 'Void Zone (Void Zone)']
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [VOID DAMAGE] Error fetching void damage data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error fetching void damage data',
             error: error.message 
         });
     } finally {
@@ -6465,7 +6895,8 @@ app.get('/api/manual-rewards/:eventId', async (req, res) => {
                 points,
                 created_by,
                 created_at,
-                updated_at
+                updated_at,
+                icon_url
             FROM manual_rewards_deductions 
             WHERE event_id = $1 
             ORDER BY created_at ASC
@@ -6757,6 +7188,269 @@ app.get('/api/manual-rewards/:eventId/players', async (req, res) => {
         res.status(500).json({ 
             success: false, 
             message: 'Error getting player list',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// --- Manual Rewards Templates API Endpoints ---
+// Get all templates
+app.get('/api/manual-rewards-templates', async (req, res) => {
+    console.log('📋 [TEMPLATES] Retrieving all templates');
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if templates table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'manual_rewards_deductions_templates'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [TEMPLATES] Templates table does not exist');
+            return res.json({ 
+                success: false, 
+                message: 'Templates table does not exist. Please run database setup first.',
+                data: [] 
+            });
+        }
+        
+        // Get all templates
+        const result = await client.query(`
+            SELECT 
+                id,
+                description,
+                points,
+                player_name,
+                icon_url,
+                created_at,
+                updated_at
+            FROM manual_rewards_deductions_templates 
+            ORDER BY points DESC, description ASC
+        `);
+        
+        console.log(`📋 [TEMPLATES] Found ${result.rows.length} templates`);
+        
+        res.json({ 
+            success: true, 
+            data: result.rows
+        });
+        
+    } catch (error) {
+        console.error('❌ [TEMPLATES] Error retrieving templates:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving templates',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Insert templates into manual rewards for an event
+app.post('/api/manual-rewards/:eventId/from-templates', requireManagement, async (req, res) => {
+    const { eventId } = req.params;
+    const createdBy = req.user?.id || 'unknown';
+    const templateIdsRaw = req.body?.templateIds;
+
+    const templateIds = Array.isArray(templateIdsRaw)
+        ? templateIdsRaw
+            .map((id) => parseInt(id, 10))
+            .filter((n) => Number.isFinite(n))
+        : null;
+
+    console.log(`📋 [TEMPLATES] Inserting templates for event: ${eventId} by user: ${createdBy}`);
+    if (templateIds && templateIds.length > 0) {
+        console.log(`📋 [TEMPLATES] Requested templateIds: ${templateIds.join(', ')}`);
+    } else {
+        console.log('📋 [TEMPLATES] No specific templateIds provided - will insert all templates');
+    }
+
+    let client;
+    try {
+        client = await pool.connect();
+
+        // Check if templates table exists
+        const templatesTableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'manual_rewards_deductions_templates'
+            );
+        `);
+
+        if (!templatesTableCheck.rows[0].exists) {
+            console.log('⚠️ [TEMPLATES] Templates table does not exist');
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Templates table does not exist. Please go to the Admin page and click "Create Templates Table" or "Setup Database".'
+            });
+        }
+
+        // Check if manual rewards table exists
+        const rewardsTableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'manual_rewards_deductions'
+            );
+        `);
+
+        if (!rewardsTableCheck.rows[0].exists) {
+            console.log('⚠️ [TEMPLATES] Manual rewards table does not exist');
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Manual rewards table does not exist. Please run database setup first.'
+            });
+        }
+
+        // Get templates (optionally filtered by provided IDs)
+        let templatesResult;
+        if (templateIds && templateIds.length > 0) {
+            templatesResult = await client.query(
+                `SELECT id, description, points, player_name, icon_url
+                 FROM manual_rewards_deductions_templates
+                 WHERE id = ANY($1::int[])
+                 ORDER BY id ASC`,
+                [templateIds]
+            );
+        } else {
+            templatesResult = await client.query(`
+                SELECT id, description, points, player_name, icon_url
+                FROM manual_rewards_deductions_templates 
+                ORDER BY points DESC, description ASC
+            `);
+        }
+
+        if (templatesResult.rows.length === 0) {
+            console.log('⚠️ [TEMPLATES] No templates found');
+            return res.json({ 
+                success: true, 
+                message: 'No templates found to insert',
+                data: []
+            });
+        }
+
+        // Insert each template as a manual reward entry (with empty player_name for manual editing)
+        const insertedEntries = [];
+        for (const template of templatesResult.rows) {
+            console.log(`📝 [TEMPLATES] Inserting template: ${template.description} (${template.points} pts)`);
+
+            const insertResult = await client.query(
+                `INSERT INTO manual_rewards_deductions (
+                    event_id, player_name, description, points, created_by, icon_url
+                ) VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING *`,
+                [
+                    eventId,
+                    '', // Empty player name - to be filled by user
+                    template.description,
+                    template.points,
+                    createdBy,
+                    template.icon_url,
+                ]
+            );
+
+            insertedEntries.push(insertResult.rows[0]);
+        }
+
+        console.log(`✅ [TEMPLATES] Successfully inserted ${insertedEntries.length} template entries for event: ${eventId}`);
+
+        res.json({ 
+            success: true, 
+            message: `Successfully inserted ${insertedEntries.length} template entries`,
+            data: insertedEntries,
+            templatesInserted: insertedEntries.length,
+        });
+
+    } catch (error) {
+        console.error('❌ [TEMPLATES] Error inserting templates:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error inserting templates',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Create templates table separately (for troubleshooting)
+app.post('/api/admin/create-templates-table', async (req, res) => {
+    console.log('📋 [ADMIN] Creating templates table manually...');
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Create manual_rewards_deductions_templates table
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS manual_rewards_deductions_templates (
+                id SERIAL PRIMARY KEY,
+                description TEXT NOT NULL,
+                points DECIMAL(10,2) NOT NULL,
+                player_name VARCHAR(255),
+                icon_url VARCHAR(500),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        
+        console.log('✅ [ADMIN] Templates table created successfully');
+
+        // Create index
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_templates_description ON manual_rewards_deductions_templates (description)
+        `);
+        
+        console.log('✅ [ADMIN] Templates table index created');
+
+        // Add icon_url column to existing templates table if it doesn't exist
+        try {
+            await client.query(`
+                ALTER TABLE manual_rewards_deductions_templates 
+                ADD COLUMN IF NOT EXISTS icon_url VARCHAR(500)
+            `);
+            console.log('✅ [ADMIN] Added icon_url column to templates table (if missing)');
+        } catch (error) {
+            console.log('⚠️ [ADMIN] icon_url column might already exist in templates table:', error.message);
+        }
+
+        // Insert default templates if they don't exist
+        console.log('🔧 [ADMIN] Checking and inserting default templates...');
+        const templatesCheck = await client.query('SELECT COUNT(*) FROM manual_rewards_deductions_templates');
+        const templateCount = parseInt(templatesCheck.rows[0].count);
+        
+        if (templateCount === 0) {
+            console.log('📝 [ADMIN] Inserting default template data...');
+            await client.query(`
+                INSERT INTO manual_rewards_deductions_templates (description, points, player_name, icon_url) VALUES
+                ('Main Tank', 100, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg'),
+                ('Off Tank 1', 80, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg'),
+                ('Off Tank 2', 50, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg'),
+                ('Off Tank 3', 30, '', 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg')
+            `);
+            console.log('✅ [ADMIN] Default templates inserted successfully!');
+        } else {
+            console.log(`📋 [ADMIN] Found ${templateCount} existing templates, skipping insertion`);
+        }
+        
+        res.json({ 
+            success: true, 
+            message: 'Templates table created and populated successfully!',
+            templatesCount: templateCount === 0 ? 4 : templateCount
+        });
+        
+    } catch (error) {
+        console.error('❌ [ADMIN] Error creating templates table:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error creating templates table', 
             error: error.message 
         });
     } finally {

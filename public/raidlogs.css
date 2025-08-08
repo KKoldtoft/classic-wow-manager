@@ -607,6 +607,38 @@
     margin-top: 30px;
 }
 
+/* Void Damage specific styling */
+.rankings-section.void-damage {
+    border-left: 4px solid #9b59b6;
+}
+
+.rankings-section.void-damage .section-header {
+    background: linear-gradient(135deg, #9b59b6, #8e44ad);
+}
+
+.rankings-section.void-damage .amount-value {
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+.rankings-section.void-damage .character-name {
+    color: #000 !important;
+}
+
+.rankings-section.void-damage .character-details {
+    color: #000 !important;
+}
+
+.rankings-section.void-damage .void-details {
+    color: #000 !important;
+}
+
+.void-details {
+    font-size: 11px;
+    color: #bbb;
+    margin-top: 2px;
+}
+
 /* Polymorph & Power Infusion container specific styling */
 .polymorph-power-infusion-container {
     margin-top: 30px;
@@ -1256,6 +1288,17 @@
     font-weight: 700;
 }
 
+/* Low Performance Sections */
+.low-performance-container {
+    margin-bottom: 30px;
+}
+
+.rankings-section.too-low-damage-section .amount-value,
+.rankings-section.too-low-healing-section .amount-value {
+    color: #e74c3c !important;
+    font-weight: bold;
+}
+
 /* Frost Resistance specific styles */
 .frost-res-amount {
     font-size: 0.85rem;
@@ -1749,6 +1792,60 @@ body.raid-active .scroll-target {
     padding: 20px;
 }
 
+/* Templates Styles */
+.manual-rewards-templates {
+    background: #f0f8ff;
+    border: 1px solid #b3d9ff;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.templates-actions {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.btn-templates {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    font-size: 14px;
+}
+
+.btn-templates:hover {
+    background: #218838;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(40, 167, 69, 0.3);
+}
+
+.btn-templates:active {
+    transform: translateY(0);
+}
+
+.btn-templates:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.templates-info {
+    color: #6c757d;
+    font-size: 13px;
+    font-style: italic;
+}
+
 /* Form Styles */
 .manual-rewards-form {
     background: var(--secondary-bg, #2a2a2a);
@@ -1756,6 +1853,17 @@ body.raid-active .scroll-target {
     border-radius: 8px;
     padding: 20px;
     margin-bottom: 20px;
+    transition: all 0.3s ease;
+    position: relative; /* Ensure z-index on active state creates a stacking context */
+}
+
+/* Active form highlighting */
+.manual-rewards-form.form-active {
+    border: 2px solid #007bff;
+    background: rgba(0, 123, 255, 0.05);
+    box-shadow: 0 0 15px rgba(0, 123, 255, 0.3);
+    transform: scale(1.02);
+    z-index: 15000; /* Above ranking items to allow dropdown to display over them */
 }
 
 .form-grid {
@@ -1796,6 +1904,7 @@ body.raid-active .scroll-target {
 /* Player Search Dropdown */
 .player-search-container {
     position: relative;
+    z-index: 20000; /* Ensure the container and its dropdown render above ranking items */
 }
 
 .player-dropdown {
@@ -1825,7 +1934,7 @@ body.raid-active .scroll-target {
 
 .player-dropdown-item:hover,
 .player-dropdown-item.selected {
-    background: rgba(255, 255, 255, 0.2) !important;
+    background: rgba(255, 255, 255, 1) !important;
 }
 
 .player-dropdown-item:last-child {
@@ -1834,43 +1943,43 @@ body.raid-active .scroll-target {
 
 /* Class-specific background colors for dropdown items */
 .player-dropdown-item.class-warrior {
-    background: rgba(199, 156, 110, 0.3);
+    background: rgba(199, 156, 110, 1);
 }
 
 .player-dropdown-item.class-paladin {
-    background: rgba(245, 140, 186, 0.3);
+    background: rgba(245, 140, 186, 1);
 }
 
 .player-dropdown-item.class-hunter {
-    background: rgba(171, 212, 115, 0.3);
+    background: rgba(171, 212, 115, 1);
 }
 
 .player-dropdown-item.class-rogue {
-    background: rgba(255, 245, 105, 0.3);
+    background: rgba(255, 245, 105, 1);
 }
 
 .player-dropdown-item.class-priest {
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 1);
 }
 
 .player-dropdown-item.class-shaman {
-    background: rgba(0, 112, 222, 0.3);
+    background: rgba(0, 112, 222, 1);
 }
 
 .player-dropdown-item.class-mage {
-    background: rgba(105, 204, 240, 0.3);
+    background: rgba(105, 204, 240, 1);
 }
 
 .player-dropdown-item.class-warlock {
-    background: rgba(148, 130, 201, 0.3);
+    background: rgba(148, 130, 201, 1);
 }
 
 .player-dropdown-item.class-druid {
-    background: rgba(255, 125, 10, 0.3);
+    background: rgba(255, 125, 10, 1);
 }
 
 .player-dropdown-item.class-unknown {
-    background: rgba(156, 163, 175, 0.3);
+    background: rgba(156, 163, 175, 1);
 }
 
 .player-class {
@@ -2062,6 +2171,64 @@ body.raid-active .scroll-target {
 
 .manual-rewards-section .amount-value.negative {
     color: #dc3545;
+}
+
+/* Template Entry Styles */
+.manual-rewards-section .ranking-item.template-entry {
+    border: 2px dashed #28a745;
+    background: rgba(40, 167, 69, 0.05);
+    animation: pulse-template 2s infinite;
+    color: white; /* White text for template entries */
+}
+
+.manual-rewards-section .ranking-item.template-entry:hover {
+    background: rgba(40, 167, 69, 0.1);
+    border-color: #218838;
+}
+
+/* Template entries with assigned players (no longer template-entry class but have icon) */
+.manual-rewards-section .ranking-item.has-template-icon:not(.template-entry) {
+    color: #333; /* Black text when player is assigned */
+}
+
+.manual-rewards-section .character-name.needs-player {
+    color: white !important; /* Force white for needs-player state */
+    font-style: italic;
+    font-weight: 500;
+}
+
+/* Template icon styles */
+.template-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: 2px solid #ffd700;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    object-fit: cover;
+}
+
+.template-icon:hover {
+    border-color: #ffed4a;
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* Text color overrides for template entries */
+.manual-rewards-section .ranking-item.template-entry .character-name,
+.manual-rewards-section .ranking-item.template-entry .character-details,
+.manual-rewards-section .ranking-item.template-entry .amount-value {
+    color: white !important;
+}
+
+/* Text color for filled template entries (with icons but no template-entry class) */
+.manual-rewards-section .ranking-item.has-template-icon:not(.template-entry) .character-name,
+.manual-rewards-section .ranking-item.has-template-icon:not(.template-entry) .character-details {
+    color: #333 !important;
+}
+
+@keyframes pulse-template {
+    0% { border-color: #28a745; }
+    50% { border-color: #20c997; }
+    100% { border-color: #28a745; }
 }
 
 /* Action buttons for manual rewards */
