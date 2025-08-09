@@ -519,9 +519,7 @@ body.has-raid-bar {
 }
 
 /* Specific styling for today's event panel */
-.event-panel-today {
-
-}
+.event-panel-today { border: 1px solid rgba(255,255,255,0.08); }
 
 .event-panel h3 {
     color: #ffffff; /* Discord blue for titles */
@@ -712,6 +710,13 @@ body.has-raid-bar {
     border-top-right-radius: 0;
     opacity: 0.9; /* 90% opacity */
 }
+
+.character-item-sub, .character-item-sub * { color: #000000 !important; font-weight: 400; }
+.char-extra { display: grid; grid-template-columns: 1fr; row-gap: 4px; font-size: 13px; }
+.char-extra .label { color: #000; font-weight: 400; }
+.char-extra .value { color: #000; font-weight: 400; }
+.char-extra .last-item { display: inline-flex; align-items: center; gap: 6px; color: #a335ee !important; background: rgba(0,0,0,0.85); padding: 3px 6px; border-radius: 5px; }
+.char-extra .last-item img { width: 18px; height: 18px; border-radius: 3px; }
 
 /* Make the top card stick visually with flat bottom corners */
 .character-item {

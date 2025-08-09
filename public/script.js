@@ -443,11 +443,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     bottom.classList.add('character-item-sub', `class-${characterClass}`);
                     bottom.innerHTML = `
                         <div class="char-extra" data-char="${char.character_name}">
-                            <div><strong>1P member:</strong> <span class="extra-guild">…</span></div>
-                            <div><strong>Current Naxx streak:</strong> <span class="extra-streak">…</span></div>
-                            <div><strong>Last raid:</strong> <span class="extra-last-raid">…</span></div>
-                            <div><strong>Next raid:</strong> <span class="extra-next-raid">…</span></div>
-                            <div><strong>Last item won:</strong> <span class="extra-last-item">…</span></div>
+                            <div><span class="label">1P member:</span> <span class="extra-guild value">…</span></div>
+                            <div><span class="label">Current Naxx streak:</span> <span class="extra-streak value">…</span></div>
+                            <div><span class="label">Last raid:</span> <span class="extra-last-raid value">…</span></div>
+                            <div><span class="label">Next raid:</span> <span class="extra-next-raid value">…</span></div>
+                            <div><span class="label">Last item won:</span> <span class="extra-last-item value">…</span></div>
                         </div>
                     `;
 
@@ -629,7 +629,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (!roster) continue;
                     const inRaidDrop = Array.isArray(roster.raidDrop) && roster.raidDrop.some(p => (p?.userid === user.id) || (p?.discord_user_id === user.id));
                     const inBench = Array.isArray(roster.bench) && roster.bench.some(p => (p?.userid === user.id) || (p?.discord_user_id === user.id));
-                    if (inRaidDrop || inBench) { nextRaid = ev.channelName || ev.name || 'Upcoming raid'; break; }
+                    if (inRaidDrop || inBench) {
+                        const name = ev.name || ev.channelName || 'Upcoming raid';
+                        // Format date dd-mm-yyyy from startTime seconds
+                        let dateStr = '';
+                        if (ev.startTime) {
+                            const d = new Date((ev.startTime) * 1000);
+                            const dd = String(d.getDate()).padStart(2,'0');
+                            const mm = String(d.getMonth()+1).padStart(2,'0');
+                            const yyyy = d.getFullYear();
+                            dateStr = `${dd}-${mm}-${yyyy}`;
+                        }
+                        nextRaid = dateStr ? `${name} - ${dateStr}` : name;
+                        break;
+                    }
                 }
             }
         } catch {}
@@ -645,12 +658,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const loot = await fetchLoot(ev.eventId || ev.eventID || ev.id || ev.event_id);
                     if (loot && loot.success && Array.isArray(loot.items)) {
                         const found = loot.items.find(it => (it.player_name || '').toLowerCase() === (char.character_name || '').toLowerCase());
-                        if (found) { lastItem = found.item_name; break; }
+                        if (found) {
+                            const icon = found.icon_link ? `<img src="${found.icon_link}" alt=""/>` : '';
+                            lastItem = `<span class="last-item">${icon}<span>${found.item_name}</span></span>`;
+                            break;
+                        }
                     }
                 }
             }
         } catch {}
-        container.querySelector('.extra-last-item').textContent = lastItem;
+        const lastItemEl = container.querySelector('.extra-last-item');
+        if (lastItem.startsWith('<span')) lastItemEl.innerHTML = lastItem; else lastItemEl.textContent = lastItem;
     }
 
     // Function to fetch and display Items Hall of Fame
