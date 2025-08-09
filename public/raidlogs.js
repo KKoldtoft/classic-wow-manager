@@ -1560,8 +1560,8 @@ class RaidLogsManager {
         this.displayShamanHealers(healers);
         this.displayPriestHealers(healers);
         this.displayDruidHealers(healers);
-        this.displayWorldBuffsRankings(this.worldBuffsData);
-        this.displayFrostResistanceRankings(this.frostResistanceData);
+        this.displayWorldBuffsRankings(this.frostResistanceData);
+        this.displayWorldBuffsCopyRankings(this.worldBuffsData);
         this.displayAbilitiesRankings(this.abilitiesData);
         this.displayManaPotionsRankings(this.manaPotionsData);
         this.displayRunesRankings(this.runesData);
@@ -1594,7 +1594,6 @@ class RaidLogsManager {
         this.updatePowerInfusionHeader();
                     this.updateDecursesHeader();
             this.updateVoidDamageHeader();
-        this.updateFrostResistanceHeader();
         this.updateArchiveButtons();
         this.displayWallOfShame();
         
@@ -2412,6 +2411,113 @@ class RaidLogsManager {
 
     displayWorldBuffsRankings(players) {
         const container = document.getElementById('world-buffs-list');
+        if (!container) return;
+        
+        const section = container.closest('.rankings-section');
+        section.classList.add('world-buffs');
+
+        // Filter players by primary role - only show DPS players (for frost resistance)
+        let filteredPlayers = players;
+        if (this.primaryRoles) {
+            console.log(`🧊 [FROST RESISTANCE] Filtering ${players.length} players by primary role`);
+            filteredPlayers = players.filter(player => {
+                const playerName = player.character_name.toLowerCase();
+                const primaryRole = this.primaryRoles[playerName];
+                const isDPS = primaryRole === 'dps';
+                
+                if (!isDPS && primaryRole) {
+                    console.log(`🚫 [FROST RESISTANCE] Excluding ${player.character_name} (primary role: ${primaryRole})`);
+                }
+                
+                return isDPS;
+            });
+            console.log(`✅ [FROST RESISTANCE] Filtered to ${filteredPlayers.length} DPS players`);
+        } else {
+            console.log('⚠️ [FROST RESISTANCE] No primary roles data available, showing all players');
+        }
+
+        // Filter out players with 0 points for display, but keep all players for progress calculations
+        const playersToDisplay = filteredPlayers.filter(player => player.points !== 0);
+        
+        // Use all filtered players (including 0-point players) to calculate max frost resistance for progress bars
+        const maxFrostResForProgress = Math.max(...filteredPlayers.map(p => p.frost_resistance), 1);
+        
+        console.log(`🧊 [FROST RESISTANCE] Total DPS players: ${filteredPlayers.length}, Displaying: ${playersToDisplay.length} (excluding 0-point players)`);
+        console.log(`🧊 [FROST RESISTANCE] Max frost resistance for progress bars: ${maxFrostResForProgress}`);
+        
+        if (playersToDisplay.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-snowflake"></i>
+                    <p>All DPS players have adequate frost resistance!</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = playersToDisplay.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class || 'unknown');
+            
+            // Recalculate progress percentage using all players' max frost resistance (including 0-point players)
+            const fillPercentage = Math.max(5, maxFrostResForProgress > 0 ? Math.round((player.frost_resistance / maxFrostResForProgress) * 100) : 0);
+            
+            console.log(`🧊 [FROST RESISTANCE] ${player.character_name}: class=${player.character_class} -> normalized=${characterClass}, frost_res=${player.frost_resistance}, fill=${fillPercentage}%, type=${player.dps_type}`);
+            
+            // Determine frost resistance status for styling
+            let frostResClass = 'buff-count';
+            const isPhysical = player.dps_type === 'physical';
+            const isCaster = player.dps_type === 'caster';
+            
+            if (isPhysical) {
+                if (player.frost_resistance < 80) {
+                    frostResClass += ' low';
+                } else if (player.frost_resistance < 130) {
+                    frostResClass += ' medium';
+                } else {
+                    frostResClass += ' high';
+                }
+            } else if (isCaster) {
+                if (player.frost_resistance < 80) {
+                    frostResClass += ' low';
+                } else if (player.frost_resistance < 150) {
+                    frostResClass += ' medium';
+                } else {
+                    frostResClass += ' high';
+                }
+            }
+
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name class-${characterClass}">
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
+                        </div>
+                    <div class="character-details">
+                            <div class="${frostResClass}">${player.frost_resistance} frost resistance</div>
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="Points: ${player.points} (${player.dps_type} DPS)">
+                        <div class="amount-value ${player.points < 0 ? 'negative' : ''}">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updateWorldBuffsHeader() {
+        const headerElement = document.getElementById('world-buffs-header-text');
+        if (headerElement) {
+            headerElement.textContent = `Points for frost resistance (Physical: -5 <130, -10 <80 | Caster: -5 <150, -10 <80)`;
+        }
+    }
+
+    displayWorldBuffsCopyRankings(players) {
+        const container = document.getElementById('world-buffs-copy-list');
         const section = container.closest('.rankings-section');
         section.classList.add('world-buffs');
 
@@ -2442,9 +2548,9 @@ class RaidLogsManager {
         }
 
         // Update header text based on required buffs
-        this.updateWorldBuffsHeader();
+        this.updateWorldBuffsCopyHeader();
 
-        console.log(`🌍 [WORLD BUFFS] Displaying ${sortedPlayers.length} players with missing buffs (max buffs in raid: ${maxBuffsInRaid})`);
+        console.log(`🌍 [WORLD BUFFS COPY] Displaying ${sortedPlayers.length} players with missing buffs (max buffs in raid: ${maxBuffsInRaid})`);
         
         container.innerHTML = sortedPlayers.map((player, index) => {
             const position = index + 1;
@@ -2453,7 +2559,7 @@ class RaidLogsManager {
             // Calculate fill percentage based on buff count vs max in raid (for progress bar)
             const fillPercentage = Math.max(5, (player.total_buffs / maxBuffsInRaid) * 100);
             
-            console.log(`🌍 [WORLD BUFFS] ${player.character_name}: class=${player.character_class} -> normalized=${characterClass}, buffs=${player.total_buffs}/${maxBuffsInRaid}, fill=${fillPercentage}%`);
+            console.log(`🌍 [WORLD BUFFS COPY] ${player.character_name}: class=${player.character_class} -> normalized=${characterClass}, buffs=${player.total_buffs}/${maxBuffsInRaid}, fill=${fillPercentage}%`);
             
             // Determine buff count status for styling
             let buffCountClass = 'buff-count';
@@ -2505,9 +2611,8 @@ class RaidLogsManager {
                         <div class="character-name class-${characterClass}">
                             ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
-                        <div class="character-details">
+                    <div class="character-details">
                             <div class="${buffCountClass}">${player.total_buffs} buffs</div>
-                            ${missingBuffsText ? `<div class="buff-details missing-buffs">${missingBuffsText}</div>` : ''}
                         </div>
                     </div>
                     <div class="performance-amount" title="Points: ${player.points} (${player.points < 0 ? player.points / -10 : 0} missing buffs)">
@@ -2519,164 +2624,45 @@ class RaidLogsManager {
         }).join('');
     }
 
-    updateWorldBuffsHeader() {
-        const headerElement = document.getElementById('world-buffs-header-text');
+    updateWorldBuffsCopyHeader() {
+        const headerElement = document.getElementById('world-buffs-copy-header-text');
         if (headerElement && this.worldBuffsRequiredBuffs) {
             headerElement.textContent = `Points for missing world buffs (-10 per buff below ${this.worldBuffsRequiredBuffs})`;
         }
     }
 
-    displayFrostResistanceRankings(players) {
-        const container = document.getElementById('frost-resistance-list');
-        if (!container) return;
-        
-        const section = container.closest('.rankings-section');
-        section.classList.add('frost-resistance-section');
 
-        // Filter players by primary role - only show DPS players
-        let filteredPlayers = players;
-        if (this.primaryRoles) {
-            console.log(`🧊 [FROST RESISTANCE] Filtering ${players.length} players by primary role`);
-            filteredPlayers = players.filter(player => {
-                const playerName = player.character_name.toLowerCase();
-                const primaryRole = this.primaryRoles[playerName];
-                const isDPS = primaryRole === 'dps';
-                
-                if (!isDPS && primaryRole) {
-                    console.log(`🚫 [FROST RESISTANCE] Excluding ${player.character_name} (primary role: ${primaryRole})`);
-                }
-                
-                return isDPS;
-            });
-            console.log(`✅ [FROST RESISTANCE] Filtered to ${filteredPlayers.length} DPS players`);
-        } else {
-            console.log('⚠️ [FROST RESISTANCE] No primary roles data available, showing all players');
-        }
-
-        // Show the section if we have data
-        if (filteredPlayers.length > 0) {
-            section.style.display = 'block';
-        } else {
-            section.style.display = 'none';
-            return;
-        }
-
-        // Filter out players with 0 points for display, but keep all players for progress calculations
-        const playersToDisplay = filteredPlayers.filter(player => player.points !== 0);
-        
-        // Use all filtered players (including 0-point players) to calculate max frost resistance for progress bars
-        const maxFrostResForProgress = Math.max(...filteredPlayers.map(p => p.frost_resistance), 1);
-        
-        console.log(`🧊 [FROST RESISTANCE] Total DPS players: ${filteredPlayers.length}, Displaying: ${playersToDisplay.length} (excluding 0-point players)`);
-        console.log(`🧊 [FROST RESISTANCE] Max frost resistance for progress bars: ${maxFrostResForProgress}`);
-        
-        if (playersToDisplay.length === 0) {
-            container.innerHTML = `
-                <div class="rankings-empty">
-                    <i class="fas fa-snowflake"></i>
-                    <p>All DPS players have adequate frost resistance!</p>
-                </div>
-            `;
-            return;
-        }
-        
-        container.innerHTML = playersToDisplay.map((player, index) => {
-            const position = index + 1;
-            const characterClass = this.normalizeClassName(player.character_class || 'unknown');
-            
-            // Recalculate progress percentage using all players' max frost resistance (including 0-point players)
-            const fillPercentage = Math.max(5, maxFrostResForProgress > 0 ? Math.round((player.frost_resistance / maxFrostResForProgress) * 100) : 0);
-            
-            console.log(`🧊 [FROST RESISTANCE] ${player.character_name}: class=${player.character_class} -> normalized=${characterClass}, frost_res=${player.frost_resistance}, fill=${fillPercentage}%, type=${player.dps_type}`);
-            
-            // Determine frost resistance status for styling
-            let frostResClass = 'frost-res-amount';
-            const isPhysical = player.dps_type === 'physical';
-            const isCaster = player.dps_type === 'caster';
-            
-            if (isPhysical) {
-                if (player.frost_resistance < 80) {
-                    frostResClass += ' very-low';
-                } else if (player.frost_resistance < 130) {
-                    frostResClass += ' low';
-                } else {
-                    frostResClass += ' good';
-                }
-            } else if (isCaster) {
-                if (player.frost_resistance < 80) {
-                    frostResClass += ' very-low';
-                } else if (player.frost_resistance < 150) {
-                    frostResClass += ' low';
-                } else {
-                    frostResClass += ' good';
-                }
-            }
-
-            // Create DPS type and threshold info
-            const thresholdInfo = isPhysical ? 
-                `Physical DPS (130+ recommended)` : 
-                `Caster DPS (150+ recommended)`;
-
-            return `
-                <div class="ranking-item">
-                    <div class="ranking-position">
-                        <span class="ranking-number">#${position}</span>
-                    </div>
-                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
-                        <div class="character-name class-${characterClass}">
-                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
-                        </div>
-                        <div class="character-details">
-                            <div class="${frostResClass}">${player.frost_resistance} frost resistance</div>
-                            <div class="frost-res-details">${thresholdInfo}</div>
-                        </div>
-                    </div>
-                    <div class="performance-amount" title="Points: ${player.points} (${player.dps_type} DPS)">
-                        <div class="amount-value ${player.points < 0 ? 'negative' : ''}">${player.points}</div>
-                        <div class="points-label">points</div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    updateFrostResistanceHeader() {
-        const headerElement = document.getElementById('frost-resistance-header-text');
-        if (headerElement) {
-            headerElement.textContent = `Points for frost resistance (Physical: -5 <130, -10 <80 | Caster: -5 <150, -10 <80)`;
-        }
-    }
 
     updateArchiveButtons() {
-        // Update World Buffs archive button
+        // Update World Buffs archive button (now shows Frost Resistance data)
         const worldBuffsButton = document.getElementById('world-buffs-archive-button');
         if (worldBuffsButton) {
-            if (this.worldBuffsArchiveUrl) {
+            if (this.frostResistanceArchiveUrl) {
                 worldBuffsButton.classList.remove('disabled');
-                worldBuffsButton.onclick = () => window.open(this.worldBuffsArchiveUrl, '_blank');
-                worldBuffsButton.title = 'View archived World Buffs sheet';
-                console.log(`🌍 World Buffs archive button enabled with URL: ${this.worldBuffsArchiveUrl}`);
+                worldBuffsButton.onclick = () => window.open(this.frostResistanceArchiveUrl, '_blank');
+                worldBuffsButton.title = 'View archived Frost Resistance sheet';
+                console.log(`🧊 Frost Resistance archive button enabled with URL: ${this.frostResistanceArchiveUrl}`);
             } else {
                 worldBuffsButton.classList.add('disabled');
                 worldBuffsButton.onclick = null;
-                worldBuffsButton.title = 'No archived World Buffs sheet found for this event';
-                console.log(`🌍 World Buffs archive button disabled - no URL found`);
+                worldBuffsButton.title = 'No archived Frost Resistance sheet found for this event';
+                console.log(`🧊 Frost Resistance archive button disabled - no URL found`);
             }
         }
 
-        // Update Frost Resistance archive button
-        const frostResButton = document.getElementById('frost-resistance-archive-button');
-        if (frostResButton) {
-            if (this.frostResistanceArchiveUrl) {
-                frostResButton.classList.remove('disabled');
-                frostResButton.onclick = () => window.open(this.frostResistanceArchiveUrl, '_blank');
-                frostResButton.title = 'View archived Frost Resistance sheet';
-                console.log(`🧊 Frost Resistance archive button enabled with URL: ${this.frostResistanceArchiveUrl}`);
+        // Update World Buffs Copy archive button
+        const worldBuffsCopyButton = document.getElementById('world-buffs-copy-archive-button');
+        if (worldBuffsCopyButton) {
+            if (this.worldBuffsArchiveUrl) {
+                worldBuffsCopyButton.classList.remove('disabled');
+                worldBuffsCopyButton.onclick = () => window.open(this.worldBuffsArchiveUrl, '_blank');
+                worldBuffsCopyButton.title = 'View archived World Buffs sheet';
+                console.log(`🌍 World Buffs Copy archive button enabled with URL: ${this.worldBuffsArchiveUrl}`);
             } else {
-                frostResButton.classList.add('disabled');
-                frostResButton.onclick = null;
-                frostResButton.title = 'No archived Frost Resistance sheet found for this event';
-                console.log(`🧊 Frost Resistance archive button disabled - no URL found`);
+                worldBuffsCopyButton.classList.add('disabled');
+                worldBuffsCopyButton.onclick = null;
+                worldBuffsCopyButton.title = 'No archived World Buffs sheet found for this event';
+                console.log(`🌍 World Buffs Copy archive button disabled - no URL found`);
             }
         }
     }
@@ -3826,7 +3812,7 @@ class RaidLogsManager {
         const canonicalClass = this.getCanonicalClass(characterClass);
         const emoteId = this.classIconEmotes[canonicalClass];
         if (emoteId) {
-            return `<img src="https://cdn.discordapp.com/emojis/${emoteId}.png" class="spec-icon" alt="${canonicalClass}" width="20" height="20" loading="lazy" decoding="async">`;
+            return `<img src="https://cdn.discordapp.com/emojis/${emoteId}.png" class="spec-icon" alt="${canonicalClass}" width="50" height="50" loading="lazy" decoding="async">`;
         }
         return `<i class="fas fa-user-circle spec-icon unknown-spec" style="color: #aaa;" title="${canonicalClass}"></i>`;
     }
@@ -3840,13 +3826,13 @@ class RaidLogsManager {
                 p.roster_spec_emote
             );
             if (player && player.roster_spec_emote) {
-                return `<img src="https://cdn.discordapp.com/emojis/${player.roster_spec_emote}.png" class="spec-icon" alt="${specName}" width="20" height="20" loading="lazy" decoding="async">`;
+                return `<img src="https://cdn.discordapp.com/emojis/${player.roster_spec_emote}.png" class="spec-icon" alt="${specName}" width="50" height="50" loading="lazy" decoding="async">`;
             }
 
             // Priority 2: spec icon from SPEC_DATA mapping
             const iconUrl = this.getSpecIconUrl(specName, characterClass);
             if (iconUrl) {
-                return `<img src="${iconUrl}" class="spec-icon" alt="${specName}" width="20" height="20" loading="lazy" decoding="async">`;
+                return `<img src="${iconUrl}" class="spec-icon" alt="${specName}" width="50" height="50" loading="lazy" decoding="async">`;
             }
         }
 

@@ -653,14 +653,15 @@ body.has-raid-bar {
     gap: 8px; /* Spacing between character panels */
 }
 
+.character-card { list-style: none; }
+
 .character-item {
+    position: relative;
     display: flex;
-    justify-content: center;
     align-items: center;
-    height: 40px;
-    padding: 8px 12px;
+    min-height: 70px;
+    padding: 5px 5px 5px 85px; /* room for 60x60 icon + spacing */
     border-radius: 8px;
-    border: 2px solid rgba(255, 255, 255, 0.2);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
@@ -672,55 +673,90 @@ body.has-raid-bar {
 
 .char-name {
     font-weight: 600;
-    font-size: 14px;
-    text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.8);
+    font-size: 16px;
     color: #000000;
-    text-align: center;
 }
 
-/* Hide the class text - we only show character name */
-.char-class {
-    display: none;
+/* Details line below name (class text) */
+.char-details {
+    font-size: 13px;
+    color: #000000;
+    opacity: 0.9;
+}
+
+.char-text {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Left class icon similar to raidlogs spec icon positioning */
+.class-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    object-fit: cover;
+}
+
+/* Bottom extension card */
+.character-item-sub {
+    position: relative;
+    min-height: 36px;
+    margin-top: 0;
+    padding: 6px 12px;
+    border-radius: 0 0 8px 8px; /* top corners will be 0 via override below */
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    opacity: 0.9; /* 90% opacity */
+}
+
+/* Make the top card stick visually with flat bottom corners */
+.character-item {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
 }
 
 /* WoW Class Background Colors for Character Panels */
-.character-item.class-warrior {
+.character-item.class-warrior, .character-item-sub.class-warrior {
     background: linear-gradient(135deg, #C79C6E, #A67C52);
 }
 
-.character-item.class-paladin {
+.character-item.class-paladin, .character-item-sub.class-paladin {
     background: linear-gradient(135deg, #F58CBA, #E06B9A);
 }
 
-.character-item.class-hunter {
+.character-item.class-hunter, .character-item-sub.class-hunter {
     background: linear-gradient(135deg, #ABD473, #8FB356);
 }
 
-.character-item.class-rogue {
+.character-item.class-rogue, .character-item-sub.class-rogue {
     background: linear-gradient(135deg, #FFF569, #E6DD4F);
 }
 
-.character-item.class-priest {
+.character-item.class-priest, .character-item-sub.class-priest {
     background: linear-gradient(135deg, #FFFFFF, #E6E6E6);
 }
 
-.character-item.class-shaman {
+.character-item.class-shaman, .character-item-sub.class-shaman {
     background: linear-gradient(135deg, #0070DE, #005BB8);
 }
 
-.character-item.class-mage {
+.character-item.class-mage, .character-item-sub.class-mage {
     background: linear-gradient(135deg, #69CCF0, #4FB3D9);
 }
 
-.character-item.class-warlock {
+.character-item.class-warlock, .character-item-sub.class-warlock {
     background: linear-gradient(135deg, #9482C9, #7A6BA8);
 }
 
-.character-item.class-druid {
+.character-item.class-druid, .character-item-sub.class-druid {
     background: linear-gradient(135deg, #FF7D0A, #E66A00);
 }
 
-.character-item.class-unknown {
+.character-item.class-unknown, .character-item-sub.class-unknown {
     background: linear-gradient(135deg, #666666, #555555);
 }
 

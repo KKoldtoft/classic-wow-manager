@@ -121,10 +121,11 @@
 
 /* Rankings sections */
 .rankings-section {
+    --panel-accent: #5865F2;
     background: var(--card-bg, #1e1e1e);
-    border: 1px solid var(--border-color, #3a3a3a);
+    border: 4px solid var(--panel-accent);
     border-radius: 12px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
     margin-bottom: 30px;
     overflow: hidden;
     flex: 1;
@@ -228,9 +229,13 @@
 .character-info {
     flex: 1;
     margin-left: 20px;
-    padding: 8px;
+    padding: 0px 0px 0px 70px; /* left padding for 50px icon + spacing */
     border-radius: 6px;
     position: relative;
+    min-height: 70px; /* target height for compact layout */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
 /* Visual meter background using CSS gradients */
@@ -288,6 +293,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     cursor: help;
+    display: block;
 }
 
 .character-spec {
@@ -323,7 +329,7 @@
 
 /* Damage specific styling */
 .rankings-section.damage {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    --panel-accent: #dc3545;
 }
 
 .rankings-section.damage .section-header {
@@ -336,7 +342,7 @@
 
 /* Healing specific styling */
 .rankings-section.healing {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    --panel-accent: #28a745;
 }
 
 .rankings-section.healing .section-header {
@@ -348,9 +354,8 @@
 }
 
 /* Abilities specific styling */
-.rankings-section.abilities {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.abilities { --panel-accent: #ff6b35; }
+.rankings-section.abilities-section { --panel-accent: #ff6b35; }
 
 .rankings-section.abilities .section-header {
     background: linear-gradient(135deg, #ff6b35 0%, #e55a2b 100%);
@@ -378,9 +383,8 @@
 }
 
 /* Mana Potions specific styling */
-.rankings-section.mana-potions {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.mana-potions { --panel-accent: #4a9eff; }
+.rankings-section.mana-potions-section { --panel-accent: #4a9eff; }
 
 .rankings-section.mana-potions .section-header {
     background: linear-gradient(135deg, #4a9eff 0%, #3d82e6 100%);
@@ -392,9 +396,8 @@
 }
 
 /* Runes specific styling */
-.rankings-section.runes {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.runes { --panel-accent: #8b5cf6; }
+.rankings-section.runes-section { --panel-accent: #8b5cf6; }
 
 .rankings-section.runes .section-header {
     background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
@@ -406,9 +409,8 @@
 }
 
 /* Interrupts specific styling */
-.rankings-section.interrupts {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.interrupts { --panel-accent: #f59e0b; }
+.rankings-section.interrupts-section { --panel-accent: #f59e0b; }
 
 .rankings-section.interrupts .section-header {
     background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
@@ -420,9 +422,8 @@
 }
 
 /* Disarms specific styling */
-.rankings-section.disarms {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.disarms { --panel-accent: #dc3545; }
+.rankings-section.disarms-section { --panel-accent: #dc3545; }
 
 .rankings-section.disarms .section-header {
     background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
@@ -434,9 +435,8 @@
 }
 
 /* Sunder specific styling */
-.rankings-section.sunder {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.sunder { --panel-accent: #6f42c1; }
+.rankings-section.sunder-section { --panel-accent: #6f42c1; }
 
 .rankings-section.sunder .section-header {
     background: linear-gradient(135deg, #6f42c1 0%, #5a3499 100%);
@@ -453,9 +453,7 @@
 }
 
 /* Curse specific styling */
-.rankings-section.curse {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.curse { --panel-accent: #8b5cf6; }
 
 .rankings-section.curse .section-header {
     background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
@@ -467,9 +465,8 @@
 }
 
 /* Curse of Recklessness specific styling */
-.rankings-section.curse-recklessness {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.curse-recklessness { --panel-accent: #8b5cf6; }
+.rankings-section.curse-recklessness-section { --panel-accent: #8b5cf6; }
 
 .rankings-section.curse-recklessness .section-header {
     background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
@@ -481,9 +478,8 @@
 }
 
 /* Curse of Shadow specific styling */
-.rankings-section.curse-shadow {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.curse-shadow { --panel-accent: #6b46c1; }
+.rankings-section.curse-shadow-section { --panel-accent: #6b46c1; }
 
 .rankings-section.curse-shadow .section-header {
     background: linear-gradient(135deg, #6b46c1 0%, #553c9a 100%);
@@ -495,9 +491,8 @@
 }
 
 /* Curse of Elements specific styling */
-.rankings-section.curse-elements {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.curse-elements { --panel-accent: #3b82f6; }
+.rankings-section.curse-elements-section { --panel-accent: #3b82f6; }
 
 .rankings-section.curse-elements .section-header {
     background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
@@ -509,9 +504,8 @@
 }
 
 /* Faerie Fire specific styling */
-.rankings-section.faerie-fire {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.faerie-fire { --panel-accent: #10b981; }
+.rankings-section.faerie-fire-section { --panel-accent: #10b981; }
 
 .rankings-section.faerie-fire .section-header {
     background: linear-gradient(135deg, #10b981 0%, #059669 100%);
@@ -528,9 +522,8 @@
 }
 
 /* Scorch specific styling */
-.rankings-section.scorch {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.scorch { --panel-accent: #dc3545; }
+.rankings-section.scorch-section { --panel-accent: #dc3545; }
 
 .rankings-section.scorch .section-header {
     background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
@@ -542,9 +535,8 @@
 }
 
 /* Demoralizing Shout specific styling */
-.rankings-section.demo-shout {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.demo-shout { --panel-accent: #d2691e; }
+.rankings-section.demo-shout-section { --panel-accent: #d2691e; }
 
 .rankings-section.demo-shout .section-header {
     background: linear-gradient(135deg, #d2691e 0%, #b8860b 100%);
@@ -561,9 +553,8 @@
 }
 
 /* Polymorph specific styling */
-.rankings-section.polymorph {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.polymorph { --panel-accent: #8b5cf6; }
+.rankings-section.polymorph-section { --panel-accent: #8b5cf6; }
 
 .rankings-section.polymorph .section-header {
     background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
@@ -575,9 +566,8 @@
 }
 
 /* Power Infusion specific styling */
-.rankings-section.power-infusion {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.power-infusion { --panel-accent: #ffd700; }
+.rankings-section.power-infusion-section { --panel-accent: #ffd700; }
 
 .rankings-section.power-infusion .section-header {
     background: linear-gradient(135deg, #ffd700 0%, #ffb347 100%);
@@ -589,9 +579,8 @@
 }
 
 /* Decurses specific styling */
-.rankings-section.decurses {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.decurses { --panel-accent: #69CCF0; }
+.rankings-section.decurses-section { --panel-accent: #69CCF0; }
 
 .rankings-section.decurses .section-header {
     background: linear-gradient(135deg, #69CCF0 0%, #4a9eff 100%);
@@ -608,9 +597,8 @@
 }
 
 /* Void Damage specific styling */
-.rankings-section.void-damage {
-    border-left: 4px solid #9b59b6;
-}
+.rankings-section.void-damage { --panel-accent: #9b59b6; }
+.rankings-section.void-damage-section { --panel-accent: #9b59b6; }
 
 .rankings-section.void-damage .section-header {
     background: linear-gradient(135deg, #9b59b6, #8e44ad);
@@ -649,10 +637,8 @@
     margin-bottom: 30px;
 }
 
-.rankings-section.god-gamer-dps {
-    box-shadow: 0 6px 12px rgba(255, 215, 0, 0.4);
-    border: 2px solid #FFD700;
-}
+.rankings-section.god-gamer-dps { --panel-accent: #FFD700; }
+.rankings-section.god-gamer-dps-section { --panel-accent: #FFD700; }
 
 .rankings-section.god-gamer-dps .section-header {
     background: linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FF8C00 100%);
@@ -668,10 +654,8 @@
     text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
 }
 
-.rankings-section.god-gamer-healer {
-    box-shadow: 0 6px 12px rgba(255, 215, 0, 0.4);
-    border: 2px solid #FFD700;
-}
+.rankings-section.god-gamer-healer { --panel-accent: #FFD700; }
+.rankings-section.god-gamer-healer-section { --panel-accent: #FFD700; }
 
 .rankings-section.god-gamer-healer .section-header {
     background: linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FF8C00 100%);
@@ -701,9 +685,8 @@
 }
 
 /* Shaman Healers specific styling */
-.rankings-section.shaman-healers {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.shaman-healers { --panel-accent: #0070DE; }
+.rankings-section.shaman-healers-section { --panel-accent: #0070DE; }
 
 .rankings-section.shaman-healers .section-header {
     background: linear-gradient(135deg, #0070DE 0%, #005bb5 100%);
@@ -715,9 +698,8 @@
 }
 
 /* Priest Healers specific styling */
-.rankings-section.priest-healers {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.priest-healers { --panel-accent: #FFFFFF; }
+.rankings-section.priest-healers-section { --panel-accent: #FFFFFF; }
 
 .rankings-section.priest-healers .section-header {
     background: linear-gradient(135deg, #FFFFFF 0%, #F0F0F0 100%);
@@ -731,9 +713,8 @@
 }
 
 /* Druid Healers specific styling */
-.rankings-section.druid-healers {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
+.rankings-section.druid-healers { --panel-accent: #FF7D0A; }
+.rankings-section.druid-healers-section { --panel-accent: #FF7D0A; }
 
 .rankings-section.druid-healers .section-header {
     background: linear-gradient(135deg, #FF7D0A 0%, #e56600 100%);
@@ -750,7 +731,7 @@
 }
 
 .rankings-section.streak-section {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    --panel-accent: #ff6b35;
 }
 
 .rankings-section.streak-section .section-header {
@@ -764,7 +745,7 @@
 
 /* Guild Members specific styling */
 .rankings-section.guild-section {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    --panel-accent: #28a745;
 }
 
 .rankings-section.guild-section .section-header {
@@ -873,11 +854,15 @@
 
 /* Spec icon styling for raid logs */
 .spec-icon {
-    width: 20px;
-    height: 20px;
-    margin-right: 8px;
+    width: 50px;
+    height: 50px;
+    margin-right: 12px;
     flex-shrink: 0;
     vertical-align: middle;
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
 }
 
 /* FontAwesome spec icon fallbacks */
@@ -885,18 +870,26 @@
 .spec-icon.unknown-spec {
     width: auto;
     height: auto;
-    font-size: 18px;
+    font-size: 50px;
 } 
+
+/* Hide removed elements */
+.buff-details,
+.missing-buffs,
+.frost-res-details {
+    display: none !important;
+}
 
 /* Stats section styling */
 .stats-section {
+    --panel-accent: #5865F2;
     background: #2c2c2c;
-    border: 1px solid var(--border-color, #3a3a3a);
+    border: 4px solid var(--panel-accent);
     border-radius: 8px;
     padding: 20px;
     margin: 40px auto 30px auto;
     max-width: 1025px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
     position: relative;
 }
 
@@ -1214,7 +1207,7 @@
 }
 
 .rankings-section.world-buffs-section {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    --panel-accent: #10b981;
 }
 
 .rankings-section.world-buffs-section .section-header {
@@ -1235,6 +1228,14 @@
 }
 
 /* Frost resistance section uses standard styling like other panels */
+.rankings-section.frost-resistance-section { --panel-accent: #5865F2; }
+
+/* Match World Buffs text colors inside frost player frames */
+.rankings-section.frost-resistance-section .character-name,
+.rankings-section.frost-resistance-section .character-details,
+.rankings-section.frost-resistance-section .frost-res-amount {
+    color: #000000 !important;
+}
 
 /* Buff-specific styles */
 .buff-details {
@@ -1302,7 +1303,7 @@
 /* Frost Resistance specific styles */
 .frost-res-amount {
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: 600; /* Match weight with world buffs count */
     color: #000000; /* Black text */
 }
 
@@ -1324,72 +1325,43 @@
     margin-top: 2px;
 }
 
+/* Frost rows should use the same base character-info box */
 .rankings-section.frost-resistance-section .character-info {
     position: relative;
     overflow: hidden;
+    padding: 0 0 0 70px !important; /* room for 50px icon + spacing */
+    min-height: 70px !important;
 }
 
-.rankings-section.frost-resistance-section .character-info::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    height: 100%;
-    width: var(--fill-percentage, 0%);
-    opacity: 0.15;
-    z-index: 0;
-    transition: width 0.3s ease;
-}
+/* Remove frost-specific overlay to match world buffs panel visuals */
 
-/* Class-specific background colors for frost resistance progress bars */
-.rankings-section.frost-resistance-section .character-info.class-warrior::before {
-    background: linear-gradient(90deg, #C79C6E, rgba(199, 156, 110, 0.3));
-}
-
-.rankings-section.frost-resistance-section .character-info.class-paladin::before {
-    background: linear-gradient(90deg, #F58CBA, rgba(245, 140, 186, 0.3));
-}
-
-.rankings-section.frost-resistance-section .character-info.class-hunter::before {
-    background: linear-gradient(90deg, #ABD473, rgba(171, 212, 115, 0.3));
-}
-
-.rankings-section.frost-resistance-section .character-info.class-rogue::before {
-    background: linear-gradient(90deg, #FFF569, rgba(255, 245, 105, 0.3));
-}
-
-.rankings-section.frost-resistance-section .character-info.class-priest::before {
-    background: linear-gradient(90deg, #FFFFFF, rgba(255, 255, 255, 0.3));
-}
-
-.rankings-section.frost-resistance-section .character-info.class-shaman::before {
-    background: linear-gradient(90deg, #0070DE, rgba(0, 112, 222, 0.3));
-}
-
-.rankings-section.frost-resistance-section .character-info.class-mage::before {
-    background: linear-gradient(90deg, #69CCF0, rgba(105, 204, 240, 0.3));
-}
-
-.rankings-section.frost-resistance-section .character-info.class-warlock::before {
-    background: linear-gradient(90deg, #9482C9, rgba(148, 130, 201, 0.3));
-}
-
-.rankings-section.frost-resistance-section .character-info.class-druid::before {
-    background: linear-gradient(90deg, #FF7D0A, rgba(255, 125, 10, 0.3));
-}
-
-.rankings-section.frost-resistance-section .character-info.class-unknown::before {
-    background: linear-gradient(90deg, #9ca3af, rgba(156, 163, 175, 0.3));
-}
-
+/* Keep text above background gradient, same as other panels */
 .rankings-section.frost-resistance-section .character-name,
 .rankings-section.frost-resistance-section .character-details {
     position: relative;
     z-index: 1;
 }
 
-.rankings-section.frost-resistance-section .character-name {
-    color: #000000 !important; /* Force black text for character names */
+/* Match World Buffs text colors inside player frames */
+.rankings-section.frost-resistance-section .character-details,
+.rankings-section.frost-resistance-section .frost-res-amount {
+    color: #000000 !important;
+}
+
+/* Use same points color accent as World Buffs */
+.rankings-section.frost-resistance-section .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Frost Resistance icons match positioning handled above */
+
+.rankings-section.frost-resistance-section .spec-icon {
+    position: absolute !important;
+    left: 12px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    z-index: 2 !important; /* above progress overlay */
 }
 
 /* Integrated archive button styling for World Buffs and Frost Resistance panels */
@@ -1772,10 +1744,11 @@ body.raid-active .scroll-target {
 
 /* Manual Rewards and Deductions Panel Styles */
 .manual-rewards-section {
+    --panel-accent: #8b5cf6;
     background: var(--card-bg, #1e1e1e);
-    border: 1px solid var(--border-color, #3a3a3a);
+    border: 4px solid var(--panel-accent);
     border-radius: 12px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
     margin: 0 auto 30px auto;
     max-width: 1200px;
     overflow: hidden;

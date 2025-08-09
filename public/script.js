@@ -423,10 +423,42 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const list = document.createElement('ul');
                 list.classList.add('character-list');
                 characters.forEach(char => {
-                    const listItem = document.createElement('li');
-                    listItem.classList.add('character-item', `class-${char.class.toLowerCase().replace(/\s+/g, '-')}`);
-                    listItem.innerHTML = `<span class="char-name">${char.character_name}</span> <span class="char-class">${char.class}</span>`;
-                    list.appendChild(listItem);
+                    const characterClass = (char.class || 'Unknown').toLowerCase().replace(/\s+/g, '-');
+                    const classIconUrl = getClassIconUrl(char.class);
+
+                    const wrapper = document.createElement('li');
+                    wrapper.classList.add('character-card');
+
+                    const top = document.createElement('div');
+                    top.classList.add('character-item', `class-${characterClass}`);
+                    top.innerHTML = `
+                        ${classIconUrl ? `<img class="class-icon" src="${classIconUrl}" alt="${char.class}">` : ''}
+                        <div class="char-text">
+                            <span class="char-name">${char.character_name}</span>
+                            <span class="char-details">${char.class || ''}</span>
+                        </div>
+                    `;
+
+                    const bottom = document.createElement('div');
+                    bottom.classList.add('character-item-sub', `class-${characterClass}`);
+                    bottom.innerHTML = `
+                        <div class="char-extra" data-char="${char.character_name}">
+                            <div><strong>1P member:</strong> <span class="extra-guild">…</span></div>
+                            <div><strong>Current Naxx streak:</strong> <span class="extra-streak">…</span></div>
+                            <div><strong>Last raid:</strong> <span class="extra-last-raid">…</span></div>
+                            <div><strong>Next raid:</strong> <span class="extra-next-raid">…</span></div>
+                            <div><strong>Last item won:</strong> <span class="extra-last-item">…</span></div>
+                        </div>
+                    `;
+
+                    wrapper.appendChild(top);
+                    wrapper.appendChild(bottom);
+                    list.appendChild(wrapper);
+
+                    // Load and fill in extra details asynchronously
+                    loadCharacterExtras(char, bottom.querySelector('.char-extra')).catch(() => {
+                        // Leave placeholders on error
+                    });
                 });
                 myCharsContainer.appendChild(list);
             } else {
@@ -437,6 +469,188 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.error('Error fetching user characters:', error);
             myCharsContainer.innerHTML = '<p>An error occurred while fetching your characters.</p>';
         }
+    }
+
+    // Map class to icon using the same assets as raidlogs class icon display
+    function getClassIconUrl(cls) {
+        const map = {
+            'Warrior': 'https://cdn.discordapp.com/emojis/579532030153588739.png',
+            'Rogue': 'https://cdn.discordapp.com/emojis/579532030086217748.png',
+            'Hunter': 'https://cdn.discordapp.com/emojis/579532029880827924.png',
+            'Mage': 'https://cdn.discordapp.com/emojis/579532030161977355.png',
+            'Warlock': 'https://cdn.discordapp.com/emojis/579532029851336716.png',
+            'Shaman': 'https://cdn.discordapp.com/emojis/579532030056857600.png',
+            'Paladin': 'https://cdn.discordapp.com/emojis/579532029906124840.png',
+            'Priest': 'https://cdn.discordapp.com/emojis/579532029901799437.png',
+            'Druid': 'https://cdn.discordapp.com/emojis/579532029675438081.png'
+        };
+        return map[cls] || '';
+    }
+
+    // Caches for API data
+    let cachedUser = null;
+    let cachedGuildMembers = null;
+    let cachedAttendance = null;
+    let cachedUpcoming = null;
+    let cachedHistoric = null;
+
+    async function getCurrentUser() {
+        if (cachedUser) return cachedUser;
+        try {
+            const res = await fetch('/user');
+            cachedUser = await res.json();
+        } catch (e) {
+            cachedUser = { loggedIn: false };
+        }
+        return cachedUser;
+    }
+
+    async function getGuildMembers() {
+        if (cachedGuildMembers) return cachedGuildMembers;
+        try {
+            const res = await fetch('/api/guild-members');
+            const data = await res.json();
+            cachedGuildMembers = data.success ? data.members : [];
+        } catch (e) {
+            cachedGuildMembers = [];
+        }
+        return cachedGuildMembers;
+    }
+
+    async function getAttendance() {
+        if (cachedAttendance) return cachedAttendance;
+        try {
+            const res = await fetch('/api/attendance');
+            const data = await res.json();
+            cachedAttendance = data.success ? data.data : null;
+        } catch (e) {
+            cachedAttendance = null;
+        }
+        return cachedAttendance;
+    }
+
+    async function getUpcomingEvents() {
+        if (cachedUpcoming) return cachedUpcoming;
+        try {
+            const res = await fetch('/api/events');
+            const data = await res.json();
+            cachedUpcoming = Array.isArray(data.scheduledEvents) ? data.scheduledEvents : [];
+        } catch (e) {
+            cachedUpcoming = [];
+        }
+        return cachedUpcoming;
+    }
+
+    async function getHistoricEvents() {
+        if (cachedHistoric) return cachedHistoric;
+        try {
+            const res = await fetch('/api/events/historic');
+            const data = await res.json();
+            cachedHistoric = Array.isArray(data.scheduledEvents) ? data.scheduledEvents : [];
+        } catch (e) {
+            cachedHistoric = [];
+        }
+        return cachedHistoric;
+    }
+
+    async function fetchRoster(eventId) {
+        try {
+            const res = await fetch(`/api/roster/${eventId}`);
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (e) {
+            return null;
+        }
+    }
+
+    async function fetchLoot(eventId) {
+        try {
+            const res = await fetch(`/api/loot/${eventId}`);
+            if (!res.ok) return { success: true, data: [] };
+            const data = await res.json();
+            return data;
+        } catch (e) {
+            return { success: true, data: [] };
+        }
+    }
+
+    async function loadCharacterExtras(char, container) {
+        const [user, guildMembers, attendance, upcoming, historic] = await Promise.all([
+            getCurrentUser(),
+            getGuildMembers(),
+            getAttendance(),
+            getUpcomingEvents(),
+            getHistoricEvents()
+        ]);
+
+        // 1P member
+        const inGuild = !!(guildMembers || []).find(m => (m.character_name || '').toLowerCase() === (char.character_name || '').toLowerCase());
+        container.querySelector('.extra-guild').textContent = inGuild ? 'Yes' : 'No';
+
+        // Current Naxx streak (from regular attendance streak per user)
+        let streakVal = '—';
+        try {
+            if (attendance && user && user.id) {
+                const playerRow = (attendance.players || []).find(p => p.discord_id === user.id);
+                if (playerRow && typeof playerRow.player_streak === 'number') streakVal = String(playerRow.player_streak);
+            }
+        } catch {}
+        container.querySelector('.extra-streak').textContent = streakVal;
+
+        // Last raid (from attendance records by discord id, latest containing this char)
+        let lastRaid = '—';
+        try {
+            if (attendance && user && user.id) {
+                // Build ordered weeks descending
+                const weeks = (attendance.weeks || []).slice().sort((a,b) => {
+                    if (a.weekYear !== b.weekYear) return b.weekYear - a.weekYear;
+                    return b.weekNumber - a.weekNumber;
+                });
+                const byPlayer = attendance.attendance || {};
+                const playerWeeks = byPlayer[user.id] || {};
+                for (const w of weeks) {
+                    const key = `${w.weekYear}-${w.weekNumber}`;
+                    const rows = playerWeeks[key] || [];
+                    const match = rows.find(r => (r.characterName || '').toLowerCase() === (char.character_name || '').toLowerCase());
+                    if (match) { lastRaid = match.channelName || '—'; break; }
+                }
+            }
+        } catch {}
+        container.querySelector('.extra-last-raid').textContent = lastRaid;
+
+        // Next raid (scan upcoming events and rosters for signup by current user)
+        let nextRaid = '—';
+        try {
+            if (user && user.id && Array.isArray(upcoming)) {
+                // Sort upcoming by soonest
+                const upcomingSorted = upcoming.slice().sort((a,b) => (a.startTime || 0) - (b.startTime || 0));
+                for (const ev of upcomingSorted) {
+                    const roster = await fetchRoster(ev.eventId || ev.eventID || ev.id || ev.event_id);
+                    if (!roster) continue;
+                    const inRaidDrop = Array.isArray(roster.raidDrop) && roster.raidDrop.some(p => (p?.userid === user.id) || (p?.discord_user_id === user.id));
+                    const inBench = Array.isArray(roster.bench) && roster.bench.some(p => (p?.userid === user.id) || (p?.discord_user_id === user.id));
+                    if (inRaidDrop || inBench) { nextRaid = ev.channelName || ev.name || 'Upcoming raid'; break; }
+                }
+            }
+        } catch {}
+        container.querySelector('.extra-next-raid').textContent = nextRaid;
+
+        // Last item won (scan recent historic events for loot by this character)
+        let lastItem = '—';
+        try {
+            if (Array.isArray(historic)) {
+                const histSorted = historic.slice().sort((a,b) => (b.startTime || 0) - (a.startTime || 0));
+                const recent = histSorted.slice(0, 20);
+                for (const ev of recent) {
+                    const loot = await fetchLoot(ev.eventId || ev.eventID || ev.id || ev.event_id);
+                    if (loot && loot.success && Array.isArray(loot.items)) {
+                        const found = loot.items.find(it => (it.player_name || '').toLowerCase() === (char.character_name || '').toLowerCase());
+                        if (found) { lastItem = found.item_name; break; }
+                    }
+                }
+            }
+        } catch {}
+        container.querySelector('.extra-last-item').textContent = lastItem;
     }
 
     // Function to fetch and display Items Hall of Fame

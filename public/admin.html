@@ -456,6 +456,24 @@
                 </div>
             </div>
 
+            <!-- Class/Spec Mapping Viewer (Management) -->
+            <div id="class-spec-mapping-section" class="permission-card management-section" style="display: none;">
+                <h2 style="display:flex;align-items:center;gap:8px;cursor:pointer;" onclick="toggleClassSpecMappingPanel()">
+                    <i class="fas fa-clipboard-list"></i>
+                    Class / Spec Mapping
+                    <span id="class-spec-fold-icon" style="margin-left:auto;color:#6c757d;font-size:14px;">(click to expand)</span>
+                </h2>
+                <div id="class-spec-mapping-panel" style="display:none;">
+                    <p style="color:#7f8c8d;">Debug panel: view the static class/spec → role/icon/color mapping stored in the database.</p>
+                    <div style="margin-bottom: 12px;">
+                        <button class="btn" id="load-class-spec-btn" onclick="loadClassSpecMappings()">
+                            <i class="fas fa-download"></i> Load Mapping
+                        </button>
+                    </div>
+                    <div id="class-spec-mapping-content"></div>
+                </div>
+            </div>
+
             <!-- Regular user section -->
             <div id="user-section" class="permission-card">
                 <h2>👤 User Features</h2>
@@ -520,7 +538,81 @@
                 document.getElementById('attendance-channel-filter-section').style.display = 'block';
                 document.getElementById('rewards-section').style.display = 'block';
                 document.getElementById('channel-backgrounds-section').style.display = 'block';
+                document.getElementById('class-spec-mapping-section').style.display = 'block';
             }
+        }
+
+        function toggleClassSpecMappingPanel() {
+            const panel = document.getElementById('class-spec-mapping-panel');
+            const icon = document.getElementById('class-spec-fold-icon');
+            const isHidden = panel.style.display === 'none';
+            panel.style.display = isHidden ? 'block' : 'none';
+            icon.textContent = isHidden ? '(click to collapse)' : '(click to expand)';
+        }
+
+        async function loadClassSpecMappings() {
+            const content = document.getElementById('class-spec-mapping-content');
+            const btn = document.getElementById('load-class-spec-btn');
+            content.innerHTML = '<div class="loading">Loading class/spec mappings...</div>';
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+            try {
+                const resp = await fetch('/api/admin/class-spec-mappings');
+                const data = await resp.json();
+                if (!resp.ok || !data.success) {
+                    content.innerHTML = `<div class="access-denied">Error loading mappings: ${data.message || 'Unknown error'}</div>`;
+                    return;
+                }
+                renderClassSpecMappings(data.mappings || []);
+            } catch (e) {
+                console.error('Error loading class/spec mappings:', e);
+                content.innerHTML = '<div class="access-denied">Network error while loading mappings.</div>';
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-download"></i> Load Mapping';
+            }
+        }
+
+        function renderClassSpecMappings(rows) {
+            const content = document.getElementById('class-spec-mapping-content');
+            if (!rows.length) {
+                content.innerHTML = `
+                    <div style="background:#fff3cd;border:1px solid #ffeaa7;padding:15px;border-radius:8px;color:#856404;">
+                        No mappings found. Run "Setup Database" to seed the table.
+                    </div>`;
+                return;
+            }
+            const table = document.createElement('table');
+            table.className = 'data-table';
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>Class</th>
+                        <th>Spec</th>
+                        <th>Role</th>
+                        <th>Spec Icon</th>
+                        <th>Class Icon</th>
+                        <th>Class Color</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map(r => `
+                        <tr>
+                            <td>${r.class_name}</td>
+                            <td>${r.spec_name}</td>
+                            <td>${r.role}</td>
+                            <td>${r.spec_icon_url ? `<img src="${r.spec_icon_url}" alt="spec" style="width:22px;height:22px;border-radius:4px;">` : ''}</td>
+                            <td>${r.class_icon_url ? `<img src="${r.class_icon_url}" alt="class" style="width:22px;height:22px;border-radius:4px;">` : ''}</td>
+                            <td>
+                                <span style="display:inline-flex;align-items:center;gap:8px;">
+                                    <span style="display:inline-block;width:18px;height:18px;border-radius:3px;border:1px solid #e0e0e0;background:${r.class_color_hex || '#ffffff'}"></span>
+                                    <code style="color:#6c757d;">${r.class_color_hex || ''}</code>
+                                </span>
+                            </td>
+                        </tr>`).join('')}
+                </tbody>`;
+            content.innerHTML = '';
+            content.appendChild(table);
         }
 
         async function loadAllUsers() {
@@ -678,6 +770,7 @@
                                 <li><strong>Manual rewards/deductions table created/updated</strong> ⚖️</li>
                                 <li><strong>Manual rewards templates table created/updated</strong> 📋</li>
                                 <li><strong>Player role mapping table created/updated (with primary_role calculation)</strong> 🎯</li>
+                                <li><strong>Class/spec mapping table created/updated</strong> 🧭</li>
                                 <li><strong>Background blur setting added</strong> 🌫️</li>
                     <li><strong>Background darken setting added</strong> 🌙</li>
                     <li><strong>Text shadows added to event cards</strong> ✨</li>

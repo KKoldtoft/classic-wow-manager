@@ -4123,6 +4123,65 @@ app.post('/api/admin/setup-database', async (req, res) => {
             CREATE INDEX IF NOT EXISTS idx_player_role_mapping_player_class ON player_role_mapping (player_name, character_class)
         `);
         
+        // Create class_spec_mappings table for fast class/spec -> role/icon/color lookups
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS class_spec_mappings (
+                class_name VARCHAR(50) NOT NULL,
+                spec_name VARCHAR(50) NOT NULL,
+                role VARCHAR(20) NOT NULL,
+                spec_icon_url TEXT,
+                class_icon_url TEXT,
+                class_color_hex VARCHAR(7),
+                PRIMARY KEY (class_name, spec_name)
+            )
+        `);
+        
+        // Helpful indexes
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_class_spec_mappings_class ON class_spec_mappings (class_name)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_class_spec_mappings_role ON class_spec_mappings (role)
+        `);
+
+        // Seed class/spec mapping data (idempotent upsert)
+        await client.query(`
+            INSERT INTO class_spec_mappings (class_name, spec_name, role, spec_icon_url, class_icon_url, class_color_hex) VALUES
+            ('Warrior','Protection','tank','https://cdn.discordapp.com/emojis/580801859221192714.png','https://cdn.discordapp.com/emojis/579532030153588739.png','#C79C6E'),
+            ('Warrior','Fury','dps','https://cdn.discordapp.com/emojis/637564445215948810.png','https://cdn.discordapp.com/emojis/579532030153588739.png','#C79C6E'),
+            ('Warrior','Arms','dps','https://cdn.discordapp.com/emojis/637564445031399474.png','https://cdn.discordapp.com/emojis/579532030153588739.png','#C79C6E'),
+            ('Rogue','Combat','dps','https://cdn.discordapp.com/emojis/637564352333086720.png','https://cdn.discordapp.com/emojis/579532030086217748.png','#FFF569'),
+            ('Rogue','Assassination','dps','https://cdn.discordapp.com/emojis/637564351707873324.png','https://cdn.discordapp.com/emojis/579532030086217748.png','#FFF569'),
+            ('Rogue','Subtlety','dps','https://cdn.discordapp.com/emojis/637564352169508892.png','https://cdn.discordapp.com/emojis/579532030086217748.png','#FFF569'),
+            ('Hunter','Beastmastery','dps','https://cdn.discordapp.com/emojis/637564202021814277.png','https://cdn.discordapp.com/emojis/579532029880827924.png','#ABD473'),
+            ('Hunter','Marksmanship','dps','https://cdn.discordapp.com/emojis/637564202084466708.png','https://cdn.discordapp.com/emojis/579532029880827924.png','#ABD473'),
+            ('Hunter','Survival','dps','https://cdn.discordapp.com/emojis/637564202130866186.png','https://cdn.discordapp.com/emojis/579532029880827924.png','#ABD473'),
+            ('Mage','Arcane','dps','https://cdn.discordapp.com/emojis/637564231545389056.png','https://cdn.discordapp.com/emojis/579532030161977355.png','#69CCF0'),
+            ('Mage','Fire','dps','https://cdn.discordapp.com/emojis/637564231239073802.png','https://cdn.discordapp.com/emojis/579532030161977355.png','#69CCF0'),
+            ('Mage','Frost','dps','https://cdn.discordapp.com/emojis/637564231469891594.png','https://cdn.discordapp.com/emojis/579532030161977355.png','#69CCF0'),
+            ('Warlock','Affliction','dps','https://cdn.discordapp.com/emojis/637564406984867861.png','https://cdn.discordapp.com/emojis/579532029851336716.png','#9482C9'),
+            ('Warlock','Demonology','dps','https://cdn.discordapp.com/emojis/637564407001513984.png','https://cdn.discordapp.com/emojis/579532029851336716.png','#9482C9'),
+            ('Warlock','Destruction','dps','https://cdn.discordapp.com/emojis/637564406682877964.png','https://cdn.discordapp.com/emojis/579532029851336716.png','#9482C9'),
+            ('Shaman','Restoration','healer','https://cdn.discordapp.com/emojis/637564379847458846.png','https://cdn.discordapp.com/emojis/579532030056857600.png','#0070DE'),
+            ('Shaman','Elemental','dps','https://cdn.discordapp.com/emojis/637564379595931649.png','https://cdn.discordapp.com/emojis/579532030056857600.png','#0070DE'),
+            ('Shaman','Enhancement','dps','https://cdn.discordapp.com/emojis/637564379772223489.png','https://cdn.discordapp.com/emojis/579532030056857600.png','#0070DE'),
+            ('Paladin','Holy','healer','https://cdn.discordapp.com/emojis/637564297622454272.png','https://cdn.discordapp.com/emojis/579532029906124840.png','#F58CBA'),
+            ('Paladin','Protection','tank','https://cdn.discordapp.com/emojis/637564297647489034.png','https://cdn.discordapp.com/emojis/579532029906124840.png','#F58CBA'),
+            ('Paladin','Retribution','dps','https://cdn.discordapp.com/emojis/637564297953673216.png','https://cdn.discordapp.com/emojis/579532029906124840.png','#F58CBA'),
+            ('Priest','Discipline','healer','https://cdn.discordapp.com/emojis/637564323442720768.png','https://cdn.discordapp.com/emojis/579532029901799437.png','#FFFFFF'),
+            ('Priest','Holy','healer','https://cdn.discordapp.com/emojis/637564323530539019.png','https://cdn.discordapp.com/emojis/579532029901799437.png','#FFFFFF'),
+            ('Priest','Shadow','dps','https://cdn.discordapp.com/emojis/637564323291725825.png','https://cdn.discordapp.com/emojis/579532029901799437.png','#FFFFFF'),
+            ('Druid','Balance','dps','https://cdn.discordapp.com/emojis/637564171994529798.png','https://cdn.discordapp.com/emojis/579532029675438081.png','#FF7D0A'),
+            ('Druid','Dreamstate','dps','https://cdn.discordapp.com/emojis/982381290663866468.png','https://cdn.discordapp.com/emojis/579532029675438081.png','#FF7D0A'),
+            ('Druid','Feral','tank','https://cdn.discordapp.com/emojis/637564172061900820.png','https://cdn.discordapp.com/emojis/579532029675438081.png','#FF7D0A'),
+            ('Druid','Restoration','healer','https://cdn.discordapp.com/emojis/637564172007112723.png','https://cdn.discordapp.com/emojis/579532029675438081.png','#FF7D0A')
+            ON CONFLICT (class_name, spec_name) DO UPDATE SET 
+                role = EXCLUDED.role,
+                spec_icon_url = EXCLUDED.spec_icon_url,
+                class_icon_url = EXCLUDED.class_icon_url,
+                class_color_hex = EXCLUDED.class_color_hex
+        `);
+        
         res.json({ 
             success: true, 
             message: 'Database tables created successfully!' 
@@ -4188,6 +4247,33 @@ app.get('/api/admin/debug-db', async (req, res) => {
             success: false, 
             error: error.message 
         });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Class/Spec mapping viewer (Management only)
+app.get('/api/admin/class-spec-mappings', async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+    const hasRole = await hasManagementRole(req.user.accessToken);
+    if (!hasRole) {
+        return res.status(403).json({ success: false, message: 'Management role required' });
+    }
+
+    let client;
+    try {
+        client = await pool.connect();
+        const result = await client.query(`
+            SELECT class_name, spec_name, role, spec_icon_url, class_icon_url, class_color_hex
+            FROM class_spec_mappings
+            ORDER BY class_name, spec_name
+        `);
+        res.json({ success: true, mappings: result.rows });
+    } catch (error) {
+        console.error('❌ [CLASS SPEC MAP] Error fetching mappings:', error);
+        res.status(500).json({ success: false, message: 'Error fetching class/spec mappings' });
     } finally {
         if (client) client.release();
     }
