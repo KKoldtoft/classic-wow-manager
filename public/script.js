@@ -553,15 +553,45 @@ document.addEventListener('DOMContentLoaded', async () => {
         return cachedHistoric;
     }
 
-    async function fetchRoster(eventId) {
-        try {
-            const res = await fetch(`/api/roster/${eventId}`);
-            if (!res.ok) return null;
-            return await res.json();
-        } catch (e) {
-            return null;
-        }
+    function getEventId(obj) {
+        return obj?.eventId || obj?.eventID || obj?.id || obj?.event_id || null;
     }
+
+    function findEventById(events, id) {
+        if (!id) return null;
+        return events.find(ev => String(getEventId(ev)) === String(id)) || null;
+    }
+
+    function formatDateDDMMYYYYFromEpochSeconds(sec) {
+        if (!sec) return '';
+        const d = new Date(sec * 1000);
+        const options = { day: '2-digit', month: '2-digit', year: 'numeric' };
+        return d.toLocaleDateString('en-GB', options); // dd/mm/yyyy
+    }
+
+    function formatEventDisplay(name, startTime) {
+        const dateStr = formatDateDDMMYYYYFromEpochSeconds(startTime);
+        return dateStr ? `${name} - ${dateStr}` : name;
+    }
+
+    const rosterCache = new Map(); // eventId -> Promise(roster)
+    async function fetchRoster(eventId) {
+        if (!eventId) return null;
+        if (rosterCache.has(eventId)) return rosterCache.get(eventId);
+        const p = (async () => {
+            try {
+                const res = await fetch(`/api/roster/${eventId}`);
+                if (!res.ok) return null;
+                return await res.json();
+            } catch (e) {
+                return null;
+            }
+        })();
+        rosterCache.set(eventId, p);
+        return p;
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
     async function fetchLoot(eventId) {
         try {
@@ -597,52 +627,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch {}
         container.querySelector('.extra-streak').textContent = streakVal;
 
-        // Last raid (from attendance records by discord id, latest containing this char)
+        // Last raid (direct from backend using log_data with characterName + characterClass + discordId)
         let lastRaid = '—';
         try {
-            if (attendance && user && user.id) {
-                // Build ordered weeks descending
-                const weeks = (attendance.weeks || []).slice().sort((a,b) => {
-                    if (a.weekYear !== b.weekYear) return b.weekYear - a.weekYear;
-                    return b.weekNumber - a.weekNumber;
+            const user = await getCurrentUser();
+            if (user && user.id) {
+                const params = new URLSearchParams({
+                    discordId: user.id,
+                    characterName: char.character_name,
+                    characterClass: char.class
                 });
-                const byPlayer = attendance.attendance || {};
-                const playerWeeks = byPlayer[user.id] || {};
-                for (const w of weeks) {
-                    const key = `${w.weekYear}-${w.weekNumber}`;
-                    const rows = playerWeeks[key] || [];
-                    const match = rows.find(r => (r.characterName || '').toLowerCase() === (char.character_name || '').toLowerCase());
-                    if (match) { lastRaid = match.channelName || '—'; break; }
+                const res = await fetch(`/api/character/last-raid?${params.toString()}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success && data.found) {
+                        lastRaid = formatEventDisplay(data.channelName || 'Raid', data.startTime);
+                    }
                 }
             }
         } catch {}
         container.querySelector('.extra-last-raid').textContent = lastRaid;
 
-        // Next raid (scan upcoming events and rosters for signup by current user)
+        // Next raid (scan near-future upcoming events and check rosters for THIS CHARACTER; rate-limit to avoid API spam)
         let nextRaid = '—';
         try {
             if (user && user.id && Array.isArray(upcoming)) {
                 // Sort upcoming by soonest
-                const upcomingSorted = upcoming.slice().sort((a,b) => (a.startTime || 0) - (b.startTime || 0));
-                for (const ev of upcomingSorted) {
-                    const roster = await fetchRoster(ev.eventId || ev.eventID || ev.id || ev.event_id);
+                const nowSec = Math.floor(Date.now() / 1000);
+                const upcomingSorted = upcoming
+                    .filter(ev => (ev.startTime || 0) >= nowSec)
+                    .slice() // copy
+                    .sort((a,b) => (a.startTime || 0) - (b.startTime || 0))
+                    .slice(0, 4); // cap to first 4 to avoid API spam
+                for (let i = 0; i < upcomingSorted.length; i++) {
+                    const ev = upcomingSorted[i];
+                    const roster = await fetchRoster(getEventId(ev));
                     if (!roster) continue;
-                    const inRaidDrop = Array.isArray(roster.raidDrop) && roster.raidDrop.some(p => (p?.userid === user.id) || (p?.discord_user_id === user.id));
-                    const inBench = Array.isArray(roster.bench) && roster.bench.some(p => (p?.userid === user.id) || (p?.discord_user_id === user.id));
+                    const inRaidDrop = Array.isArray(roster.raidDrop) && roster.raidDrop.some(p => isSameCharacter(p, char));
+                    const inBench = Array.isArray(roster.bench) && roster.bench.some(p => isSameCharacter(p, char));
                     if (inRaidDrop || inBench) {
-                        const name = ev.name || ev.channelName || 'Upcoming raid';
-                        // Format date dd-mm-yyyy from startTime seconds
-                        let dateStr = '';
-                        if (ev.startTime) {
-                            const d = new Date((ev.startTime) * 1000);
-                            const dd = String(d.getDate()).padStart(2,'0');
-                            const mm = String(d.getMonth()+1).padStart(2,'0');
-                            const yyyy = d.getFullYear();
-                            dateStr = `${dd}-${mm}-${yyyy}`;
-                        }
-                        nextRaid = dateStr ? `${name} - ${dateStr}` : name;
+                        const name = ev.channelName || ev.name || 'Upcoming raid';
+                        nextRaid = formatEventDisplay(name, ev.startTime);
                         break;
                     }
+                    // small delay between roster calls to avoid 429s
+                    await sleep(1000);
                 }
             }
         } catch {}
@@ -669,6 +698,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch {}
         const lastItemEl = container.querySelector('.extra-last-item');
         if (lastItem.startsWith('<span')) lastItemEl.innerHTML = lastItem; else lastItemEl.textContent = lastItem;
+    }
+
+    function isSameCharacter(playerObj, char) {
+        const charName = (char.character_name || '').toLowerCase();
+        const charClass = (char.class || '').toLowerCase();
+        const names = [
+            playerObj?.assigned_char_name,
+            playerObj?.original_signup_name,
+            playerObj?.player_name,
+            playerObj?.name,
+            playerObj?.character_name
+        ].filter(Boolean).map(n => String(n).toLowerCase());
+        const classes = [
+            playerObj?.assigned_char_class,
+            playerObj?.character_class,
+            playerObj?.class
+        ].filter(Boolean).map(c => String(c).toLowerCase());
+        const nameMatches = names.includes(charName);
+        const classMatches = classes.length === 0 ? true : classes.includes(charClass);
+        return nameMatches && classMatches;
     }
 
     // Function to fetch and display Items Hall of Fame

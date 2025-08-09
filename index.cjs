@@ -2483,7 +2483,12 @@ async function enrichPlayersWithDbData(players, client) {
                 const matchingChar = userChars.find(c => getCanonicalClass(c.class) === apiCanonicalClass);
                 if (matchingChar) {
                     mainCharacterName = matchingChar.character_name;
-                    console.log(`🔄 Name correction: ${player.name} -> ${matchingChar.character_name} (class mismatch detected)`);
+                    try {
+                        // Deduplicate noisy logs unless explicitly enabled
+                        if (process.env.DEBUG_NAME_CORRECTION === '1') {
+                            console.log(`🔄 Name correction: ${player.name} -> ${matchingChar.character_name} (class mismatch detected)`);
+                        }
+                    } catch {}
                 }
             }
         }
@@ -5296,6 +5301,65 @@ app.get('/api/log-data/:eventId', async (req, res) => {
             message: 'Error retrieving log data',
             error: error.message 
         });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get last raid (by event) for a specific character using log_data + cached event metadata
+app.get('/api/character/last-raid', async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+    const { discordId, characterName, characterClass } = req.query;
+    if (!discordId || !characterName || !characterClass) {
+        return res.status(400).json({ success: false, message: 'discordId, characterName and characterClass are required' });
+    }
+
+    let client;
+    try {
+        client = await pool.connect();
+
+        // Ensure log_data exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'log_data'
+            ) as exists;
+        `);
+        if (!tableCheck.rows[0].exists) {
+            return res.json({ success: true, found: false });
+        }
+
+        const result = await client.query(`
+            SELECT 
+                ld.event_id,
+                (ec.event_data->>'channelName') as channel_name,
+                (ec.event_data->>'startTime')::bigint as start_time
+            FROM log_data ld
+            LEFT JOIN raid_helper_events_cache ec ON ec.event_id = ld.event_id
+            WHERE LOWER(ld.character_name) = LOWER($1)
+              AND LOWER(ld.character_class) = LOWER($2)
+              AND ld.discord_id = $3
+            ORDER BY COALESCE((ec.event_data->>'startTime')::bigint, 0) DESC, ld.created_at DESC
+            LIMIT 1
+        `, [characterName, characterClass, discordId]);
+
+        if (result.rows.length === 0) {
+            return res.json({ success: true, found: false });
+        }
+
+        const row = result.rows[0];
+        return res.json({
+            success: true,
+            found: true,
+            eventId: row.event_id,
+            channelName: row.channel_name || null,
+            startTime: row.start_time || null
+        });
+    } catch (error) {
+        console.error('❌ [CHAR LAST RAID] Error:', error);
+        return res.status(500).json({ success: false, message: 'Error fetching last raid for character' });
     } finally {
         if (client) client.release();
     }
