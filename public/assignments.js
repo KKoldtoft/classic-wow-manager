@@ -197,16 +197,32 @@
     if (panelKeyLower.includes('faerlina')) {
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755113421/Faerlina_mid_dpcain.jpg';
       defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755113422/Faerlina_full_osemdc.png';
+    } else if (panelKeyLower.includes('maex')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755118454/Maexxna_mid_no9hfo.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755118572/Maexxna_full_uje68o.png';
+    } else if (panelKeyLower.includes('razu')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755119195/Raz_mid_kffysm.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755119197/Raz_full_ixeyyh.png';
+    } else if (panelKeyLower.includes('goth')) {
+      // Default to Human side for Gothik; we'll provide a toggle to switch sides
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755120092/Gothik_human_mid_mwb7ok.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755120092/Gothik_human_mid_mwb7ok.jpg';
+    } else if (panelKeyLower.includes('patch')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755121524/Patchwerk_mid_zgey7f.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755121524/Patchwerk_full_s90vtk.png';
+    } else if (panelKeyLower.includes('grobb')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755122356/Grobbulus_mid_aw4tig.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755122356/Grobbulus_full_ftbwtq.png';
     }
     let displayImageUrl = (image_url && !String(image_url).includes('placehold.co')) ? image_url : defaultMid;
-    if (panelKeyLower.includes('faerlina')) {
+    if (panelKeyLower.includes('faerlina') || panelKeyLower.includes('maex') || panelKeyLower.includes('razu') || panelKeyLower.includes('goth') || panelKeyLower.includes('patch') || panelKeyLower.includes('grobb')) {
       displayImageUrl = defaultMid;
     }
 
     const imgLink = document.createElement('a');
     imgLink.href = (panel.image_url_full && panel.image_url_full.trim().length > 0)
       ? panel.image_url_full
-      : (panelKeyLower.includes('faerlina') ? defaultFull : displayImageUrl);
+      : ((panelKeyLower.includes('faerlina') || panelKeyLower.includes('maex') || panelKeyLower.includes('razu') || panelKeyLower.includes('goth') || panelKeyLower.includes('patch') || panelKeyLower.includes('grobb')) ? defaultFull : displayImageUrl);
     imgLink.target = '_blank';
     imgLink.rel = 'noopener noreferrer';
     const img = document.createElement('img');
@@ -215,6 +231,80 @@
     img.alt = `${headerTitle} positions`;
     imgLink.appendChild(img);
     imgWrapper.appendChild(imgLink);
+
+    // Gothik: add a right-side slider arrow to toggle between Human and Undead side images
+    if (panelKeyLower.includes('goth')) {
+      try {
+        imgWrapper.style.position = 'relative';
+        const human = {
+          mid: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755120092/Gothik_human_mid_mwb7ok.jpg',
+          full: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755120092/Gothik_human_mid_mwb7ok.jpg'
+        };
+        const undead = {
+          mid: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755120767/Gothik_undead_mid_rwfabt.jpg',
+          full: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755120765/Gothik_undead_full_s03qbn.png'
+        };
+        let currentSide = 'human';
+        function applySide(side) {
+          const src = side === 'undead' ? undead : human;
+          img.src = src.mid;
+          img.alt = `${headerTitle} positions (${side})`;
+          imgLink.href = src.full;
+        }
+        applySide(currentSide);
+        const nextBtn = document.createElement('button');
+        nextBtn.type = 'button';
+        nextBtn.setAttribute('aria-label', 'Next image');
+        nextBtn.style.position = 'absolute';
+        nextBtn.style.right = '8px';
+        nextBtn.style.top = '50%';
+        nextBtn.style.transform = 'translateY(-50%)';
+        nextBtn.style.width = '36px';
+        nextBtn.style.height = '36px';
+        nextBtn.style.borderRadius = '50%';
+        nextBtn.style.border = '1px solid rgba(255,255,255,0.6)';
+        nextBtn.style.background = 'rgba(0,0,0,0.45)';
+        nextBtn.style.color = '#fff';
+        nextBtn.style.cursor = 'pointer';
+        nextBtn.style.display = 'flex';
+        nextBtn.style.alignItems = 'center';
+        nextBtn.style.justifyContent = 'center';
+        nextBtn.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)';
+        nextBtn.innerHTML = '<i class="fas fa-chevron-right"></i>';
+        nextBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          currentSide = currentSide === 'human' ? 'undead' : 'human';
+          applySide(currentSide);
+        });
+        imgWrapper.appendChild(nextBtn);
+
+        const prevBtn = document.createElement('button');
+        prevBtn.type = 'button';
+        prevBtn.setAttribute('aria-label', 'Previous image');
+        prevBtn.style.position = 'absolute';
+        prevBtn.style.left = '8px';
+        prevBtn.style.top = '50%';
+        prevBtn.style.transform = 'translateY(-50%)';
+        prevBtn.style.width = '36px';
+        prevBtn.style.height = '36px';
+        prevBtn.style.borderRadius = '50%';
+        prevBtn.style.border = '1px solid rgba(255,255,255,0.6)';
+        prevBtn.style.background = 'rgba(0,0,0,0.45)';
+        prevBtn.style.color = '#fff';
+        prevBtn.style.cursor = 'pointer';
+        prevBtn.style.display = 'flex';
+        prevBtn.style.alignItems = 'center';
+        prevBtn.style.justifyContent = 'center';
+        prevBtn.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)';
+        prevBtn.innerHTML = '<i class="fas fa-chevron-left"></i>';
+        prevBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          currentSide = currentSide === 'human' ? 'undead' : 'human';
+          applySide(currentSide);
+        });
+        imgWrapper.appendChild(prevBtn);
+      } catch {}
+    }
     // Removed URL input under the image
 
     // Description (managed by panel Edit/Save)
