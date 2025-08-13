@@ -1104,14 +1104,41 @@ app.get('/raidlogs', (req, res) => {
 
 
 // All API and authentication routes should come AFTER express.static AND specific HTML routes
-app.get('/auth/discord', passport.authenticate('discord'));
+app.get('/auth/discord', (req, res, next) => {
+	// Build a safe return path to embed in the OAuth state parameter
+	const returnToParam = typeof req.query.returnTo === 'string' ? req.query.returnTo : null;
+	let safeReturnTo = '/';
+	if (returnToParam && returnToParam.startsWith('/')) {
+		safeReturnTo = returnToParam;
+	} else if (typeof req.headers.referer === 'string') {
+		try {
+			const refererUrl = new URL(req.headers.referer);
+			const refererPath = refererUrl.pathname + refererUrl.search + refererUrl.hash;
+			if (refererPath && refererPath.startsWith('/')) {
+				safeReturnTo = refererPath;
+			}
+		} catch (_) {
+			// Ignore invalid referer header
+		}
+	}
+	// Stash on request for the authenticate call to use as state
+	req.oauthReturnState = encodeURIComponent(safeReturnTo);
+	return next();
+}, (req, res, next) => passport.authenticate('discord', { state: req.oauthReturnState })(req, res, next));
 
 app.get('/auth/discord/callback',
   passport.authenticate('discord', {
     failureRedirect: '/'
   }),
   (req, res) => {
-    res.redirect('/');
+    // Prefer the OAuth state param as source of truth for return path
+    const state = typeof req.query.state === 'string' ? req.query.state : '';
+    let destination = '/';
+    try {
+      const decoded = decodeURIComponent(state || '');
+      if (decoded && decoded.startsWith('/')) destination = decoded;
+    } catch (_) {}
+    res.redirect(destination);
   }
 );
 

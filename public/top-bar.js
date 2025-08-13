@@ -55,8 +55,10 @@ async function updateAuthUI() {
         });
 
     } else {
+        const currentPath = window.location.pathname + window.location.search + window.location.hash;
+        const encodedReturnTo = encodeURIComponent(currentPath);
         authContainer.innerHTML = `
-            <button class="discord-button" onclick="window.location.href='/auth/discord'">
+            <button class="discord-button" onclick="window.location.href='/auth/discord?returnTo=${encodedReturnTo}'">
                 <i class="fab fa-discord discord-icon"></i>
                 Sign in with Discord
             </button>

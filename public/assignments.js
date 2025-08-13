@@ -13,6 +13,11 @@
         return afterEvent[3] || 'main';
       }
     }
+    // Non-event routes: /assignments or /assignments/:wing
+    const aIdx = parts.indexOf('assignments');
+    if (aIdx >= 0) {
+      return parts[aIdx + 1] || 'main';
+    }
     return 'main';
   }
 
@@ -113,7 +118,7 @@
     // Hide special-grid placeholder entries from the normal list
     const visibleEntries = entries.filter(en => {
       const a = String(en.assignment || '');
-      return !(a.startsWith('__HGRID__:') || a.startsWith('__SPORE__:'));
+      return !(a.startsWith('__HGRID__:') || a.startsWith('__SPORE__:') || a.startsWith('__KEL__:'));
     });
     const nameToDiscordId = new Map((Array.isArray(roster)?roster:[]).map(r => [String(r.character_name||'').toLowerCase(), r.discord_user_id]));
 
@@ -142,6 +147,18 @@
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755074097/16590_ezmekl.png';
       } else if (bossKeyForIcon.includes('loatheb')) {
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755080534/Fungal_monster_s0zutr.webp';
+      } else if (bossKeyForIcon.includes('patch')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755085582/patchwerk_wfd5z4.gif';
+      } else if (bossKeyForIcon.includes('grobb')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755086620/24792_gahise.png';
+      } else if (bossKeyForIcon.includes('thadd')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755087787/dfka9xt-cbdf45c1-45b9-460b-a997-5a46c4de0a65_txsidf.png';
+      } else if (bossKeyForIcon.includes('gluth')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755087393/27103_rdbmzc.png';
+      } else if (bossKeyForIcon.includes('sapph')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755093137/oUwfSmi_mp74xg.gif';
+      } else if (bossKeyForIcon.includes('kel')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755110522/15945_eop7se.png';
       } else {
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754809667/30800_etmqmc.png';
       }
@@ -174,12 +191,22 @@
 
     // Image / image URL
     const imgWrapper = document.createElement('div');
-    const defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754768041/Anubian_mid_eeb1zj.jpg';
-    const defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754768042/Anubian_full_s1fmvs.png';
-    const displayImageUrl = (image_url && !String(image_url).includes('placehold.co')) ? image_url : defaultMid;
+    let defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754768041/Anubian_mid_eeb1zj.jpg';
+    let defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754768042/Anubian_full_s1fmvs.png';
+    const panelKeyLower = String(headerTitle || boss || '').toLowerCase();
+    if (panelKeyLower.includes('faerlina')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755113421/Faerlina_mid_dpcain.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755113422/Faerlina_full_osemdc.png';
+    }
+    let displayImageUrl = (image_url && !String(image_url).includes('placehold.co')) ? image_url : defaultMid;
+    if (panelKeyLower.includes('faerlina')) {
+      displayImageUrl = defaultMid;
+    }
 
     const imgLink = document.createElement('a');
-    imgLink.href = displayImageUrl;
+    imgLink.href = (panel.image_url_full && panel.image_url_full.trim().length > 0)
+      ? panel.image_url_full
+      : (panelKeyLower.includes('faerlina') ? defaultFull : displayImageUrl);
     imgLink.target = '_blank';
     imgLink.rel = 'noopener noreferrer';
     const img = document.createElement('img');
@@ -937,6 +964,151 @@
       panelDiv._getSporeGridState = () => sporeGridState;
     }
 
+    // Special section for Kel'Thuzad: Group grid (A, B, C, D)
+    const isKelPanel = String((boss || '')).toLowerCase().includes('kel');
+    let kelGridWrap = null;
+    let kelGridState = null; // { groups: {1:[...],2:[...],3:[...],4:[...] } }
+    if (isKelPanel) {
+      kelGridWrap = document.createElement('div');
+      kelGridWrap.className = 'kel-grid-wrap';
+      kelGridWrap.style.marginTop = '16px';
+      kelGridWrap.style.padding = '12px 16px';
+      kelGridWrap.style.borderTop = '1px solid var(--border-color, #3a3a3a)';
+      kelGridWrap.style.width = '100%';
+
+      const kelTitle = document.createElement('div');
+      kelTitle.textContent = "Kel'Thuzad Groups";
+      kelTitle.style.fontWeight = '700';
+      kelTitle.style.color = '#e5e7eb';
+      kelTitle.style.margin = '8px 0 6px 0';
+
+      function deriveKelFromEntries(allEntries) {
+        const map = {};
+        (Array.isArray(allEntries)?allEntries:[]).forEach(en => {
+          const m = String(en.assignment||'').match(/^__KEL__:(\d+):(\d+)$/);
+          if (m) {
+            const g = Number(m[1]);
+            const s = Number(m[2]);
+            if (!map[g]) map[g] = [];
+            map[g][s-1] = en.character_name || null;
+          }
+        });
+        return map;
+      }
+      const initialKel = panel.kel_groups || deriveKelFromEntries(panel.entries);
+      kelGridState = { groups: { 1: [], 2: [], 3: [], 4: [] } };
+      for (let g=1; g<=4; g++) {
+        const arr = Array.isArray(initialKel[g]) ? initialKel[g] : [];
+        // default to up to 8 slots; will expand dynamically when rendering
+        kelGridState.groups[g] = arr.slice();
+      }
+
+      function renderKelGrid(readOnly) {
+        kelGridWrap.innerHTML = '';
+        // header
+        const head = document.createElement('div');
+        head.style.display = 'grid';
+        head.style.gridTemplateColumns = 'repeat(4, 1fr)';
+        head.style.gap = '10px';
+        head.style.background = 'rgba(0,0,0,0.25)';
+        head.style.padding = '6px 8px';
+        const labelMeta = [
+          { text: 'Group A', icon: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/5_triangle_rbpjyi.png' },
+          { text: 'Group B', icon: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/6_diamond_hre1uj.png' },
+          { text: 'Group C', icon: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/3_square_yqucv9.png' },
+          { text: 'Tanks',   icon: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/7_circle_zayctt.png' }
+        ];
+        labelMeta.forEach(({text, icon}) => {
+          const d = document.createElement('div');
+          d.style.fontWeight='700'; d.style.color='#e5e7eb'; d.style.textAlign='center';
+          d.style.display='flex'; d.style.alignItems='center'; d.style.justifyContent='center'; d.style.gap='6px';
+          const img = document.createElement('img'); img.src = icon; img.alt = 'mark'; img.width = 18; img.height = 18; img.loading = 'lazy';
+          const span = document.createElement('span'); span.textContent = text;
+          d.appendChild(img); d.appendChild(span);
+          head.appendChild(d);
+        });
+        kelGridWrap.appendChild(head);
+
+        const groups = kelGridState.groups;
+        const maxLen = Math.max(
+          (groups[1]||[]).length,
+          (groups[2]||[]).length,
+          (groups[3]||[]).length,
+          (groups[4]||[]).length,
+          8
+        );
+
+        function makeRowForSlot(slotIdx) {
+          const row = document.createElement('div');
+          row.style.display = 'grid';
+          row.style.gridTemplateColumns = 'repeat(4, 1fr)';
+          row.style.gap = '10px';
+          row.style.background = (slotIdx % 2 === 1) ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)';
+          row.style.padding = '6px 8px';
+          for (let g=1; g<=4; g++) {
+            const cell = document.createElement('div');
+            cell.style.display = 'flex';
+            cell.style.alignItems = 'center';
+            cell.style.justifyContent = 'center';
+            const currentName = (groups[g] && groups[g][slotIdx-1]) || '';
+            if (readOnly) {
+              const wrap = document.createElement('div');
+              wrap.style.minHeight = '28px';
+              wrap.style.display = 'inline-flex';
+              wrap.style.alignItems = 'center';
+              wrap.style.justifyContent = 'center';
+              wrap.style.gap = '8px';
+              wrap.style.borderRadius = '8px';
+              wrap.style.padding = '6px 10px';
+              wrap.style.width = '100px';
+              const color = getRosterClassColorByName(roster, currentName);
+              wrap.style.background = color ? color : 'rgba(255,255,255,0.08)';
+              const span = document.createElement('span'); span.textContent = currentName || '—'; span.style.color = '#000'; span.style.fontWeight='700';
+              wrap.appendChild(span);
+              cell.appendChild(wrap);
+            } else {
+              const wrap = document.createElement('div');
+              wrap.style.display = 'flex';
+              wrap.style.alignItems = 'center';
+              wrap.style.gap = '8px';
+              const sel = document.createElement('select');
+              sel.className = 'assignment-editable';
+              sel.style.maxWidth = '220px';
+              sel.innerHTML = ['<option value="">Select player...</option>']
+                .concat((Array.isArray(roster)?roster:[]).map(r => `<option value="${r.character_name}" ${String(r.character_name)===String(currentName)?'selected':''}>${r.character_name}</option>`))
+                .join('');
+              sel.addEventListener('change', () => {
+                const val = sel.value || null;
+                if (!groups[g]) groups[g] = [];
+                groups[g][slotIdx-1] = val;
+              });
+              wrap.appendChild(sel);
+              const del = document.createElement('button');
+              del.className = 'delete-x';
+              del.innerHTML = '&times;';
+              del.title = 'Remove player';
+              del.addEventListener('click', () => { if (!groups[g]) groups[g]=[]; groups[g][slotIdx-1] = null; renderKelGrid(false); });
+              wrap.appendChild(del);
+              cell.appendChild(wrap);
+            }
+            row.appendChild(cell);
+          }
+          return row;
+        }
+
+        for (let s=1; s<=maxLen; s++) {
+          kelGridWrap.appendChild(makeRowForSlot(s));
+        }
+      }
+
+      // initial render view mode
+      renderKelGrid(true);
+      content.appendChild(kelTitle);
+      content.appendChild(kelGridWrap);
+      panelDiv._renderKelGrid = (readOnly) => renderKelGrid(readOnly);
+      panelDiv._getKelGridState = () => kelGridState;
+    }
+
     panelDiv.appendChild(header);
     panelDiv.appendChild(content);
 
@@ -1332,6 +1504,264 @@
                 // re-render grid in edit mode for visibility
                 if (typeof panelDiv._renderSporeGrid === 'function') panelDiv._renderSporeGrid(false);
               }
+            } else if (bossKey.includes("patch")) {
+              // Patchwerk defaults: 3 tanks + healer assignments
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const t1 = findByMarker('skull');   // ID1 on main -> Skull
+                const t2 = findByMarker('cross');   // ID2 on main -> Cross
+                const t3 = findByMarker('square');  // ID3 on main -> Square
+                if (t1) toAdd.push({ r: t1, icon: icons.circle,  text: 'Tank Boss' });
+                if (t2) toAdd.push({ r: t2, icon: icons.star,    text: 'Absorb hateful strike' });
+                if (t3) toAdd.push({ r: t3, icon: icons.diamond, text: 'Absorb hateful strike' });
+                // Healers: all shamans, priests, druids alphabetically by character name
+                const isHealer = (r) => ['shaman','priest','druid'].includes(String(r.class_name||'').toLowerCase());
+                const healers = (Array.isArray(roster)?roster:[]).filter(isHealer)
+                  .sort((a,b) => String(a.character_name||'').localeCompare(String(b.character_name||'')));
+                const tankTargets = [ t1?.character_name || '', t2?.character_name || '', t3?.character_name || '' ];
+                const tankIcons = [ icons.circle, icons.star, icons.diamond ];
+                for (let i=0; i<healers.length; i++) {
+                  // First 12 healers: 4 per tank (t1,t2,t3). Clip to available tanks if fewer than 3.
+                  if (i < 12 && (t1 || t2 || t3)) {
+                    const block = Math.floor(i / 4); // 0..2
+                    const tankIdx = Math.min(block, (tankTargets.filter(Boolean).length || 1) - 1);
+                    const targetName = tankTargets[tankIdx] || '';
+                    if (targetName) {
+                      toAdd.push({ r: healers[i], icon: tankIcons[tankIdx] || null, text: `Heal ${targetName}` });
+                    } else {
+                      toAdd.push({ r: healers[i], icon: null, text: 'FFA Heal tanks only' });
+                    }
+                  } else {
+                    toAdd.push({ r: healers[i], icon: null, text: 'FFA Heal tanks only' });
+                  }
+                }
+              } catch {}
+            } else if (bossKey.includes("grobb")) {
+              // Grobbulus defaults
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const t1 = findByMarker('skull');
+                const t2 = findByMarker('cross');
+                const t3 = findByMarker('square');
+                if (t1) toAdd.push({ r: t1, icon: icons.skull, text: 'Tank Boss' });
+                if (t2) toAdd.push({ r: t2, icon: null, text: 'Tank slimes' });
+                if (t3) toAdd.push({ r: t3, icon: null, text: 'Tank slimes (backup)' });
+                // Lowest priest by group/slot
+                const priests = (Array.isArray(roster)?roster:[])
+                  .filter(r => String(r.class_name||'').toLowerCase()==='priest')
+                  .sort((a,b)=> ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99)));
+                if (priests[0]) toAdd.push({ r: priests[0], icon: null, text: 'Dispel when players is at the edge.' });
+              } catch {}
+            } else if (bossKey.includes("gluth")) {
+              // Gluth defaults
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const t1 = findByMarker('skull');
+                const t2 = findByMarker('cross');
+                const t3 = findByMarker('square');
+                if (t1) toAdd.push({ r: t1, icon: icons.skull, text: 'Tank Boss' });
+                if (t2) toAdd.push({ r: t2, icon: icons.skull, text: 'Backup Tank Boss (in casee main tank fails fear dodge)' });
+                if (t3) toAdd.push({ r: t3, icon: 'https://wow.zamimg.com/images/wow/icons/large/spell_shadow_deathscream.jpg', text: 'Piercing Howl Tank adds' });
+              } catch {}
+            } else if (bossKey.includes("sapph")) {
+              // Sapphiron defaults
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const t1 = findByMarker('skull');
+                const t2 = findByMarker('cross');
+                if (t1) toAdd.push({ r: t1, icon: icons.skull, text: 'Tank Boss' });
+                if (t2) toAdd.push({ r: t2, icon: icons.skull, text: 'Backup Tank Boss (Stay 2nd on threat)' });
+
+                // Mages left/right split: use only mages for count and split (ignore druids)
+                const mages = (Array.isArray(roster)?roster:[]).filter(r => String(r.class_name||'').toLowerCase()==='mage');
+                const leftCap = Math.floor(mages.length / 2);
+                const rightCap = mages.length - leftCap;
+                const mageLeft = mages.slice(0, leftCap);
+                const mageRight = mages.slice(leftCap, leftCap + rightCap);
+                mageLeft.forEach(m => toAdd.push({ r: m, icon: null, text: 'Decurse Tank + left' }));
+                mageRight.forEach(m => toAdd.push({ r: m, icon: null, text: 'Decurse Tank + right' }));
+
+                // Healers: Shamans, Priests, Druids (in that order)
+                const shamans = (Array.isArray(roster)?roster:[]).filter(r => String(r.class_name||'').toLowerCase()==='shaman');
+                const priests = (Array.isArray(roster)?roster:[]).filter(r => String(r.class_name||'').toLowerCase()==='priest');
+                const druidsH = (Array.isArray(roster)?roster:[]).filter(r => String(r.class_name||'').toLowerCase()==='druid');
+                const healers = [...shamans, ...priests, ...druidsH];
+                healers.forEach((r, i) => {
+                  let text = '';
+                  if (i === 0) text = 'Heal Tank + Group';
+                  else if (i <= 4) text = 'Heal Group';
+                  else if (i <= 7) text = 'Heal Group + Tank';
+                  else if (i <= 11) text = 'Heal Tank';
+                  else text = 'Heal Raid';
+                  toAdd.push({ r, icon: null, text });
+                });
+              } catch {}
+            } else if (bossKey.includes("kel")) {
+              // Kel'Thuzad defaults
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const id1 = findByMarker('skull');
+                const id2 = findByMarker('cross');
+                const id3 = findByMarker('square');
+                const id4 = findByMarker('moon');
+                if (id1) toAdd.push({ r: id1, icon: icons.skull, text: 'Tank Boss' });
+                if (id2) toAdd.push({ r: id2, icon: icons.skull, text: 'Tank Boss' });
+                if (id3) toAdd.push({ r: id3, icon: icons.skull, text: 'Tank Boss' });
+                if (id4) toAdd.push({ r: id4, icon: icons.skull, text: 'Tank Boss' });
+                // Build Kel grid: D gets the 4 tanks (ID1..ID4), B gets all rogues, remaining warriors spread across A,B,C
+                if (isKelPanel && typeof panelDiv._getKelGridState === 'function') {
+                  const state = panelDiv._getKelGridState();
+                  const rogues = (Array.isArray(roster)?roster:[]).filter(r => String(r.class_name||'').toLowerCase()==='rogue');
+                  const allWarriors = (Array.isArray(roster)?roster:[]).filter(r => String(r.class_name||'').toLowerCase()==='warrior');
+                  const tankNames = [id1?.character_name, id2?.character_name, id3?.character_name, id4?.character_name].filter(Boolean).map(n => String(n).toLowerCase());
+                  const remainingWarriors = allWarriors.filter(r => !tankNames.includes(String(r.character_name||'').toLowerCase()));
+                  // D column (4): the tanks in order
+                  state.groups[4] = [id1?.character_name||null, id2?.character_name||null, id3?.character_name||null, id4?.character_name||null].filter(Boolean);
+                  // B column (2): all rogues
+                  state.groups[2] = rogues.map(r => r.character_name);
+                  // A(1), B(2) and C(3): spread remaining warriors evenly, extra goes to A then C
+                  const targets = [1,2,3];
+                  const counts = {1: (state.groups[1]||[]).length, 2: state.groups[2].length, 3: (state.groups[3]||[]).length};
+                  for (const w of remainingWarriors) {
+                    // choose group with minimum count among A,B,C, tie-breaker A then C then B
+                    const order = [1,3,2];
+                    let best = 1;
+                    for (const g of order) { if (counts[g] < counts[best]) best = g; }
+                    if (!state.groups[best]) state.groups[best] = [];
+                    state.groups[best].push(w.character_name);
+                    counts[best] += 1;
+                  }
+                  if (typeof panelDiv._renderKelGrid === 'function') panelDiv._renderKelGrid(false);
+                }
+                // Priests: 3 lowest by group/slot
+                const priests = (Array.isArray(roster)?roster:[])
+                  .filter(r => String(r.class_name||'').toLowerCase()==='priest')
+                  .sort((a,b)=> ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99)))
+                  .slice(0,3);
+                const priestIcons = [icons.star, icons.moon, icons.cross];
+                const priestTexts = ['Shackle Left, middle, right.', 'Shackle Left, middle, right.', 'Shackle Left, middle, right.'];
+                priests.forEach((p, i) => { toAdd.push({ r: p, icon: priestIcons[i] || null, text: priestTexts[i] }); });
+                // Shamans: 4 lowest by group/slot with mark-specific text
+                const shamans = (Array.isArray(roster)?roster:[])
+                  .filter(r => String(r.class_name||'').toLowerCase()==='shaman')
+                  .sort((a,b)=> ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99)))
+                  .slice(0,4);
+                const shamanIcons = [icons.triangle, icons.diamond, icons.square, icons.circle];
+                const shamanMarks = ['Triangle','Diamond','Square','Circle'];
+                shamans.forEach((s, i) => {
+                  const mark = shamanMarks[i] || 'Triangle';
+                  toAdd.push({ r: s, icon: shamanIcons[i] || null, text: `NF+Chain Heal on ${mark}` });
+                });
+              } catch {}
+            } else if (bossKey.includes("thadd")) {
+              // Thaddius defaults
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const id1 = findByMarker('skull');
+                const id2 = findByMarker('cross');
+                const id3 = findByMarker('square');
+                const id4 = findByMarker('moon');
+                if (id1) toAdd.push({ r: id1, icon: icons.skull, text: 'Tank Stalagg (Right Side)' });
+                if (id3) toAdd.push({ r: id3, icon: icons.skull, text: 'Tank Stalagg (Right Side)' });
+                if (id2) toAdd.push({ r: id2, icon: icons.cross, text: 'Tank Feugen (Left Side)' });
+                if (id4) toAdd.push({ r: id4, icon: icons.cross, text: 'Tank Feugen (Left Side)' });
+                if (id1) toAdd.push({ r: id1, icon: icons.skull, text: 'Tank Boss' });
+
+                // Group 8 healers → split between sides (up to 5), extra goes right; if >=2 of same class, split across sides
+                const healerClasses = new Set(['shaman','priest','druid']);
+                const g8HealersAll = (Array.isArray(roster)?roster:[])
+                  .filter(r => Number(r.party_id) === 8 && healerClasses.has(String(r.class_name||'').toLowerCase()))
+                  .sort((a,b)=> (Number(a.slot_id)||99) - (Number(b.slot_id)||99));
+                const g8Healers = g8HealersAll.slice(0, 5);
+                if (g8Healers.length > 0) {
+                  const classToPlayers = new Map();
+                  for (const r of g8Healers) {
+                    const cls = String(r.class_name||'').toLowerCase();
+                    if (!classToPlayers.has(cls)) classToPlayers.set(cls, []);
+                    classToPlayers.get(cls).push(r);
+                  }
+                  const left = [];
+                  const right = [];
+                  const placed = new Set();
+                  // Ensure both sides get a player for classes with >= 2
+                  for (const [cls, arr] of classToPlayers.entries()) {
+                    if (arr.length >= 2) {
+                      const a = arr[0]; const b = arr[1];
+                      left.push(a); placed.add(a.character_name);
+                      right.push(b); placed.add(b.character_name);
+                    }
+                  }
+                  // Remaining players preserve original order
+                  const leftovers = g8Healers.filter(r => !placed.has(r.character_name));
+                  for (const r of leftovers) {
+                    // bias right on tie so odd extra goes right
+                    if (left.length < right.length) left.push(r); else right.push(r);
+                  }
+                  // Create entries
+                  for (const r of left)  toAdd.push({ r, icon: null, text: 'Go left side' });
+                  for (const r of right) toAdd.push({ r, icon: null, text: 'Go right side' });
+                }
+              } catch {}
             }
 
             // Insert at top in order; ensure edit mode for visibility
@@ -1367,6 +1797,7 @@
           if (addDefaultsBtn) addDefaultsBtn.style.display = 'inline-block';
           if (isHorsemenPanel && typeof panelDiv._renderHorseGrid === 'function') panelDiv._renderHorseGrid(false);
           if (isLoathebPanel && typeof panelDiv._renderSporeGrid === 'function') panelDiv._renderSporeGrid(false);
+          if (isKelPanel && typeof panelDiv._renderKelGrid === 'function') panelDiv._renderKelGrid(false);
         });
 
         saveBtn?.addEventListener('click', async () => {
@@ -1409,6 +1840,21 @@
               });
             });
           }
+          // Persist Kel'Thuzad Groups if present
+          if (isKelPanel && kelGridState) {
+            payloadPanel.kel_groups = kelGridState.groups;
+            Object.entries(kelGridState.groups).forEach(([group, arr]) => {
+              (arr||[]).forEach((name, idx) => {
+                if (!name) return;
+                payloadPanel.entries.push({
+                  character_name: name,
+                  marker_icon_url: null,
+                  assignment: `__KEL__:${group}:${idx+1}`,
+                  accept_status: null
+                });
+              });
+            });
+          }
           for (const row of Array.from(list.children)) {
             if (!row.querySelector) continue;
             const getVal = sel => row.querySelector(sel)?.value || '';
@@ -1441,6 +1887,7 @@
             if (addDefaultsBtn) addDefaultsBtn.style.display = 'none';
           if (isHorsemenPanel && typeof panelDiv._renderHorseGrid === 'function') panelDiv._renderHorseGrid(true);
           if (isLoathebPanel && typeof panelDiv._renderSporeGrid === 'function') panelDiv._renderSporeGrid(true);
+          if (isKelPanel && typeof panelDiv._renderKelGrid === 'function') panelDiv._renderKelGrid(true);
         });
     }
 
@@ -1571,6 +2018,7 @@
             renderAcceptArea();
           });
         }
+        // Sapphiron defaults are handled in Add Defaults branch within this handler
       }
       renderCharInfo(true);
 
@@ -2269,6 +2717,80 @@
           container.appendChild(buildPanel(loathebPanel, user, roster));
           return;
         }
+        if (wing === 'abomination') {
+          const patchPanel = {
+            dungeon: 'Naxxramas',
+            wing: 'Abomination',
+            boss: 'Patchwerk',
+            strategy_text: 'Tanks MUST stack perfectly. Top 3 on threat must be tanks. Melee DPS dip in slime to juke hateful strike. Healers spam consumes and keep tanks up. Heal only tanks.',
+            image_url: 'https://placehold.co/1200x675?text=Patchwerk',
+            video_url: 'https://www.youtube.com/embed/bmpVXEQYIcg',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755085582/patchwerk_wfd5z4.gif',
+            entries: []
+          };
+          const grobbPanel = {
+            dungeon: 'Naxxramas',
+            wing: 'Abomination',
+            boss: 'Grobbulus',
+            strategy_text: "Boss must face away from raid. Don't dispel unless assigned. Melee stay at max range and cleve when slime is up. Drop slime pools at the edge of the room.",
+            image_url: 'https://placehold.co/1200x675?text=Grobbulus',
+            video_url: 'https://www.youtube.com/embed/WhqA3O6HIJk',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755086620/24792_gahise.png',
+            entries: []
+          };
+          const gluthPanel = {
+            dungeon: 'Naxxramas',
+            wing: 'Abomination',
+            boss: 'Gluth',
+            strategy_text: 'Rotate tanks on healing debuff if needed. Kite adds far from Boss. No one raid heal. Only heal tanks. Mages help on adds with frost nova. Casters stay on max range to dodge fear. Hunters place slow trap for kiting. Shamans use Tremor if in melee and earth binding if in ranged group.',
+            image_url: 'https://placehold.co/1200x675?text=Gluth',
+            video_url: 'https://www.youtube.com/embed/JWf9-N609PA',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755087393/27103_rdbmzc.png',
+            entries: []
+          };
+          const thaddPanel = {
+            dungeon: 'Naxxramas',
+            wing: 'Abomination',
+            boss: 'Thaddius',
+            strategy_text: 'Phase 1:\nOdd groups left - Even groups right. Kill adds at the same time. Casters max range. Off-tank taunt on tank swap.\n\nPhase 2:\nStack in front of boss. On Polarity Shift, Minus go left. Plus go right. Run trough the boss.\n\nNotes:\nPlus goes right\nMinus goes left\nMages, watch the ignite.',
+            image_url: 'https://placehold.co/1200x675?text=Thaddius',
+            video_url: 'https://www.youtube.com/embed/lgDJq4-i4kk',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755087787/dfka9xt-cbdf45c1-45b9-460b-a997-5a46c4de0a65_txsidf.png',
+            entries: []
+          };
+          container.innerHTML = '';
+          container.appendChild(buildPanel(patchPanel, user, roster));
+          container.appendChild(buildPanel(grobbPanel, user, roster));
+          container.appendChild(buildPanel(gluthPanel, user, roster));
+          container.appendChild(buildPanel(thaddPanel, user, roster));
+          return;
+        }
+        if (wing === 'frostwyrm_lair') {
+          const sapphPanel = {
+            dungeon: 'Naxxramas',
+            wing: 'Frostwyrm_Lair',
+            boss: 'Sapphiron',
+            strategy_text: 'Positions & Pre-pop\nOdd groups left. Even groups right. Everyone pre-pop GFPP and GSPP when we unboon.\n\nLand phase\nMellee stand on max range. Avoid Blizzard and don\'t parry-haste the boss.\nCasters stack loosely for aoe healing and avoid Blizzard.\nShaman melee healers stand with your group so you can chain-heal yourself.\n\nAir phase\nSpread out in the half of the room towards the entrace of the room. When you get targeted for ice-block, pop a Greater Frost Protection Potion to stay alive.',
+            image_url: 'https://placehold.co/1200x675?text=Sapphiron',
+            video_url: 'https://www.youtube.com/embed/NwDFC6kFi7c',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755093137/oUwfSmi_mp74xg.gif',
+            entries: []
+          };
+          const kelPanel = {
+            dungeon: 'Naxxramas',
+            wing: 'Frostwyrm_Lair',
+            boss: "Kel'Thuzad",
+            strategy_text: "Phase 1\nDont't die. Don't multi shot. Stay in the circle. Kill adds fast. Prioritze shooting skellingtons over killing abos.\n\nPhase 2\nMelee stack perfectly on your marks and backpeddle out when ground gets black. Casters and healers spread out in the room.\n\nHealers, heal Frost Blast targets fast.\n\nPhase 3\nPriests, shackle adds BEFORE they get to the middle. Keep them shackled.",
+            image_url: 'https://placehold.co/1200x675?text=Kel%5C%27Thuzad',
+            video_url: 'https://www.youtube.com/embed/GUIftNHHKNs',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755109693/imgbin-heroes-of-the-storm-kel-thuzad-arthas-menethil-storm-za4EdhZSa9A2GBvAUf1Gi8t4q_qxel5s.jpg',
+            entries: []
+          };
+          container.innerHTML = '';
+          container.appendChild(buildPanel(sapphPanel, user, roster));
+          container.appendChild(buildPanel(kelPanel, user, roster));
+          return;
+        }
         container.innerHTML = '<div class="no-data-message"><div class="no-data-content"><i class="fas fa-info-circle"></i><h3>No Assignments</h3><p>No assignments found for this wing.</p></div></div>';
         return;
       }
@@ -2338,6 +2860,30 @@
       } else if (wing === 'plague') {
         // Ensure Plague Wing shows panels in order: Noth, Heigan, Loatheb
         const order = ['noth', 'heig', 'loatheb'];
+        toRender = toRender.slice().sort((a, b) => {
+          const ak = String(a.boss || '').toLowerCase();
+          const bk = String(b.boss || '').toLowerCase();
+          const ai = order.findIndex(k => ak.includes(k));
+          const bi = order.findIndex(k => bk.includes(k));
+          const av = ai === -1 ? 999 : ai;
+          const bv = bi === -1 ? 999 : bi;
+          return av - bv;
+        });
+      } else if (wing === 'abomination') {
+        // Ensure Abomination Wing ordering with Patchwerk, Grobbulus, Gluth, Thaddius
+        const order = ['patch', 'grobb', 'gluth', 'thadd'];
+        toRender = toRender.slice().sort((a, b) => {
+          const ak = String(a.boss || '').toLowerCase();
+          const bk = String(b.boss || '').toLowerCase();
+          const ai = order.findIndex(k => ak.includes(k));
+          const bi = order.findIndex(k => bk.includes(k));
+          const av = ai === -1 ? 999 : ai;
+          const bv = bi === -1 ? 999 : bi;
+          return av - bv;
+        });
+      } else if (wing === 'frostwyrm_lair') {
+        // Ensure Frostwyrm Lair ordering: Sapphiron, then Kel'Thuzad
+        const order = ['sapph', 'kel'];
         toRender = toRender.slice().sort((a, b) => {
           const ak = String(a.boss || '').toLowerCase();
           const bk = String(b.boss || '').toLowerCase();
@@ -2440,6 +2986,94 @@
             entries: []
           };
           container.appendChild(buildPanel(loathebPanel, user, roster));
+        }
+      } else if (wing === 'abomination') {
+        // Ensure Patchwerk, Grobbulus, Gluth and Thaddius panels are present even if not saved yet
+        const hasPatch = toRender.some(p => String(p.boss || '').toLowerCase().includes('patch'));
+        const hasGrobb = toRender.some(p => String(p.boss || '').toLowerCase().includes('grobb'));
+        const hasGluth = toRender.some(p => String(p.boss || '').toLowerCase().includes('gluth'));
+        const hasThadd = toRender.some(p => String(p.boss || '').toLowerCase().includes('thadd'));
+        if (!hasPatch) {
+          const patchPanel = {
+            dungeon: 'Naxxramas',
+            wing: 'Abomination',
+            boss: 'Patchwerk',
+            strategy_text: 'Tanks MUST stack perfectly. Top 3 on threat must be tanks. Melee DPS dip in slime to juke hateful strike. Healers spam consumes and keep tanks up. Heal only tanks.',
+            image_url: 'https://placehold.co/1200x675?text=Patchwerk',
+            video_url: 'https://www.youtube.com/embed/bmpVXEQYIcg',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755085582/patchwerk_wfd5z4.gif',
+            entries: []
+          };
+          container.appendChild(buildPanel(patchPanel, user, roster));
+        }
+        if (!hasGrobb) {
+          const grobbPanel = {
+            dungeon: 'Naxxramas',
+            wing: 'Abomination',
+            boss: 'Grobbulus',
+            strategy_text: "Boss must face away from raid. Don't dispel unless assigned. Melee stay at max range and cleve when slime is up. Drop slime pools at the edge of the room.",
+            image_url: 'https://placehold.co/1200x675?text=Grobbulus',
+            video_url: 'https://www.youtube.com/embed/WhqA3O6HIJk',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755086620/24792_gahise.png',
+            entries: []
+          };
+          container.appendChild(buildPanel(grobbPanel, user, roster));
+        }
+        if (!hasGluth) {
+          const gluthPanel = {
+            dungeon: 'Naxxramas',
+            wing: 'Abomination',
+            boss: 'Gluth',
+            strategy_text: 'Rotate tanks on healing debuff if needed. Kite adds far from Boss. No one raid heal. Only heal tanks. Mages help on adds with frost nova. Casters stay on max range to dodge fear. Hunters place slow trap for kiting. Shamans use Tremor if in melee and earth binding if in ranged group.',
+            image_url: 'https://placehold.co/1200x675?text=Gluth',
+            video_url: 'https://www.youtube.com/embed/JWf9-N609PA',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755087393/27103_rdbmzc.png',
+            entries: []
+          };
+          container.appendChild(buildPanel(gluthPanel, user, roster));
+        }
+        if (!hasThadd) {
+          const thaddPanel = {
+            dungeon: 'Naxxramas',
+            wing: 'Abomination',
+            boss: 'Thaddius',
+            strategy_text: 'Phase 1:\nOdd groups left - Even groups right. Kill adds at the same time. Casters max range. Off-tank taunt on tank swap.\n\nPhase 2:\nStack in front of boss. On Polarity Shift, Minus go left. Plus go right. Run trough the boss.\n\nNotes:\nPlus goes right\nMinus goes left\nMages, watch the ignite.',
+            image_url: 'https://placehold.co/1200x675?text=Thaddius',
+            video_url: 'https://www.youtube.com/embed/lgDJq4-i4kk',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755087787/dfka9xt-cbdf45c1-45b9-460b-a997-5a46c4de0a65_txsidf.png',
+            entries: []
+          };
+          container.appendChild(buildPanel(thaddPanel, user, roster));
+        }
+      } else if (wing === 'frostwyrm_lair') {
+        // Ensure Sapphiron and Kel'Thuzad panels are present even if not saved yet
+        const hasSapph = toRender.some(p => String(p.boss || '').toLowerCase().includes('sapph'));
+        const hasKel = toRender.some(p => String(p.boss || '').toLowerCase().includes('kel'));
+        if (!hasSapph) {
+          const sapphPanel = {
+            dungeon: 'Naxxramas',
+            wing: 'Frostwyrm_Lair',
+            boss: 'Sapphiron',
+            strategy_text: 'Positions & Pre-pop\nOdd groups left. Even groups right. Everyone pre-pop GFPP and GSPP when we unboon.\n\nLand phase\nMellee stand on max range. Avoid Blizzard and don\'t parry-haste the boss.\nCasters stack loosely for aoe healing and avoid Blizzard.\nShaman melee healers stand with your group so you can chain-heal yourself.\n\nAir phase\nSpread out in the half of the room towards the entrace of the room. When you get targeted for ice-block, pop a Greater Frost Protection Potion to stay alive.',
+            image_url: 'https://placehold.co/1200x675?text=Sapphiron',
+            video_url: 'https://www.youtube.com/embed/NwDFC6kFi7c',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755093137/oUwfSmi_mp74xg.gif',
+            entries: []
+          };
+          container.appendChild(buildPanel(sapphPanel, user, roster));
+        }
+        if (!hasKel) {
+          const kelPanel = {
+            dungeon: 'Naxxramas',
+            wing: 'Frostwyrm_Lair',
+            boss: "Kel'Thuzad",
+            strategy_text: "Phase 1\nDont't die. Don't multi shot. Stay in the circle. Kill adds fast. Prioritze shooting skellingtons over killing abos.\n\nPhase 2\nMelee stack perfectly on your marks and backpeddle out when ground gets black. Casters and healers spread out in the room.\n\nHealers, heal Frost Blast targets fast.\n\nPhase 3\nPriests, shackle adds BEFORE they get to the middle. Keep them shackled.",
+            image_url: 'https://placehold.co/1200x675?text=Kel%5C%27Thuzad',
+            video_url: 'https://www.youtube.com/embed/GUIftNHHKNs',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755109693/imgbin-heroes-of-the-storm-kel-thuzad-arthas-menethil-storm-za4EdhZSa9A2GBvAUf1Gi8t4q_qxel5s.jpg',
+            entries: []
+          };
+          container.appendChild(buildPanel(kelPanel, user, roster));
         }
       }
 

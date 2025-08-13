@@ -418,6 +418,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const characters = await response.json();
 
+            // Sort by class order and then by character name
+            const CLASS_ORDER = ['Warrior','Rogue','Hunter','Mage','Warlock','Shaman','Priest','Druid'];
+            const classRank = (cls) => {
+                const normalized = String(cls || '').trim();
+                const idx = CLASS_ORDER.indexOf(normalized);
+                return idx === -1 ? 999 : idx;
+            };
+            characters.sort((a, b) => {
+                const ra = classRank(a.class);
+                const rb = classRank(b.class);
+                if (ra !== rb) return ra - rb;
+                const na = String(a.character_name || '').toLowerCase();
+                const nb = String(b.character_name || '').toLowerCase();
+                return na.localeCompare(nb);
+            });
+
             if (characters && characters.length > 0) {
                 myCharsContainer.innerHTML = ''; // Clear loading message
                 const list = document.createElement('ul');
