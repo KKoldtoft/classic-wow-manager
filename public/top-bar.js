@@ -283,7 +283,16 @@ function setupUpcomingRaidsDropdown() {
 
 // Raid Bar functionality
 async function updateRaidBar() {
-    const activeEventId = localStorage.getItem('activeEventSession');
+    let activeEventId = localStorage.getItem('activeEventSession');
+    // Fallback: derive from URL /event/:eventId/*
+    if (!activeEventId) {
+        const parts = window.location.pathname.split('/').filter(Boolean);
+        const idx = parts.indexOf('event');
+        if (idx >= 0 && parts[idx + 1]) {
+            activeEventId = parts[idx + 1];
+            localStorage.setItem('activeEventSession', activeEventId);
+        }
+    }
     const raidBar = document.getElementById('raid-bar');
     const raidTitle = document.getElementById('raid-title');
     
@@ -352,11 +361,9 @@ function updateRaidNavigation(eventId) {
     
     // Assignments and Gold Pot are dead links for now
     if (assignmentsLink) {
-        assignmentsLink.href = '#';
-        assignmentsLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            // TODO: Implement assignments functionality
-        });
+        assignmentsLink.href = `/event/${eventId}/assignments`;
+        // Remove any existing event listeners by cloning the node (keeps id and classes)
+        assignmentsLink.replaceWith(assignmentsLink.cloneNode(true));
     }
     
     if (goldpotLink) {

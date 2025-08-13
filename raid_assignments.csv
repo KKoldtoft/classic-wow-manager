@@ -1,0 +1,36 @@
+"id","event_id","dungeon","wing","boss","strategy_text","image_url","created_at","updated_at","video_url","image_url_full","boss_icon_url"
+1,"1400931154957176924","Naxxramas","Spider Wing","Anub'Rekhan","Casters and healers, spread out behind the boss, so you don't all take impale damage. 
+
+If you get impaled and fly, don't die from fall damage, use blink or lip or healthstone or anything you can to stay alive.
+
+If you are high on threat, swap to the adds.","https://placehold.co/1200x675?text=Anub%27Rekhan+Positions","2025-08-09 19:48:41.053404","2025-08-12 07:43:24.650387",NULL,NULL,NULL
+82,"1400931154957176924","Naxxramas","Spider Wing","Grand Widow Faerlina","Kill the 2 followers fast (Skull and Cross), then nuke boss. Move out of rain of fire.
+
+Assigned priests use mind control and Widow's Embrace to dispel Enrage from the boss.","https://res.cloudinary.com/duthjs0c3/image/upload/v1754816216/Faerlina_mid_xzjrtj.jpg","2025-08-10 11:26:54.955187","2025-08-10 19:27:42.380389","https://www.youtube.com/embed/JaAJ01RTsP4",NULL,NULL
+121,"1394045831551778956","Naxxramas","Spider Wing","Anub'Rekhan","Assignments will appear here.","https://res.cloudinary.com/duthjs0c3/image/upload/v1754768041/Anubian_mid_eeb1zj.jpg","2025-08-10 23:14:49.666159","2025-08-10 23:14:49.666159","https://www.youtube.com/embed/yEh16DOAs-k?si=sbFC_3eSplmFyuav&start=13&controls=0&modestbranding=1&rel=0&iv_load_policy=3","https://res.cloudinary.com/duthjs0c3/image/upload/v1754768042/Anubian_full_s1fmvs.png","https://res.cloudinary.com/duthjs0c3/image/upload/v1754809667/30800_etmqmc.png"
+122,"1394045831551778956","Naxxramas","Spider Wing","Grand Widow Faerlina","Kill the 2 followers fast (Skull and Cross), then nuke boss. Move out of rain of fire.
+
+Assigned priests use mind control and Widow's Embrace to dispel Enrage from the boss.","https://res.cloudinary.com/duthjs0c3/image/upload/v1754816216/Faerlina_mid_xzjrtj.jpg","2025-08-10 23:14:49.667841","2025-08-10 23:14:49.667841","https://www.youtube.com/embed/JaAJ01RTsP4","https://res.cloudinary.com/duthjs0c3/image/upload/v1754816215/Faerlina_full_wdeu9g.png","https://res.cloudinary.com/duthjs0c3/image/upload/v1754815959/3kvUdFR_kx7gif.png"
+155,"1400931154957176924","Naxxramas","","Tanking","When you have a tanking target, go defensive stand, taunt and bloodthirst. Once you have agro you can swap to berserker if you can survive it.",NULL,"2025-08-10 23:38:03.852978","2025-08-12 15:42:53.927909",NULL,NULL,NULL
+177,"1400931154957176924","Naxxramas","","Healing","Shamans, bounce chain heals of your tank assignment. Keep them alive. Priests and Druids, keep your tank alive.",NULL,"2025-08-11 00:12:45.150828","2025-08-11 01:16:19.374142",NULL,NULL,NULL
+447,"1400931154957176924","Naxxramas","","Buffs",NULL,NULL,"2025-08-11 18:33:46.72374","2025-08-12 07:42:17.023773",NULL,NULL,NULL
+484,"1400931154957176924","Naxxramas","","Curses and Dispels",NULL,NULL,"2025-08-11 22:45:42.028873","2025-08-11 22:45:42.028873",NULL,NULL,NULL
+495,"1400931154957176924","Naxxramas","","Decurse and Dispel",NULL,NULL,"2025-08-11 23:14:56.329532","2025-08-11 23:14:56.329532",NULL,NULL,NULL
+496,"1400931154957176924","Naxxramas","","Curses and Soul Stones",NULL,NULL,"2025-08-11 23:15:12.330526","2025-08-11 23:15:12.330526",NULL,NULL,NULL
+507,"1400931154957176924","Naxxramas","","Power Infusion",NULL,NULL,"2025-08-11 23:33:03.643157","2025-08-11 23:33:03.643157",NULL,NULL,NULL
+610,"1400931154957176924","Naxxramas","Spider","Maexxna","Nuke the boss. Shamans and druids, remove poison. HoT and Shield on tank before Web Spray. Tank use last stand, Lifegiving gem etc.
+
+Do not hit the boss in the face, only pound his ass. Let the tank turn it around before you zug zug.","https://placehold.co/1200x675?text=Maexxna","2025-08-12 09:50:04.300844","2025-08-12 09:50:59.967823","https://www.youtube.com/embed/m5j7EHv7Dfw",NULL,NULL
+678,"1400931154957176924","Naxxramas","Military","Razuvious","Priests pull with mind control. Off-tanks tank adds. Mana users run out before Disruption Shout. Melee throw target dummies when needed.","https://placehold.co/1200x675?text=Razuvious","2025-08-12 10:52:24.03348","2025-08-12 10:55:19.362164","https://www.youtube.com/embed/XdWewsnOrhU",NULL,NULL
+741,"1400931154957176924","Naxxramas","Military","Gothik","Warriors on Undead side. Ranged and Rogues on Human side. Pop Greater Stoneshield on wave 9. We don't shackle. Healers","https://placehold.co/1200x675?text=Gothik","2025-08-12 12:05:14.863159","2025-08-12 12:05:14.863159","https://www.youtube.com/embed/MrBGF1P3eMM",NULL,NULL
+754,"1400931154957176924","Naxxramas","Military","The Four Horsemen","We nuke down and commit on Thane.
+
+Healer rotation starts on first mark and then healers all roather on every 3rd mark.","https://placehold.co/1200x675?text=The+Four+Horsemen","2025-08-12 14:17:32.806143","2025-08-12 15:27:42.332329",NULL,NULL,NULL
+956,"1398394409820750015","Naxxramas","Spider Wing","Anub'Rekhan","Assignments will appear here.","https://res.cloudinary.com/duthjs0c3/image/upload/v1754768041/Anubian_mid_eeb1zj.jpg","2025-08-12 15:50:07.233638","2025-08-12 15:50:07.233638","https://www.youtube.com/embed/yEh16DOAs-k?si=sbFC_3eSplmFyuav&start=13&controls=0&modestbranding=1&rel=0&iv_load_policy=3","https://res.cloudinary.com/duthjs0c3/image/upload/v1754768042/Anubian_full_s1fmvs.png","https://res.cloudinary.com/duthjs0c3/image/upload/v1754809667/30800_etmqmc.png"
+957,"1398394409820750015","Naxxramas","Spider Wing","Grand Widow Faerlina","Kill the 2 followers fast (Skull and Cross), then nuke boss. Move out of rain of fire.
+
+Assigned priests use mind control and Widow's Embrace to dispel Enrage from the boss.","https://res.cloudinary.com/duthjs0c3/image/upload/v1754816216/Faerlina_mid_xzjrtj.jpg","2025-08-12 15:50:07.234624","2025-08-12 15:50:07.234624","https://www.youtube.com/embed/JaAJ01RTsP4","https://res.cloudinary.com/duthjs0c3/image/upload/v1754816215/Faerlina_full_wdeu9g.png","https://res.cloudinary.com/duthjs0c3/image/upload/v1754815959/3kvUdFR_kx7gif.png"
+958,"1398394409820750015","Naxxramas","","Tanking",NULL,NULL,"2025-08-12 15:50:13.620999","2025-08-12 15:50:34.954222",NULL,NULL,NULL
+986,"1398394409820750015","Naxxramas","Military","The Four Horsemen","We nuke down and commit on Thane.
+
+Healer rotation starts on first mark and then healers all roather on every 3rd mark.","https://placehold.co/1200x675?text=The+Four+Horsemen","2025-08-12 15:56:57.298695","2025-08-12 16:22:51.839176",NULL,NULL,NULL

@@ -51,8 +51,11 @@ initializeRPBTrackingTable();
 // Initialize Raid-Helper events cache table
 initializeRaidHelperEventsCacheTable();
 
-// Initialize raid durations table
+    // Initialize raid durations table
 initializeRaidDurationsTable();
+
+    // Initialize assignments tables
+    initializeAssignmentsTables();
 
 // Migrate player confirmed logs table
 migratePlayerConfirmedLogsTable();
@@ -77,6 +80,83 @@ async function initializeEventsCacheTable() {
     console.log('✅ Events cache table initialized');
   } catch (error) {
     console.error('❌ Error creating events cache table:', error);
+  }
+}
+
+// Assignments tables initialization
+async function initializeAssignmentsTables() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS raid_assignments (
+        id SERIAL PRIMARY KEY,
+        event_id VARCHAR(100) NOT NULL,
+        dungeon TEXT NOT NULL,
+        wing TEXT NOT NULL DEFAULT '',
+        boss TEXT NOT NULL,
+        strategy_text TEXT,
+        image_url TEXT,
+        image_url_full TEXT,
+        boss_icon_url TEXT,
+        video_url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(event_id, dungeon, wing, boss)
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS raid_assignment_entries (
+        id SERIAL PRIMARY KEY,
+        event_id VARCHAR(100) NOT NULL,
+        dungeon TEXT NOT NULL,
+        wing TEXT NOT NULL DEFAULT '',
+        boss TEXT NOT NULL,
+        character_name TEXT NOT NULL,
+        class_name TEXT,
+        class_color TEXT,
+        spec_name TEXT,
+        spec_emote TEXT,
+        marker_icon_url TEXT,
+        assignment TEXT,
+        sort_index INTEGER DEFAULT 0,
+        character_discord_id TEXT,
+        accept_status TEXT,
+        accept_set_by TEXT,
+        accept_updated_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS raid_assignment_entry_accepts (
+        id SERIAL PRIMARY KEY,
+        event_id VARCHAR(100) NOT NULL,
+        dungeon TEXT NOT NULL,
+        wing TEXT NOT NULL DEFAULT '',
+        boss TEXT NOT NULL,
+        character_name TEXT NOT NULL,
+        accept_status TEXT,
+        accept_set_by TEXT,
+        accept_updated_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(event_id, dungeon, wing, boss, character_name)
+      );
+    `);
+    // Ensure new columns exist when upgrading
+    await pool.query(`ALTER TABLE raid_assignment_entries ADD COLUMN IF NOT EXISTS marker_icon_url TEXT`);
+    await pool.query(`ALTER TABLE raid_assignment_entries ADD COLUMN IF NOT EXISTS character_discord_id TEXT`);
+    await pool.query(`ALTER TABLE raid_assignment_entries ADD COLUMN IF NOT EXISTS accept_status TEXT`);
+    await pool.query(`ALTER TABLE raid_assignment_entries ADD COLUMN IF NOT EXISTS accept_set_by TEXT`);
+    await pool.query(`ALTER TABLE raid_assignment_entries ADD COLUMN IF NOT EXISTS accept_updated_at TIMESTAMP`);
+    await pool.query(`ALTER TABLE raid_assignments ADD COLUMN IF NOT EXISTS video_url TEXT`);
+    await pool.query(`ALTER TABLE raid_assignments ADD COLUMN IF NOT EXISTS image_url_full TEXT`);
+    await pool.query(`ALTER TABLE raid_assignments ADD COLUMN IF NOT EXISTS boss_icon_url TEXT`);
+    await pool.query(`ALTER TABLE raid_assignment_entry_accepts ADD COLUMN IF NOT EXISTS accept_status TEXT`);
+    await pool.query(`ALTER TABLE raid_assignment_entry_accepts ADD COLUMN IF NOT EXISTS accept_set_by TEXT`);
+    await pool.query(`ALTER TABLE raid_assignment_entry_accepts ADD COLUMN IF NOT EXISTS accept_updated_at TIMESTAMP`);
+    console.log('✅ Assignments tables initialized');
+  } catch (error) {
+    console.error('❌ Error initializing assignments tables:', error);
   }
 }
 
@@ -1110,6 +1190,364 @@ app.get('/api/user/permissions', async (req, res) => {
       error: error.message 
     });
   }
+});
+
+// --- Assignments API ---
+app.get('/api/assignments/:eventId', async (req, res) => {
+  const { eventId } = req.params;
+  try {
+    // Ensure core Naxx Spider Wing panels exist (Anub'Rekhan, Grand Widow Faerlina)
+    const base = await pool.query(
+      `SELECT * FROM raid_assignments WHERE event_id = $1 ORDER BY id ASC`,
+      [eventId]
+    );
+
+    // Always ensure Anub'Rekhan exists
+    await pool.query(
+      `INSERT INTO raid_assignments (event_id, dungeon, wing, boss, strategy_text, image_url, image_url_full, boss_icon_url, video_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (event_id, dungeon, wing, boss) DO NOTHING`,
+      [
+        eventId,
+        'Naxxramas',
+        'Spider Wing',
+        "Anub'Rekhan",
+        'Assignments will appear here.',
+        'https://res.cloudinary.com/duthjs0c3/image/upload/v1754768041/Anubian_mid_eeb1zj.jpg',
+        'https://res.cloudinary.com/duthjs0c3/image/upload/v1754768042/Anubian_full_s1fmvs.png',
+        'https://res.cloudinary.com/duthjs0c3/image/upload/v1754809667/30800_etmqmc.png',
+        'https://www.youtube.com/embed/yEh16DOAs-k?si=sbFC_3eSplmFyuav&start=13&controls=0&modestbranding=1&rel=0&iv_load_policy=3'
+      ]
+    );
+    // Always ensure Grand Widow Faerlina exists
+    await pool.query(
+      `INSERT INTO raid_assignments (event_id, dungeon, wing, boss, strategy_text, image_url, image_url_full, boss_icon_url, video_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (event_id, dungeon, wing, boss) DO NOTHING`,
+      [
+        eventId,
+        'Naxxramas',
+        'Spider Wing',
+        'Grand Widow Faerlina',
+        "Kill the 2 followers fast (Skull and Cross), then nuke boss. Move out of rain of fire.\n\nAssigned priests use mind control and Widow's Embrace to dispel Enrage from the boss.",
+        'https://res.cloudinary.com/duthjs0c3/image/upload/v1754816216/Faerlina_mid_xzjrtj.jpg',
+        'https://res.cloudinary.com/duthjs0c3/image/upload/v1754816215/Faerlina_full_wdeu9g.png',
+        'https://res.cloudinary.com/duthjs0c3/image/upload/v1754815959/3kvUdFR_kx7gif.png',
+        'https://www.youtube.com/embed/JaAJ01RTsP4'
+      ]
+    );
+
+    const panelsResult = await pool.query(
+      `SELECT id, dungeon, wing, boss, strategy_text, image_url, image_url_full, boss_icon_url, video_url
+       FROM raid_assignments WHERE event_id = $1
+       ORDER BY dungeon, wing NULLS FIRST, boss`,
+      [eventId]
+    );
+    const entriesResult = await pool.query(
+      `SELECT * FROM raid_assignment_entries WHERE event_id = $1 ORDER BY sort_index, id`,
+      [eventId]
+    );
+    const acceptsResult = await pool.query(
+      `SELECT event_id, dungeon, wing, boss, character_name, accept_status, accept_set_by, accept_updated_at
+       FROM raid_assignment_entry_accepts WHERE event_id = $1`,
+      [eventId]
+    );
+    const acceptKey = (e) => `${e.event_id}|${(e.dungeon||'')}|${(e.wing||'')}|${(e.boss||'')}|${(e.character_name||'').toLowerCase()}`;
+    const acceptsMap = new Map(acceptsResult.rows.map(r => [acceptKey(r), r]));
+
+    const panels = panelsResult.rows.map(p => ({
+      ...p,
+      entries: entriesResult.rows
+        .filter(e => e.dungeon === p.dungeon && (e.wing || '') === (p.wing || '') && e.boss === p.boss)
+        .map(e => {
+          const key = `${eventId}|${p.dungeon||''}|${p.wing||''}|${p.boss||''}|${(e.character_name||'').toLowerCase()}`;
+          const acc = acceptsMap.get(key);
+          return {
+            ...e,
+            accept_status: acc?.accept_status || null,
+            accept_set_by: acc?.accept_set_by || null,
+            accept_updated_at: acc?.accept_updated_at || null,
+          };
+        })
+    }));
+
+    res.json({ success: true, panels });
+  } catch (error) {
+    console.error('Error fetching assignments:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch assignments' });
+  }
+});
+
+// Management action to insert Faerlina panel with defaults
+app.post('/api/assignments/:eventId/seed/faerlina', requireManagement, async (req, res) => {
+  const { eventId } = req.params;
+  const dungeon = 'Naxxramas';
+  const wing = 'Spider Wing';
+  const boss = 'Grand Widow Faerlina';
+  const strategy = 'Kill the 2 followers fast (Skull and Cross), then nuke boss. Move out of rain of fire.\n\nAssigned priests use mind control and Widow\'s Embrace to dispel Enrage from the boss.';
+  const imageMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754816216/Faerlina_mid_xzjrtj.jpg';
+  const imageFull = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754816215/Faerlina_full_wdeu9g.png';
+  const bossIcon = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754815959/3kvUdFR_kx7gif.png';
+  const video = 'https://www.youtube.com/embed/JaAJ01RTsP4';
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO raid_assignments (event_id, dungeon, wing, boss, strategy_text, image_url, image_url_full, boss_icon_url, video_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (event_id, dungeon, wing, boss)
+       DO UPDATE SET strategy_text = EXCLUDED.strategy_text, image_url = EXCLUDED.image_url, image_url_full = EXCLUDED.image_url_full, boss_icon_url = EXCLUDED.boss_icon_url, video_url = EXCLUDED.video_url, updated_at = NOW()`,
+      [eventId, dungeon, wing, boss, strategy, imageMid, imageFull, bossIcon, video]
+    );
+    // Build template entries from current roster
+    const rosterRes = await client.query(
+      `SELECT assigned_char_name AS character_name, assigned_char_class AS class_name, assigned_char_spec AS spec_name, assigned_char_spec_emote AS spec_emote, party_id, slot_id
+         FROM roster_overrides WHERE event_id = $1 AND assigned_char_name IS NOT NULL`,
+      [eventId]
+    );
+    const templates = buildFaerlinaTemplateEntries(rosterRes.rows);
+    // Clear existing entries for this panel and insert defaults
+    await client.query(
+      `DELETE FROM raid_assignment_entries WHERE event_id = $1 AND dungeon = $2 AND wing = $3 AND boss = $4`,
+      [eventId, dungeon, wing, boss]
+    );
+    let sortIndex = 0;
+    for (const t of templates) {
+      await client.query(
+        `INSERT INTO raid_assignment_entries (event_id, dungeon, wing, boss, character_name, marker_icon_url, assignment, sort_index)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [eventId, dungeon, wing, boss, t.character_name, t.marker_icon_url || null, t.assignment || null, sortIndex++]
+      );
+    }
+    await client.query('COMMIT');
+    res.json({ success: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error seeding Faerlina panel:', err);
+    res.status(500).json({ success: false, message: 'Failed to seed Faerlina panel' });
+  } finally {
+    client.release();
+  }
+});
+
+// Helper for Faerlina default templates
+function buildFaerlinaTemplateEntries(roster) {
+  const byPartySlot = (p, s) => roster.find(r => Number(r.party_id) === Number(p) && Number(r.slot_id) === Number(s));
+  const findPriestsSorted = () => roster.filter(r => String(r.class_name).toLowerCase() === 'priest')
+    .sort((a,b) => (Number(a.party_id)||99) - (Number(b.party_id)||99) || (Number(a.slot_id)||99) - (Number(b.slot_id)||99));
+  const priests = findPriestsSorted();
+  const p1 = priests[0];
+  const p2 = priests[1];
+  const entries = [];
+  const icons = {
+    skull: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/1_skull_faqei8.png',
+    cross: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/2_cross_kj9wuf.png',
+    square: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/3_square_yqucv9.png',
+    moon: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/4_moon_vwhoen.png',
+    triangle: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/5_triangle_rbpjyi.png',
+    diamond: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/6_diamond_hre1uj.png',
+    circle: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/7_circle_zayctt.png'
+  };
+  const pushIf = (r, icon, text) => { if (r) entries.push({ character_name: r.character_name, marker_icon_url: icon, assignment: text }); };
+  // #1 G1 S1 tank boss (square)
+  pushIf(byPartySlot(1,1), icons.square, 'Tank the boss');
+  // #2 G1 S2 tank left 2 adds (triangle)
+  pushIf(byPartySlot(1,2), icons.triangle, 'Tank the left 2 adds');
+  // #3 G1 S2 tank left 2 adds (moon)
+  pushIf(byPartySlot(1,2), icons.moon, 'Tank the left 2 adds');
+  // #4 G1 S3 tank right 2 adds (diamond)
+  pushIf(byPartySlot(1,3), icons.diamond, 'Tank the right 2 adds');
+  // #5 G1 S3 tank right 2 adds (circle)
+  pushIf(byPartySlot(1,3), icons.circle, 'Tank the right 2 adds');
+  // #6 G2 S1 tank Skull
+  pushIf(byPartySlot(2,1), icons.skull, 'Tank Skull');
+  // #7 G2 S2 tank Cross
+  pushIf(byPartySlot(2,2), icons.cross, 'Tank Cross (pull it to boss)');
+  // #8 First priest MC
+  if (p1) entries.push({ character_name: p1.character_name, marker_icon_url: icons.diamond, assignment: "Use mind control and Widow's Embrace to dispel Enrage from the boss. Start with Diamond and Circle targets." });
+  // #9 First priest MC Circle
+  if (p1) entries.push({ character_name: p1.character_name, marker_icon_url: icons.circle, assignment: "Use mind control and Widow's Embrace to dispel Enrage from the boss. Start with Diamond and Circle targets." });
+  // #10 Second priest backup
+  if (p2) entries.push({ character_name: p2.character_name, marker_icon_url: icons.circle, assignment: 'Backup mindcontrol in case the assigned priest dies or fails.' });
+  return entries;
+}
+// Accept/Decline API: player can update own entry; managers can update any
+app.post('/api/assignments/:eventId/entry/accept', express.json(), async (req, res) => {
+  const { eventId } = req.params;
+  const { dungeon, wing = '', boss, character_name, accept_status } = req.body || {};
+  if (!eventId || !dungeon || !boss || !character_name || !['accept','decline',null,''].includes(accept_status)) {
+    return res.status(400).json({ success: false, message: 'Invalid payload' });
+  }
+  const isAuthed = req.isAuthenticated && req.isAuthenticated();
+  if (!isAuthed) return res.status(401).json({ success: false, message: 'Login required' });
+  const actingUserId = req.user?.id;
+  try {
+    // Determine if acting user is manager
+    let isManager = false;
+    try { isManager = await hasManagementRole(req.user.accessToken); } catch {}
+    // Verify ownership: character_name in roster_overrides for this event must have discord_user_id == acting user
+    const ownerRes = await pool.query(
+      `SELECT discord_user_id FROM roster_overrides WHERE event_id = $1 AND LOWER(assigned_char_name) = LOWER($2) LIMIT 1`,
+      [eventId, character_name]
+    );
+    const ownerId = ownerRes.rows[0]?.discord_user_id || null;
+    const canEdit = isManager || (ownerId && ownerId === actingUserId);
+    if (!canEdit) return res.status(403).json({ success: false, message: 'Forbidden' });
+
+    await pool.query(
+      `INSERT INTO raid_assignment_entry_accepts (event_id, dungeon, wing, boss, character_name, accept_status, accept_set_by, accept_updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+       ON CONFLICT (event_id, dungeon, wing, boss, character_name)
+       DO UPDATE SET accept_status = EXCLUDED.accept_status, accept_set_by = EXCLUDED.accept_set_by, accept_updated_at = NOW()`,
+      [eventId, dungeon, wing || '', boss, character_name, accept_status || null, actingUserId]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating accept status:', error);
+    res.status(500).json({ success: false, message: 'Failed to update status' });
+  }
+});
+
+// Returns roster for assignments for a given event, enriched with class color and spec icon
+app.get('/api/assignments/:eventId/roster', async (req, res) => {
+  const { eventId } = req.params;
+  try {
+    const result = await pool.query(
+      `SELECT 
+         ro.assigned_char_name AS character_name,
+         ro.assigned_char_class AS class_name,
+         ro.assigned_char_spec AS spec_name,
+         ro.assigned_char_spec_emote AS spec_emote,
+         ro.discord_user_id,
+         ro.party_id,
+         ro.slot_id,
+         csm.class_color_hex AS class_color,
+         csm.spec_icon_url
+       FROM roster_overrides ro
+       LEFT JOIN class_spec_mappings csm 
+         ON LOWER(csm.class_name) = LOWER(ro.assigned_char_class)
+        AND LOWER(csm.spec_name) = LOWER(ro.assigned_char_spec)
+       WHERE ro.event_id = $1
+         AND ro.assigned_char_name IS NOT NULL
+       ORDER BY ro.assigned_char_name`,
+      [eventId]
+    );
+    res.json({ success: true, roster: result.rows });
+  } catch (error) {
+    console.error('Error fetching assignments roster:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch roster' });
+  }
+});
+
+app.post('/api/assignments/:eventId/save', requireManagement, express.json(), async (req, res) => {
+  const { eventId } = req.params;
+  const { panels } = req.body || {};
+  if (!Array.isArray(panels)) return res.status(400).json({ success: false, message: 'Invalid payload' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Build roster lookup for validation and spec/class derivation
+    const rosterRes = await client.query(
+      `SELECT assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, discord_user_id
+         FROM roster_overrides WHERE event_id = $1 AND assigned_char_name IS NOT NULL`,
+      [eventId]
+    );
+    const rosterByName = new Map();
+    for (const r of rosterRes.rows) {
+      rosterByName.set(String(r.assigned_char_name).toLowerCase(), r);
+    }
+    // Preload class/spec mapping
+    const csmRes = await client.query(`SELECT class_name, spec_name, class_color_hex FROM class_spec_mappings`);
+    const csmKey = (c, s) => `${String(c).toLowerCase()}|${String(s).toLowerCase()}`;
+    const csmMap = new Map();
+    for (const m of csmRes.rows) csmMap.set(csmKey(m.class_name, m.spec_name), m);
+    for (const panel of panels) {
+      const { dungeon, wing = null, boss, strategy_text, image_url, entries = [] } = panel;
+      if (!dungeon || !boss) continue;
+        await client.query(
+          `INSERT INTO raid_assignments (event_id, dungeon, wing, boss, strategy_text, image_url, image_url_full, boss_icon_url)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (event_id, dungeon, wing, boss)
+           DO UPDATE SET strategy_text = EXCLUDED.strategy_text, image_url = EXCLUDED.image_url, image_url_full = EXCLUDED.image_url_full, boss_icon_url = EXCLUDED.boss_icon_url, updated_at = NOW()`,
+          [eventId, dungeon, wing || '', boss, strategy_text || null, image_url || null, panel.image_url_full || null, panel.boss_icon_url || null]
+      );
+        // Update optional video_url if provided on payload
+        if (panel.video_url !== undefined) {
+          await client.query(
+            `UPDATE raid_assignments SET video_url = $1, updated_at = NOW() WHERE event_id = $2 AND dungeon = $3 AND COALESCE(wing,'') = $4 AND boss = $5`,
+            [panel.video_url || null, eventId, dungeon, wing || '', boss]
+          );
+        }
+        // Update optional image_url_full and boss_icon_url if provided
+        if (panel.image_url_full !== undefined || panel.boss_icon_url !== undefined) {
+          await client.query(
+            `UPDATE raid_assignments SET image_url_full = COALESCE($1, image_url_full), boss_icon_url = COALESCE($2, boss_icon_url), updated_at = NOW()
+             WHERE event_id = $3 AND dungeon = $4 AND COALESCE(wing,'') = $5 AND boss = $6`,
+            [panel.image_url_full ?? null, panel.boss_icon_url ?? null, eventId, dungeon, wing || '', boss]
+          );
+        }
+
+      // Clear and re-insert entries for this panel for simplicity
+      await client.query(
+        `DELETE FROM raid_assignment_entries WHERE event_id = $1 AND dungeon = $2 AND wing = $3 AND boss = $4`,
+        [eventId, dungeon, wing || '', boss]
+      );
+
+      let sortIndex = 0;
+      for (const entry of entries) {
+        const { character_name, assignment, marker_icon_url, accept_status } = entry;
+        if (!character_name) continue;
+        const roster = rosterByName.get(String(character_name).toLowerCase());
+        if (!roster) {
+          throw new Error(`Player '${character_name}' is not in the roster for this event`);
+        }
+        const cls = roster.assigned_char_class || '';
+        const spc = roster.assigned_char_spec || '';
+        const emote = roster.assigned_char_spec_emote || null;
+        const map = csmMap.get(csmKey(cls, spc));
+        const classColor = map?.class_color_hex || null;
+        await client.query(
+          `INSERT INTO raid_assignment_entries
+            (event_id, dungeon, wing, boss, character_name, class_name, class_color, spec_name, spec_emote, marker_icon_url, assignment, sort_index, character_discord_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [eventId, dungeon, wing || '', boss, character_name, cls || null, classColor, spc || null, emote, marker_icon_url || null, assignment || null, sortIndex++, roster?.discord_user_id || null]
+        );
+        // Persist acceptance state: upsert for accept/decline, clear for null/empty
+        if (accept_status === 'accept' || accept_status === 'decline') {
+          await client.query(
+            `INSERT INTO raid_assignment_entry_accepts (event_id, dungeon, wing, boss, character_name, accept_status, accept_set_by, accept_updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+             ON CONFLICT (event_id, dungeon, wing, boss, character_name)
+             DO UPDATE SET accept_status = EXCLUDED.accept_status, accept_set_by = EXCLUDED.accept_set_by, accept_updated_at = NOW()`,
+            [eventId, dungeon, wing || '', boss, character_name, accept_status, req.user?.id || null]
+          );
+        } else {
+          await client.query(
+            `DELETE FROM raid_assignment_entry_accepts WHERE event_id = $1 AND dungeon = $2 AND wing = $3 AND boss = $4 AND character_name = $5`,
+            [eventId, dungeon, wing || '', boss, character_name]
+          );
+        }
+      }
+    }
+    await client.query('COMMIT');
+    res.json({ success: true });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error saving assignments:', error);
+    res.status(500).json({ success: false, message: 'Failed to save assignments' });
+  } finally {
+    client.release();
+  }
+});
+
+// Page route
+app.get('/event/:eventId/assignments', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'assignments.html'));
+});
+
+// Subpage routes for assignments wings
+app.get('/event/:eventId/assignments/:wing', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'assignments.html'));
 });
 
 // Management-only endpoint for user data

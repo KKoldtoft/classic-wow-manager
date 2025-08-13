@@ -651,7 +651,7 @@ body.has-raid-bar {
     gap: 8px; /* Spacing between character panels */
 }
 
-.character-card { list-style: none; }
+.character-card { list-style: none; border: 1px solid #333; border-radius: 8px; margin-bottom: 10px; }
 
 .character-item {
     position: relative;
@@ -708,14 +708,16 @@ body.has-raid-bar {
     border-radius: 0 0 8px 8px; /* top corners will be 0 via override below */
     border-top-left-radius: 0;
     border-top-right-radius: 0;
-    opacity: 0.9; /* 90% opacity */
+    background: rgba(0, 0, 0, 0.9); /* dark background for bottom card */
 }
 
-.character-item-sub, .character-item-sub * { color: #000000 !important; font-weight: 400; }
+.character-item-sub .label, .character-item-sub .value { color: #ffffff !important; font-weight: 400; }
 .char-extra { display: grid; grid-template-columns: 1fr; row-gap: 4px; font-size: 13px; }
+.char-extra > div { display: flex; align-items: center; column-gap: 8px; }
 .char-extra .label { color: #000; font-weight: 400; }
 .char-extra .value { color: #000; font-weight: 400; }
-.char-extra .last-item { display: inline-flex; align-items: center; gap: 6px; color: #a335ee !important; background: rgba(0,0,0,0.85); padding: 3px 6px; border-radius: 5px; }
+.char-extra .last-item { display: inline-flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.85); padding: 3px 6px; border-radius: 5px; }
+.char-extra .last-item, .char-extra .last-item * { color: #a335ee !important; }
 .char-extra .last-item img { width: 18px; height: 18px; border-radius: 3px; }
 
 /* Make the top card stick visually with flat bottom corners */
@@ -725,43 +727,43 @@ body.has-raid-bar {
 }
 
 /* WoW Class Background Colors for Character Panels */
-.character-item.class-warrior, .character-item-sub.class-warrior {
+.character-item.class-warrior {
     background: linear-gradient(135deg, #C79C6E, #A67C52);
 }
 
-.character-item.class-paladin, .character-item-sub.class-paladin {
+.character-item.class-paladin {
     background: linear-gradient(135deg, #F58CBA, #E06B9A);
 }
 
-.character-item.class-hunter, .character-item-sub.class-hunter {
+.character-item.class-hunter {
     background: linear-gradient(135deg, #ABD473, #8FB356);
 }
 
-.character-item.class-rogue, .character-item-sub.class-rogue {
+.character-item.class-rogue {
     background: linear-gradient(135deg, #FFF569, #E6DD4F);
 }
 
-.character-item.class-priest, .character-item-sub.class-priest {
+.character-item.class-priest {
     background: linear-gradient(135deg, #FFFFFF, #E6E6E6);
 }
 
-.character-item.class-shaman, .character-item-sub.class-shaman {
+.character-item.class-shaman {
     background: linear-gradient(135deg, #0070DE, #005BB8);
 }
 
-.character-item.class-mage, .character-item-sub.class-mage {
+.character-item.class-mage {
     background: linear-gradient(135deg, #69CCF0, #4FB3D9);
 }
 
-.character-item.class-warlock, .character-item-sub.class-warlock {
+.character-item.class-warlock {
     background: linear-gradient(135deg, #9482C9, #7A6BA8);
 }
 
-.character-item.class-druid, .character-item-sub.class-druid {
+.character-item.class-druid {
     background: linear-gradient(135deg, #FF7D0A, #E66A00);
 }
 
-.character-item.class-unknown, .character-item-sub.class-unknown {
+.character-item.class-unknown {
     background: linear-gradient(135deg, #666666, #555555);
 }
 

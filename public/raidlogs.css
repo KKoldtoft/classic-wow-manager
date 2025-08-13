@@ -2029,7 +2029,7 @@ body.raid-active .scroll-target {
 .manual-rewards-section .ranking-item {
     display: flex;
     align-items: center;
-    padding: 15px 25px;
+    padding: 5px 0px;
     border-bottom: 1px solid var(--border-color, #3a3a3a);
     transition: background-color 0.2s ease;
     position: relative;
@@ -2058,8 +2058,7 @@ body.raid-active .scroll-target {
 /* Manual Rewards Character Info */
 .manual-rewards-section .character-info {
     flex: 1;
-    margin-left: 20px;
-    padding: 8px;
+    margin-left: 0px;
     border-radius: 6px;
     position: relative;
 }
