@@ -13,6 +13,208 @@ const fs = require('fs');
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
+// --- Warcraft Logs API (v2 GraphQL) Configuration ---
+const WCL_TOKEN_URL = 'https://www.warcraftlogs.com/oauth/token';
+const WCL_API_URL = 'https://classic.warcraftlogs.com/api/v2/client'; // default for Classic
+const WCL_CLIENT_ID = process.env.WCL_CLIENT_ID;
+const WCL_CLIENT_SECRET = process.env.WCL_CLIENT_SECRET;
+
+let wclAccessToken = null;
+let wclTokenExpiresAt = 0; // epoch ms
+const reportMetaCache = new Map(); // key: `${apiUrl}::${reportCode}` -> { actorsById, abilitiesById, fetchedAt }
+
+// --- Live View shared state (in-memory) ---
+let activeLive = null; // { reportInput: string, startedAt: number, startedBy: { id, username } }
+
+async function getWclAccessToken() {
+  if (!WCL_CLIENT_ID || !WCL_CLIENT_SECRET) {
+    throw new Error('Missing WCL_CLIENT_ID or WCL_CLIENT_SECRET env vars');
+  }
+  const now = Date.now();
+  if (wclAccessToken && now < (wclTokenExpiresAt - 60000)) {
+    return wclAccessToken;
+  }
+  const form = new URLSearchParams();
+  form.append('grant_type', 'client_credentials');
+  const response = await axios.post(WCL_TOKEN_URL, form, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    auth: { username: WCL_CLIENT_ID, password: WCL_CLIENT_SECRET },
+    timeout: 20000
+  });
+  const data = response.data || {};
+  if (!data.access_token) {
+    throw new Error('Failed to obtain Warcraft Logs access token');
+  }
+  wclAccessToken = data.access_token;
+  const expiresInSec = typeof data.expires_in === 'number' ? data.expires_in : 3600;
+  wclTokenExpiresAt = now + (expiresInSec * 1000);
+  return wclAccessToken;
+}
+
+function getWclApiUrlFromInput(input) {
+  const str = String(input || '');
+  const lower = str.toLowerCase();
+  // Handle raw host paths without scheme, or full URLs
+  if (lower.includes('vanilla.warcraftlogs.com')) return 'https://vanilla.warcraftlogs.com/api/v2/client';
+  if (lower.includes('classic.warcraftlogs.com')) return 'https://classic.warcraftlogs.com/api/v2/client';
+  if (lower.includes('www.warcraftlogs.com') || lower.includes('warcraftlogs.com/reports/')) return 'https://www.warcraftlogs.com/api/v2/client';
+  // Try URL parsing as a fallback (in case of other subdomains)
+  try {
+    const u = new URL(str.startsWith('http') ? str : `https://${str}`);
+    const host = (u.hostname || '').toLowerCase();
+    if (host.includes('vanilla.warcraftlogs.com')) return 'https://vanilla.warcraftlogs.com/api/v2/client';
+    if (host.includes('classic.warcraftlogs.com')) return 'https://classic.warcraftlogs.com/api/v2/client';
+    if (host.includes('www.warcraftlogs.com')) return 'https://www.warcraftlogs.com/api/v2/client';
+  } catch (_) {}
+  return WCL_API_URL; // default to Classic
+}
+
+function extractWclReportCode(input) {
+  if (!input || typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  const match = trimmed.match(/\/reports\/([A-Za-z0-9]{16,})/);
+  if (match && match[1]) return match[1];
+  const codeOnly = trimmed.replace(/^https?:\/\//i, '').split(/[?#\s]/)[0];
+  if (/^[A-Za-z0-9]+$/.test(codeOnly)) return codeOnly;
+  return null;
+}
+
+async function fetchWclEventsPage(params) {
+  const { reportCode, startTime, endTime, apiUrl } = params;
+  const token = await getWclAccessToken();
+  const query = `query($code: String!, $start: Float!, $end: Float!) {
+    reportData {
+      report(code: $code) {
+        startTime
+        events(startTime: $start, endTime: $end) {
+          data
+          nextPageTimestamp
+        }
+      }
+    }
+  }`;
+  const variables = { code: reportCode, start: Math.max(0, Number(startTime || 0)), end: Math.max(0, Number(endTime || 0)) };
+  let resp;
+  try {
+    resp = await axios.post(apiUrl || WCL_API_URL, { query, variables }, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000
+    });
+  } catch (err) {
+    const status = err.response && err.response.status;
+    const data = err.response && err.response.data;
+    const details = typeof data === 'object' ? JSON.stringify(data) : String(data || '');
+    throw new Error(`HTTP error from WCL API ${status || ''}: ${details}`.trim());
+  }
+  const body = resp.data;
+  if (body.errors) {
+    const message = body.errors.map(e => e.message).join('; ');
+    throw new Error(`Warcraft Logs GraphQL error: ${message}`);
+  }
+  const report = body && body.data && body.data.reportData && body.data.reportData.report;
+  if (!report || !report.events) {
+    throw new Error('Invalid Warcraft Logs response');
+  }
+  return {
+    reportStartTime: report.startTime,
+    events: Array.isArray(report.events.data) ? report.events.data : [],
+    nextPageTimestamp: report.events.nextPageTimestamp != null ? report.events.nextPageTimestamp : null
+  };
+}
+
+async function fetchWclEarliestFightStart(params) {
+  const { reportCode, apiUrl } = params;
+  const token = await getWclAccessToken();
+  const query = `query($code: String!) {\n    reportData {\n      report(code: $code) {\n        fights { startTime }\n      }\n    }\n  }`;
+  const variables = { code: reportCode };
+  const resp = await axios.post(apiUrl || WCL_API_URL, { query, variables }, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    timeout: 20000
+  });
+  const body = resp.data;
+  if (body.errors) {
+    return 0; // fallback to start
+  }
+  const fights = body && body.data && body.data.reportData && body.data.reportData.report && body.data.reportData.report.fights;
+  if (!Array.isArray(fights) || fights.length === 0) return 0;
+  let minStart = Infinity;
+  for (const f of fights) {
+    if (f && typeof f.startTime === 'number' && f.startTime < minStart) minStart = f.startTime;
+  }
+  if (!isFinite(minStart)) return 0;
+  return Math.max(0, Math.floor(minStart));
+}
+
+async function fetchWclReportMeta(params) {
+  const { reportCode, apiUrl } = params;
+  const cacheKey = `${apiUrl || WCL_API_URL}::${reportCode}`;
+  const cached = reportMetaCache.get(cacheKey);
+  if (cached && (Date.now() - cached.fetchedAt) < 60 * 60 * 1000) { // 1 hour
+    return cached;
+  }
+  const token = await getWclAccessToken();
+  const query = `query($code: String!) {\n    reportData {\n      report(code: $code) {\n        masterData {\n          actors { id name type subType }\n          abilities { gameID name type }\n        }\n      }\n    }\n  }`;
+  const variables = { code: reportCode };
+  let resp;
+  try {
+    resp = await axios.post(apiUrl || WCL_API_URL, { query, variables }, {
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+  } catch (err) {
+    // On failure, return empty meta to avoid blocking
+    return { actorsById: {}, abilitiesById: {}, fetchedAt: Date.now(), partial: true };
+  }
+  const body = resp.data;
+  const report = body && body.data && body.data.reportData && body.data.reportData.report;
+  const master = report && report.masterData;
+  const actors = (master && Array.isArray(master.actors)) ? master.actors : [];
+  const abilities = (master && Array.isArray(master.abilities)) ? master.abilities : [];
+  const actorsById = {};
+  for (const a of actors) {
+    if (a && a.id != null) actorsById[a.id] = { name: a.name || String(a.id), type: a.type || null, subType: a.subType || null };
+  }
+  const abilitiesById = {};
+  for (const ab of abilities) {
+    if (ab && ab.gameID != null) abilitiesById[ab.gameID] = { name: ab.name || String(ab.gameID), type: ab.type || null };
+  }
+  const meta = { actorsById, abilitiesById, fetchedAt: Date.now() };
+  reportMetaCache.set(cacheKey, meta);
+  return meta;
+}
+
+async function fetchWclFights(params) {
+  const { reportCode, apiUrl } = params;
+  const token = await getWclAccessToken();
+  const query = `query($code: String!) {\n    reportData {\n      report(code: $code) {\n        fights { id encounterID name startTime endTime kill }\n      }\n    }\n  }`;
+  const variables = { code: reportCode };
+  let resp;
+  try {
+    resp = await axios.post(apiUrl || WCL_API_URL, { query, variables }, {
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+  } catch (err) {
+    const status = err.response && err.response.status;
+    const data = err.response && err.response.data;
+    const details = typeof data === 'object' ? JSON.stringify(data) : String(data || '');
+    throw new Error(`HTTP error from WCL API ${status || ''}: ${details}`.trim());
+  }
+  const body = resp.data;
+  if (body.errors) {
+    const message = body.errors.map(e => e.message).join('; ');
+    throw new Error(`Warcraft Logs GraphQL error: ${message}`);
+  }
+  const fights = body && body.data && body.data.reportData && body.data.reportData.report && body.data.reportData.report.fights;
+  return Array.isArray(fights) ? fights : [];
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -1102,6 +1304,11 @@ app.get('/raidlogs', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'raidlogs.html'));
 });
 
+// Minimal live view page
+app.get('/live', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'live.html'));
+});
+
 
 // All API and authentication routes should come AFTER express.static AND specific HTML routes
 app.get('/auth/discord', (req, res, next) => {
@@ -1186,6 +1393,161 @@ app.get('/user', async (req, res) => {
     }
   } else {
     res.json({ loggedIn: false });
+  }
+});
+
+// Warcraft Logs events incremental polling endpoint
+// Query params:
+// - report: report code or full URL
+// - cursor: nextPageTimestamp from previous response, or 0 to start
+// - windowMs: how far ahead to request from cursor (default 15000ms)
+app.get('/api/wcl/events', async (req, res) => {
+  try {
+    const reportInput = String(req.query.report || '');
+    const reportCode = extractWclReportCode(reportInput);
+    if (!reportCode) {
+      return res.status(400).json({ error: 'Missing or invalid report parameter' });
+    }
+    const cursor = Number(req.query.cursor || 0);
+    const windowMs = Math.min(60000, Math.max(1000, Number(req.query.windowMs || 15000)));
+    let start = Math.max(0, Math.floor(cursor));
+    const apiUrl = getWclApiUrlFromInput(reportInput);
+    // If first request and no data yet, jump to earliest fight start (buffered back by 5s)
+    if (start === 0) {
+      const earliest = await fetchWclEarliestFightStart({ reportCode, apiUrl });
+      if (earliest > 0) {
+        start = Math.max(0, earliest - 5000);
+      }
+    }
+    const end = start + windowMs;
+
+    const page = await fetchWclEventsPage({ reportCode, startTime: start, endTime: end, apiUrl });
+    const meta = await fetchWclReportMeta({ reportCode, apiUrl });
+    // Ensure monotonic next cursor: prefer API nextPageTimestamp; otherwise advance by window
+    const nextCursor = page.nextPageTimestamp != null ? page.nextPageTimestamp : end;
+
+    // Update shared live progress only when host advances (prevents viewers from racing ahead)
+    try {
+      if (activeLive && typeof activeLive.reportInput === 'string') {
+        const sameReport = extractWclReportCode(activeLive.reportInput) === reportCode;
+        if (sameReport && req.isAuthenticated && req.isAuthenticated()) {
+          const isHost = activeLive.startedBy && String(req.user && req.user.id) === String(activeLive.startedBy.id);
+          if (isHost) {
+            const candidate = Math.max(start, nextCursor);
+            if (typeof candidate === 'number' && (activeLive.currentCursorMs == null || candidate > activeLive.currentCursorMs)) {
+              activeLive.currentCursorMs = candidate;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    res.json({
+      reportStartTime: page.reportStartTime,
+      events: page.events,
+      nextCursor,
+      meta: {
+        actorsById: meta.actorsById || {},
+        abilitiesById: meta.abilitiesById || {}
+      }
+    });
+  } catch (err) {
+    console.error('WCL events error:', err && err.message ? err.message : err);
+    res.status(500).json({ error: 'Failed to fetch events', details: String(err && err.message ? err.message : err) });
+  }
+});
+
+// Simple token status endpoint to debug OAuth
+app.get('/api/wcl/token-status', async (req, res) => {
+  try {
+    const token = await getWclAccessToken();
+    res.json({ ok: true, tokenPreview: `${token.slice(0, 8)}...`, expiresAt: wclTokenExpiresAt });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
+  }
+});
+
+// Live session control and status
+app.get('/api/wcl/live/status', (req, res) => {
+  res.json({ active: !!activeLive, live: activeLive });
+});
+
+// Map of assigned characters for an event: name -> { class, spec, color, party_id, slot_id }
+app.get('/api/events/:eventId/assigned-characters', async (req, res) => {
+  try {
+    const eventId = req.params.eventId;
+    const result = await pool.query(
+      `SELECT assigned_char_name, assigned_char_class, assigned_char_spec, player_color, party_id, slot_id
+       FROM roster_overrides
+       WHERE event_id = $1 AND assigned_char_name IS NOT NULL`,
+      [eventId]
+    );
+    const map = {};
+    for (const row of result.rows) {
+      if (!row.assigned_char_name) continue;
+      const key = String(row.assigned_char_name).toLowerCase();
+      map[key] = {
+        name: row.assigned_char_name,
+        class: row.assigned_char_class || null,
+        spec: row.assigned_char_spec || null,
+        color: row.player_color || null,
+        partyId: row.party_id || null,
+        slotId: row.slot_id || null,
+      };
+    }
+    res.json({ assigned: map });
+  } catch (err) {
+    console.error('assigned-characters error', err);
+    res.status(500).json({ error: 'Failed to load assigned characters' });
+  }
+});
+
+app.post('/api/wcl/live/start', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: 'Authentication required' });
+    const isMgmt = await hasManagementRole(req.user.accessToken);
+    if (!isMgmt) return res.status(403).json({ error: 'Management role required' });
+
+    const reportInput = String(req.body && req.body.report || '');
+    const reportCode = extractWclReportCode(reportInput);
+    if (!reportCode) return res.status(400).json({ error: 'Invalid report parameter' });
+    const startCursorMs = Math.max(0, Number(req.body && req.body.startCursorMs || 0));
+    activeLive = {
+      reportInput,
+      startCursorMs,
+      currentCursorMs: startCursorMs,
+      startedAt: Date.now(),
+      startedBy: { id: req.user.id, username: req.user.username }
+    };
+    res.json({ ok: true, live: activeLive });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to start live', details: String(err && err.message ? err.message : err) });
+  }
+});
+
+app.post('/api/wcl/live/stop', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: 'Authentication required' });
+    const isMgmt = await hasManagementRole(req.user.accessToken);
+    if (!isMgmt) return res.status(403).json({ error: 'Management role required' });
+    activeLive = null;
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to stop live', details: String(err && err.message ? err.message : err) });
+  }
+});
+
+// Fights listing for a report
+app.get('/api/wcl/fights', async (req, res) => {
+  try {
+    const reportInput = String(req.query.report || '');
+    const reportCode = extractWclReportCode(reportInput);
+    if (!reportCode) return res.status(400).json({ error: 'Missing or invalid report parameter' });
+    const apiUrl = getWclApiUrlFromInput(reportInput);
+    const fights = await fetchWclFights({ reportCode, apiUrl });
+    res.json({ fights });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch fights', details: String(err && err.message ? err.message : err) });
   }
 });
 
