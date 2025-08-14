@@ -1471,4 +1471,27 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Initial check on page load
     checkLoginAndFetch();
+
+    // Masonry: auto-calc row spans for .main-content-grid direct children
+    try {
+        const grid = document.querySelector('.main-content-grid');
+        if (grid) {
+            const rowHeightUnit = parseInt(getComputedStyle(grid).getPropertyValue('grid-auto-rows')) || 8;
+            const rowGap = parseInt(getComputedStyle(grid).getPropertyValue('gap')) || 0;
+            const items = Array.from(grid.children);
+
+            const resizeObserver = new ResizeObserver(() => {
+                items.forEach(item => {
+                    if (!(item instanceof HTMLElement)) return;
+                    const contentHeight = item.getBoundingClientRect().height;
+                    const span = Math.ceil((contentHeight + rowGap) / (rowHeightUnit + rowGap));
+                    item.style.gridRowEnd = `span ${span}`;
+                });
+            });
+
+            items.forEach(el => resizeObserver.observe(el));
+        }
+    } catch (e) {
+        console.warn('Masonry init failed:', e);
+    }
 });

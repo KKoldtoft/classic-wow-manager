@@ -60,64 +60,78 @@
 
     <div class="container">
         <div class="main-content-grid">
+            <!-- Spanning (2-column) promo panel -->
+            <div class="panel panel--span-2">
+                <div class="panel-split">
+                    <div class="panel-image">
+                        <img src="https://res.cloudinary.com/duthjs0c3/image/upload/v1755160576/44659136-ee79-44cf-a137-aaac4d8c107e_bjvgxm.png" alt="1Principles recruitment poster">
+                    </div>
+                    <div class="panel-text">
+                        <h2 class="panel-title">1PRINCIPLES WANTS YOU!</h2>
+                        <p>We’re expanding our raid portfolio and looking for passionate raidleaders to run fun, clean, and well-organized raids.</p>
+                        <p>As a raidleader, you’ll guide your team through victories and setbacks alike, keeping the vibe positive and the strategy sharp.</p>
+                        <h3>We offer:</h3>
+                        <ul>
+                            <li>Training and support until you’re ready to solo lead</li>
+                            <li>Full control over roster, invites, and assignments (optional)</li>
+                            <li>A seat in the 1Principles management team</li>
+                            <li>Competitive cut (up to 5% raidleader share)</li>
+                            <li>The respect of every Orc, Troll, Night Elf, and Tauren in our ranks</li>
+                        </ul>
+                        <p>Interested? Contact TheZapper on Discord for a friendly, no-obligation chat.</p>
+                    </div>
+                </div>
+            </div>
             <!-- Column 1: Upcoming Raids -->
-            <div class="grid-column">
-                <div class="panel">
-                    <h1 class="panel-title">Upcoming Raids</h1>
-                    <div id="events-list" class="events-container">
-                        <!-- Events will be dynamically inserted here -->
-                    </div>
-                    <div class="refresh-section">
-                        <button id="refresh-events-btn" class="refresh-button">
-                            <i class="fas fa-sync-alt"></i>
-                            Refresh Events
-                        </button>
-                        <div id="refresh-status" class="refresh-status"></div>
-                        <div id="last-refresh" class="last-refresh">Last refresh: Never</div>
-                    </div>
+            <div class="panel">
+                <h1 class="panel-title">Upcoming Raids</h1>
+                <div id="events-list" class="events-container">
+                    <!-- Events will be dynamically inserted here -->
+                </div>
+                <div class="refresh-section">
+                    <button id="refresh-events-btn" class="refresh-button">
+                        <i class="fas fa-sync-alt"></i>
+                        Refresh Events
+                    </button>
+                    <div id="refresh-status" class="refresh-status"></div>
+                    <div id="last-refresh" class="last-refresh">Last refresh: Never</div>
                 </div>
             </div>
-            
+
             <!-- Column 2: Completed Raids -->
-            <div class="grid-column">
-                <div class="panel">
-                    <h1 class="panel-title">Completed Raids</h1>
-                    <div id="historic-events-list" class="events-container">
-                        <!-- Completed events will be dynamically inserted here -->
-                    </div>
-                    <div class="refresh-section">
-                        <button id="refresh-historic-events-btn" class="refresh-button">
-                            <i class="fas fa-sync-alt"></i>
-                            Refresh Events
-                        </button>
-                        <button id="show-more-historic-btn" class="refresh-button" style="display: none;">
-                            <i class="fas fa-plus"></i>
-                            Show more
-                        </button>
-                        <div id="refresh-historic-status" class="refresh-status"></div>
-                        <div id="last-historic-refresh" class="last-refresh">Last refresh: Never</div>
-                        <div id="historic-events-count" class="events-count" style="display: none;"></div>
-                    </div>
+            <div class="panel">
+                <h1 class="panel-title">Completed Raids</h1>
+                <div id="historic-events-list" class="events-container">
+                    <!-- Completed events will be dynamically inserted here -->
+                </div>
+                <div class="refresh-section">
+                    <button id="refresh-historic-events-btn" class="refresh-button">
+                        <i class="fas fa-sync-alt"></i>
+                        Refresh Events
+                    </button>
+                    <button id="show-more-historic-btn" class="refresh-button" style="display: none;">
+                        <i class="fas fa-plus"></i>
+                        Show more
+                    </button>
+                    <div id="refresh-historic-status" class="refresh-status"></div>
+                    <div id="last-historic-refresh" class="last-refresh">Last refresh: Never</div>
+                    <div id="historic-events-count" class="events-count" style="display: none;"></div>
                 </div>
             </div>
-            
+
             <!-- Column 3: My Characters -->
-            <div class="grid-column">
-                <div class="panel">
-                    <h1 class="panel-title">My Characters</h1>
-                    <div id="my-characters-list">
-                        <!-- User's characters will be dynamically inserted here -->
-                    </div>
+            <div class="panel">
+                <h1 class="panel-title">My Characters</h1>
+                <div id="my-characters-list">
+                    <!-- User's characters will be dynamically inserted here -->
                 </div>
             </div>
-            
+
             <!-- Column 4: Items Hall of Fame -->
-            <div class="grid-column">
-                <div class="panel">
-                    <h1 class="panel-title">Items Hall of Fame</h1>
-                    <div id="items-hall-of-fame-list">
-                        <!-- Top 10 most expensive items will be dynamically inserted here -->
-                    </div>
+            <div class="panel">
+                <h1 class="panel-title">Items Hall of Fame</h1>
+                <div id="items-hall-of-fame-list">
+                    <!-- Top 10 most expensive items will be dynamically inserted here -->
                 </div>
             </div>
         </div>

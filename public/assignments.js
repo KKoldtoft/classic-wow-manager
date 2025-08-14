@@ -213,16 +213,19 @@
     } else if (panelKeyLower.includes('grobb')) {
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755122356/Grobbulus_mid_aw4tig.jpg';
       defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755122356/Grobbulus_full_ftbwtq.png';
+    } else if (panelKeyLower.includes('gluth')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755150437/Gluth_mid_ju7cbx.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755150438/Gluth_full_bkqgdj.png';
     }
     let displayImageUrl = (image_url && !String(image_url).includes('placehold.co')) ? image_url : defaultMid;
-    if (panelKeyLower.includes('faerlina') || panelKeyLower.includes('maex') || panelKeyLower.includes('razu') || panelKeyLower.includes('goth') || panelKeyLower.includes('patch') || panelKeyLower.includes('grobb')) {
+    if (panelKeyLower.includes('faerlina') || panelKeyLower.includes('maex') || panelKeyLower.includes('razu') || panelKeyLower.includes('goth') || panelKeyLower.includes('patch') || panelKeyLower.includes('grobb') || panelKeyLower.includes('gluth')) {
       displayImageUrl = defaultMid;
     }
 
     const imgLink = document.createElement('a');
     imgLink.href = (panel.image_url_full && panel.image_url_full.trim().length > 0)
       ? panel.image_url_full
-      : ((panelKeyLower.includes('faerlina') || panelKeyLower.includes('maex') || panelKeyLower.includes('razu') || panelKeyLower.includes('goth') || panelKeyLower.includes('patch') || panelKeyLower.includes('grobb')) ? defaultFull : displayImageUrl);
+      : ((panelKeyLower.includes('faerlina') || panelKeyLower.includes('maex') || panelKeyLower.includes('razu') || panelKeyLower.includes('goth') || panelKeyLower.includes('patch') || panelKeyLower.includes('grobb') || panelKeyLower.includes('gluth')) ? defaultFull : displayImageUrl);
     imgLink.target = '_blank';
     imgLink.rel = 'noopener noreferrer';
     const img = document.createElement('img');

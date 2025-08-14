@@ -605,7 +605,7 @@ body.has-raid-bar {
     margin: 0 auto; /* Center the container */
 }
 
-/* --- 4-Column Layout --- */
+/* --- 4-Column Layout (masonry-ready) --- */
 .main-content-grid {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr 1fr; /* 4 equal columns */
@@ -614,6 +614,8 @@ body.has-raid-bar {
     padding: 30px;
     max-width: 1800px; /* Wider to accommodate 4 columns */
     margin: 0 auto;
+    grid-auto-flow: row dense; /* allow better packing around spanning items */
+    grid-auto-rows: 8px; /* base row height unit for masonry calculation */
 }
 
 .grid-column {
@@ -629,9 +631,7 @@ body.has-raid-bar {
     padding: 20px;
 }
 
-.grid-column .panel {
-    width: 90%;
-}
+/* panels are full width inside the grid now */
 
 .panel-title {
     margin-top: 0;
@@ -639,6 +639,59 @@ body.has-raid-bar {
     border-bottom: 1px solid #eee;
     padding-bottom: 10px;
     margin-bottom: 15px;
+}
+
+/* Spanning helpers for direct children of .main-content-grid */
+.panel--span-2 { grid-column: span 2; }
+.panel--span-3 { grid-column: span 3; }
+.panel--span-4 { grid-column: 1 / -1; }
+
+/* Split panel layout: image left, text right */
+.panel-split {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 20px;
+    align-items: stretch;
+}
+.panel-image {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.panel-image img {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    object-fit: cover;
+}
+.panel-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px; /* tighter spacing between text blocks */
+}
+.panel-text p { margin: 6px 0; line-height: 1.45; }
+.panel-text h3 { margin-top: 10px; }
+.panel-text ul {
+    margin: -15px 0 10px 18px;
+    list-style: none; /* custom bullet for better vertical alignment */
+    padding-left: 0;
+}
+.panel-text li {
+    margin: 8px 0; /* slightly larger spacing for readability */
+    position: relative;
+    padding-left: 22px; /* room for custom bullet */
+    line-height: 1.5;
+}
+.panel-text li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.75em; /* centers the dot vertically to text line */
+    transform: translateY(-50%);
+    width: 6px;
+    height: 6px;
+    background: #333; /* subtle dark bullet on light panel */
+    border-radius: 50%;
 }
 
 /* My Characters List Styling - Individual Character Panels */
@@ -844,6 +897,8 @@ body.has-raid-bar {
         padding: 25px;
         max-width: 1200px;
     }
+    .panel--span-2, .panel--span-3, .panel--span-4 { grid-column: 1 / -1; }
+    .panel-split { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 900px) {
@@ -853,6 +908,8 @@ body.has-raid-bar {
         padding: 20px;
         max-width: 600px;
     }
+    .panel--span-2, .panel--span-3, .panel--span-4 { grid-column: 1 / -1; }
+    .panel-split { grid-template-columns: 1fr; }
     
     .grid-column {
         gap: 20px;
