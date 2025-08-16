@@ -471,6 +471,8 @@ body.has-raid-bar {
     color: white; /* Make text white for readability */
     position: relative; /* For pseudo-element positioning */
     overflow: hidden; /* Contain pseudo-elements */
+    display: block; /* Ensure anchor panels behave like blocks for full clickable area */
+    text-decoration: none; /* Prevent underline when rendered as an anchor */
 }
 
 /* Ensure content stays above background pseudo-elements */

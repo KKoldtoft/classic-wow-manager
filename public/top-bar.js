@@ -89,16 +89,22 @@ function highlightActiveRaidNav() {
     const raidNavLinks = document.querySelectorAll('.raid-nav-link');
     
     raidNavLinks.forEach(link => {
-        const linkHref = link.getAttribute('href');
-        
-        // Special handling for different paths
-        if (currentPath === '/gold' && link.id === 'raid-goldpot-link') {
+        const linkHref = link.getAttribute('href') || '';
+        const isRoster = currentPath.includes('/event/') && currentPath.includes('/roster');
+        const isAssignments = currentPath.includes('/event/') && currentPath.includes('/assignments');
+        const isGold = currentPath.includes('/event/') && currentPath.includes('/gold');
+        const isLoot = currentPath.includes('/event/') && currentPath.includes('/loot');
+        const isRaidlogs = currentPath.includes('/event/') && currentPath.includes('/raidlogs');
+
+        if (isRoster && link.id === 'raid-roster-link') {
             link.classList.add('active');
-        } else if (currentPath === '/raidlogs' && link.id === 'raid-logs-link') {
+        } else if (isAssignments && link.id === 'raid-assignments-link') {
             link.classList.add('active');
-        } else if (currentPath.includes('/roster') && link.id === 'raid-roster-link') {
+        } else if ((isGold || currentPath === '/gold') && link.id === 'raid-goldpot-link') {
             link.classList.add('active');
-        } else if (currentPath === '/attendance' && linkHref === '/attendance') {
+        } else if ((isLoot || currentPath === '/loot') && link.id === 'raid-loot-link') {
+            link.classList.add('active');
+        } else if ((isRaidlogs || currentPath === '/raidlogs') && link.id === 'raid-logs-link') {
             link.classList.add('active');
         } else if (linkHref && linkHref === currentPath) {
             link.classList.add('active');
@@ -355,13 +361,14 @@ function updateRaidNavigation(eventId) {
     const assignmentsLink = document.getElementById('raid-assignments-link');
     const logsLink = document.getElementById('raid-logs-link');
     const goldpotLink = document.getElementById('raid-goldpot-link');
+    const lootLink = document.getElementById('raid-loot-link');
     
     // Update roster link
     if (rosterLink) {
         rosterLink.href = `/event/${eventId}/roster`;
     }
     
-    // Assignments and Gold Pot are dead links for now
+    // Assignments link
     if (assignmentsLink) {
         assignmentsLink.href = `/event/${eventId}/assignments`;
         // Remove any existing event listeners by cloning the node (keeps id and classes)
@@ -369,14 +376,17 @@ function updateRaidNavigation(eventId) {
     }
     
     if (goldpotLink) {
-        goldpotLink.href = '/gold';
-        // Remove any existing event listeners
+        goldpotLink.href = `/event/${eventId}/gold`;
         goldpotLink.replaceWith(goldpotLink.cloneNode(true));
     }
     
-    // Raid Logs link stays as /raidlogs - the raid logs page will use the localStorage session
     if (logsLink) {
-        logsLink.href = '/raidlogs';
+        logsLink.href = `/event/${eventId}/raidlogs`;
+    }
+
+    if (lootLink) {
+        lootLink.href = `/event/${eventId}/loot`;
+        lootLink.replaceWith(lootLink.cloneNode(true));
     }
 }
 

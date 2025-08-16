@@ -1008,7 +1008,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             upcomingEvents.forEach((event, index) => {
                 try {
-                    const eventDiv = document.createElement('div');
+                    const eventDiv = document.createElement('a');
                     eventDiv.classList.add('event-panel');
                     eventDiv.setAttribute('data-event-index', index);
                     
@@ -1021,19 +1021,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
 
                     if (eventId !== 'unknown') {
-                        eventDiv.style.cursor = 'pointer';
-                        eventDiv.addEventListener('click', () => {
-                            // Set active session in localStorage
-                            localStorage.setItem('activeEventSession', eventId);
-                            console.log('🎯 Set active event session from events page:', eventId);
-                            
-                            // Update raid bar if function is available
-                            if (typeof updateRaidBar === 'function') {
-                                updateRaidBar();
-                            }
-                            
-                            window.location.href = `/event/${eventId}/roster`;
-                        });
+                        eventDiv.href = `/event/${eventId}/roster`;
                     }
 
                     const eventStartDate = new Date(event.startTime * 1000);
@@ -1190,7 +1178,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         eventsToShow.forEach((event, index) => {
                 try {
-                    const eventDiv = document.createElement('div');
+                    const eventDiv = document.createElement('a');
                     eventDiv.classList.add('event-panel', 'historic');
                     eventDiv.setAttribute('data-event-index', startIndex + index);
                     
@@ -1203,19 +1191,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
 
                     if (eventId !== 'unknown') {
-                        eventDiv.style.cursor = 'pointer';
-                        eventDiv.addEventListener('click', () => {
-                            // Set active session in localStorage
-                            localStorage.setItem('activeEventSession', eventId);
-                            console.log('🎯 Set active event session from completed events:', eventId);
-                            
-                            // Update raid bar if function is available
-                            if (typeof updateRaidBar === 'function') {
-                                updateRaidBar();
-                            }
-                            
-                            window.location.href = `/event/${eventId}/roster`;
-                        });
+                        eventDiv.href = `/event/${eventId}/roster`;
                     }
 
                     const eventStartDate = new Date(event.startTime * 1000);

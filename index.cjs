@@ -24,7 +24,7 @@ let wclTokenExpiresAt = 0; // epoch ms
 const reportMetaCache = new Map(); // key: `${apiUrl}::${reportCode}` -> { actorsById, abilitiesById, fetchedAt }
 
 // --- Live View shared state (in-memory) ---
-let activeLive = null; // { reportInput: string, startedAt: number, startedBy: { id, username } }
+let activeLive = null; // { reportInput, startCursorMs, currentCursorMs, startedAt, startedBy, stats, buffers }
 
 async function getWclAccessToken() {
   if (!WCL_CLIENT_ID || !WCL_CLIENT_SECRET) {
@@ -1268,6 +1268,19 @@ app.get('/event/:eventId/roster', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'roster.html'));
 });
 
+// Serve Raid Logs, Gold, and Loot pages with event-scoped URLs
+app.get('/event/:eventId/raidlogs', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'raidlogs.html'));
+});
+
+app.get('/event/:eventId/gold', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'gold.html'));
+});
+
+app.get('/event/:eventId/loot', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'loot.html'));
+});
+
 app.get('/players', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'players.html'));
 });
@@ -1307,6 +1320,11 @@ app.get('/raidlogs', (req, res) => {
 // Minimal live view page
 app.get('/live', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'live.html'));
+});
+
+// Live host page (management controls)
+app.get('/livehost', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'livehost.html'));
 });
 
 
@@ -1442,6 +1460,82 @@ app.get('/api/wcl/events', async (req, res) => {
       }
     } catch (_) {}
 
+    // If a shared session is active for this report, update host-side snapshot using the raw events
+    try {
+      if (activeLive && extractWclReportCode(activeLive.reportInput) === reportCode) {
+        const actors = meta.actorsById || {};
+        const abilities = meta.abilitiesById || {};
+        const stats = activeLive.stats;
+        if (stats) {
+          for (const ev of page.events) {
+            const type = (ev.type || '').toLowerCase();
+            const ts = ev.timestamp || 0;
+            // Encounter markers
+            if (type === 'encounterstart' || type === 'encounterend') {
+              const name = ev.encounterName || ev.bossName || ev.name || '';
+              stats.encounters.push({ name, type: type === 'encounterstart' ? 'start' : 'end', ts });
+              if (type === 'encounterstart') {
+                stats.encounter.name = name;
+                stats.encounter.bySource = {};
+              } else {
+                stats.encounter.name = null;
+              }
+              continue;
+            }
+            const srcId = ev.sourceID || (ev.source && ev.source.id);
+            const tgtId = ev.targetID || (ev.target && ev.target.id);
+            const srcName = (srcId != null && actors[srcId] && actors[srcId].name) || (ev.source && ev.source.name) || (srcId != null ? `#${srcId}` : null);
+            const tgtName = (tgtId != null && actors[tgtId] && actors[tgtId].name) || (ev.target && ev.target.name) || (tgtId != null ? `#${tgtId}` : null);
+            const abilityId = ev.abilityGameID || (ev.ability && ev.ability.guid);
+            const abilityName = (abilityId != null && abilities[abilityId] && abilities[abilityId].name) || (ev.ability && ev.ability.name) || null;
+
+            // Totals (damage/heal)
+            if (type === 'damage' || type === 'heal') {
+              const ownerName = ev.source && ev.source.petOwner && ev.source.petOwner.name ? ev.source.petOwner.name : null;
+              const tally = ownerName || srcName;
+              if (tally) {
+                const rec = stats.totalBySource[tally] || { dmg: 0, heal: 0, color: null };
+                if (type === 'damage') rec.dmg += Number(ev.amount || 0);
+                if (type === 'heal') rec.heal += Number(ev.amount || 0);
+                stats.totalBySource[tally] = rec;
+                if (stats.encounter && stats.encounter.name) {
+                  const er = stats.encounter.bySource[tally] || { dmg: 0, heal: 0, color: rec.color };
+                  if (type === 'damage') er.dmg += Number(ev.amount || 0);
+                  if (type === 'heal') er.heal += Number(ev.amount || 0);
+                  stats.encounter.bySource[tally] = er;
+                }
+              }
+            }
+            // Rolling buffers for death context per target
+            if ((type === 'damage' || type === 'heal') && tgtName) {
+              const key = `tgt:${tgtName.toLowerCase()}`;
+              const buf = activeLive.buffers[key] || [];
+              buf.push({ ts, type, source: srcName || '', ability: abilityName || '', amount: Number(ev.amount || 0) });
+              // Trim to last 10s
+              const cutoff = ts - 10000;
+              while (buf.length && buf[0].ts < cutoff) buf.shift();
+              activeLive.buffers[key] = buf;
+            }
+            // Death log: host records only assigned players (if we know the assigned set)
+            if (type === 'death' && tgtName) {
+              let allow = true;
+              if (activeLive.assignedSet && activeLive.assignedSet.size > 0) {
+                allow = activeLive.assignedSet.has(String(tgtName).toLowerCase());
+              }
+              if (allow) {
+                const key = `${tgtName}@${ts}`;
+                const bufKey = `tgt:${tgtName.toLowerCase()}`;
+                const lines = (activeLive.buffers[bufKey] || []).slice();
+                const lower = String(tgtName).toLowerCase();
+                const color = (activeLive.assignedColors && activeLive.assignedColors[lower]) ? activeLive.assignedColors[lower] : null;
+                stats.deaths.push({ name: tgtName, ts, color, lines, key });
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
     res.json({
       reportStartTime: page.reportStartTime,
       events: page.events,
@@ -1470,6 +1564,19 @@ app.get('/api/wcl/token-status', async (req, res) => {
 // Live session control and status
 app.get('/api/wcl/live/status', (req, res) => {
   res.json({ active: !!activeLive, live: activeLive });
+});
+
+// Snapshot of current host aggregates for viewers to mirror
+app.get('/api/wcl/live/snapshot', (req, res) => {
+  if (!activeLive) return res.json({ active: false });
+  // Return a shallow copy to avoid accidental mutations
+  const snapshot = {
+    reportInput: activeLive.reportInput,
+    startCursorMs: activeLive.startCursorMs,
+    currentCursorMs: activeLive.currentCursorMs,
+    stats: activeLive.stats
+  };
+  res.json({ active: true, live: snapshot });
 });
 
 // Map of assigned characters for an event: name -> { class, spec, color, party_id, slot_id }
@@ -1512,12 +1619,41 @@ app.post('/api/wcl/live/start', async (req, res) => {
     const reportCode = extractWclReportCode(reportInput);
     if (!reportCode) return res.status(400).json({ error: 'Invalid report parameter' });
     const startCursorMs = Math.max(0, Number(req.body && req.body.startCursorMs || 0));
+    const eventIdRaw = req.body && req.body.eventId ? String(req.body.eventId) : null;
+    let assignedSet = null;
+    let assignedColors = null; // name(lower) -> color hex
+    if (eventIdRaw) {
+      try {
+        const result = await pool.query(
+          `SELECT assigned_char_name, player_color FROM roster_overrides WHERE event_id = $1 AND assigned_char_name IS NOT NULL`,
+          [eventIdRaw]
+        );
+        assignedSet = new Set();
+        assignedColors = {};
+        for (const row of result.rows) {
+          const nm = String(row.assigned_char_name || '').toLowerCase();
+          if (!nm) continue;
+          assignedSet.add(nm);
+          if (row.player_color) assignedColors[nm] = row.player_color;
+        }
+      } catch (_) {}
+    }
     activeLive = {
       reportInput,
       startCursorMs,
       currentCursorMs: startCursorMs,
       startedAt: Date.now(),
-      startedBy: { id: req.user.id, username: req.user.username }
+      startedBy: { id: req.user.id, username: req.user.username },
+      eventId: eventIdRaw,
+      assignedSet,
+      assignedColors,
+      stats: {
+        totalBySource: {}, // name -> { dmg, heal, color }
+        encounter: { name: null, bySource: {} },
+        deaths: [], // [{ name, ts, color, lines: [{ts,type,source,ability,amount}], key }]
+        encounters: [] // [{ name, type: 'start'|'end', ts }]
+      },
+      buffers: {} // name -> [{ ts, type, source, ability, amount }]
     };
     res.json({ ok: true, live: activeLive });
   } catch (err) {

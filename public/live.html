@@ -55,6 +55,16 @@
         .encounter-line { margin: 2px 0; }
         .encounter-start { color: #2ecc71; }
         .encounter-end { color: #e74c3c; }
+        .encounter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .encounter-box { border: 1px solid #ddd; border-radius: 6px; padding: 8px; background: #fff; }
+        .encounter-box-title { font-weight: 600; margin-bottom: 4px; }
+        .encounter-box .time { font-size: 12px; color: #333; }
+        .live-panels { max-width: 1600px; margin: 10px auto 0; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .death-list { display: flex; flex-direction: column; gap: 10px; }
+        .meter-list { display: flex; flex-direction: column; gap: 6px; }
+        .meter-item { position: relative; border: 1px solid #ddd; border-radius: 6px; overflow: hidden; background: #666666; }
+        .meter-bar { position: absolute; top: 0; left: 0; bottom: 0; width: 0%; opacity: 0.85; }
+        .meter-row { position: relative; display: flex; justify-content: space-between; padding: 6px 10px; font-size: 14px; z-index: 1; color: #ffffff; }
         .death-card {
             background: #131313;
             border: 1px solid #2a2a2a;
@@ -122,7 +132,33 @@
             </button>
         </div>
     </div>
-    <div id="encounter-feed" class="encounter-feed"></div>
+    <div class="live-panels">
+        <div class="panel">
+            <h2 class="panel-title">Death Log</h2>
+            <div id="death-panel-body" class="death-list"></div>
+        </div>
+        <div class="panel">
+            <h2 class="panel-title">Encounter Log</h2>
+            <div id="encounter-panel-body" class="encounter-grid"></div>
+        </div>
+        <div class="panel">
+            <h2 class="panel-title">Total Damage (Top 5)</h2>
+            <div id="top-dmg-list" class="meter-list"></div>
+        </div>
+        <div class="panel">
+            <h2 class="panel-title">Total Healing (Top 5)</h2>
+            <div id="top-heal-list" class="meter-list"></div>
+        </div>
+        <div class="panel">
+            <h2 class="panel-title">Encounter Damage (Top 5)</h2>
+            <div id="enc-dmg-list" class="meter-list"></div>
+        </div>
+        <div class="panel">
+            <h2 class="panel-title">Encounter Healing (Top 5)</h2>
+            <div id="enc-heal-list" class="meter-list"></div>
+        </div>
+    </div>
+
     <div class="live-container">
         <h2>Live View</h2>
         <div class="controls">
@@ -132,16 +168,13 @@
                 <input id="mm" type="number" min="0" max="59" value="0" />
                 <input id="ss" type="number" min="0" max="59" value="0" />
             </div>
-            <button id="startBtn">Start</button>
-            <button id="pauseBtn" type="button">Pause</button>
-            <button id="jumpFirstBtn" type="button">Jump to First Fight</button>
-            <button id="jumpNextBtn" type="button">Jump to Next Fight</button>
             <button id="startSharedBtn" type="button" style="display:none;">Start Shared Live Session</button>
+            <button id="stopSharedBtn" type="button" style="display:none;">Stop Shared Live Session</button>
             <span class="status" id="status"></span>
         </div>
         
         <div id="stream" class="stream" aria-live="polite"></div>
-        <div id="stats" class="stats-grid" aria-live="polite"></div>
+        
     </div>
 </body>
 </html>

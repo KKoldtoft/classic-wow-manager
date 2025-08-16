@@ -2,14 +2,16 @@
     const $ = (sel) => document.querySelector(sel);
     const stream = () => $('#stream');
 	const statsEl = () => $('#stats');
-    const encounterFeed = () => $('#encounter-feed');
+    const encounterFeed = () => $('#encounter-panel-body');
+    const deathPanelBody = () => $('#death-panel-body');
+    const topDmgList = () => $('#top-dmg-list');
+    const topHealList = () => $('#top-heal-list');
+    const encDmgList = () => $('#enc-dmg-list');
+    const encHealList = () => $('#enc-heal-list');
     const statusEl = () => $('#status');
     const input = () => $('#reportInput');
-	const startBtn = () => $('#startBtn');
-	const pauseBtn = () => $('#pauseBtn');
-	const jumpFirstBtn = () => $('#jumpFirstBtn');
-	const jumpNextBtn = () => $('#jumpNextBtn');
 	const startSharedBtn = () => $('#startSharedBtn');
+	const stopSharedBtn = () => $('#stopSharedBtn');
 	const hh = () => $('#hh');
 	const mm = () => $('#mm');
 	const ss = () => $('#ss');
@@ -25,12 +27,15 @@
 	// Filters removed per user request
 	let fightsCache = [];
     let assignedMap = null; // name(lowercased) -> { class, spec, color, partyId, slotId }
+    let isManager = false;
 
     // Rolling 10s event buffer by actor name/id for death analysis
     const rollingBuffer = new Map(); // key: actorKey -> array of events
     const MAX_BUFFER_MS = 10000;
     const MAX_BUFFER_EVENTS = 2000;
     const deathCards = new Map(); // key: actorKey@timestamp -> DOM element
+    const totalBySource = new Map(); // sourceName -> { dmg: number, heal: number, classColor?: string }
+    let currentEncounter = null; // { name: string, bySource: Map(name -> {dmg, heal, classColor}) }
 
     function setStatus(text) { statusEl().textContent = text || ''; }
 
@@ -117,13 +122,30 @@
             const typeLower = String(ev.type || 'event').toLowerCase();
             // Encounter feed lines
             if ((typeLower === 'encounterstart' || typeLower === 'encounterend') && encounterFeed()) {
-                const line = document.createElement('div');
-                line.className = 'encounter-line ' + (typeLower === 'encounterstart' ? 'encounter-start' : 'encounter-end');
+                const box = document.createElement('div');
+                box.className = 'encounter-box';
+                const title = document.createElement('div');
+                title.className = 'encounter-box-title';
                 const rel = (typeof ev.timestamp === 'number') ? ev.timestamp : 0;
                 const when = formatMs(rel);
                 const name = ev && (ev.encounterName || ev.bossName || ev.name || '') || '';
-                line.textContent = `${typeLower === 'encounterstart' ? 'Encounter started' : 'Encounter ended'}: ${name} @ ${when}`;
-                encounterFeed().appendChild(line);
+                title.textContent = `${name}`;
+                const time = document.createElement('div');
+                time.className = 'time';
+                time.textContent = `${typeLower === 'encounterstart' ? 'start' : 'end'}: ${when}`;
+                box.appendChild(title);
+                box.appendChild(time);
+                encounterFeed().appendChild(box);
+
+                // Manage encounter-scoped totals
+                if (typeLower === 'encounterstart') {
+                    currentEncounter = { name, bySource: new Map() };
+                    // Clear panels immediately
+                    if (encDmgList()) encDmgList().innerHTML = '';
+                    if (encHealList()) encHealList().innerHTML = '';
+                } else if (typeLower === 'encounterend') {
+                    currentEncounter = null; // stop accumulating
+                }
             }
             const srcId = ev.sourceID ?? ev.source?.id;
             const tgtId = ev.targetID ?? ev.target?.id;
@@ -139,6 +161,38 @@
                     arr.push({ ts: relTs, type: typeLower, ev });
                     const cutoff = relTs - MAX_BUFFER_MS;
                     while (arr.length && (arr[0].ts < cutoff || arr.length > MAX_BUFFER_EVENTS)) arr.shift();
+                }
+                // Aggregate totals by source
+                const ownerName = ev && ev.source && ev.source.petOwner && ev.source.petOwner.name ? ev.source.petOwner.name : null;
+                const tallyName = ownerName || srcName || (srcId != null ? `#${srcId}` : null);
+                if (tallyName) {
+                    let rec = totalBySource.get(tallyName);
+                    if (!rec) { rec = { dmg: 0, heal: 0 }; totalBySource.set(tallyName, rec); }
+                    // class color from assigned map if available
+                    if (!rec.classColor && assignedMap && assignedMap[tallyName.toLowerCase()]) {
+                        rec.classColor = assignedMap[tallyName.toLowerCase()].color || null;
+                    }
+                    if (!rec.classColor && assignedMap && assignedMap[tallyName.toLowerCase()]) {
+                        const cls = assignedMap[tallyName.toLowerCase()].class;
+                        const c = classColorFor(cls);
+                        if (c) rec.classColor = c;
+                    }
+                    const amount = Number(ev.amount || 0);
+                    if (typeLower === 'damage') rec.dmg += amount;
+                    if (typeLower === 'heal') rec.heal += amount;
+
+                    // Per-encounter accumulation: only when an encounter is active
+                    if (currentEncounter) {
+                        let er = currentEncounter.bySource.get(tallyName);
+                        if (!er) { er = { dmg: 0, heal: 0, classColor: rec.classColor || null }; currentEncounter.bySource.set(tallyName, er); }
+                        if (!er.classColor && assignedMap && assignedMap[tallyName.toLowerCase()]) {
+                            const cls = assignedMap[tallyName.toLowerCase()].class;
+                            const c = classColorFor(cls);
+                            if (c) er.classColor = c;
+                        }
+                        if (typeLower === 'damage') er.dmg += amount;
+                        if (typeLower === 'heal') er.heal += amount;
+                    }
                 }
             }
 
@@ -259,7 +313,9 @@
                     mini.appendChild(fragMini);
                     card.appendChild(header);
                     card.appendChild(mini);
-                    statsEl().appendChild(card);
+                    // Newest first
+                    const container = deathPanelBody();
+                    if (container && container.firstChild) container.insertBefore(card, container.firstChild); else if (container) container.appendChild(card);
                     deathCards.set(key, card);
 
                     // Header + background class color if available
@@ -291,6 +347,8 @@
             body = await resp.json();
             if (Array.isArray(body.events) && body.events.length > 0) {
                 appendLines(body.events, body.reportStartTime || 0, body.meta || null);
+                // Update top 5 lists after new batch
+                renderTopLists();
             }
 			if (typeof body.nextCursor === 'number') {
                 nextCursor = body.nextCursor;
@@ -335,9 +393,7 @@
         $('#stream').innerHTML = '';
         nextCursor = getStartTimeMs();
         isRunning = true;
-        isPaused = false;
         setStatus('starting...');
-        startBtn().textContent = 'Stop';
         pollOnce();
     }
 
@@ -346,7 +402,6 @@
         if (pollTimer) clearTimeout(pollTimer);
         pollTimer = null;
         setStatus('stopped');
-        startBtn().textContent = 'Start';
     }
 
     function getStartTimeMs() {
@@ -366,11 +421,57 @@
         ss().value = String(s);
     }
 
-    function togglePause() {
-        isPaused = !isPaused;
-        pauseBtn().textContent = isPaused ? 'Resume' : 'Pause';
-        if (!isPaused && isRunning) {
-            pollOnce();
+    // pause removed
+
+    function renderTopLists() {
+        const dmgArr = [];
+        const healArr = [];
+        for (const [name, rec] of totalBySource.entries()) {
+            dmgArr.push({ name, value: rec.dmg, color: rec.classColor || '#444' });
+            healArr.push({ name, value: rec.heal, color: rec.classColor || '#444' });
+        }
+        dmgArr.sort((a,b) => b.value - a.value);
+        healArr.sort((a,b) => b.value - a.value);
+
+        const renderMeter = (container, arr) => {
+            if (!container) return;
+            container.innerHTML = '';
+            const top = arr[0] && arr[0].value > 0 ? arr[0].value : 1;
+            (arr.slice(0,5)).forEach(item => {
+                const wrap = document.createElement('div');
+                wrap.className = 'meter-item';
+                const bar = document.createElement('div');
+                bar.className = 'meter-bar';
+                bar.style.width = `${Math.round((item.value / top) * 100)}%`;
+                bar.style.background = colorToRgba(item.color, 0.6) || item.color;
+                const row = document.createElement('div');
+                row.className = 'meter-row';
+                const nm = document.createElement('span');
+                nm.textContent = item.name;
+                const val = document.createElement('span');
+                val.textContent = String(item.value);
+                row.appendChild(nm);
+                row.appendChild(val);
+                wrap.appendChild(bar);
+                wrap.appendChild(row);
+                container.appendChild(wrap);
+            });
+        };
+        renderMeter(topDmgList(), dmgArr);
+        renderMeter(topHealList(), healArr);
+
+        // Per-encounter (only if an encounter is active)
+        if (currentEncounter) {
+            const eDmgArr = [];
+            const eHealArr = [];
+            for (const [name, rec] of currentEncounter.bySource.entries()) {
+                eDmgArr.push({ name, value: rec.dmg, color: rec.classColor || '#444' });
+                eHealArr.push({ name, value: rec.heal, color: rec.classColor || '#444' });
+            }
+            eDmgArr.sort((a,b) => b.value - a.value);
+            eHealArr.sort((a,b) => b.value - a.value);
+            renderMeter(encDmgList(), eDmgArr);
+            renderMeter(encHealList(), eHealArr);
         }
     }
 
@@ -410,11 +511,23 @@
 
     // Filters removed
 
+    function classColorFor(name) {
+        if (!name) return null;
+        const n = String(name).toLowerCase();
+        // map common class names
+        if (n.includes('warrior')) return '#C79C6E';
+        if (n.includes('paladin')) return '#F58CBA';
+        if (n.includes('hunter')) return '#ABD473';
+        if (n.includes('rogue')) return '#FFF569';
+        if (n.includes('priest')) return '#FFFFFF';
+        if (n.includes('shaman')) return '#0070DE';
+        if (n.includes('mage')) return '#69CCF0';
+        if (n.includes('warlock')) return '#9482C9';
+        if (n.includes('druid')) return '#FF7D0A';
+        return null;
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
-        startBtn().addEventListener('click', () => { if (isRunning) stop(); else start(); });
-        if (pauseBtn()) pauseBtn().addEventListener('click', togglePause);
-		if (jumpFirstBtn()) jumpFirstBtn().addEventListener('click', jumpToFirstFight);
-		if (jumpNextBtn()) jumpNextBtn().addEventListener('click', jumpToNextFight);
         // Filters removed
         input().addEventListener('keydown', (e) => {
             if (e.key === 'Enter') start();
@@ -430,6 +543,150 @@
         // Live indicator
         const indicator = document.getElementById('live-indicator');
         const liveLink = document.getElementById('live-view-link');
+        // On first load, if a shared session is active, fetch a snapshot to mirror host panels
+        (async () => {
+            try {
+                const snap = await fetch('/api/wcl/live/snapshot', { headers: { 'Accept': 'application/json' } }).then(r=>r.json());
+                if (snap && snap.active && snap.live) {
+                    // Set report and cursor
+                    if (snap.live.reportInput && !reportParam) {
+                        input().value = snap.live.reportInput;
+                        reportParam = snap.live.reportInput;
+                    }
+                    const startMs = Math.max(0, Number(snap.live.currentCursorMs || snap.live.startCursorMs || 0));
+                    if (startMs > 0) {
+                        hh().value = String(Math.floor(startMs / 3600000));
+                        mm().value = String(Math.floor((startMs % 3600000) / 60000));
+                        ss().value = String(Math.floor((startMs % 60000) / 1000));
+                        nextCursor = startMs;
+                    }
+                    // Apply totals and encounter to meter maps
+                    if (snap.live.stats) {
+                        const totals = snap.live.stats.totalBySource || {};
+                        for (const name in totals) {
+                            const rec = totals[name];
+                            totalBySource.set(name, { dmg: Number(rec.dmg||0), heal: Number(rec.heal||0), classColor: rec.color || null });
+                        }
+                        if (snap.live.stats.encounter && snap.live.stats.encounter.name) {
+                            currentEncounter = { name: snap.live.stats.encounter.name, bySource: new Map() };
+                            const e = snap.live.stats.encounter.bySource || {};
+                            for (const name in e) {
+                                const rec = e[name];
+                                currentEncounter.bySource.set(name, { dmg: Number(rec.dmg||0), heal: Number(rec.heal||0), classColor: rec.color || null });
+                            }
+                        }
+                        // Render initial meters
+                        renderTopLists();
+                        // Preload Encounter Log and Death Log from host snapshot so late viewers mirror host
+                        try {
+                            // Ensure assignedMap is available for filtering/class colors
+                            const eventId = localStorage.getItem('activeEventSession');
+                            if (eventId && !assignedMap) {
+                                const j = await fetch(`/api/events/${encodeURIComponent(eventId)}/assigned-characters`, { headers: { 'Accept': 'application/json' } }).then(r => r.ok ? r.json() : null).catch(()=>null);
+                                assignedMap = j && j.assigned ? j.assigned : null;
+                            }
+
+                            // Encounter boxes
+                            if (encounterFeed) {
+                                const encs = Array.isArray(snap.live.stats.encounters) ? snap.live.stats.encounters : [];
+                                if (encounterFeed()) encounterFeed().innerHTML = '';
+                                for (const enc of encs) {
+                                    const box = document.createElement('div');
+                                    box.className = 'encounter-box';
+                                    const title = document.createElement('div');
+                                    title.className = 'encounter-box-title';
+                                    title.textContent = `${enc.name || ''}`;
+                                    const time = document.createElement('div');
+                                    time.className = 'time';
+                                    time.textContent = `${enc.type === 'start' ? 'start' : 'end'}: ${formatMs(Number(enc.ts||0))}`;
+                                    box.appendChild(title);
+                                    box.appendChild(time);
+                                    if (encounterFeed()) encounterFeed().appendChild(box);
+                                }
+                            }
+
+                            // Encounter meters snapshot fill (ensures non-empty for viewers)
+                            {
+                                const eObj = snap.live.stats && snap.live.stats.encounter && snap.live.stats.encounter.bySource ? snap.live.stats.encounter.bySource : {};
+                                const hasEntries = eObj && Object.keys(eObj).length > 0;
+                                if (hasEntries) {
+                                    if (!currentEncounter || !currentEncounter.bySource || currentEncounter.bySource.size === 0) {
+                                        let inferredName = null;
+                                        const encs = Array.isArray(snap.live.stats.encounters) ? snap.live.stats.encounters : [];
+                                        for (let i = encs.length - 1; i >= 0; i--) { if (encs[i] && encs[i].name) { inferredName = encs[i].name; break; } }
+                                        currentEncounter = { name: inferredName || '(Encounter)', bySource: new Map() };
+                                        for (const n in eObj) {
+                                            const r = eObj[n];
+                                            currentEncounter.bySource.set(n, { dmg: Number(r.dmg||0), heal: Number(r.heal||0), classColor: r.color || null });
+                                        }
+                                    }
+                                    // Render immediately
+                                    renderTopLists();
+                                }
+                            }
+
+                            // Death cards (newest on top) — only for assigned players
+                            if (deathPanelBody) {
+                                const deaths = Array.isArray(snap.live.stats.deaths) ? snap.live.stats.deaths : [];
+                                if (deathPanelBody()) deathPanelBody().innerHTML = '';
+                                if (assignedMap) {
+                                    for (const d of deaths) {
+                                        const name = d && d.name ? String(d.name) : null;
+                                        if (!name) continue;
+                                        if (!assignedMap[name.toLowerCase()]) continue; // filter to assigned players
+                                        const key = `${name}@${Number(d.ts||0)}`;
+                                        if (!deathCards.has(key)) {
+                                            const card = document.createElement('div');
+                                            card.className = 'death-card';
+                                            const header = document.createElement('div');
+                                            header.className = 'title';
+                                            const nm = document.createElement('span');
+                                            nm.textContent = name;
+                                            const tm = document.createElement('span');
+                                            tm.textContent = formatMs(Number(d.ts||0)).replace(/:/g, '.');
+                                            header.appendChild(nm);
+                                            header.appendChild(tm);
+
+                                            // Class color background/border like meters
+                                            const info = assignedMap[name.toLowerCase()] || null;
+                                            let colorHex = info && info.color ? info.color : null;
+                                            if (!colorHex && info && info.class) colorHex = classColorFor(info.class) || null;
+                                            if (colorHex) {
+                                                const bg = colorToRgba(colorHex, 0.2) || colorHex;
+                                                card.style.background = bg;
+                                                card.style.border = `1px solid ${colorHex}`;
+                                                header.style.color = getReadableTextColor(bg);
+                                            }
+                                            card.appendChild(header);
+
+                                            const mini = document.createElement('div');
+                                            mini.className = 'mini-stream';
+                                            const lines = Array.isArray(d.lines) ? d.lines : [];
+                                            for (const ln of lines) {
+                                                const row = document.createElement('div');
+                                                const isHeal = String(ln.type||'').toLowerCase() === 'heal';
+                                                row.style.color = isHeal ? 'rgb(107, 255, 122)' : 'rgb(255, 107, 107)';
+                                                const time = formatMs(Number(ln.ts||0));
+                                                const src = ln.source || '';
+                                                const ability = ln.ability || '';
+                                                const amt = Number(ln.amount||0);
+                                                row.textContent = `[${time}] ${isHeal ? 'heal' : 'damage'} ${src} [${ability}] amount=${amt}`;
+                                                mini.appendChild(row);
+                                            }
+                                            card.appendChild(mini);
+                                            const container = deathPanelBody();
+                                            if (container && container.firstChild) container.insertBefore(card, container.firstChild); else if (container) container.appendChild(card);
+                                            deathCards.set(key, card);
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (_) {}
+                    }
+                    if (!isRunning && reportParam) start();
+                }
+            } catch (_) {}
+        })();
         async function refreshLiveStatus() {
             try {
                 const resp = await fetch('/api/wcl/live/status', { headers: { 'Accept': 'application/json' } });
@@ -438,6 +695,16 @@
                 if (indicator) {
                     indicator.style.background = on ? '#2ecc71' : '#e74c3c';
                     indicator.style.boxShadow = on ? '0 0 6px #2ecc71' : '0 0 6px #e74c3c';
+                }
+                // Toggle management buttons
+                if (isManager) {
+                    if (startSharedBtn()) startSharedBtn().style.display = on ? 'none' : 'inline-block';
+                    if (stopSharedBtn()) stopSharedBtn().style.display = on ? 'inline-block' : 'none';
+                }
+                if (!on) {
+                    // Shared session ended; stop any local streaming
+                    if (isRunning) stop();
+                    return;
                 }
                 if (on && body.live && body.live.reportInput && !reportParam) {
                     // Auto-start viewing active live report for viewers without management
@@ -458,22 +725,25 @@
         setInterval(refreshLiveStatus, 3000);
         refreshLiveStatus();
 
-        // Show management-only Start Shared button
+        // Show management-only Start/Stop buttons (host-only). On /live viewers, always hide controls.
         (async () => {
             try {
                 const userResp = await fetch('/user');
                 const user = await userResp.json();
-                if (user && user.loggedIn && user.hasManagementRole && startSharedBtn()) {
-                    startSharedBtn().style.display = 'inline-block';
+                isManager = !!(user && user.loggedIn && user.hasManagementRole);
+                const isHostPage = location.pathname === '/livehost';
+                if (isHostPage && isManager && startSharedBtn()) {
+                    // Initial visibility handled by refreshLiveStatus
                     startSharedBtn().addEventListener('click', async () => {
                         const report = (input().value || '').trim();
                         if (!report) { input().focus(); return; }
                         const startCursorMs = getStartTimeMs();
+                        const eventId = localStorage.getItem('activeEventSession') || null;
                         try {
                             const resp = await fetch('/api/wcl/live/start', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ report, startCursorMs })
+                                body: JSON.stringify({ report, startCursorMs, eventId })
                             });
                             const body = await resp.json();
                             if (!resp.ok) throw new Error(body && (body.details || body.error) || 'Failed to start');
@@ -482,13 +752,24 @@
                             setStatus(`error: ${err.message}`);
                         }
                     });
+                    if (stopSharedBtn()) {
+                        stopSharedBtn().addEventListener('click', async () => {
+                            try {
+                                const resp = await fetch('/api/wcl/live/stop', { method: 'POST' });
+                                const body = await resp.json();
+                                if (!resp.ok) throw new Error(body && (body.details || body.error) || 'Failed to stop');
+                                setStatus('Shared live session stopped');
+                                // Immediately stop local streaming without refresh
+                                if (isRunning) stop();
+                            } catch (err) {
+                                setStatus(`error: ${err.message}`);
+                            }
+                        });
+                    }
                 } else {
-                    // Viewer: hide controls and make time readonly
-                    if (startBtn()) startBtn().style.display = 'none';
-                    if (pauseBtn()) pauseBtn().style.display = 'none';
-                    if (jumpFirstBtn()) jumpFirstBtn().style.display = 'none';
-                    if (jumpNextBtn()) jumpNextBtn().style.display = 'none';
+                    // Viewer or non-host page: hide management controls and make time readonly
                     if (startSharedBtn()) startSharedBtn().style.display = 'none';
+                    if (stopSharedBtn()) stopSharedBtn().style.display = 'none';
                     const reportInputEl = document.getElementById('reportInput');
                     if (reportInputEl) { reportInputEl.style.display = 'none'; }
                     if (hh()) hh().readOnly = true;

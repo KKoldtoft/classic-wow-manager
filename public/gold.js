@@ -21,8 +21,25 @@ class GoldPotManager {
 
     async loadData() {
         try {
-            // Get the active event session ID from localStorage
-            this.currentEventId = localStorage.getItem('activeEventSession');
+            // Prefer URL param /event/:eventId/gold; fallback to localStorage
+            let eventIdFromUrl = null;
+            try {
+                const parts = window.location.pathname.split('/').filter(Boolean);
+                const idx = parts.indexOf('event');
+                if (idx >= 0 && parts[idx + 1]) {
+                    eventIdFromUrl = parts[idx + 1];
+                }
+            } catch {}
+
+            // Get the active event session ID
+            this.currentEventId = eventIdFromUrl || localStorage.getItem('activeEventSession');
+
+            if (eventIdFromUrl) {
+                localStorage.setItem('activeEventSession', eventIdFromUrl);
+                if (typeof updateRaidBar === 'function') {
+                    setTimeout(() => updateRaidBar(), 0);
+                }
+            }
             
             if (!this.currentEventId) {
                 this.showError('No active event session found. Please select an event from the events page.');

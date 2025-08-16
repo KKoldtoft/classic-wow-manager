@@ -398,7 +398,24 @@ class RaidLogsManager {
     }
 
     async loadRaidLogsData() {
-        this.activeEventId = localStorage.getItem('activeEventSession');
+        // Prefer URL param /event/:eventId/raidlogs; fallback to localStorage
+        let eventIdFromUrl = null;
+        try {
+            const parts = window.location.pathname.split('/').filter(Boolean);
+            const idx = parts.indexOf('event');
+            if (idx >= 0 && parts[idx + 1]) {
+                eventIdFromUrl = parts[idx + 1];
+            }
+        } catch {}
+
+        this.activeEventId = eventIdFromUrl || localStorage.getItem('activeEventSession');
+
+        if (eventIdFromUrl) {
+            localStorage.setItem('activeEventSession', eventIdFromUrl);
+            if (typeof updateRaidBar === 'function') {
+                setTimeout(() => updateRaidBar(), 0);
+            }
+        }
         
         if (!this.activeEventId) {
             this.showNoData('No active raid session found');
