@@ -135,6 +135,24 @@
         </div>
     </div>
 
+    <!-- Fix Name Overlay -->
+    <div id="fix-name-overlay" class="player-search-overlay">
+        <div class="player-search-modal">
+            <button class="fix-name-close">&times;</button>
+            <div class="player-search-header">Fix Player Name</div>
+            <div class="fix-name-form">
+                <div class="fix-name-row"><label>Discord ID</label><div id="fix-discord-id" class="fix-name-value"></div></div>
+                <div class="fix-name-row"><label>Class</label><div id="fix-class" class="fix-name-value"></div></div>
+                <div class="fix-name-row"><label>Role</label><div id="fix-role" class="fix-name-value"></div></div>
+                <div class="fix-name-row"><label>Name</label><input id="fix-name-input" type="text" class="player-search-input" autocomplete="off"></div>
+                <div class="fix-name-actions" style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
+                    <button id="fix-name-cancel" class="panel-button" type="button"><i class="fas fa-times"></i><span>Cancel</span></button>
+                    <button id="fix-name-save" class="panel-button" type="button"><i class="fas fa-save"></i><span>Save</span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="/confirmation-modal.js"></script>
     <script src="/add-character.js"></script>
     <script src="/roster-api.js"></script>

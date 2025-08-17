@@ -35,6 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentRosterData = {};
     let playerCharacterHistory = {}; // Track all characters each player has used
     let playerCharacterDetails = {}; // Track class info for each character
+    let playersDbCache = {}; // Cache of players table entries by discord ID
 
     // Add utility functions for optimistic updates
     const OptimisticUpdates = {
@@ -739,6 +740,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 });
             });
+
+            // Fix name action
+            cell.querySelectorAll('[data-action="fix-name"]').forEach(item => {
+                item.addEventListener('click', async (e) => {
+                    const { userid } = e.currentTarget.dataset;
+                    const player = currentRosterData.raidDrop?.find(p => p && p.userid === userid) || currentRosterData.bench?.find(p => p && p.userid === userid);
+                    if (!player) return;
+                    openFixNameOverlay(player);
+                });
+            });
         }
     };
 
@@ -773,6 +784,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             setupHideBenchToggle();
             setupHideConfirmedToggle();
             setupPlayerSearchModal();
+            setupFixNameModal();
+            await prefetchPlayersDb();
+            await applyDbMismatchStyling();
             
             // Apply all visibility effects after roster is rendered
             setTimeout(() => {
@@ -838,6 +852,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="player-details-dropdown">${dropdownContentHTML}</div>`;
 
                     applyPlayerColor(cellDiv, player.color);
+                    markCellDbMismatch(cellDiv, player);
                     } else {
                         // Empty slot - make it clickable with "Add new character" option
                         cellDiv.classList.add('empty-slot-clickable');
@@ -924,7 +939,79 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="player-details-dropdown">${dropdownContentHTML}</div>`;
 
         applyPlayerColor(cellDiv, player.color);
+        markCellDbMismatch(cellDiv, player);
         return cellDiv;
+    }
+
+    function getDisplayCharacterNameForPlayer(player) {
+        return player.mainCharacterName || player.name || '';
+    }
+
+    async function fetchDbCharactersForUser(discordUserId) {
+        if (playersDbCache[discordUserId] !== undefined) return playersDbCache[discordUserId];
+        try {
+            const resp = await fetch(`/api/players/by-discord-id/${discordUserId}`);
+            if (!resp.ok) {
+                playersDbCache[discordUserId] = [];
+                return [];
+            }
+            const data = await resp.json();
+            playersDbCache[discordUserId] = Array.isArray(data.characters) ? data.characters : [];
+            return playersDbCache[discordUserId];
+        } catch (e) {
+            playersDbCache[discordUserId] = [];
+            return [];
+        }
+    }
+
+    async function prefetchPlayersDb() {
+        const ids = new Set();
+        (currentRosterData.raidDrop || []).forEach(p => { if (p && p.userid) ids.add(p.userid); });
+        (currentRosterData.bench || []).forEach(p => { if (p && p.userid) ids.add(p.userid); });
+        const promises = Array.from(ids).map(id => fetchDbCharactersForUser(id));
+        await Promise.all(promises);
+    }
+
+    function doesPlayerExistInDbCached(player) {
+        const list = playersDbCache[player.userid] || [];
+        const name = getDisplayCharacterNameForPlayer(player).toLowerCase();
+        const cls = (player.class || '').toLowerCase();
+        return list.some(row => (row.character_name || '').toLowerCase() === name && (row.class || '').toLowerCase() === cls);
+    }
+
+    function markCellDbMismatch(cell, player) {
+        if (!player || !player.userid) return;
+        if (playersDbCache[player.userid] === undefined) {
+            fetchDbCharactersForUser(player.userid).then(() => {
+                if (!cell || !cell.parentNode) return;
+                if (!doesPlayerExistInDbCached(player)) cell.classList.add('db-mismatch'); else cell.classList.remove('db-mismatch');
+            });
+            return;
+        }
+        if (!doesPlayerExistInDbCached(player)) {
+            cell.classList.add('db-mismatch');
+        } else {
+            cell.classList.remove('db-mismatch');
+        }
+    }
+
+    async function applyDbMismatchStyling() {
+        // Roster cells
+        (document.querySelectorAll('.roster-column .roster-cell.player-filled') || []).forEach(cell => {
+            const dropdownItem = cell.querySelector('[data-userid]');
+            const userid = dropdownItem ? dropdownItem.dataset.userid : null;
+            if (!userid) return;
+            const player = (currentRosterData.raidDrop || []).find(p => p && p.userid === userid);
+            if (player) markCellDbMismatch(cell, player);
+        });
+        // Bench cells
+        (document.querySelectorAll('#benched-list .roster-cell.player-filled') || []).forEach(cell => {
+            const dropdownItem = cell.querySelector('[data-userid]');
+            const userid = dropdownItem ? dropdownItem.dataset.userid : null;
+            if (!userid) return;
+            const player = (currentRosterData.bench || []).find(p => p && p.userid === userid);
+            if (player) markCellDbMismatch(cell, player);
+        });
     }
 
 
@@ -968,6 +1055,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 content += `<div class="dropdown-item has-submenu"><i class="fas fa-magic menu-icon"></i>Swap Spec ${specSubmenuHTML}</div>`;
             }
         }
+
+        // Add Fix name action (available for both roster and bench players)
+        content += `<div class="dropdown-item" data-action="fix-name" data-userid="${player.userid}"><i class="fas fa-edit menu-icon"></i>Fix name</div>`;
 
         
 
@@ -1589,6 +1679,99 @@ document.addEventListener('DOMContentLoaded', async () => {
                 searchPlayers(e.target.value.trim());
             }, 300); // Debounce search by 300ms
         });
+    }
+
+    // Fix Name modal functionality
+    let currentFixTarget = null;
+
+    function openFixNameOverlay(player) {
+        currentFixTarget = player;
+        const overlay = document.getElementById('fix-name-overlay');
+        const input = document.getElementById('fix-name-input');
+        const discordDiv = document.getElementById('fix-discord-id');
+        const classDiv = document.getElementById('fix-class');
+        const roleDiv = document.getElementById('fix-role');
+
+        // Populate values
+        discordDiv.textContent = player.userid;
+        classDiv.textContent = player.class || '';
+        roleDiv.textContent = deriveRole(player.class, player.spec);
+        input.value = player.mainCharacterName || player.name || '';
+
+        overlay.style.display = 'flex';
+        input.focus();
+    }
+
+    function closeFixNameOverlay() {
+        const overlay = document.getElementById('fix-name-overlay');
+        overlay.style.display = 'none';
+        currentFixTarget = null;
+    }
+
+    function setupFixNameModal() {
+        const overlay = document.getElementById('fix-name-overlay');
+        if (!overlay) return;
+        const closeBtn = overlay.querySelector('.fix-name-close');
+        const cancelBtn = document.getElementById('fix-name-cancel');
+        const saveBtn = document.getElementById('fix-name-save');
+        const input = document.getElementById('fix-name-input');
+
+        closeBtn.addEventListener('click', closeFixNameOverlay);
+        cancelBtn.addEventListener('click', closeFixNameOverlay);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) closeFixNameOverlay(); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && overlay.style.display === 'flex') closeFixNameOverlay(); });
+
+        saveBtn.addEventListener('click', async () => {
+            if (!currentFixTarget) return;
+            const oldName = currentFixTarget.mainCharacterName || currentFixTarget.name || '';
+            const newName = (input.value || '').trim();
+            if (!newName) {
+                showAlert('Invalid name', 'Please enter a valid name.');
+                return;
+            }
+            try {
+                await fixPlayerName(currentFixTarget.userid, oldName, newName, currentFixTarget.class, eventId);
+                // Update local state and refresh UI
+                const rosterPlayer = currentRosterData.raidDrop?.find(p => p && p.userid === currentFixTarget.userid);
+                if (rosterPlayer) rosterPlayer.mainCharacterName = newName;
+                const benchPlayer = currentRosterData.bench?.find(p => p && p.userid === currentFixTarget.userid);
+                if (benchPlayer) benchPlayer.mainCharacterName = newName;
+                closeFixNameOverlay();
+                await renderRoster();
+            } catch (error) {
+                showAlert('Save Error', `Failed to save name: ${error.message}`);
+            }
+        });
+    }
+
+    function deriveRole(className, specName) {
+        if (!className) return 'Unknown';
+        const c = (className || '').toLowerCase();
+        const s = (specName || '').toLowerCase();
+        if (c.includes('paladin')) {
+            if (s.includes('holy')) return 'Healer';
+            if (s.includes('protection')) return 'Tank';
+            return 'DPS';
+        }
+        if (c.includes('priest')) {
+            if (s.includes('shadow')) return 'DPS';
+            return 'Healer';
+        }
+        if (c.includes('druid')) {
+            if (s.includes('restoration')) return 'Healer';
+            if (s.includes('bear') || s.includes('guardian') || s.includes('feral tank')) return 'Tank';
+            return 'DPS';
+        }
+        if (c.includes('warrior')) {
+            if (s.includes('protection')) return 'Tank';
+            return 'DPS';
+        }
+        if (c.includes('shaman')) {
+            if (s.includes('restoration')) return 'Healer';
+            return 'DPS';
+        }
+        // Hunter, Mage, Rogue, Warlock default to DPS
+        return 'DPS';
     }
 
     function updateRevertButtonVisibility() {

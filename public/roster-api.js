@@ -162,3 +162,28 @@ async function addExistingPlayerToRoster(eventId, characterData, targetPartyId, 
     }
     return response.json();
 }
+
+// Check if a player exists in the players table by exact (discord_id, character_name, class)
+async function checkPlayerExists(discordUserId, characterName, characterClass) {
+    const url = `/api/players/search?q=${encodeURIComponent(characterName)}`;
+    const response = await fetch(url);
+    if (!response.ok) return false;
+    const rows = await response.json();
+    const lowerName = (characterName || '').toLowerCase();
+    const lowerClass = (characterClass || '').toLowerCase();
+    return rows.some(r => (r.discord_id === discordUserId) && (r.character_name?.toLowerCase() === lowerName) && (r.class?.toLowerCase() === lowerClass));
+}
+
+// Fix a player's character name in the players table (and update the roster override name for the given event)
+async function fixPlayerName(discordUserId, oldName, newName, characterClass, eventId) {
+    const response = await fetch(`/api/players/${discordUserId}/fix-name`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldName, newName, characterClass, eventId })
+    });
+    if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fix player name');
+    }
+    return response.json();
+}

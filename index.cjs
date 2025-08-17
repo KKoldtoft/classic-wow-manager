@@ -2096,6 +2096,76 @@ app.get('/api/management/users', requireManagement, async (req, res) => {
   }
 });
 
+// Management-only: update a player row (discord_id, character_name, class)
+app.put('/api/management/users', requireManagement, async (req, res) => {
+  const { originalDiscordId, originalCharacterName, newDiscordId, newCharacterName, newClass } = req.body || {};
+
+  if (!originalDiscordId || !originalCharacterName) {
+    return res.status(400).json({ success: false, message: 'Missing originalDiscordId or originalCharacterName' });
+  }
+  if (!newDiscordId || !newCharacterName || !newClass) {
+    return res.status(400).json({ success: false, message: 'Missing newDiscordId or newCharacterName or newClass' });
+  }
+
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+
+    const result = await client.query(
+      `UPDATE players
+       SET discord_id = $1, character_name = $2, class = $3
+       WHERE discord_id = $4 AND character_name = $5`,
+      [newDiscordId, newCharacterName, newClass, originalDiscordId, originalCharacterName]
+    );
+
+    if (result.rowCount === 0) {
+      // If no row to update, respond 404
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Player not found' });
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Player updated', player: { discord_id: newDiscordId, character_name: newCharacterName, class: newClass } });
+  } catch (error) {
+    if (client) await client.query('ROLLBACK');
+    // Unique violation when changing PK to an existing one
+    if (error && error.code === '23505') {
+      return res.status(409).json({ success: false, message: 'A player with that Discord ID and character name already exists.' });
+    }
+    console.error('Error updating player by management:', error);
+    res.status(500).json({ success: false, message: 'Internal Server Error' });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Management-only: delete a player row
+app.delete('/api/management/users', requireManagement, async (req, res) => {
+  const { discordId, characterName } = req.body || {};
+  if (!discordId || !characterName) {
+    return res.status(400).json({ success: false, message: 'Missing discordId or characterName' });
+  }
+
+  let client;
+  try {
+    client = await pool.connect();
+    const result = await client.query(
+      'DELETE FROM players WHERE discord_id = $1 AND character_name = $2',
+      [discordId, characterName]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, message: 'Player not found' });
+    }
+    res.json({ success: true, message: 'Player deleted' });
+  } catch (error) {
+    console.error('Error deleting player by management:', error);
+    res.status(500).json({ success: false, message: 'Internal Server Error' });
+  } finally {
+    if (client) client.release();
+  }
+});
+
 // Management-only endpoint for roster statistics
 app.get('/api/management/roster-stats', requireManagement, async (req, res) => {
   try {
@@ -2678,6 +2748,74 @@ app.get('/api/players', async (req, res) => {
     } catch (error) {
         console.error('Error fetching players:', error.stack);
         res.status(500).json({ message: 'Error fetching players from the database.' });
+    }
+});
+
+// Update a player's character name in the players table and optionally the current event roster
+app.put('/api/players/:discordUserId/fix-name', async (req, res) => {
+    const { discordUserId } = req.params;
+    const { oldName, newName, characterClass, eventId } = req.body || {};
+
+    if (!newName || !characterClass) {
+        return res.status(400).json({ message: 'Missing required fields: newName and characterClass.' });
+    }
+
+    let client;
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+
+        // Ensure the player does not already have a character with the same name/class
+        const dupCheck = await client.query(
+            `SELECT 1 FROM players 
+             WHERE discord_id = $1 AND LOWER(character_name) = LOWER($2) AND LOWER(class) = LOWER($3)`,
+            [discordUserId, newName, characterClass]
+        );
+        if (dupCheck.rows.length > 0 && (!oldName || oldName.toLowerCase() !== newName.toLowerCase())) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ message: `A character named "${newName}" already exists for this class.` });
+        }
+
+        // Try to update existing row (based on old name if provided)
+        let updated = false;
+        if (oldName) {
+            const updateResult = await client.query(
+                `UPDATE players 
+                 SET character_name = $1 
+                 WHERE discord_id = $2 AND LOWER(character_name) = LOWER($3) AND LOWER(class) = LOWER($4)`,
+                [newName, discordUserId, oldName, characterClass]
+            );
+            updated = updateResult.rowCount > 0;
+        }
+
+        // If no old row was updated, ensure a row exists with the new name (insert if missing)
+        if (!updated) {
+            await client.query(
+                `INSERT INTO players (discord_id, character_name, class)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (discord_id, character_name) DO UPDATE SET class = EXCLUDED.class`,
+                [discordUserId, newName, characterClass]
+            );
+        }
+
+        // If this request is coming from a specific event context, update roster override name only
+        if (eventId) {
+            await client.query(
+                `UPDATE roster_overrides 
+                 SET assigned_char_name = $1 
+                 WHERE event_id = $2 AND discord_user_id = $3`,
+                [newName, eventId, discordUserId]
+            );
+        }
+
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'Player name updated successfully.', newName });
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Error fixing player name:', error);
+        res.status(500).json({ message: 'Internal Server Error' });
+    } finally {
+        if (client) client.release();
     }
 });
 

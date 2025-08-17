@@ -628,20 +628,25 @@
                 if (response.ok) {
                     const tableHtml = `
                         <h4>All Users (${data.users.length} total)</h4>
-                        <table class="data-table">
+                        <table class="data-table" id="users-table">
                             <thead>
                                 <tr>
                                     <th>Discord ID</th>
                                     <th>Character Name</th>
                                     <th>Class</th>
+                                    <th style="width:160px;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${data.users.map(user => `
-                                    <tr>
-                                        <td>${user.discord_id}</td>
+                                    <tr data-discord-id="${user.discord_id}" data-character-name="${user.character_name}">
+                                        <td><code>${user.discord_id}</code></td>
                                         <td>${user.character_name}</td>
                                         <td>${user.class}</td>
+                                        <td>
+                                            <button class="btn" onclick="editUserRow(this)"><i class="fas fa-edit"></i> Edit</button>
+                                            <button class="btn danger" onclick="deleteUserRow(this)"><i class="fas fa-trash"></i> Delete</button>
+                                        </td>
                                     </tr>
                                 `).join('')}
                             </tbody>
@@ -654,6 +659,123 @@
             } catch (error) {
                 console.error('Error loading users:', error);
                 document.getElementById('management-data').innerHTML = '<p>Error loading users.</p>';
+            }
+        }
+
+        function editUserRow(button) {
+            const row = button.closest('tr');
+            const originalDiscordId = row.dataset.discordId;
+            const originalCharacterName = row.dataset.characterName;
+
+            const cells = row.querySelectorAll('td');
+            const currentDiscord = cells[0].innerText.trim();
+            const currentName = cells[1].innerText.trim();
+            const currentClass = cells[2].innerText.trim();
+
+            row.innerHTML = `
+                <td><input type="text" value="${currentDiscord}" style="width:100%; padding:6px;"></td>
+                <td><input type="text" value="${currentName}" style="width:100%; padding:6px;"></td>
+                <td>
+                    <input type="text" value="${currentClass}" style="width:100%; padding:6px;" list="class-list">
+                    <datalist id="class-list">
+                        <option>Warrior</option>
+                        <option>Paladin</option>
+                        <option>Hunter</option>
+                        <option>Rogue</option>
+                        <option>Priest</option>
+                        <option>Shaman</option>
+                        <option>Mage</option>
+                        <option>Warlock</option>
+                        <option>Druid</option>
+                    </datalist>
+                </td>
+                <td>
+                    <button class="btn" onclick="saveUserRow(this, '${originalDiscordId}', '${originalCharacterName}')"><i class="fas fa-save"></i> Save</button>
+                    <button class="btn danger" onclick="cancelEditUserRow(this, '${originalDiscordId}', '${originalCharacterName}', '${currentDiscord}', '${currentName}', '${currentClass}')"><i class="fas fa-times"></i> Cancel</button>
+                </td>
+            `;
+        }
+
+        async function saveUserRow(button, originalDiscordId, originalCharacterName) {
+            const row = button.closest('tr');
+            const inputs = row.querySelectorAll('input');
+            const newDiscordId = inputs[0].value.trim();
+            const newCharacterName = inputs[1].value.trim();
+            const newClass = inputs[2].value.trim();
+
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+            try {
+                const resp = await fetch('/api/management/users', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ originalDiscordId, originalCharacterName, newDiscordId, newCharacterName, newClass })
+                });
+                const data = await resp.json();
+                if (!resp.ok || !data.success) {
+                    alert('Error saving: ' + (data.message || 'Unknown error'));
+                    return;
+                }
+                // Update row back to read mode
+                row.dataset.discordId = newDiscordId;
+                row.dataset.characterName = newCharacterName;
+                row.innerHTML = `
+                    <td><code>${newDiscordId}</code></td>
+                    <td>${newCharacterName}</td>
+                    <td>${newClass}</td>
+                    <td>
+                        <button class="btn" onclick="editUserRow(this)"><i class="fas fa-edit"></i> Edit</button>
+                        <button class="btn danger" onclick="deleteUserRow(this)"><i class="fas fa-trash"></i> Delete</button>
+                    </td>
+                `;
+            } catch (e) {
+                console.error('Save error:', e);
+                alert('Network error while saving.');
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        function cancelEditUserRow(button, originalDiscordId, originalCharacterName, discordId, characterName, characterClass) {
+            const row = button.closest('tr');
+            row.dataset.discordId = originalDiscordId;
+            row.dataset.characterName = originalCharacterName;
+            row.innerHTML = `
+                <td><code>${discordId}</code></td>
+                <td>${characterName}</td>
+                <td>${characterClass}</td>
+                <td>
+                    <button class="btn" onclick="editUserRow(this)"><i class="fas fa-edit"></i> Edit</button>
+                    <button class="btn danger" onclick="deleteUserRow(this)"><i class="fas fa-trash"></i> Delete</button>
+                </td>
+            `;
+        }
+
+        async function deleteUserRow(button) {
+            const row = button.closest('tr');
+            const discordId = row.dataset.discordId;
+            const characterName = row.dataset.characterName;
+            if (!confirm(`Delete player "${characterName}" (${discordId})? This cannot be undone.`)) return;
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
+            try {
+                const resp = await fetch('/api/management/users', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ discordId, characterName })
+                });
+                const data = await resp.json();
+                if (!resp.ok || !data.success) {
+                    alert('Error deleting: ' + (data.message || 'Unknown error'));
+                    return;
+                }
+                row.parentNode.removeChild(row);
+            } catch (e) {
+                console.error('Delete error:', e);
+                alert('Network error while deleting.');
+            } finally {
+                button.disabled = false;
             }
         }
 
