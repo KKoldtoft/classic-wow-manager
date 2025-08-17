@@ -8038,7 +8038,7 @@ app.get('/api/manual-rewards/:eventId', async (req, res) => {
 // Add manual reward/deduction entry
 app.post('/api/manual-rewards/:eventId', requireManagement, async (req, res) => {
     const { eventId } = req.params;
-    const { player_name, player_class, discord_id, description, points } = req.body;
+    const { player_name, player_class, discord_id, description, points, icon_url } = req.body;
     const createdBy = req.user?.id || 'unknown';
     
     console.log(`⚖️ [MANUAL REWARDS] Adding entry for event: ${eventId}, player: ${player_name}, points: ${points}`);
@@ -8073,10 +8073,10 @@ app.post('/api/manual-rewards/:eventId', requireManagement, async (req, res) => 
         // Insert new entry
         const result = await client.query(`
             INSERT INTO manual_rewards_deductions 
-            (event_id, player_name, player_class, discord_id, description, points, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            (event_id, player_name, player_class, discord_id, description, points, created_by, icon_url)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING *
-        `, [eventId, player_name, player_class, discord_id, description, points, createdBy]);
+        `, [eventId, player_name, player_class || null, discord_id || null, description, points, createdBy, icon_url || null]);
         
         const newEntry = result.rows[0];
         console.log(`✅ [MANUAL REWARDS] Created entry with ID: ${newEntry.id}`);
@@ -11624,11 +11624,11 @@ app.get('/api/raid-stats/:eventId', async (req, res) => {
     try {
         client = await pool.connect();
         
-        // Get RPB archive information
+        // Get RPB archive information (filter strictly to RPB analysis type)
         const rpbResult = await client.query(`
             SELECT archive_url, archive_name, rpb_completed_at
             FROM rpb_tracking 
-            WHERE event_id = $1 AND archive_url IS NOT NULL
+            WHERE event_id = $1 AND archive_url IS NOT NULL AND analysis_type = 'rpb'
             ORDER BY created_at DESC 
             LIMIT 1
         `, [eventId]);

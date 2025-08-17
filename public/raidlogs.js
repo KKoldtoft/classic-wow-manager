@@ -4022,11 +4022,11 @@ class RaidLogsManager {
             });
         }
 
-        // Add templates button
+        // Tanks button (warrior-colored) — add MT/OT1/OT2/OT3 from main Tanking panel (ID1..ID4)
         const addTemplatesBtn = document.getElementById('add-templates-btn');
         if (addTemplatesBtn) {
             addTemplatesBtn.addEventListener('click', () => {
-                this.handleAddFromTemplates();
+                this.autoAddMainTanks();
             });
         }
 
@@ -4034,31 +4034,31 @@ class RaidLogsManager {
         const add4HTanksBtn = document.getElementById('add-templates-4h-tanks-btn');
         if (add4HTanksBtn) {
             add4HTanksBtn.addEventListener('click', () => {
-                this.handleAddFromTemplates([5,6,7,8]);
+                this.autoAddFourHorsemenTanks();
             });
         }
         const addRazMcBtn = document.getElementById('add-templates-raz-mc-btn');
         if (addRazMcBtn) {
             addRazMcBtn.addEventListener('click', () => {
-                this.handleAddFromTemplates([9,10]);
+                this.autoAddRazMC();
             });
         }
         const addPullerBtn = document.getElementById('add-templates-puller-btn');
         if (addPullerBtn) {
             addPullerBtn.addEventListener('click', () => {
-                this.handleAddFromTemplates([11]);
+                this.autoAddPuller();
             });
         }
         const addGluthKiteBtn = document.getElementById('add-templates-gluth-kite-btn');
         if (addGluthKiteBtn) {
             addGluthKiteBtn.addEventListener('click', () => {
-                this.handleAddFromTemplates([12]);
+                this.autoAddGluthKite();
             });
         }
         const addSummonersBtn = document.getElementById('add-templates-summoners-btn');
         if (addSummonersBtn) {
             addSummonersBtn.addEventListener('click', () => {
-                this.handleAddFromTemplates([13,14,15]);
+                this.autoAddSummoners();
             });
         }
         
@@ -4083,6 +4083,375 @@ class RaidLogsManager {
         
         window.addEventListener('scroll', repositionDropdown);
         window.addEventListener('resize', repositionDropdown);
+    }
+
+    // Auto-add 4H tanks from Assignments: pick warriors in Horsemen grid excluding main-page Tanking ID1..ID4
+    async autoAddFourHorsemenTanks() {
+        if (!this.activeEventId) {
+            console.error('❌ [4H TANKS] No active event ID');
+            return;
+        }
+        try {
+            // Fetch assignments for this event
+            const res = await fetch(`/api/assignments/${this.activeEventId}`);
+            const data = await res.json();
+            if (!data || !data.success) throw new Error('Failed to load assignments');
+
+            const panels = Array.isArray(data.panels) ? data.panels : [];
+            // Main page: Tanking panel for ID1..ID4
+            const tankingPanel = panels.find(p => String(p.boss || '').toLowerCase() === 'tanking' && (!p.wing || String(p.wing).trim() === '' || String(p.wing).toLowerCase() === 'main'))
+                               || panels.find(p => String(p.boss || '').toLowerCase() === 'tanking');
+            const tankNames = [];
+            if (tankingPanel && Array.isArray(tankingPanel.entries)) {
+                const findByMarker = (markerSub) => {
+                    const e = tankingPanel.entries.find(en => String(en.marker_icon_url || '').toLowerCase().includes(markerSub));
+                    return e && e.character_name ? String(e.character_name) : null;
+                };
+                const id1 = findByMarker('skull');
+                const id2 = findByMarker('cross');
+                const id3 = findByMarker('square');
+                const id4 = findByMarker('moon');
+                [id1, id2, id3, id4].forEach(n => { if (n) tankNames.push(n.toLowerCase()); });
+            }
+
+            // Military -> The Four Horsemen panel and its persisted grid
+            const horsePanel = panels.find(p => String(p.wing || '').toLowerCase().includes('military') && (String(p.boss || '').toLowerCase().includes('four') || String(p.boss || '').toLowerCase().includes('horse')));
+            if (!horsePanel) throw new Error('Four Horsemen panel not found');
+
+            // Collect up to 8 warrior names from hidden entries __HGRID__ or horsemen_tanks
+            const horseNames = new Set();
+            if (horsePanel.horsemen_tanks && typeof horsePanel.horsemen_tanks === 'object') {
+                Object.values(horsePanel.horsemen_tanks).forEach(arr => {
+                    const name = Array.isArray(arr) ? arr[0] : null;
+                    if (name) horseNames.add(String(name));
+                });
+            }
+            if (Array.isArray(horsePanel.entries)) {
+                horsePanel.entries.forEach(en => {
+                    const m = String(en.assignment || '').match(/^__HGRID__:(\d+):1$/);
+                    if (m && en.character_name) horseNames.add(String(en.character_name));
+                });
+            }
+
+            // Exclude main tanks (ID1..ID4)
+            const candidates = Array.from(horseNames).filter(n => !tankNames.includes(String(n).toLowerCase()));
+
+            // Limit to 4 and map to POST payloads
+            const selected = candidates.slice(0, 4);
+            if (selected.length === 0) {
+                console.warn('⚠️ [4H TANKS] No eligible warriors found to add');
+                return;
+            }
+
+            // Icon for warrior tank
+            const iconUrl = 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg';
+
+            // Ensure players list present to resolve class/discord
+            if (!this.playersData || !Array.isArray(this.playersData) || this.playersData.length === 0) {
+                try { await this.fetchPlayersForDropdown(); } catch {}
+            }
+
+            // Send sequentially (simple and reliable)
+            for (const name of selected) {
+                // Try to find class/discord from dropdown cached players
+                let playerClass = null, discordId = null;
+                const m = (this.playersData || []).find(p => String(p.player_name || '').toLowerCase() === String(name).toLowerCase());
+                if (m) { playerClass = m.player_class || null; discordId = m.discord_id || null; }
+                await fetch(`/api/manual-rewards/${this.activeEventId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        player_name: name,
+                        player_class: playerClass,
+                        discord_id: discordId,
+                        description: '4 Horsemen tank assignment',
+                        points: 15,
+                        icon_url: iconUrl
+                    })
+                });
+            }
+
+            // Refresh list
+            await this.fetchManualRewardsData();
+            this.populateManualRewardsTable();
+            this.updateTotalPointsCard();
+        } catch (err) {
+            console.error('❌ [4H TANKS] Failed to auto add 4H tanks:', err);
+        }
+    }
+
+    // Auto-add Raz MC: add exactly the two priests assigned in the Razuvious panel on /assignments/military
+    async autoAddRazMC() {
+        if (!this.activeEventId) {
+            console.error('❌ [RAZ MC] No active event ID');
+            return;
+        }
+        try {
+            const res = await fetch(`/api/assignments/${this.activeEventId}`);
+            const data = await res.json();
+            if (!data || !data.success) throw new Error('Failed to load assignments');
+
+            const panels = Array.isArray(data.panels) ? data.panels : [];
+            const razPanel = panels.find(p => String(p.wing || '').toLowerCase().includes('military') && String(p.boss || '').toLowerCase().includes('razu'));
+            if (!razPanel) { console.warn('⚠️ [RAZ MC] Razuvious panel not found'); return; }
+
+            // Gather priests from the panel entries (case-insensitive), dedupe by name
+            const namesSet = new Set();
+            const picks = [];
+            (Array.isArray(razPanel.entries) ? razPanel.entries : []).forEach(en => {
+                const cls = String(en.class_name || '').toLowerCase();
+                const name = String(en.character_name || '');
+                if (!name) return;
+                if (cls === 'priest' && !namesSet.has(name.toLowerCase())) {
+                    namesSet.add(name.toLowerCase());
+                    picks.push(name);
+                }
+            });
+
+            const selected = picks.slice(0, 2);
+            if (selected.length === 0) { console.warn('⚠️ [RAZ MC] No priests found in Razuvious panel'); return; }
+
+            // Ensure players and roster cache present for class/discord resolution
+            if (!this.playersData || !Array.isArray(this.playersData) || this.playersData.length === 0) {
+                try { await this.fetchPlayersForDropdown(); } catch {}
+            }
+            if (!this.rosterMapByName || this.rosterMapByName.size === 0) {
+                try { await this.buildRosterCache(); } catch {}
+            }
+
+            const iconUrl = 'https://wow.zamimg.com/images/wow/icons/large/spell_shadow_shadowworddominate.jpg';
+
+            for (const name of selected) {
+                const lower = String(name).toLowerCase();
+                let playerClass = 'Priest', discordId = null;
+                const p = (this.playersData || []).find(pp => String(pp.player_name || '').toLowerCase() === lower);
+                if (p) { playerClass = p.player_class || playerClass; discordId = p.discord_id || null; }
+                if (!p && this.rosterMapByName) {
+                    const cls = this.rosterMapByName.get(lower);
+                    if (cls) playerClass = cls;
+                }
+                await fetch(`/api/manual-rewards/${this.activeEventId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        player_name: name,
+                        player_class: playerClass,
+                        discord_id: discordId,
+                        description: 'Razuvious mind control duty',
+                        points: 15,
+                        icon_url: iconUrl
+                    })
+                });
+            }
+            await this.fetchManualRewardsData();
+            this.populateManualRewardsTable();
+            this.updateTotalPointsCard();
+        } catch (err) {
+            console.error('❌ [RAZ MC] Failed to auto add Raz MC priests:', err);
+        }
+    }
+
+    // Auto-add Puller: hunter with lowest (party_id, slot_id) in roster
+    async autoAddPuller() {
+        if (!this.activeEventId) return;
+        try {
+            if (!this.rosterMapByName || this.rosterMapByName.size === 0) {
+                await this.buildRosterCache();
+            }
+            // Fetch roster to get party/slot
+            const res = await fetch(`/api/assignments/${this.activeEventId}/roster`);
+            const data = await res.json();
+            const roster = (data && data.success && Array.isArray(data.roster)) ? data.roster : [];
+            const hunters = roster.filter(r => String(r.class_name || '').toLowerCase() === 'hunter')
+                                  .sort((a,b)=> (Number(a.party_id)||99)-(Number(b.party_id)||99) || (Number(a.slot_id)||99)-(Number(b.slot_id)||99));
+            if (hunters.length === 0) { console.warn('⚠️ [PULLER] No hunters found'); return; }
+            const h = hunters[0];
+            const iconUrl = 'https://wow.zamimg.com/images/wow/icons/large/ability_hunter_snipershot.jpg';
+            // Resolve discord via playersData
+            if (!this.playersData || !Array.isArray(this.playersData) || this.playersData.length === 0) {
+                try { await this.fetchPlayersForDropdown(); } catch {}
+            }
+            const p = (this.playersData || []).find(pp => String(pp.player_name || '').toLowerCase() === String(h.character_name || '').toLowerCase());
+            const discordId = p?.discord_id || null;
+            await fetch(`/api/manual-rewards/${this.activeEventId}`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    player_name: h.character_name,
+                    player_class: 'Hunter',
+                    discord_id: discordId,
+                    description: 'Hunter Pulling',
+                    points: 20,
+                    icon_url: iconUrl
+                })
+            });
+            await this.fetchManualRewardsData();
+            this.populateManualRewardsTable();
+            this.updateTotalPointsCard();
+        } catch (err) {
+            console.error('❌ [PULLER] Failed to auto add hunter puller:', err);
+        }
+    }
+
+    // Auto-add Gluth kite: druid assigned in Gluth panel on Abomination wing
+    async autoAddGluthKite() {
+        if (!this.activeEventId) return;
+        try {
+            const res = await fetch(`/api/assignments/${this.activeEventId}`);
+            const data = await res.json();
+            if (!data || !data.success) throw new Error('Failed to load assignments');
+            const panels = Array.isArray(data.panels) ? data.panels : [];
+            const gluthPanel = panels.find(p => String(p.wing || '').toLowerCase().includes('abomination') && String(p.boss || '').toLowerCase().includes('gluth'));
+            if (!gluthPanel) { console.warn('⚠️ [GLUTH] Gluth panel not found'); return; }
+            const druid = (Array.isArray(gluthPanel.entries) ? gluthPanel.entries : []).find(en => String(en.class_name || '').toLowerCase() === 'druid');
+            if (!druid || !druid.character_name) { console.warn('⚠️ [GLUTH] No druid found in Gluth panel'); return; }
+            // Resolve discord/class from players/roster
+            if (!this.playersData || !Array.isArray(this.playersData) || this.playersData.length === 0) {
+                try { await this.fetchPlayersForDropdown(); } catch {}
+            }
+            if (!this.rosterMapByName || this.rosterMapByName.size === 0) {
+                try { await this.buildRosterCache(); } catch {}
+            }
+            const lower = String(druid.character_name).toLowerCase();
+            let playerClass = 'Druid', discordId = null;
+            const p = (this.playersData || []).find(pp => String(pp.player_name || '').toLowerCase() === lower);
+            if (p) { playerClass = p.player_class || playerClass; discordId = p.discord_id || null; }
+            const iconUrl = 'https://wow.zamimg.com/images/wow/icons/medium/classicon_druid.jpg';
+            await fetch(`/api/manual-rewards/${this.activeEventId}`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    player_name: druid.character_name,
+                    player_class: playerClass,
+                    discord_id: discordId,
+                    description: 'Gluth skillington kiteing',
+                    points: 10,
+                    icon_url: iconUrl
+                })
+            });
+            await this.fetchManualRewardsData();
+            this.populateManualRewardsTable();
+            this.updateTotalPointsCard();
+        } catch (err) {
+            console.error('❌ [GLUTH] Failed to auto add Gluth kite druid:', err);
+        }
+    }
+
+    // Auto-add Summoners: warlock with lowest group/slot as Raid summoner; leave two clickers empty
+    async autoAddSummoners() {
+        if (!this.activeEventId) return;
+        try {
+            const res = await fetch(`/api/assignments/${this.activeEventId}/roster`);
+            const data = await res.json();
+            const roster = (data && data.success && Array.isArray(data.roster)) ? data.roster : [];
+            const locks = roster.filter(r => String(r.class_name || '').toLowerCase() === 'warlock')
+                                .sort((a,b)=> (Number(a.party_id)||99)-(Number(b.party_id)||99) || (Number(a.slot_id)||99)-(Number(b.slot_id)||99));
+            if (locks.length === 0) { console.warn('⚠️ [SUMMON] No warlocks found'); return; }
+            const lock = locks[0];
+            // Resolve discord via playersData
+            if (!this.playersData || !Array.isArray(this.playersData) || this.playersData.length === 0) {
+                try { await this.fetchPlayersForDropdown(); } catch {}
+            }
+            const p = (this.playersData || []).find(pp => String(pp.player_name || '').toLowerCase() === String(lock.character_name || '').toLowerCase());
+            const discordId = p?.discord_id || null;
+            const iconUrl = 'https://static.wikia.nocookie.net/wowpedia/images/f/f4/Spell_shadow_twilight.png';
+            // Add the primary summoner
+            await fetch(`/api/manual-rewards/${this.activeEventId}`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    player_name: lock.character_name,
+                    player_class: 'Warlock',
+                    discord_id: discordId,
+                    description: 'Raid summoner',
+                    points: 10,
+                    icon_url: iconUrl
+                })
+            });
+            // Add the two clicker slots empty (use non-empty placeholder name so DB constraint passes; UI shows template-entry styling)
+            const emptyEntries = [
+                { description: 'Raid summoner clicker #1', points: 5 },
+                { description: 'Raid summoner clicker #2', points: 5 }
+            ];
+            for (const e of emptyEntries) {
+                await fetch(`/api/manual-rewards/${this.activeEventId}`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        player_name: '(unassigned)',
+                        player_class: null,
+                        discord_id: null,
+                        description: e.description,
+                        points: e.points,
+                        icon_url: iconUrl
+                    })
+                });
+            }
+            await this.fetchManualRewardsData();
+            this.populateManualRewardsTable();
+            this.updateTotalPointsCard();
+        } catch (err) {
+            console.error('❌ [SUMMON] Failed to auto add summoners:', err);
+        }
+    }
+
+    // Auto-add Tanks: MT, OT1, OT2, OT3 from main page Tanking panel (ID1..ID4 markers)
+    async autoAddMainTanks() {
+        if (!this.activeEventId) return;
+        try {
+            const res = await fetch(`/api/assignments/${this.activeEventId}`);
+            const data = await res.json();
+            if (!data || !data.success) throw new Error('Failed to load assignments');
+            const panels = Array.isArray(data.panels) ? data.panels : [];
+            const tankingPanel = panels.find(p => String(p.boss || '').toLowerCase() === 'tanking' && (!p.wing || String(p.wing).trim() === '' || String(p.wing).toLowerCase() === 'main'))
+                               || panels.find(p => String(p.boss || '').toLowerCase() === 'tanking');
+            if (!tankingPanel || !Array.isArray(tankingPanel.entries)) { console.warn('⚠️ [TANKS] Tanking panel not found'); return; }
+            const pickByMarker = (marker) => {
+                const e = tankingPanel.entries.find(en => String(en.marker_icon_url || '').toLowerCase().includes(marker));
+                return e?.character_name || null;
+            };
+            const order = [
+                { marker: 'skull',  desc: 'Main Tank' },
+                { marker: 'cross',  desc: 'Off Tank 1' },
+                { marker: 'square', desc: 'Off Tank 2' },
+                { marker: 'moon',   desc: 'Off Tank 3' }
+            ];
+            // Ensure players list present for discord/class
+            if (!this.playersData || !Array.isArray(this.playersData) || this.playersData.length === 0) {
+                try { await this.fetchPlayersForDropdown(); } catch {}
+            }
+            const iconUrl = 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_defensivestance.jpg';
+            for (const { marker, desc } of order) {
+                const name = pickByMarker(marker);
+                if (!name) continue;
+                const lower = String(name).toLowerCase();
+                const p = (this.playersData || []).find(pp => String(pp.player_name || '').toLowerCase() === lower);
+                const discordId = p?.discord_id || null;
+                await fetch(`/api/manual-rewards/${this.activeEventId}`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        player_name: name,
+                        player_class: 'Warrior',
+                        discord_id: discordId,
+                        description: desc,
+                        points: this.getTankPointsForDescription(desc),
+                        icon_url: iconUrl
+                    })
+                });
+            }
+            await this.fetchManualRewardsData();
+            this.populateManualRewardsTable();
+            this.updateTotalPointsCard();
+        } catch (err) {
+            console.error('❌ [TANKS] Failed to auto add main tanks:', err);
+        }
+    }
+
+    getTankPointsForDescription(desc) {
+        // Map to template defaults; adjust as needed
+        const map = {
+            'Main Tank': 100,
+            'Off Tank 1': 80,
+            'Off Tank 2': 50,
+            'Off Tank 3': 30
+        };
+        return map[desc] ?? 0;
     }
     
     async fetchCurrentUser() {
@@ -4123,12 +4492,27 @@ class RaidLogsManager {
             
             console.log(`⚖️ [MANUAL REWARDS] Loaded ${this.manualRewardsData.length} manual entries`);
             
-            // Also fetch player list for the dropdown
+            // Also fetch player list and roster to resolve classes/icons reliably
             await this.fetchPlayersForDropdown();
+            await this.buildRosterCache();
             
         } catch (error) {
             console.error('❌ [MANUAL REWARDS] Error fetching manual rewards:', error);
             this.manualRewardsData = [];
+        }
+    }
+
+    async buildRosterCache() {
+        try {
+            const res = await fetch(`/api/assignments/${this.activeEventId}/roster`);
+            const data = await res.json();
+            if (!data || !data.success) { this.rosterMapByName = new Map(); return; }
+            const roster = Array.isArray(data.roster) ? data.roster : [];
+            this.rosterMapByName = new Map(roster.map(r => [String(r.character_name || '').toLowerCase(), r.class_name || null]));
+            console.log('👥 [ROSTER] Built roster map for class lookup. Size:', this.rosterMapByName.size);
+        } catch (e) {
+            console.warn('⚠️ [ROSTER] Failed to build roster map', e);
+            this.rosterMapByName = new Map();
         }
     }
     
@@ -4168,6 +4552,7 @@ class RaidLogsManager {
         
         const templatesSection = document.getElementById('manual-rewards-templates');
 
+        // Always show the list to everyone; form/templates remain gated by role
         if (hasManagementRole) {
             console.log('⚖️ [MANUAL REWARDS] User has management role, showing full interface');
             if (form) form.style.display = 'block';
@@ -4182,8 +4567,9 @@ class RaidLogsManager {
             if (form) form.style.display = 'none';
             if (templatesSection) templatesSection.style.display = 'none';
             if (actionsHeader) actionsHeader.style.display = 'none';
-            if (accessDeniedMessage) accessDeniedMessage.style.display = 'block';
-            if (manualRewardsContent) manualRewardsContent.style.display = 'none';
+            if (accessDeniedMessage) accessDeniedMessage.style.display = 'none';
+            if (manualRewardsContent) manualRewardsContent.style.display = 'block';
+            this.populateManualRewardsTable();
         }
     }
     
@@ -4215,7 +4601,7 @@ class RaidLogsManager {
         rankingItem.className = 'ranking-item';
         
         // Check if this is a template entry (empty player name)
-        const isTemplateEntry = !entry.player_name || entry.player_name.trim() === '';
+        const isTemplateEntry = !entry.player_name || entry.player_name.trim() === '' || entry.player_name.trim().toLowerCase() === '(unassigned)';
         const hasIcon = entry.icon_url && entry.icon_url.trim() !== '';
         
         if (isTemplateEntry) {
@@ -4243,11 +4629,31 @@ class RaidLogsManager {
         
         // Character Info
         const characterInfo = document.createElement('div');
-        characterInfo.className = `character-info ${entry.player_class ? `class-${this.normalizeClassName(entry.player_class)}` : 'class-unknown'}`;
+        // Derive class from entry, or fall back to players list, then roster
+        let derivedClass = entry.player_class;
+        if (!derivedClass && entry.player_name) {
+            const lower = String(entry.player_name).toLowerCase();
+            const m = (this.playersData || []).find(p => String(p.player_name || '').toLowerCase() === lower);
+            if (m) derivedClass = m.player_class;
+            if (!derivedClass && this.rosterMapByName && this.rosterMapByName.size > 0) {
+                derivedClass = this.rosterMapByName.get(lower) || null;
+            }
+        }
+        characterInfo.className = `character-info ${derivedClass ? `class-${this.normalizeClassName(derivedClass)}` : 'class-unknown'}`;
         
-        // Character Name
+        // Character Name and class/spec icon
         const characterName = document.createElement('div');
         characterName.className = 'character-name';
+        // Add class/spec icon at left if class is known
+        try {
+            const classIconHtml = this.getClassIconHtml(derivedClass || 'unknown');
+            if (classIconHtml) {
+                const wrapper = document.createElement('span');
+                wrapper.innerHTML = classIconHtml;
+                const node = wrapper.firstChild;
+                if (node) characterInfo.appendChild(node);
+            }
+        } catch {}
         
         if (isTemplateEntry) {
             characterName.innerHTML = '<em>Click Edit to assign player</em>';
@@ -4588,10 +4994,7 @@ class RaidLogsManager {
     }
     
     async deleteEntry(entry) {
-        if (!confirm(`Are you sure you want to delete this entry?\n\nPlayer: ${entry.player_name}\nDescription: ${entry.description}\nPoints: ${entry.points}`)) {
-            return;
-        }
-        
+        // Instant delete without confirmation
         console.log('🗑️ [MANUAL REWARDS] Deleting entry:', entry);
         
         try {
