@@ -1745,6 +1745,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (rosterPlayer) rosterPlayer.mainCharacterName = newName;
                 const benchPlayer = currentRosterData.bench?.find(p => p && p.userid === currentFixTarget.userid);
                 if (benchPlayer) benchPlayer.mainCharacterName = newName;
+                // Invalidate cached DB characters for this user so border updates without full F5
+                try { delete playersDbCache[currentFixTarget.userid]; } catch (e) {}
                 closeFixNameOverlay();
                 await renderRoster();
             } catch (error) {
