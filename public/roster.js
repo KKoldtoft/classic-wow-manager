@@ -972,11 +972,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         await Promise.all(promises);
     }
 
+    function canonicalizeClassForDbMatch(className) {
+        const lower = (className || '').toLowerCase();
+        if (lower === 'tank') return 'warrior';
+        return getCanonicalClass(className);
+    }
+
     function doesPlayerExistInDbCached(player) {
         const list = playersDbCache[player.userid] || [];
         const name = getDisplayCharacterNameForPlayer(player).toLowerCase();
-        const cls = (player.class || '').toLowerCase();
-        return list.some(row => (row.character_name || '').toLowerCase() === name && (row.class || '').toLowerCase() === cls);
+        const cls = canonicalizeClassForDbMatch(player.class);
+        return list.some(row => (
+            (row.character_name || '').toLowerCase() === name &&
+            canonicalizeClassForDbMatch(row.class) === cls
+        ));
     }
 
     function markCellDbMismatch(cell, player) {
