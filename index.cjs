@@ -1281,6 +1281,11 @@ app.get('/event/:eventId/loot', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'loot.html'));
 });
 
+// Event-scoped Logs page
+app.get('/event/:eventId/logs', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'logs.html'));
+});
+
 app.get('/players', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'players.html'));
 });
@@ -4988,6 +4993,53 @@ app.post('/api/admin/setup-database', async (req, res) => {
             console.log(`📋 [SETUP] Found ${templateCount} existing templates, skipping insertion`);
         }
         
+        // ---------------------------------------------------------------------
+        // Rewards Snapshot tables (for locking and manual editing of panel data)
+        // ---------------------------------------------------------------------
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS rewards_snapshot_events (
+                event_id VARCHAR(255) PRIMARY KEY,
+                locked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                locked_by_id VARCHAR(255),
+                locked_by_name VARCHAR(255)
+            )
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS rewards_and_deductions_points (
+                id SERIAL PRIMARY KEY,
+                event_id VARCHAR(255) NOT NULL,
+                panel_key VARCHAR(100) NOT NULL,
+                panel_name VARCHAR(255) NOT NULL,
+                discord_user_id VARCHAR(255),
+                character_name VARCHAR(255) NOT NULL,
+                character_class VARCHAR(50),
+                ranking_number_original INTEGER,
+                point_value_original DECIMAL(12,2) NOT NULL,
+                point_value_edited DECIMAL(12,2),
+                character_details_original TEXT,
+                character_details_edited TEXT,
+                primary_numeric_original DECIMAL(20,4),
+                primary_numeric_edited DECIMAL(20,4),
+                aux_json JSONB,
+                edited_by_id VARCHAR(255),
+                edited_by_name VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(event_id, panel_key, character_name, ranking_number_original)
+            )
+        `);
+
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_rewards_points_event ON rewards_and_deductions_points (event_id)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_rewards_points_panel ON rewards_and_deductions_points (event_id, panel_key)
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_rewards_points_discord ON rewards_and_deductions_points (discord_user_id)
+        `);
+        
         // Create indexes for attendance_cache
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_attendance_cache_discord_id ON attendance_cache (discord_id)
@@ -8303,6 +8355,229 @@ app.get('/api/manual-rewards/:eventId/players', async (req, res) => {
             message: 'Error getting player list',
             error: error.message 
         });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// === Rewards Snapshot API ===
+
+// Status: cheap check if an event is locked in snapshot mode
+app.get('/api/rewards-snapshot/:eventId/status', async (req, res) => {
+    const { eventId } = req.params;
+    let client;
+    try {
+        client = await pool.connect();
+        const result = await client.query(
+            `SELECT event_id, locked_at, locked_by_id, locked_by_name
+             FROM rewards_snapshot_events WHERE event_id = $1`,
+            [eventId]
+        );
+        if (result.rows.length === 0) {
+            return res.json({ success: true, locked: false });
+        }
+        const row = result.rows[0];
+        return res.json({
+            success: true,
+            locked: true,
+            lockedAt: row.locked_at,
+            lockedById: row.locked_by_id,
+            lockedByName: row.locked_by_name
+        });
+    } catch (error) {
+        console.error('❌ [SNAPSHOT] Status error:', error);
+        return res.status(500).json({ success: false, message: 'Error fetching snapshot status' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Lock and store snapshot entries. Accepts entries from the frontend for speed and fidelity.
+// Body: { entries: [ { panel_key, panel_name, discord_user_id, character_name, character_class, ranking_number_original, point_value_original, character_details_original, primary_numeric_original, aux_json } ] }
+app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, express.json(), async (req, res) => {
+    const { eventId } = req.params;
+    const entries = Array.isArray(req.body?.entries) ? req.body.entries : [];
+    const lockedById = req.user?.id || null;
+    const lockedByName = req.user?.username || req.user?.global_name || req.user?.display_name || 'unknown';
+    let client;
+    try {
+        client = await pool.connect();
+
+        // If already locked, short-circuit
+        const existing = await client.query('SELECT 1 FROM rewards_snapshot_events WHERE event_id = $1', [eventId]);
+        if (existing.rows.length > 0) {
+            return res.json({ success: true, message: 'Already locked', locked: true });
+        }
+
+        await client.query('BEGIN');
+        await client.query(
+            `INSERT INTO rewards_snapshot_events (event_id, locked_by_id, locked_by_name)
+             VALUES ($1, $2, $3)`,
+            [eventId, lockedById, lockedByName]
+        );
+
+        if (entries.length > 0) {
+            // Bulk insert entries using UNNEST columns
+            const cols = {
+                panel_key: [], panel_name: [], discord_user_id: [], character_name: [], character_class: [],
+                ranking_number_original: [], point_value_original: [], character_details_original: [],
+                primary_numeric_original: [], aux_json: []
+            };
+            for (const e of entries) {
+                cols.panel_key.push(e.panel_key || null);
+                cols.panel_name.push(e.panel_name || null);
+                cols.discord_user_id.push(e.discord_user_id || null);
+                cols.character_name.push(e.character_name || null);
+                cols.character_class.push(e.character_class || null);
+                cols.ranking_number_original.push(Number.isFinite(e.ranking_number_original) ? e.ranking_number_original : null);
+                cols.point_value_original.push(e.point_value_original ?? 0);
+                cols.character_details_original.push(e.character_details_original || null);
+                cols.primary_numeric_original.push(e.primary_numeric_original ?? null);
+                cols.aux_json.push(e.aux_json ? JSON.stringify(e.aux_json) : null);
+            }
+
+            const query = `
+                INSERT INTO rewards_and_deductions_points (
+                    event_id, panel_key, panel_name, discord_user_id, character_name, character_class,
+                    ranking_number_original, point_value_original, character_details_original,
+                    primary_numeric_original, aux_json
+                )
+                SELECT
+                    $1::varchar,
+                    unnest($2::varchar[]),
+                    unnest($3::varchar[]),
+                    unnest($4::varchar[]),
+                    unnest($5::varchar[]),
+                    unnest($6::varchar[]),
+                    unnest($7::int[]),
+                    unnest($8::numeric[]),
+                    unnest($9::text[]),
+                    unnest($10::numeric[]),
+                    unnest($11::jsonb[])
+            `;
+
+            await client.query(query, [
+                eventId,
+                cols.panel_key,
+                cols.panel_name,
+                cols.discord_user_id,
+                cols.character_name,
+                cols.character_class,
+                cols.ranking_number_original,
+                cols.point_value_original,
+                cols.character_details_original,
+                cols.primary_numeric_original,
+                cols.aux_json
+            ]);
+        }
+
+        await client.query('COMMIT');
+        return res.json({ success: true, locked: true, inserted: entries.length });
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        console.error('❌ [SNAPSHOT] Lock error:', error);
+        return res.status(500).json({ success: false, message: 'Error locking snapshot' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get snapshot rows for an event
+app.get('/api/rewards-snapshot/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    let client;
+    try {
+        client = await pool.connect();
+        const rows = await client.query(
+            `SELECT * FROM rewards_and_deductions_points WHERE event_id = $1 ORDER BY panel_key, ranking_number_original NULLS LAST, character_name`,
+            [eventId]
+        );
+        return res.json({ success: true, data: rows.rows });
+    } catch (error) {
+        console.error('❌ [SNAPSHOT] Fetch error:', error);
+        return res.status(500).json({ success: false, message: 'Error fetching snapshot rows' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Update a single snapshot row's edited fields
+app.put('/api/rewards-snapshot/:eventId/entry', requireManagement, express.json(), async (req, res) => {
+    const { eventId } = req.params;
+    const {
+        panel_key,
+        character_name,
+        discord_user_id,
+        ranking_number_original,
+        point_value_edited,
+        character_details_edited,
+        primary_numeric_edited
+    } = req.body || {};
+    const editedById = req.user?.id || null;
+    const editedByName = req.user?.username || req.user?.global_name || req.user?.display_name || 'unknown';
+
+    if (!panel_key || !character_name) {
+        return res.status(400).json({ success: false, message: 'panel_key and character_name are required' });
+    }
+
+    let client;
+    try {
+        client = await pool.connect();
+        const result = await client.query(
+            `UPDATE rewards_and_deductions_points
+             SET point_value_edited = COALESCE($1, point_value_edited),
+                 character_details_edited = COALESCE($2, character_details_edited),
+                 primary_numeric_edited = COALESCE($3, primary_numeric_edited),
+                 edited_by_id = $4,
+                 edited_by_name = $5,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE event_id = $6 AND panel_key = $7
+               AND (
+                    (discord_user_id IS NOT NULL AND discord_user_id = $9)
+                 OR (discord_user_id IS NULL AND character_name = $8)
+               )
+               AND (ranking_number_original IS NOT DISTINCT FROM $10)
+             RETURNING *`,
+            [
+                point_value_edited,
+                character_details_edited,
+                primary_numeric_edited,
+                editedById,
+                editedByName,
+                eventId,
+                panel_key,
+                character_name,
+                discord_user_id || null,
+                Number.isFinite(ranking_number_original) ? ranking_number_original : null
+            ]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Snapshot entry not found' });
+        }
+        return res.json({ success: true, entry: result.rows[0] });
+    } catch (error) {
+        console.error('❌ [SNAPSHOT] Update error:', error);
+        return res.status(500).json({ success: false, message: 'Error updating snapshot entry' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Unlock and revert snapshot (delete snapshot rows and event lock)
+app.post('/api/rewards-snapshot/:eventId/unlock', requireManagement, async (req, res) => {
+    const { eventId } = req.params;
+    let client;
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+        await client.query('DELETE FROM rewards_and_deductions_points WHERE event_id = $1', [eventId]);
+        await client.query('DELETE FROM rewards_snapshot_events WHERE event_id = $1', [eventId]);
+        await client.query('COMMIT');
+        return res.json({ success: true, reverted: true });
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        console.error('❌ [SNAPSHOT] Unlock error:', error);
+        return res.status(500).json({ success: false, message: 'Error unlocking snapshot' });
     } finally {
         if (client) client.release();
     }
@@ -11934,18 +12209,31 @@ app.get('/api/items-hall-of-fame', async (req, res) => {
         }
         
         const result = await pool.query(`
+            WITH ranked AS (
+                SELECT 
+                    li.item_name,
+                    li.player_name,
+                    li.gold_amount,
+                    li.icon_link,
+                    li.event_id,
+                    ec.event_data->>'channelName' AS channel_name,
+                    (ec.event_data->>'startTime')::bigint AS start_time,
+                    ROW_NUMBER() OVER (PARTITION BY LOWER(li.item_name) ORDER BY li.gold_amount DESC) AS rn
+                FROM loot_items li
+                LEFT JOIN raid_helper_events_cache ec ON li.event_id = ec.event_id
+                WHERE li.gold_amount > 0
+            )
             SELECT 
-                li.item_name,
-                li.player_name,
-                li.gold_amount,
-                li.icon_link,
-                li.event_id,
-                ec.event_data->>'channelName' as channel_name,
-                (ec.event_data->>'startTime')::bigint as start_time
-            FROM loot_items li
-            LEFT JOIN raid_helper_events_cache ec ON li.event_id = ec.event_id
-            WHERE li.gold_amount > 0
-            ORDER BY li.gold_amount DESC
+                item_name,
+                player_name,
+                gold_amount,
+                icon_link,
+                event_id,
+                channel_name,
+                start_time
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY gold_amount DESC
             LIMIT 10
         `);
         

@@ -12,7 +12,25 @@ class WoWLogsAnalyzer {
 
         
         this.initializeEventListeners();
-        
+
+        // Normalize URL: if we have an active event but current URL is not event-scoped, redirect
+        try {
+            const parts = window.location.pathname.split('/').filter(Boolean);
+            const idx = parts.indexOf('event');
+            const isEventScoped = idx >= 0 && parts[idx + 1];
+            const isLogsPage = parts.includes('logs');
+            const activeEventId = localStorage.getItem('activeEventSession');
+            if (!isEventScoped && isLogsPage && activeEventId) {
+                window.location.replace(`/event/${activeEventId}/logs`);
+                return;
+            }
+            // If URL has an event ID, set it into localStorage to become active
+            if (idx >= 0 && parts[idx + 1]) {
+                localStorage.setItem('activeEventSession', parts[idx + 1]);
+                if (typeof updateRaidBar === 'function') setTimeout(() => updateRaidBar(), 0);
+            }
+        } catch {}
+
         // Check for stored log data on page load
         this.checkForStoredLogData();
     }

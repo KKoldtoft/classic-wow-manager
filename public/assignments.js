@@ -3178,6 +3178,19 @@
   document.addEventListener('DOMContentLoaded', () => {
     // Ensure raid bar/nav wired
     if (typeof updateRaidBar === 'function') updateRaidBar();
+    // Normalize URL: if we have an active event but current URL is not event-scoped, redirect
+    try {
+      const parts = window.location.pathname.split('/').filter(Boolean);
+      const isEventScoped = parts.includes('event') && parts[parts.indexOf('event') + 1];
+      const isAssignmentsPage = parts.includes('assignments');
+      const activeId = getActiveEventId();
+      if (!isEventScoped && isAssignmentsPage && activeId) {
+        const wing = getCurrentWing();
+        const wingPath = wing && wing !== 'main' ? `/${wing}` : '';
+        window.location.replace(`/event/${activeId}/assignments${wingPath}`);
+        return;
+      }
+    } catch {}
     initializeFloatingNavigation();
     // Tag body for main page only
     try { if (getCurrentWing() === 'main') document.body.classList.add('assignments-main'); } catch {}

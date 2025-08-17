@@ -34,6 +34,17 @@ class GoldPotManager {
             // Get the active event session ID
             this.currentEventId = eventIdFromUrl || localStorage.getItem('activeEventSession');
 
+            // Normalize URL: if we have an active event but current URL is not event-scoped, redirect
+            try {
+                const parts = window.location.pathname.split('/').filter(Boolean);
+                const isEventScoped = parts.includes('event') && parts[parts.indexOf('event') + 1];
+                const isGoldPage = parts.includes('gold');
+                if (!isEventScoped && isGoldPage && this.currentEventId) {
+                    window.location.replace(`/event/${this.currentEventId}/gold`);
+                    return;
+                }
+            } catch {}
+
             if (eventIdFromUrl) {
                 localStorage.setItem('activeEventSession', eventIdFromUrl);
                 if (typeof updateRaidBar === 'function') {

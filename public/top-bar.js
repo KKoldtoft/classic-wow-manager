@@ -306,45 +306,38 @@ async function updateRaidBar() {
     
     if (!raidBar) return;
     
-    if (activeEventId) {
-        try {
-            // Fetch events data to get the raid name
-            const response = await fetch('/api/events');
+    // If no active event at all, hide the bar and exit
+    if (!activeEventId) {
+        hideRaidBar();
+        return;
+    }
+
+    // Always show the bar and update links based on the active event ID
+    raidBar.style.display = 'flex';
+    document.body.classList.add('has-raid-bar');
+    updateRaidNavigation(activeEventId);
+    setTimeout(() => highlightActiveRaidNav(), 100);
+
+    // Best-effort: fetch the event title; if it fails, keep a generic title
+    try {
+        const response = await fetch('/api/events');
+        if (response.ok) {
             const data = await response.json();
-            
             if (data && data.scheduledEvents) {
                 const activeEvent = data.scheduledEvents.find(event => event.id === activeEventId);
-                
-                if (activeEvent) {
-                    // Show the raid bar
-                    raidBar.style.display = 'flex';
-                    document.body.classList.add('has-raid-bar');
-                    
-                    // Update raid title
-                    if (raidTitle) {
-                        raidTitle.textContent = activeEvent.title || 'Unknown Raid';
-                    }
-                    
-                    // Update navigation links
-                    updateRaidNavigation(activeEventId);
-                    
-                    // Highlight active navigation after links are updated
-                    setTimeout(() => highlightActiveRaidNav(), 100);
-                    
-                    console.log('🎯 Raid bar updated for:', activeEvent.title);
-                } else {
-                    // Event not found, clear the session
-                    console.warn('Active event not found in current events, clearing session');
-                    localStorage.removeItem('activeEventSession');
-                    hideRaidBar();
+                if (activeEvent && raidTitle) {
+                    raidTitle.textContent = activeEvent.title || 'Selected Raid';
+                } else if (raidTitle && !raidTitle.textContent) {
+                    raidTitle.textContent = 'Selected Raid';
                 }
             }
-        } catch (error) {
-            console.error('Error updating raid bar:', error);
-            hideRaidBar();
+        } else if (raidTitle && !raidTitle.textContent) {
+            raidTitle.textContent = 'Selected Raid';
         }
-    } else {
-        hideRaidBar();
+    } catch (_) {
+        if (raidTitle && !raidTitle.textContent) {
+            raidTitle.textContent = 'Selected Raid';
+        }
     }
 }
 
@@ -381,7 +374,9 @@ function updateRaidNavigation(eventId) {
     }
     
     if (logsLink) {
-        logsLink.href = `/event/${eventId}/raidlogs`;
+        // Prefer the dedicated Logs page if present, else keep raid logs
+        const preferEventLogs = logsLink.getAttribute('data-prefer-logs') === 'true';
+        logsLink.href = preferEventLogs ? `/event/${eventId}/logs` : `/event/${eventId}/raidlogs`;
     }
 
     if (lootLink) {

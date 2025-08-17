@@ -22,6 +22,17 @@ class LootManager {
         // Get active event from URL or localStorage
         this.activeEventId = eventIdFromUrl || localStorage.getItem('activeEventSession');
 
+        // Normalize URL: if we have an active event but current URL is not event-scoped, redirect
+        try {
+            const parts = window.location.pathname.split('/').filter(Boolean);
+            const isEventScoped = parts.includes('event') && parts[parts.indexOf('event') + 1];
+            const isLootPage = parts.includes('loot');
+            if (!isEventScoped && isLootPage && this.activeEventId) {
+                window.location.replace(`/event/${this.activeEventId}/loot`);
+                return;
+            }
+        } catch {}
+
         if (eventIdFromUrl) {
             localStorage.setItem('activeEventSession', eventIdFromUrl);
             if (typeof updateRaidBar === 'function') {

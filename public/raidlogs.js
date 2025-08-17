@@ -58,6 +58,10 @@ class RaidLogsManager {
         this.isEditingEntry = false;
         this.editingEntryId = null;
         this.primaryRoles = null;
+        // Snapshot/Mode state
+        this.snapshotLocked = false;
+        this.snapshotLockedAt = null;
+        this.snapshotLockedBy = null;
         // Discord class icon emote IDs (fallback when spec icon is missing)
         this.classIconEmotes = {
             'warrior': '579532030153588739',
@@ -94,6 +98,9 @@ class RaidLogsManager {
         
         // Initialize manual rewards functionality
         this.initializeManualRewards();
+
+        // Initialize panel editing (after DOM ready)
+        this.initializePanelEditing();
     }
 
     setupPageNavigationButtons() {
@@ -410,6 +417,17 @@ class RaidLogsManager {
 
         this.activeEventId = eventIdFromUrl || localStorage.getItem('activeEventSession');
 
+        // Normalize URL: if we have an active event but current URL is not event-scoped, redirect
+        try {
+            const parts = window.location.pathname.split('/').filter(Boolean);
+            const isEventScoped = parts.includes('event') && parts[parts.indexOf('event') + 1];
+            const isRaidLogsPage = parts.includes('raidlogs');
+            if (!isEventScoped && isRaidLogsPage && this.activeEventId) {
+                window.location.replace(`/event/${this.activeEventId}/raidlogs`);
+                return;
+            }
+        } catch {}
+
         if (eventIdFromUrl) {
             localStorage.setItem('activeEventSession', eventIdFromUrl);
             if (typeof updateRaidBar === 'function') {
@@ -427,6 +445,9 @@ class RaidLogsManager {
         this.showLoading();
         
         try {
+            // First, check snapshot/lock status
+            await this.fetchSnapshotStatus();
+
             // Fetch log data, raid statistics, abilities data, mana potions data, runes data, interrupts data, disarms data, sunder data, curse data, player streaks, and reward settings in parallel
             await Promise.all([
                 this.fetchLogData(), // Now includes backend role enhancement via roster_overrides
@@ -577,6 +598,85 @@ class RaidLogsManager {
                 healing: { points_array: [80, 65, 60, 55, 40, 35, 30, 20, 15, 10] },
                 abilities: { calculation_divisor: 10, max_points: 20 }
             };
+        }
+    }
+
+    async fetchSnapshotStatus() {
+        if (!this.activeEventId) return;
+        try {
+            const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/status`);
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data && data.success) {
+                this.snapshotLocked = !!data.locked;
+                this.snapshotLockedAt = data.lockedAt || null;
+                this.snapshotLockedBy = data.lockedByName || null;
+                console.log(`[SNAPSHOT] Mode: ${this.snapshotLocked ? 'Manual' : 'Computed'}`, { at: this.snapshotLockedAt, by: this.snapshotLockedBy });
+                this.updateModeBadge();
+                if (this.snapshotLocked) {
+                    await this.fetchSnapshotData();
+                }
+            }
+        } catch (e) {
+            console.warn('⚠️ [SNAPSHOT] Failed to get status', e);
+        }
+    }
+
+    async fetchSnapshotData() {
+        try {
+            const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}`);
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!data.success) return;
+            this.snapshotEntries = data.data || [];
+            console.log(`📦 [SNAPSHOT] Loaded ${this.snapshotEntries.length} entries`);
+        } catch (e) {
+            console.warn('⚠️ [SNAPSHOT] Failed to fetch snapshot entries', e);
+        }
+    }
+
+    updateModeBadge() {
+        const badge = document.getElementById('computed-manual-badge');
+        if (!badge) return;
+        if (this.snapshotLocked) {
+            badge.innerHTML = '<i class="fas fa-user-edit" style="margin-right:6px"></i> Manual mode';
+            const by = this.snapshotLockedBy ? ` by ${this.snapshotLockedBy}` : '';
+            const at = this.snapshotLockedAt ? ` at ${new Date(this.snapshotLockedAt).toLocaleString()}` : '';
+            badge.title = `View audit: locked${by}${at}`.trim();
+            badge.classList.add('manual');
+            badge.classList.remove('computed');
+
+            // Add revert button
+            let revertBtn = document.getElementById('mode-revert-btn');
+            if (!revertBtn) {
+                revertBtn = document.createElement('button');
+                revertBtn.id = 'mode-revert-btn';
+                revertBtn.className = 'btn-templates btn-mini';
+                revertBtn.style.marginLeft = '8px';
+                revertBtn.innerHTML = '<i class="fas fa-undo"></i> Revert to computed';
+                revertBtn.onclick = async () => {
+                    const ok = confirm('Are you sure you want to reset all manual edits and revert to computed mode?');
+                    if (!ok) return;
+                    try {
+                        const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/unlock`, { method: 'POST' });
+                        if (res.ok) {
+                            this.snapshotLocked = false;
+                            this.snapshotEntries = [];
+                            this.updateModeBadge();
+                            // Reload to re-fetch computed data
+                            window.location.reload();
+                        }
+                    } catch (e) { console.error('❌ [SNAPSHOT] Revert failed', e); }
+                };
+                badge.parentElement.insertBefore(revertBtn, badge.nextSibling);
+            }
+        } else {
+            badge.innerHTML = '<i class="fas fa-microchip" style="margin-right:6px"></i> Computed mode';
+            badge.title = 'Live computed from logs and data sources';
+            badge.classList.add('computed');
+            badge.classList.remove('manual');
+            const revertBtn = document.getElementById('mode-revert-btn');
+            if (revertBtn) revertBtn.remove();
         }
     }
 
@@ -1497,6 +1597,30 @@ class RaidLogsManager {
                     else if (player.points < 0) negativePoints += Math.abs(player.points);
                 });
             }
+
+            // Include frost resistance penalties
+            if (this.frostResistanceData && Array.isArray(this.frostResistanceData)) {
+                this.frostResistanceData.forEach(player => {
+                    const pts = Number(player.points) || 0;
+                    if (pts > 0) positivePoints += pts; else if (pts < 0) negativePoints += Math.abs(pts);
+                });
+            }
+
+            // Include world buffs copy penalties
+            if (this.worldBuffsData && Array.isArray(this.worldBuffsData)) {
+                this.worldBuffsData.forEach(player => {
+                    const pts = Number(player.points) || 0;
+                    if (pts > 0) positivePoints += pts; else if (pts < 0) negativePoints += Math.abs(pts);
+                });
+            }
+
+            // Include void damage penalties
+            if (this.voidDamageData && Array.isArray(this.voidDamageData)) {
+                this.voidDamageData.forEach(player => {
+                    const pts = Number(player.points) || 0;
+                    if (pts > 0) positivePoints += pts; else if (pts < 0) negativePoints += Math.abs(pts);
+                });
+            }
             
             // Add points from manual rewards/deductions
             if (this.manualRewardsData) {
@@ -1507,6 +1631,24 @@ class RaidLogsManager {
                 });
             }
             
+            // If in manual mode with snapshot entries, override per-panel totals by snapshot effective values
+            if (this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length > 0) {
+                positivePoints = 0;
+                negativePoints = 0;
+                this.snapshotEntries.forEach(row => {
+                    const pts = Number(row.point_value_edited != null ? row.point_value_edited : row.point_value_original) || 0;
+                    if (pts > 0) positivePoints += pts; else if (pts < 0) negativePoints += Math.abs(pts);
+                });
+                // Also add manual rewards panel which is independent from snapshot
+                if (this.manualRewardsData) {
+                    this.manualRewardsData.forEach(entry => {
+                        const points = Math.round(parseFloat(entry.points));
+                        if (points > 0) positivePoints += points;
+                        else if (points < 0) negativePoints += Math.abs(points);
+                    });
+                }
+            }
+
             // Calculate final total
             const totalPoints = basePoints + positivePoints - negativePoints;
             
@@ -1616,6 +1758,383 @@ class RaidLogsManager {
         
         this.hideLoading();
         this.showContent();
+
+        // After rendering, apply snapshot overlay if in manual mode
+        if (this.snapshotLocked && this.snapshotEntries && this.snapshotEntries.length > 0) {
+            this.applySnapshotOverlay();
+        }
+    }
+
+    // --- Snapshot/Editing Helpers ---
+    initializePanelEditing() {
+        // Map panel_key to container element IDs and friendly names
+        this.panelConfigs = [
+            { key: 'damage', name: 'Damage Dealers', containerId: 'damage-dealers-list' },
+            { key: 'healing', name: 'Healers', containerId: 'healers-list' },
+            { key: 'god_gamer_dps', name: 'God Gamer DPS', containerId: 'god-gamer-dps-list' },
+            { key: 'god_gamer_healer', name: 'God Gamer Healer', containerId: 'god-gamer-healer-list' },
+            { key: 'abilities', name: 'Engineering & Holywater', containerId: 'abilities-list' },
+            { key: 'mana_potions', name: 'Major Mana Potions', containerId: 'mana-potions-list' },
+            { key: 'runes', name: 'Dark or Demonic runes', containerId: 'runes-list' },
+            { key: 'interrupts', name: 'Interrupted spells', containerId: 'interrupts-list' },
+            { key: 'disarms', name: 'Disarmed enemies', containerId: 'disarms-list' },
+            { key: 'sunder', name: 'Sunder Armor', containerId: 'sunder-list' },
+            { key: 'curse_recklessness', name: 'Curse of Recklessness', containerId: 'curse-recklessness-list' },
+            { key: 'curse_shadow', name: 'Curse of Shadow', containerId: 'curse-shadow-list' },
+            { key: 'curse_elements', name: 'Curse of the Elements', containerId: 'curse-elements-list' },
+            { key: 'faerie_fire', name: 'Faerie Fire', containerId: 'faerie-fire-list' },
+            { key: 'scorch', name: 'Scorch', containerId: 'scorch-list' },
+            { key: 'demo_shout', name: 'Demoralizing Shout', containerId: 'demo-shout-list' },
+            { key: 'polymorph', name: 'Polymorph', containerId: 'polymorph-list' },
+            { key: 'power_infusion', name: 'Power Infusion', containerId: 'power-infusion-list' },
+            { key: 'decurses', name: 'Decurses', containerId: 'decurses-list' },
+            { key: 'frost_resistance', name: 'Frost Resistance', containerId: 'world-buffs-list' },
+            { key: 'world_buffs_copy', name: 'World Buffs Copy', containerId: 'world-buffs-copy-list' },
+            { key: 'void_damage', name: 'Avoidable Void Damage', containerId: 'void-damage-list' },
+            { key: 'shaman_healers', name: 'Top Shaman Healers', containerId: 'shaman-healers-list' },
+            { key: 'priest_healers', name: 'Top Priest Healers', containerId: 'priest-healers-list' },
+            { key: 'druid_healers', name: 'Top Druid Healer', containerId: 'druid-healers-list' },
+            { key: 'too_low_damage', name: 'Too Low Damage', containerId: 'too-low-damage-list' },
+            { key: 'too_low_healing', name: 'Too Low Healing', containerId: 'too-low-healing-list' },
+            { key: 'attendance_streaks', name: 'Attendance Streak Champions', containerId: 'player-streaks-list' },
+            { key: 'guild_members', name: 'Guild Members', containerId: 'guild-members-list' }
+        ];
+
+        // Add Edit/Save buttons to each panel header
+        this.panelConfigs.forEach(cfg => {
+            const list = document.getElementById(cfg.containerId);
+            if (!list) return;
+            const section = list.closest('.rankings-section');
+            const header = section ? section.querySelector('.section-header') : null;
+            if (!header) return;
+
+            // Actions container
+            const buttonsWrap = document.createElement('div');
+            buttonsWrap.className = 'panel-actions';
+            buttonsWrap.style.marginLeft = 'auto';
+
+            const editBtn = document.createElement('button');
+            editBtn.className = 'btn-edit';
+            editBtn.textContent = 'Edit';
+            editBtn.onclick = () => this.onEditPanel(cfg);
+
+            const saveBtn = document.createElement('button');
+            saveBtn.className = 'btn-save';
+            saveBtn.textContent = 'Save';
+            saveBtn.style.display = 'none';
+            saveBtn.onclick = () => this.onSavePanel(cfg, saveBtn);
+
+            buttonsWrap.appendChild(editBtn);
+            buttonsWrap.appendChild(saveBtn);
+            header.appendChild(buttonsWrap);
+
+            cfg._editBtn = editBtn;
+            cfg._saveBtn = saveBtn;
+        });
+    }
+
+    updatePanelButtonsVisibility() {
+        const hasManagementRole = this.currentUser?.hasManagementRole || false;
+        this.panelConfigs.forEach(cfg => {
+            if (!cfg._editBtn || !cfg._saveBtn) return;
+            // Only management can see edit/save; otherwise both hidden
+            const displayStyle = hasManagementRole ? 'inline-flex' : 'none';
+            // Respect current edit state: if save visible keep it; otherwise show edit
+            if (cfg._saveBtn.style.display !== 'none') {
+                cfg._saveBtn.style.display = hasManagementRole ? 'inline-flex' : 'none';
+                cfg._editBtn.style.display = 'none';
+            } else {
+                cfg._editBtn.style.display = displayStyle;
+                cfg._saveBtn.style.display = 'none';
+            }
+        });
+        // Also gate revert button
+        const revertBtn = document.getElementById('mode-revert-btn');
+        if (revertBtn) {
+            revertBtn.style.display = (this.currentUser?.hasManagementRole ? 'inline-flex' : 'none');
+        }
+    }
+
+    async onEditPanel(cfg) {
+        // Only enter edit UI; confirmation and locking will happen on Save
+        if (!this.snapshotLocked) {
+            console.log('[SNAPSHOT] Entering edit mode; will confirm and lock on Save');
+        }
+
+        // Enable inline edits for this panel
+        const list = document.getElementById(cfg.containerId);
+        if (!list) return;
+        const items = Array.from(list.querySelectorAll('.ranking-item'));
+        items.forEach(item => {
+            const pointsEl = item.querySelector('.performance-amount .amount-value');
+            const detailsEl = item.querySelector('.character-details');
+            if (pointsEl && !pointsEl.querySelector('input')) {
+                const val = pointsEl.textContent.trim();
+                const inp = document.createElement('input');
+                inp.type = 'number';
+                inp.step = '0.01';
+                inp.value = val.replace('+','');
+                inp.style.width = '80px';
+                pointsEl.innerHTML = '';
+                pointsEl.appendChild(inp);
+            }
+            if (detailsEl && !detailsEl.querySelector('input')) {
+                const txt = detailsEl.textContent.trim();
+                const inp = document.createElement('input');
+                inp.type = 'text';
+                inp.value = txt;
+                inp.style.width = '100%';
+                detailsEl.innerHTML = '';
+                detailsEl.appendChild(inp);
+            }
+        });
+        if (cfg._saveBtn && cfg._editBtn) {
+            cfg._editBtn.style.display = 'none';
+            cfg._saveBtn.style.display = 'inline-flex';
+        }
+    }
+
+    async onSavePanel(cfg, saveBtn) {
+        // If not yet locked, confirm and lock now
+        if (!this.snapshotLocked) {
+            const confirmed = confirm('Are you sure you want to edit this value? Once you manually edit a value, data is stored and no longer reflects live data.');
+            if (!confirmed) return;
+            // Collect current edits before locking because snapshot will re-render
+            const pendingUpdates = this.collectPanelEdits(cfg);
+            await this.lockSnapshotFromCurrentView();
+            // After locking, immediately persist the previously collected edits
+            await this.persistUpdates(pendingUpdates);
+        }
+        const list = document.getElementById(cfg.containerId);
+        if (!list) return;
+        const items = Array.from(list.querySelectorAll('.ranking-item'));
+
+        // Build updates from inputs
+        const updates = [];
+        items.forEach((item, idx) => {
+            const nameEl = item.querySelector('.character-name');
+            const playerName = nameEl ? nameEl.textContent.trim() : null;
+            if (!playerName) return;
+            const pointsInp = item.querySelector('.performance-amount .amount-value input');
+            const detailsInp = item.querySelector('.character-details input');
+            const pointsVal = pointsInp ? pointsInp.value : null;
+            const detailsVal = detailsInp ? detailsInp.value : null;
+
+            // Lookup existing snapshot row to compare
+            const snap = (this.snapshotEntries || []).find(r => r.panel_key === cfg.key && r.character_name === playerName);
+            const currentEdited = snap ? snap.point_value_edited : null;
+            const currentDetailsEdited = snap ? snap.character_details_edited : null;
+
+            const numericVal = pointsVal !== null && pointsVal !== '' ? Math.round(Number(pointsVal)) : null;
+            const detailsOut = detailsVal !== null ? detailsVal : null;
+
+            const changed = (numericVal !== null && numericVal !== (snap ? (snap.point_value_edited ?? Number(snap.point_value_original)) : null)) ||
+                            (detailsOut !== null && detailsOut !== (snap ? (snap.character_details_edited ?? snap.character_details_original) : null));
+            if (!changed) return;
+
+            updates.push({
+                panel_key: cfg.key,
+                character_name: playerName,
+                discord_user_id: snap ? snap.discord_user_id : null,
+                ranking_number_original: snap ? snap.ranking_number_original : (idx + 1),
+                point_value_edited: numericVal,
+                character_details_edited: detailsOut
+            });
+        });
+
+        await this.persistUpdates(updates);
+
+        // Exit edit mode: replace inputs with values and color edited points
+        this.applySnapshotOverlayForPanel(cfg.key, cfg.containerId);
+        if (cfg._saveBtn && cfg._editBtn) {
+            cfg._saveBtn.style.display = 'none';
+            cfg._editBtn.style.display = 'inline-flex';
+        }
+        this.updateTotalPointsCard();
+    }
+
+    collectPanelEdits(cfg) {
+        const list = document.getElementById(cfg.containerId);
+        if (!list) return [];
+        const items = Array.from(list.querySelectorAll('.ranking-item'));
+        const updates = [];
+        items.forEach((item, idx) => {
+            const nameEl = item.querySelector('.character-name');
+            const playerName = nameEl ? nameEl.textContent.trim() : null;
+            if (!playerName) return;
+            const pointsInp = item.querySelector('.performance-amount .amount-value input');
+            const detailsInp = item.querySelector('.character-details input');
+            const pointsVal = pointsInp ? pointsInp.value : null;
+            const detailsVal = detailsInp ? detailsInp.value : null;
+            const snap = (this.snapshotEntries || []).find(r => r.panel_key === cfg.key && r.character_name === playerName);
+            const numericVal = pointsVal !== null && pointsVal !== '' ? Math.round(Number(pointsVal)) : null;
+            const detailsOut = detailsVal !== null ? detailsVal : null;
+            if (numericVal === null && (detailsOut === null)) {
+                return;
+            }
+            updates.push({
+                panel_key: cfg.key,
+                character_name: playerName,
+                discord_user_id: snap ? snap.discord_user_id : null,
+                ranking_number_original: snap ? snap.ranking_number_original : (idx + 1),
+                point_value_edited: numericVal,
+                character_details_edited: detailsOut
+            });
+        });
+        return updates;
+    }
+
+    async persistUpdates(updates) {
+        for (const u of updates) {
+            try {
+                const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/entry`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(u)
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    const ix = this.snapshotEntries.findIndex(r => r.panel_key === u.panel_key && r.character_name === u.character_name);
+                    if (ix >= 0) this.snapshotEntries[ix] = data.entry; else this.snapshotEntries.push(data.entry);
+                }
+            } catch (e) {
+                console.warn('⚠️ [SNAPSHOT] Update failed', e);
+            }
+        }
+    }
+
+    async lockSnapshotFromCurrentView() {
+        // Gather entries across all configured panels
+        const entries = [];
+        this.panelConfigs.forEach(cfg => {
+            const list = document.getElementById(cfg.containerId);
+            if (!list) return;
+            const items = Array.from(list.querySelectorAll('.ranking-item'));
+            items.forEach((item, idx) => {
+                const nameEl = item.querySelector('.character-name');
+                const detailsEl = item.querySelector('.character-details');
+                const pointsEl = item.querySelector('.performance-amount .amount-value');
+                const playerName = nameEl ? nameEl.textContent.trim() : null;
+                if (!playerName) return;
+                // Prefer input values when in edit mode to avoid reading empty textContent
+                const pointsInput = pointsEl ? pointsEl.querySelector('input') : null;
+                const detailsInput = detailsEl ? detailsEl.querySelector('input') : null;
+                const points = pointsInput
+                    ? Math.round(Number(pointsInput.value || '0'))
+                    : (pointsEl ? Math.round(Number((pointsEl.textContent || '0').replace('+','').trim())) : 0);
+                const details = detailsInput
+                    ? (detailsInput.value || '').trim()
+                    : (detailsEl ? (detailsEl.textContent || '').trim() : '');
+
+                // Try to derive class from character-info class-*
+                const info = item.querySelector('.character-info');
+                let charClass = null;
+                if (info && info.className) {
+                    const m = info.className.match(/class-([a-z\-]+)/);
+                    if (m) {
+                        const map = {
+                            'warrior':'Warrior','paladin':'Paladin','hunter':'Hunter','rogue':'Rogue','priest':'Priest','shaman':'Shaman','mage':'Mage','warlock':'Warlock','druid':'Druid'
+                        };
+                        charClass = map[m[1]] || null;
+                    }
+                }
+
+                // Primary numeric from known datasets if easily mapped; fallback null
+                let primaryNumeric = null;
+                const lowerName = playerName.toLowerCase();
+                const damageRow = (this.logData || []).find(p => String(p.character_name).toLowerCase() === lowerName);
+                if (cfg.key === 'damage' && damageRow) primaryNumeric = Number(damageRow.damage_amount) || 0;
+                if (cfg.key === 'healing' && damageRow) primaryNumeric = Number(damageRow.healing_amount) || 0;
+
+                // discord id when available
+                const discordId = damageRow?.discord_id || null;
+
+                entries.push({
+                    panel_key: cfg.key,
+                    panel_name: cfg.name,
+                    discord_user_id: discordId,
+                    character_name: playerName,
+                    character_class: charClass,
+                    ranking_number_original: idx + 1,
+                    point_value_original: points,
+                    character_details_original: details,
+                    primary_numeric_original: primaryNumeric,
+                    aux_json: null
+                });
+            });
+        });
+
+        try {
+            const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/lock`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entries })
+            });
+            if (res.ok) {
+                await this.fetchSnapshotStatus();
+                await this.fetchSnapshotData();
+                this.applySnapshotOverlay();
+                this.updateTotalPointsCard();
+            }
+        } catch (e) {
+            console.error('❌ [SNAPSHOT] Lock failed', e);
+        }
+    }
+
+    applySnapshotOverlay() {
+        if (!this.snapshotEntries) return;
+        const grouped = this.snapshotEntries.reduce((acc, row) => {
+            (acc[row.panel_key] = acc[row.panel_key] || []).push(row);
+            return acc;
+        }, {});
+        this.panelConfigs.forEach(cfg => {
+            this.applySnapshotOverlayForPanel(cfg.key, cfg.containerId, grouped[cfg.key] || []);
+        });
+    }
+
+    applySnapshotOverlayForPanel(panelKey, containerId, rows = null) {
+        const list = document.getElementById(containerId);
+        if (!list) return;
+        const items = Array.from(list.querySelectorAll('.ranking-item'));
+        const entries = rows || (this.snapshotEntries || []).filter(r => r.panel_key === panelKey);
+
+        // Map by character name for simple matching
+        // Prefer matching by discord_user_id when present to avoid name collisions
+        const byDiscord = new Map(entries.filter(r => r.discord_user_id).map(r => [String(r.discord_user_id), r]));
+        const byName = new Map(entries.map(r => [String(r.character_name), r]));
+        items.forEach((item, idx) => {
+            const nameEl = item.querySelector('.character-name');
+            const pointsEl = item.querySelector('.performance-amount .amount-value');
+            const detailsEl = item.querySelector('.character-details');
+            const rankEl = item.querySelector('.ranking-number');
+            const playerName = nameEl ? nameEl.textContent.trim() : null;
+            let snap = playerName ? byName.get(playerName) : null;
+            if (!snap) {
+                // Try to resolve via logData (has discord_id) and then map to snapshot by discord_user_id
+                const lower = (playerName || '').toLowerCase();
+                const row = (this.logData || []).find(p => String(p.character_name).toLowerCase() === lower);
+                if (row && row.discord_id && byDiscord.has(String(row.discord_id))) {
+                    snap = byDiscord.get(String(row.discord_id));
+                }
+            }
+            if (!snap) return;
+            const effPoints = (snap.point_value_edited != null) ? snap.point_value_edited : snap.point_value_original;
+            const effDetails = (snap.character_details_edited != null && snap.character_details_edited !== '') ? snap.character_details_edited : (snap.character_details_original || (detailsEl ? detailsEl.textContent : ''));
+            if (pointsEl) {
+                const intVal = Math.round(Number(effPoints) || 0);
+                pointsEl.textContent = intVal;
+                if (snap.point_value_edited != null) {
+                    try { pointsEl.style.setProperty('color', '#ff00ff', 'important'); } catch {}
+                    pointsEl.style.color = '#ff00ff';
+                }
+            }
+            if (detailsEl) {
+                detailsEl.textContent = effDetails;
+            }
+            if (rankEl && Number.isFinite(snap.ranking_number_original)) {
+                rankEl.textContent = `#${snap.ranking_number_original}`;
+            }
+        });
     }
 
     displayPlayerStreaksRankings(players) {
@@ -4462,13 +4981,17 @@ class RaidLogsManager {
             if (response.ok) {
                 this.currentUser = await response.json();
                 console.log('👤 [MANUAL REWARDS] Current user:', this.currentUser);
+                // Update visibility of edit/save and revert buttons based on role
+                this.updatePanelButtonsVisibility();
             } else {
                 console.log('👤 [MANUAL REWARDS] User not logged in');
                 this.currentUser = null;
+                this.updatePanelButtonsVisibility();
             }
         } catch (error) {
             console.error('❌ [MANUAL REWARDS] Error fetching user:', error);
             this.currentUser = null;
+            this.updatePanelButtonsVisibility();
         }
     }
     
