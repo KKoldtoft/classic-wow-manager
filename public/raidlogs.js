@@ -58,6 +58,13 @@ class RaidLogsManager {
         this.isEditingEntry = false;
         this.editingEntryId = null;
         this.primaryRoles = null;
+        // Gold/points aggregates
+        this.totalGoldPot = 0;
+        this.sharedGoldPot = 0;
+        this.managementCuts = { management: 0, organizer: 0, raidleader: 0, founder: 0 };
+        this.myPoints = null;
+        this.myGold = null;
+        this.goldPerPoint = null;
         // Snapshot/Mode state
         this.snapshotLocked = false;
         this.snapshotLockedAt = null;
@@ -128,6 +135,7 @@ class RaidLogsManager {
         const toggleButtons = document.querySelectorAll('.stats-toggle-btn');
         const dashboardPanel = document.getElementById('dashboard-panel');
         const shamePanel = document.getElementById('shame-panel');
+        const goldPanel = document.getElementById('gold-panel');
 
         toggleButtons.forEach(button => {
             button.addEventListener('click', () => {
@@ -139,14 +147,19 @@ class RaidLogsManager {
                 button.classList.add('active');
                 
                 // Hide all panels
-                dashboardPanel.style.display = 'none';
-                shamePanel.style.display = 'none';
+                if (dashboardPanel) dashboardPanel.style.display = 'none';
+                if (shamePanel) shamePanel.style.display = 'none';
+                if (goldPanel) goldPanel.style.display = 'none';
                 
                 // Show the selected panel
-                if (targetPanel === 'dashboard') {
+                if (targetPanel === 'dashboard' && dashboardPanel) {
                     dashboardPanel.style.display = 'grid';
-                } else if (targetPanel === 'shame') {
+                } else if (targetPanel === 'shame' && shamePanel) {
                     shamePanel.style.display = 'grid';
+                } else if (targetPanel === 'gold' && goldPanel) {
+                    goldPanel.style.display = 'grid';
+                    // Refresh gold cards when opening the tab
+                    this.updateGoldCards();
                 }
             });
         });
@@ -478,10 +491,15 @@ class RaidLogsManager {
                 this.fetchManualRewardsData(),
                 this.fetchCurrentUser(),
                 this.fetchPrimaryRoles().then(roles => this.primaryRoles = roles),
-                this.fetchVoidDamageData()
+                this.fetchVoidDamageData(),
+                this.fetchGoldPot()
             ]);
             this.displayRaidLogs();
             this.displayManualRewards();
+            // Recompute totals with all data loaded
+            this.updateTotalPointsCard();
+            // Update gold cards after primary render
+            this.updateGoldCards();
             
             // Update the original position now that content is loaded
             setTimeout(() => {
@@ -1654,12 +1672,225 @@ class RaidLogsManager {
             
             // Display the result
             valueElement.textContent = this.formatNumber(totalPoints);
+            // Store for gold calculations
+            this.totalPointsComputed = totalPoints;
             
             console.log(`📊 [TOTAL POINTS] Base: ${basePoints}, Positive: ${positivePoints}, Negative: ${negativePoints}, Total: ${totalPoints}`);
             
         } catch (error) {
             console.error('❌ [TOTAL POINTS] Error calculating total points:', error);
             valueElement.textContent = '--';
+        }
+    }
+
+    async fetchGoldPot() {
+        if (!this.activeEventId) return;
+        try {
+            const res = await fetch(`/api/event-goldpot/${this.activeEventId}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            if (data && data.success) {
+                this.totalGoldPot = Number(data.goldPot) || 0;
+                // Precompute shared and management cuts
+                this.sharedGoldPot = Math.floor(this.totalGoldPot * 0.85);
+                const mgmt = Math.floor(this.totalGoldPot * 0.15);
+                const raidleader = Math.floor(this.totalGoldPot * 0.05);
+                const founder = Math.floor(this.totalGoldPot * 0.02);
+                const organizer = Math.max(0, mgmt - raidleader - founder);
+                this.managementCuts = { management: mgmt, organizer, raidleader, founder };
+            } else {
+                this.totalGoldPot = 0;
+                this.sharedGoldPot = 0;
+                this.managementCuts = { management: 0, organizer: 0, raidleader: 0, founder: 0 };
+            }
+        } catch (e) {
+            console.error('❌ [GOLDPOT] Failed to fetch gold pot', e);
+            this.totalGoldPot = 0;
+            this.sharedGoldPot = 0;
+            this.managementCuts = { management: 0, organizer: 0, raidleader: 0, founder: 0 };
+        }
+    }
+
+    updateGoldCards() {
+        // Update Total Gold
+        const totalGoldEl = document.getElementById('gold-total-value');
+        if (totalGoldEl) {
+            totalGoldEl.textContent = (this.totalGoldPot || 0).toLocaleString();
+        }
+        // Shared Gold
+        const sharedGoldEl = document.getElementById('gold-shared-value');
+        if (sharedGoldEl) {
+            const shared = this.sharedGoldPot || Math.floor((this.totalGoldPot || 0) * 0.85);
+            sharedGoldEl.textContent = shared.toLocaleString();
+        }
+        // Management Gold
+        const mgmtVal = document.getElementById('gold-management-value');
+        const mgmtDetail = document.getElementById('gold-management-detail');
+        if (mgmtVal && mgmtDetail) {
+            const c = this.managementCuts || { management: 0, organizer: 0, raidleader: 0, founder: 0 };
+            const fmtInt = (n) => Math.round(Number(n || 0)).toLocaleString();
+            mgmtVal.textContent = fmtInt(c.management);
+            mgmtDetail.textContent = `Organizers: ${fmtInt(c.organizer)} | Raidleader: ${fmtInt(c.raidleader)} | Founders: ${fmtInt(c.founder)}`;
+            this.setupManagementTooltip(c);
+        }
+        // My Points and My Gold
+        this.computeMyPointsAndGold();
+    }
+
+    setupManagementTooltip(cuts) {
+        if (this._mgmtTooltipSetup) return;
+        const card = document.querySelector('.stat-card.gold-management');
+        if (!card) return;
+
+        let hoverTimer = null;
+        let shown = false;
+        let lastPos = { x: 0, y: 0 };
+        let tooltipEl = null;
+
+        const removeTooltip = () => {
+            if (tooltipEl && tooltipEl.parentNode) {
+                tooltipEl.parentNode.removeChild(tooltipEl);
+            }
+            tooltipEl = null;
+            shown = false;
+        };
+
+        const buildTooltip = () => {
+            const fmtInt = (n) => Math.round(Number(n || 0)).toLocaleString();
+            const el = document.createElement('div');
+            el.className = 'mgmt-tooltip';
+            el.innerHTML = `
+                <div class="mgmt-grid">
+                    <div class="mgmt-key">Total management cut:</div><div class="mgmt-val">${fmtInt(cuts.management)} Gold</div>
+                    <div class="mgmt-key">Organizer cut:</div><div class="mgmt-val">${fmtInt(cuts.organizer)} Gold</div>
+                    <div class="mgmt-key">Raidleader cut:</div><div class="mgmt-val">${fmtInt(cuts.raidleader)} Gold</div>
+                    <div class="mgmt-key">Founders cut:</div><div class="mgmt-val">${fmtInt(cuts.founder)} Gold</div>
+                </div>
+            `;
+            document.body.appendChild(el);
+            // position near cursor
+            el.style.left = Math.max(8, lastPos.x + 12) + 'px';
+            el.style.top = Math.max(8, lastPos.y + 12) + 'px';
+            // trigger fade-in
+            requestAnimationFrame(() => { el.classList.add('show'); });
+            return el;
+        };
+
+        const scheduleShow = () => {
+            clearTimeout(hoverTimer);
+            hoverTimer = setTimeout(() => {
+                tooltipEl = buildTooltip();
+                shown = true;
+            }, 1000);
+        };
+
+        const onMouseEnter = (e) => {
+            lastPos = { x: e.clientX, y: e.clientY };
+            scheduleShow();
+        };
+        const onMouseMove = (e) => {
+            if (!shown) {
+                // Any move resets the 1s hover-intent
+                lastPos = { x: e.clientX, y: e.clientY };
+                scheduleShow();
+            } else {
+                // If shown, hide immediately on any movement
+                clearTimeout(hoverTimer);
+                removeTooltip();
+            }
+        };
+        const onMouseLeave = () => {
+            clearTimeout(hoverTimer);
+            removeTooltip();
+        };
+
+        card.addEventListener('mouseenter', onMouseEnter);
+        card.addEventListener('mousemove', onMouseMove);
+        card.addEventListener('mouseleave', onMouseLeave);
+
+        this._mgmtTooltipSetup = true;
+    }
+
+    computeMyPointsAndGold() {
+        const myPointsEl = document.getElementById('my-points-value');
+        const myPointsDetailEl = document.getElementById('my-points-detail');
+        const myGoldEl = document.getElementById('my-gold-value');
+        const myGoldDetailEl = document.getElementById('my-gold-detail');
+
+        if (!myPointsEl || !myGoldEl) return;
+
+        const userId = this.currentUser?.id;
+        if (!userId) {
+            myPointsEl.textContent = '--';
+            if (myPointsDetailEl) myPointsDetailEl.textContent = 'Sign in to see your share';
+            myGoldEl.textContent = '--';
+            if (myGoldDetailEl) myGoldDetailEl.textContent = 'Each point = -- gold';
+            return;
+        }
+
+        // Character names in this raid for the logged-in user
+        const myNames = new Set((this.logData || [])
+            .filter(p => String(p.discord_id || '') === String(userId))
+            .map(p => String(p.character_name || '').toLowerCase())
+        );
+
+        // Base points: 100 per matched character present in logData
+        const basePoints = myNames.size * 100;
+
+        // Sum all points currently visible on the page for my names (all panels)
+        let sumVisible = 0;
+        try {
+            const lists = document.querySelectorAll('#raid-logs-container .rankings-list');
+            const myNamesArr = Array.from(myNames);
+            var components = [];
+            lists.forEach(list => {
+                const items = list.querySelectorAll('.ranking-item');
+                items.forEach(item => {
+                    const nameEl = item.querySelector('.character-name');
+                    const pointsEl = item.querySelector('.performance-amount .amount-value');
+                    if (!nameEl || !pointsEl) return;
+                    const nameText = String(nameEl.textContent || '').trim().toLowerCase().replace(/\s+/g, ' ');
+                    // Match when the character name appears at the end (after any icon alt text)
+                    const isMine = myNamesArr.some(nm => nameText.endsWith(nm));
+                    if (!isMine) return;
+                    const raw = String(pointsEl.textContent || '').replace('+','').trim();
+                    const val = Number(raw);
+                    if (!isNaN(val)) sumVisible += val;
+                    const signed = isNaN(val) ? null : (val > 0 ? `+${Math.round(val)}` : `${Math.round(val)}`);
+                    if (signed) components.push(signed);
+                });
+            });
+        } catch (e) {
+            console.warn('⚠️ [MY POINTS] DOM aggregation failed', e);
+        }
+
+        const myPoints = basePoints + sumVisible;
+        this.myPoints = myPoints;
+        myPointsEl.textContent = this.formatNumber(Math.round(myPoints));
+        if (myPointsDetailEl) {
+            const list = Array.from(myNames).filter(Boolean);
+            const parts = [];
+            if (list.length > 0) parts.push(`Chars: ${list.join(', ')}`);
+            parts.push(`Base ${basePoints}`);
+            if (Array.isArray(components) && components.length > 0) parts.push(components.join(', '));
+            myPointsDetailEl.textContent = parts.length > 0 ? parts.join(', ') : 'Character not matched yet';
+        }
+
+        // Compute gold per point and my gold
+        const totalPts = Number(this.totalPointsComputed) || 0;
+        const shared = Number(this.sharedGoldPot) || Math.floor((this.totalGoldPot || 0) * 0.85);
+        if (totalPts > 0 && shared > 0) {
+            const goldPerPoint = shared / totalPts;
+            this.goldPerPoint = goldPerPoint;
+            const myGold = Math.floor(myPoints * goldPerPoint);
+            this.myGold = myGold;
+            myGoldEl.textContent = myGold.toLocaleString();
+            if (myGoldDetailEl) myGoldDetailEl.textContent = `Each point = ${Math.round(goldPerPoint)} gold`;
+        } else {
+            this.goldPerPoint = null;
+            this.myGold = null;
+            myGoldEl.textContent = '--';
+            if (myGoldDetailEl) myGoldDetailEl.textContent = 'Each point = -- gold';
         }
     }
 
@@ -1789,7 +2020,7 @@ class RaidLogsManager {
             { key: 'power_infusion', name: 'Power Infusion', containerId: 'power-infusion-list' },
             { key: 'decurses', name: 'Decurses', containerId: 'decurses-list' },
             { key: 'frost_resistance', name: 'Frost Resistance', containerId: 'world-buffs-list' },
-            { key: 'world_buffs_copy', name: 'World Buffs Copy', containerId: 'world-buffs-copy-list' },
+            { key: 'world_buffs_copy', name: 'World Buffs', containerId: 'world-buffs-copy-list' },
             { key: 'void_damage', name: 'Avoidable Void Damage', containerId: 'void-damage-list' },
             { key: 'shaman_healers', name: 'Top Shaman Healers', containerId: 'shaman-healers-list' },
             { key: 'priest_healers', name: 'Top Priest Healers', containerId: 'priest-healers-list' },
@@ -1951,6 +2182,7 @@ class RaidLogsManager {
             cfg._editBtn.style.display = 'inline-flex';
         }
         this.updateTotalPointsCard();
+        this.updateGoldCards();
     }
 
     collectPanelEdits(cfg) {
@@ -2075,6 +2307,7 @@ class RaidLogsManager {
                 await this.fetchSnapshotData();
                 this.applySnapshotOverlay();
                 this.updateTotalPointsCard();
+                this.updateGoldCards();
             }
         } catch (e) {
             console.error('❌ [SNAPSHOT] Lock failed', e);
@@ -3057,9 +3290,10 @@ class RaidLogsManager {
         const section = container.closest('.rankings-section');
         section.classList.add('world-buffs');
 
-        // Filter to only show players with fewer than 6 buffs
+        // Filter to only show players with fewer than required buffs
+        const required = this.worldBuffsRequiredBuffs || 6;
         const playersWithMissingBuffs = players.filter(player => 
-            player.total_buffs < 6
+            player.total_buffs < required
         );
 
         // Sort players by points (highest first, least negative), then by total buffs
@@ -3077,7 +3311,7 @@ class RaidLogsManager {
             container.innerHTML = `
                 <div class="rankings-empty">
                     <i class="fas fa-magic"></i>
-                    <p>All players have 6+ buffs!</p>
+                    <p>All players meet the required buffs (${required}+)</p>
                 </div>
             `;
             return;
@@ -3165,6 +3399,12 @@ class RaidLogsManager {
         if (headerElement && this.worldBuffsRequiredBuffs) {
             headerElement.textContent = `Points for missing world buffs (-10 per buff below ${this.worldBuffsRequiredBuffs})`;
         }
+        // Also update the title if present (ensure it reads "World Buffs")
+        const section = document.getElementById('world-buffs-copy-list')?.closest('.rankings-section');
+        const h2 = section ? section.querySelector('.section-header h2') : null;
+        if (h2) {
+            h2.innerHTML = `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_arcane_teleportorgrimmar.jpg" alt="World Buffs" style="width: 24px; height: 24px; margin-right: 8px;"> World Buffs`;
+        }
     }
 
 
@@ -3186,19 +3426,19 @@ class RaidLogsManager {
             }
         }
 
-        // Update World Buffs Copy archive button
+        // Update World Buffs archive button
         const worldBuffsCopyButton = document.getElementById('world-buffs-copy-archive-button');
         if (worldBuffsCopyButton) {
             if (this.worldBuffsArchiveUrl) {
                 worldBuffsCopyButton.classList.remove('disabled');
                 worldBuffsCopyButton.onclick = () => window.open(this.worldBuffsArchiveUrl, '_blank');
                 worldBuffsCopyButton.title = 'View archived World Buffs sheet';
-                console.log(`🌍 World Buffs Copy archive button enabled with URL: ${this.worldBuffsArchiveUrl}`);
+                console.log(`🌍 World Buffs archive button enabled with URL: ${this.worldBuffsArchiveUrl}`);
             } else {
                 worldBuffsCopyButton.classList.add('disabled');
                 worldBuffsCopyButton.onclick = null;
                 worldBuffsCopyButton.title = 'No archived World Buffs sheet found for this event';
-                console.log(`🌍 World Buffs Copy archive button disabled - no URL found`);
+                console.log(`🌍 World Buffs archive button disabled - no URL found`);
             }
         }
     }

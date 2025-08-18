@@ -115,6 +115,9 @@
                     <button class="stats-toggle-btn" data-panel="shame">
                         <i class="fas fa-skull-crossbones"></i> Wall of Shame
                     </button>
+                    <button class="stats-toggle-btn" data-panel="gold">
+                        <i class="fas fa-coins"></i> Gold
+                    </button>
                 </div>
 
                 <!-- Dashboard Panel -->
@@ -167,13 +170,6 @@
                             <div class="stat-detail" id="rpb-archive-detail">Loading...</div>
                         </div>
 
-                        <!-- Total Points -->
-                        <div class="stat-card total-points">
-                            <i class="fas fa-coins stat-icon"></i>
-                            <div class="stat-label">Total Points</div>
-                            <div class="stat-value" id="total-points-value">--</div>
-                            <div class="stat-detail">Base + rewards - deductions</div>
-                        </div>
                     </div>
 
                 <!-- Wall of Shame Panel -->
@@ -208,6 +204,57 @@
                         <div class="stat-label">Most Team Damage</div>
                         <div class="stat-value" id="most-friendly-damage-value">--</div>
                         <div class="stat-detail" id="most-friendly-damage-detail">Damage to teammates</div>
+                    </div>
+                </div>
+
+                <!-- Gold Panel -->
+                <div class="stats-dashboard" id="gold-panel" style="display: none;">
+                    <!-- Total Gold -->
+                    <div class="stat-card gold-total">
+                        <i class="fas fa-coins stat-icon"></i>
+                        <div class="stat-label">Total Gold</div>
+                        <div class="stat-value" id="gold-total-value">--</div>
+                        <div class="stat-detail">Sum of all loot items (event)</div>
+                    </div>
+
+                    <!-- Shared Gold -->
+                    <div class="stat-card gold-shared">
+                        <i class="fas fa-hand-holding-usd stat-icon"></i>
+                        <div class="stat-label">Shared Gold</div>
+                        <div class="stat-value" id="gold-shared-value">--</div>
+                        <div class="stat-detail">85% distributed to players</div>
+                    </div>
+
+                    <!-- Management Gold -->
+                    <div class="stat-card gold-management">
+                        <i class="fas fa-briefcase stat-icon"></i>
+                        <div class="stat-label">Management Gold</div>
+                        <div class="stat-value" id="gold-management-value">--</div>
+                        <div class="stat-detail" id="gold-management-detail">Mgmt: -- | Org: -- | RL: -- | Founder: --</div>
+                    </div>
+
+                    <!-- Total Points (moved here) -->
+                    <div class="stat-card total-points">
+                        <i class="fas fa-star stat-icon"></i>
+                        <div class="stat-label">Total Points</div>
+                        <div class="stat-value" id="total-points-value">--</div>
+                        <div class="stat-detail">Base + rewards - deductions</div>
+                    </div>
+
+                    <!-- My Points -->
+                    <div class="stat-card my-points">
+                        <i class="fas fa-user-check stat-icon"></i>
+                        <div class="stat-label">My Points</div>
+                        <div class="stat-value" id="my-points-value">--</div>
+                        <div class="stat-detail" id="my-points-detail">Based on your character in this raid</div>
+                    </div>
+
+                    <!-- My Gold -->
+                    <div class="stat-card my-gold">
+                        <i class="fas fa-piggy-bank stat-icon"></i>
+                        <div class="stat-label">My Gold</div>
+                        <div class="stat-value" id="my-gold-value">--</div>
+                        <div class="stat-detail" id="my-gold-detail">Each point = -- gold</div>
                     </div>
                 </div>
             </div>
@@ -425,18 +472,18 @@
                     </div>
                 </div>
 
-                <!-- World Buffs Section Copy -->
+                <!-- World Buffs Section Copy (renamed to World Buffs) -->
                 <div class="rankings-section world-buffs-section">
                     <div class="section-header">
-                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_arcane_teleportorgrimmar.jpg" alt="World Buffs" style="width: 24px; height: 24px; margin-right: 8px;"> World Buffs Copy</h2>
-                        <p id="world-buffs-copy-header-text">Points for missing world buffs (-10 per missing buff)</p>
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_arcane_teleportorgrimmar.jpg" alt="World Buffs" style="width: 24px; height: 24px; margin-right: 8px;"> World Buffs</h2>
+                        <p id="world-buffs-copy-header-text">Points for missing world buffs (-10 per buff below 4/6)</p>
                     </div>
                     <div class="rankings-list" id="world-buffs-copy-list">
                         <!-- World buffs copy rankings will be populated here -->
                     </div>
                     <div class="integrated-archive-button" id="world-buffs-copy-archive-button">
                         <i class="fas fa-external-link-alt"></i>
-                        <span>View World Buffs Copy</span>
+                        <span>View World Buffs</span>
                     </div>
                 </div>
             </div>

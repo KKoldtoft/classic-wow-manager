@@ -1045,6 +1045,35 @@
     color: #f39c12;
 }
 
+/* Gold panel colored icons */
+.stat-card.gold-total .stat-icon { color: #f59e0b; }
+.stat-card.gold-shared .stat-icon { color: #10b981; }
+.stat-card.gold-management .stat-icon { color: #6366f1; }
+.stat-card.my-points .stat-icon { color: #3b82f6; }
+.stat-card.my-gold .stat-icon { color: #a855f7; }
+
+/* Management tooltip */
+.mgmt-tooltip {
+    position: fixed;
+    z-index: 9999;
+    background: rgba(20,20,22,0.98);
+    color: #f0f0f0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.55), 0 6px 18px rgba(0,0,0,0.35);
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    pointer-events: none;
+}
+.mgmt-tooltip.show { opacity: 1; }
+.mgmt-grid {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 6px 16px;
+}
+.mgmt-key { color: #cfcfcf; white-space: nowrap; }
+.mgmt-val { color: #ffd166; white-space: nowrap; text-align: right; }
+
 .stat-value {
     font-size: 1.8em;
     font-weight: 700;

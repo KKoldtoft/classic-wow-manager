@@ -1273,14 +1273,15 @@
 
             channels.forEach(channel => {
                 const isVisible = channel.is_visible !== false; // Default to true if not set
+                const isNax = !!channel.is_nax;
                 const toggleClass = isVisible ? 'toggle-on' : 'toggle-off';
                 const statusText = isVisible ? 'Shown' : 'Hidden';
                 const statusColor = isVisible ? '#28a745' : '#dc3545';
 
                 filtersHTML += `
                     <div class="channel-filter-item" data-channel-id="${channel.channel_id}">
-                        <div style="display: flex; align-items: center; justify-content: space-between; padding: 15px; background: white; border-radius: 8px; border: 1px solid #dee2e6;">
-                            <div style="flex: 1;">
+                        <div style="display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 15px; background: white; border-radius: 8px; border: 1px solid #dee2e6;">
+                            <div>
                                 <div style="font-weight: 600; color: #2c3e50; margin-bottom: 5px;">
                                     <i class="fas fa-hashtag" style="color: #7289da; margin-right: 5px;"></i>
                                     ${channel.channel_name || `Channel ${channel.channel_id}`}
@@ -1291,13 +1292,19 @@
                                     ${channel.historic_count ? `<br>📚 ${channel.historic_count} completed` : ''}
                                 </div>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 15px;">
-                                <span style="color: ${statusColor}; font-weight: 500; min-width: 60px;">
-                                    ${statusText}
-                                </span>
-                                <div class="channel-toggle ${toggleClass}" data-channel-id="${channel.channel_id}" onclick="toggleChannel('${channel.channel_id}')">
-                                    <div class="toggle-slider"></div>
+                            <div style="display: flex; align-items: center; gap: 20px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span style="color: ${statusColor}; font-weight: 500; min-width: 60px;">
+                                        ${statusText}
+                                    </span>
+                                    <div class="channel-toggle ${toggleClass}" data-channel-id="${channel.channel_id}" onclick="toggleChannel('${channel.channel_id}')">
+                                        <div class="toggle-slider"></div>
+                                    </div>
                                 </div>
+                                <label style="display:flex; align-items:center; gap:8px; font-size: 13px; color:#374151;">
+                                    <input type="checkbox" class="nax-toggle" data-channel-id="${channel.channel_id}" ${isNax ? 'checked' : ''} onchange="toggleNaxChannel('${channel.channel_id}', this.checked)">
+                                    <span>${isNax ? 'Is NAX' : 'Is not NAX'}</span>
+                                </label>
                             </div>
                         </div>
                     </div>
@@ -1381,6 +1388,15 @@
             document.getElementById('save-filters-btn').style.display = 'inline-flex';
         }
 
+        function toggleNaxChannel(channelId, isChecked) {
+            const label = document.querySelector(`.channel-filter-item[data-channel-id="${channelId}"] label span`);
+            if (label) {
+                label.textContent = isChecked ? 'Is NAX' : 'Is not NAX';
+            }
+            // Show save button
+            document.getElementById('save-filters-btn').style.display = 'inline-flex';
+        }
+
         async function saveChannelFilters() {
             const saveBtn = document.getElementById('save-filters-btn');
             const toggles = document.querySelectorAll('.channel-toggle');
@@ -1393,9 +1409,12 @@
             toggles.forEach(toggle => {
                 const channelId = toggle.dataset.channelId;
                 const isVisible = toggle.classList.contains('toggle-on');
+                const naxToggle = document.querySelector(`.nax-toggle[data-channel-id="${channelId}"]`);
+                const isNax = !!(naxToggle && naxToggle.checked);
                 filterSettings.push({
                     channel_id: channelId,
-                    is_visible: isVisible
+                    is_visible: isVisible,
+                    is_nax: isNax
                 });
             });
 

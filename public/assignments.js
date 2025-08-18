@@ -22,9 +22,32 @@
   }
 
   // Floating sub-navigation: set hrefs to real subpages and active state
-  function initializeFloatingNavigation() {
+  async function initializeFloatingNavigation() {
     const nav = document.getElementById('assignments-floating-nav');
     if (!nav) return;
+    const buttonsContainer = document.getElementById('assignments-nav-buttons') || nav.querySelector('.nav-buttons');
+    const eventId = getActiveEventId();
+    let isNax = true; // default assume NAX to preserve current look
+    try {
+      if (eventId) {
+        const res = await fetch(`/api/events/${eventId}/channel-flags`);
+        const data = await res.json();
+        if (data && data.success) {
+          isNax = !!data.isNax;
+        }
+      }
+    } catch {}
+
+    // If not NAX, replace nav with simplified set
+    if (!isNax && buttonsContainer) {
+      buttonsContainer.innerHTML = `
+        <a class="nav-btn" data-wing="main" href="#"><i class="fas fa-home"></i> <span>Main</span></a>
+        <a class="nav-btn" data-wing="aq40" href="#"><i class="fas fa-mountain"></i> <span>AQ40</span></a>
+        <a class="nav-btn" data-wing="bwl" href="#"><i class="fas fa-fire"></i> <span>BWL</span></a>
+        <a class="nav-btn" data-wing="mc" href="#"><i class="fas fa-fire-alt"></i> <span>MC</span></a>
+      `;
+    }
+
     const buttons = Array.from(nav.querySelectorAll('.nav-btn'));
     const parts = window.location.pathname.split('/').filter(Boolean);
     const idx = parts.indexOf('event');
@@ -2609,6 +2632,11 @@
       }
 
       const wing = getCurrentWing();
+      // Non-NAX placeholder pages
+      if (['aq40','bwl','mc'].includes(wing)) {
+        container.innerHTML = '<div class="no-data-message"><div class="no-data-content"><i class="fas fa-tools"></i><h3>Coming Soon</h3><p>This assignments page is coming soon.</p></div></div>';
+        return;
+      }
       if (wing === 'main') {
         // Build Main Assignments panels (lightweight)
         const existingTanking = panels.find(p => String(p.boss || '').toLowerCase() === 'tanking' && (!p.wing || String(p.wing).trim() === '' || String(p.wing).toLowerCase() === 'main'));

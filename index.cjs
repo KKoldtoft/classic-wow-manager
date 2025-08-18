@@ -1322,6 +1322,10 @@ app.get('/raidlogs', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'raidlogs.html'));
 });
 
+app.get('/rules', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'rules.html'));
+});
+
 // Minimal live view page
 app.get('/live', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'live.html'));
@@ -2078,6 +2082,48 @@ app.get('/event/:eventId/assignments', (req, res) => {
 // Subpage routes for assignments wings
 app.get('/event/:eventId/assignments/:wing', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'assignments.html'));
+});
+
+// Non-event scoped assignments routes (used by placeholder and generic links)
+app.get('/assignments', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'assignments.html'));
+});
+
+app.get('/assignments/:wing', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'assignments.html'));
+});
+
+// Channel flags for an event (is_nax, channelId, channelName)
+app.get('/api/events/:eventId/channel-flags', async (req, res) => {
+  const { eventId } = req.params;
+  let client;
+  try {
+    client = await pool.connect();
+    let channelId = null;
+    let channelName = null;
+    let isNax = false;
+    const ev = await client.query(
+      `SELECT event_data FROM raid_helper_events_cache WHERE event_id = $1`,
+      [eventId]
+    );
+    if (ev.rows.length > 0) {
+      const data = ev.rows[0].event_data || {};
+      channelId = data.channelId || data.channelID || data.channel_id || null;
+      channelName = data.channelName || null;
+    }
+    if (channelId) {
+      try {
+        const cf = await client.query(`SELECT is_nax FROM channel_filters WHERE channel_id = $1`, [channelId]);
+        if (cf.rows.length > 0) isNax = !!cf.rows[0].is_nax;
+      } catch {}
+    }
+    return res.json({ success: true, eventId, channelId, channelName, isNax });
+  } catch (e) {
+    console.error('❌ [/api/events/:eventId/channel-flags] Error:', e.message);
+    return res.json({ success: false, error: 'Failed to load channel flags' });
+  } finally {
+    if (client) client.release();
+  }
 });
 
 // Management-only endpoint for user data
@@ -7017,6 +7063,7 @@ app.get('/api/world-buffs-data/:eventId', async (req, res) => {
         
         // First, get the channel ID for this event to determine buff requirements
         let channelId = null;
+        let isNaxChannel = false;
         try {
             const eventResult = await client.query(`
                 SELECT event_data->>'channelId' as channel_id
@@ -7027,21 +7074,22 @@ app.get('/api/world-buffs-data/:eventId', async (req, res) => {
             if (eventResult.rows.length > 0) {
                 channelId = eventResult.rows[0].channel_id;
                 console.log(`🌍 [WORLD BUFFS] Found channel ID: ${channelId} for event: ${eventId}`);
+                // Lookup channel flags
+                try {
+                    const cf = await client.query(`SELECT is_nax FROM channel_filters WHERE channel_id = $1`, [channelId]);
+                    if (cf.rows.length > 0) {
+                        isNaxChannel = !!cf.rows[0].is_nax;
+                    }
+                } catch (e) {
+                    console.warn('🌍 [WORLD BUFFS] channel_filters lookup failed or table missing:', e.message);
+                }
             }
         } catch (err) {
             console.warn(`🌍 [WORLD BUFFS] Could not determine channel ID for event ${eventId}:`, err.message);
         }
         
-        // Base required buffs (without DMF)
-        let baseRequiredBuffs = 5; // Default: Ony, Rend, ZG, Songflower, DM Tribute
-        if (channelId === '1202206206782091264') {
-            baseRequiredBuffs = 4; // 4 buffs for this channel
-        } else if (channelId === '1184627341893316649' || channelId === '1195562433926934658') {
-            baseRequiredBuffs = 6; // 6 buffs for these channels
-        }
-        
-        // We'll determine final required buffs after checking DMF count
-        let requiredBuffs = baseRequiredBuffs;
+        // Required buffs rule per spec: 4 if not NAX, 6 if NAX (do not add DMF)
+        let requiredBuffs = isNaxChannel ? 6 : 4;
         
         // Check if table exists
         const tableCheck = await client.query(`
@@ -7149,7 +7197,7 @@ app.get('/api/world-buffs-data/:eventId', async (req, res) => {
             }
         });
         
-        // First pass: Check if DMF should be included (10+ people must have it)
+        // First pass: Check if DMF should be displayed as missing (10+ people must have it)
         let dmfCount = 0;
         Object.values(characterData).forEach(char => {
             if (char.buffs['DMF']) {
@@ -7159,13 +7207,8 @@ app.get('/api/world-buffs-data/:eventId', async (req, res) => {
         
         const includeDMF = dmfCount >= 10;
         
-        // Update required buffs if DMF is included
-        if (includeDMF) {
-            requiredBuffs = baseRequiredBuffs + 1; // Add DMF to required count
-        }
-        
-        console.log(`🌍 [WORLD BUFFS] DMF count: ${dmfCount}, included in calculations: ${includeDMF}`);
-        console.log(`🌍 [WORLD BUFFS] Final required buffs: ${requiredBuffs} (base: ${baseRequiredBuffs}, +DMF: ${includeDMF})`);
+        console.log(`🌍 [WORLD BUFFS] DMF count: ${dmfCount}, included in missing list: ${includeDMF}`);
+        console.log(`🌍 [WORLD BUFFS] Final required buffs: ${requiredBuffs} (isNax=${isNaxChannel})`);
         console.log(`🌍 [WORLD BUFFS] Characters with DMF:`, Object.keys(characterData).filter(name => characterData[name].buffs['DMF']));
         
         // Calculate points and missing buffs for each character
@@ -11691,6 +11734,19 @@ app.get('/api/admin/channel-filters', async (req, res) => {
   }
 
   try {
+    // Ensure channel_filters table exists and has expected columns
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS channel_filters (
+        channel_id TEXT PRIMARY KEY,
+        channel_name TEXT,
+        is_visible BOOLEAN DEFAULT true,
+        is_nax BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await pool.query(`ALTER TABLE channel_filters ADD COLUMN IF NOT EXISTS is_nax BOOLEAN DEFAULT false`);
+
     // Get both upcoming and completed events to find all channels with raids
     const [upcomingEventsResponse, historicEventsResponse] = await Promise.all([
               fetchEventsFromAPI().then(events => enrichEventsWithDiscordChannelNames(events)),
@@ -11753,20 +11809,22 @@ app.get('/api/admin/channel-filters', async (req, res) => {
     console.log(`📊 Extracted ${channelMap.size} unique channels from both upcoming and completed events`);
 
     // Get existing filter settings from database
-    const filterResult = await pool.query('SELECT channel_id, is_visible FROM channel_filters');
+    const filterResult = await pool.query('SELECT channel_id, is_visible, is_nax FROM channel_filters');
     const existingFilters = new Map();
     filterResult.rows.forEach(row => {
-      existingFilters.set(row.channel_id, row.is_visible);
+      existingFilters.set(row.channel_id, { is_visible: row.is_visible, is_nax: row.is_nax });
     });
 
     // Merge current channels with existing filter settings
-    const channels = Array.from(channelMap.values()).map(channel => ({
-      ...channel,
-      raid_count: (channel.upcoming_count || 0) + (channel.historic_count || 0), // Total count
-      is_visible: existingFilters.has(channel.channel_id) 
-        ? existingFilters.get(channel.channel_id)
-        : true // Default to visible for new channels
-    }));
+    const channels = Array.from(channelMap.values()).map(channel => {
+      const existing = existingFilters.get(channel.channel_id);
+      return {
+        ...channel,
+        raid_count: (channel.upcoming_count || 0) + (channel.historic_count || 0), // Total count
+        is_visible: existing ? existing.is_visible : true, // Default to visible for new channels
+        is_nax: existing ? !!existing.is_nax : false
+      };
+    });
 
     // Sort by channel name
     channels.sort((a, b) => (a.channel_name || '').localeCompare(b.channel_name || ''));
@@ -11813,10 +11871,12 @@ app.post('/api/admin/channel-filters', async (req, res) => {
         channel_id TEXT PRIMARY KEY,
         channel_name TEXT,
         is_visible BOOLEAN DEFAULT true,
+        is_nax BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    await pool.query(`ALTER TABLE channel_filters ADD COLUMN IF NOT EXISTS is_nax BOOLEAN DEFAULT false`);
 
     // Clear events cache so changes take effect immediately
     await pool.query('DELETE FROM events_cache WHERE cache_key = $1', [EVENTS_CACHE_KEY]);
@@ -11824,20 +11884,21 @@ app.post('/api/admin/channel-filters', async (req, res) => {
 
     // Update each filter setting
     for (const filter of filters) {
-      const { channel_id, is_visible } = filter;
+      const { channel_id, is_visible, is_nax } = filter;
       
       if (!channel_id || typeof is_visible !== 'boolean') {
         continue; // Skip invalid entries
       }
 
       await pool.query(`
-        INSERT INTO channel_filters (channel_id, is_visible, updated_at)
-        VALUES ($1, $2, CURRENT_TIMESTAMP)
+        INSERT INTO channel_filters (channel_id, is_visible, is_nax, updated_at)
+        VALUES ($1, $2, COALESCE($3, FALSE), CURRENT_TIMESTAMP)
         ON CONFLICT (channel_id)
         DO UPDATE SET 
           is_visible = EXCLUDED.is_visible,
+          is_nax = EXCLUDED.is_nax,
           updated_at = CURRENT_TIMESTAMP
-      `, [channel_id, is_visible]);
+      `, [channel_id, is_visible, is_nax]);
     }
 
     console.log(`📡 Updated channel filters for ${filters.length} channels`);

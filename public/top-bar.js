@@ -114,6 +114,21 @@ function highlightActiveRaidNav() {
     });
 }
 
+// Inject a "Rules" link into the top navigation if not present
+function injectRulesNavLink() {
+    const navs = document.querySelectorAll('.top-nav');
+    navs.forEach(nav => {
+        // Avoid duplicates
+        const existing = nav.querySelector('a.top-nav-link[href="/rules"]');
+        if (existing) return;
+        const rulesLink = document.createElement('a');
+        rulesLink.href = '/rules';
+        rulesLink.className = 'top-nav-link';
+        rulesLink.textContent = 'Rules';
+        nav.appendChild(rulesLink);
+    });
+}
+
 // Scroll behavior for sticky header
 let lastScrollTop = 0;
 let scrollTimeout = null;
@@ -388,6 +403,7 @@ function updateRaidNavigation(eventId) {
 // Run the functions when the document is ready.
 document.addEventListener('DOMContentLoaded', () => {
     updateAuthUI();
+    injectRulesNavLink();
     highlightActiveNav();
     setupUpcomingRaidsDropdown();
     updateRaidBar();
