@@ -4789,6 +4789,7 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 ('mana_potions', 'max_points', 10, 'Maximum points that can be earned from mana potions'),
                 ('runes', 'usage_divisor', 2, 'Number of runes needed per point'),
                 ('runes', 'points_per_division', 1, 'Points earned per rune threshold reached'),
+                ('runes', 'max_points', 15, 'Maximum points that can be earned from runes'),
                 ('interrupts', 'points_per_interrupt', 1, 'Points earned per interrupt'),
                 ('interrupts', 'interrupts_needed', 1, 'Number of interrupts needed per point'),
                 ('interrupts', 'max_points', 5, 'Maximum points that can be earned from interrupts'),
@@ -4816,6 +4817,22 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 ('sunder', 'enabled', 1, 'Whether Sunder Armor tracking is enabled'),
                 ('ui', 'background_blur', 0, 'Background image blur intensity (0-10)')
             ON CONFLICT (setting_type, setting_name) DO NOTHING
+        `);
+
+        // Force updated uptime thresholds for curses and faerie fire to 70%
+        await client.query(`
+            UPDATE reward_settings 
+            SET setting_value = 70
+            WHERE setting_name = 'uptime_threshold' 
+              AND setting_type IN ('curse','curse_shadow','curse_elements','faerie_fire')
+              AND setting_value <> 70
+        `);
+
+        // Enforce cap for runes to 15 points
+        await client.query(`
+            UPDATE reward_settings
+            SET setting_value = 15
+            WHERE setting_type = 'runes' AND setting_name = 'max_points' AND setting_value <> 15
         `);
 
         // Insert sunder armor point ranges separately (JSON data)
@@ -7727,6 +7744,7 @@ app.get('/api/runes-data/:eventId', async (req, res) => {
         
         const usageDivisor = settings.usage_divisor || 2;
         const pointsPerDivision = settings.points_per_division || 1;
+        const maxPoints = settings.max_points || 15;
         
         console.log(`🔮 [RUNES] Using dynamic settings: usage_divisor=${usageDivisor}, points_per_division=${pointsPerDivision}`);
         
@@ -7781,8 +7799,9 @@ app.get('/api/runes-data/:eventId', async (req, res) => {
         
         // Calculate points and convert to array
         const finalData = Object.values(characterData).map(char => {
-            // Calculate points: floor(total_runes / divisor) * points_per_division
-            const points = Math.floor(char.total_runes / usageDivisor) * pointsPerDivision;
+            // Calculate points: floor(total_runes / divisor) * points_per_division, then clamp to max
+            const rawPoints = Math.floor(char.total_runes / usageDivisor) * pointsPerDivision;
+            const points = Math.min(maxPoints, rawPoints);
             
             return {
                 ...char,
@@ -7800,7 +7819,8 @@ app.get('/api/runes-data/:eventId', async (req, res) => {
             eventId: eventId,
             settings: {
                 usage_divisor: usageDivisor,
-                points_per_division: pointsPerDivision
+                points_per_division: pointsPerDivision,
+                max_points: maxPoints
             }
         });
         
@@ -12378,6 +12398,86 @@ app.get('/api/event-biggestitem/:eventId', async (req, res) => {
     } catch (error) {
         console.error(`❌ [EVENT BIGGESTITEM] Error for event ${eventId}:`, error.message);
         return res.json({ success: false, error: 'Database error' });
+    }
+});
+
+// Big Buyer Bonus: top 3 spenders (loot_items sum per player) for an event
+app.get('/api/big-buyer/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    let client;
+    try {
+        client = await pool.connect();
+
+        // Ensure loot_items exists; if not, return empty
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'loot_items'
+            ) AS exists;
+        `);
+        if (!tableCheck.rows[0].exists) {
+            return res.json({ success: true, data: [] });
+        }
+
+        // Sum spend per player for event, join to log_data to get class/discord when possible
+        const result = await client.query(`
+            WITH spend AS (
+                SELECT 
+                    li.player_name AS character_name,
+                    SUM(COALESCE(li.gold_amount,0))::bigint AS spent_gold
+                FROM loot_items li
+                WHERE li.event_id = $1
+                GROUP BY li.player_name
+            ), ranked AS (
+                SELECT s.character_name,
+                       s.spent_gold,
+                       -- join any matching log_data row to get class and discord id
+                       COALESCE(ld.character_class, 'Unknown') AS character_class,
+                       ld.discord_id
+                FROM spend s
+                LEFT JOIN LATERAL (
+                    SELECT ld.character_class, ld.discord_id
+                    FROM log_data ld
+                    WHERE ld.event_id = $1 AND LOWER(ld.character_name) = LOWER(s.character_name)
+                    LIMIT 1
+                ) ld ON TRUE
+            )
+            SELECT *
+            FROM ranked
+            WHERE spent_gold >= 25000
+            ORDER BY spent_gold DESC, LOWER(character_name) ASC
+            LIMIT 3;
+        `, [eventId]);
+
+        // Compute points tier
+        const tierPoints = (g) => {
+            const n = Number(g) || 0;
+            if (n >= 100000) return 20;
+            if (n >= 75000) return 15;
+            if (n >= 50000) return 10;
+            if (n >= 25000) return 5;
+            return 0;
+        };
+
+        const data = (result.rows || []).map(r => ({
+            character_name: r.character_name,
+            character_class: r.character_class || 'Unknown',
+            discord_id: r.discord_id || null,
+            spent_gold: Number(r.spent_gold) || 0,
+            points: tierPoints(r.spent_gold)
+        }));
+
+        return res.json({ success: true, data });
+    } catch (e) {
+        console.error('❌ [BIG BUYER] Error:', e);
+        return res.status(500).json({ success: false, message: 'Internal server error' });
+    } finally {
+        if (client) client.release();
     }
 });
 

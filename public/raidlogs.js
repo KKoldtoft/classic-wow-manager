@@ -492,8 +492,11 @@ class RaidLogsManager {
                 this.fetchCurrentUser(),
                 this.fetchPrimaryRoles().then(roles => this.primaryRoles = roles),
                 this.fetchVoidDamageData(),
-                this.fetchGoldPot()
+                this.fetchGoldPot(),
+                this.fetchBigBuyerData()
             ]);
+            // Remove non-player entities across datasets
+            this.sanitizeDatasets();
             this.displayRaidLogs();
             this.displayManualRewards();
             // Recompute totals with all data loaded
@@ -1282,6 +1285,23 @@ class RaidLogsManager {
         }
     }
 
+    async fetchBigBuyerData() {
+        if (!this.activeEventId) return;
+        try {
+            const res = await fetch(`/api/big-buyer/${this.activeEventId}`);
+            if (!res.ok) { this.bigBuyerData = []; return; }
+            const data = await res.json();
+            if (data && data.success) {
+                this.bigBuyerData = data.data || [];
+            } else {
+                this.bigBuyerData = [];
+            }
+        } catch (e) {
+            console.error('❌ [BIG BUYER] Fetch failed', e);
+            this.bigBuyerData = [];
+        }
+    }
+
     async fetchShameData() {
         console.log(`💀 Fetching shame data for event: ${this.activeEventId}`);
         
@@ -1639,6 +1659,14 @@ class RaidLogsManager {
                     if (pts > 0) positivePoints += pts; else if (pts < 0) negativePoints += Math.abs(pts);
                 });
             }
+
+            // Include Big Buyer Bonus
+            if (this.bigBuyerData && Array.isArray(this.bigBuyerData)) {
+                this.bigBuyerData.forEach(player => {
+                    const pts = Number(player.points) || 0;
+                    if (pts > 0) positivePoints += pts; else if (pts < 0) negativePoints += Math.abs(pts);
+                });
+            }
             
             // Add points from manual rewards/deductions
             if (this.manualRewardsData) {
@@ -1735,6 +1763,8 @@ class RaidLogsManager {
         }
         // My Points and My Gold
         this.computeMyPointsAndGold();
+        // Ensure tooltips are wired
+        this.setupMyGoldTooltip();
     }
 
     setupManagementTooltip(cuts) {
@@ -1811,6 +1841,125 @@ class RaidLogsManager {
         this._mgmtTooltipSetup = true;
     }
 
+    setupMyGoldTooltip() {
+        if (this._myGoldTooltipSetup) return;
+        const card = document.querySelector('.stat-card.my-gold');
+        if (!card) return;
+
+        let hoverTimer = null;
+        let shown = false;
+        let lastPos = { x: 0, y: 0 };
+        let tooltipEl = null;
+
+        const removeTooltip = () => {
+            if (tooltipEl && tooltipEl.parentNode) {
+                tooltipEl.parentNode.removeChild(tooltipEl);
+            }
+            tooltipEl = null;
+            shown = false;
+        };
+
+        const buildContributions = () => {
+            const userId = this.currentUser?.id;
+            const contribs = [];
+            if (!userId) return contribs;
+            const myNames = new Set((this.logData || [])
+                .filter(p => String(p.discord_id || '') === String(userId))
+                .map(p => String(p.character_name || '').toLowerCase())
+            );
+            const myNamesArr = Array.from(myNames);
+
+            // Base
+            const basePoints = myNames.size * 100;
+            if (basePoints > 0) {
+                contribs.push({ panel: 'Base', points: basePoints });
+            }
+
+            // For each rankings section, capture single entry for my name
+            const sections = document.querySelectorAll('#raid-logs-container .rankings-section');
+            sections.forEach(section => {
+                const header = section.querySelector('.section-header h2');
+                const title = header ? header.textContent.trim() : 'Panel';
+                const list = section.querySelector('.rankings-list');
+                if (!list) return;
+                const items = list.querySelectorAll('.ranking-item');
+                for (const item of items) {
+                    const nameEl = item.querySelector('.character-name');
+                    const pointsEl = item.querySelector('.performance-amount .amount-value');
+                    if (!nameEl || !pointsEl) continue;
+                    const nameText = String(nameEl.textContent || '').trim().toLowerCase().replace(/\s+/g, ' ');
+                    const isMine = myNamesArr.some(nm => nameText.endsWith(nm));
+                    if (!isMine) continue;
+                    const raw = String(pointsEl.textContent || '').replace('+','').trim();
+                    const val = Number(raw);
+                    if (isNaN(val) || val === 0) continue;
+                    contribs.push({ panel: title, points: Math.round(val) });
+                    break; // only one contribution per panel
+                }
+            });
+
+            return contribs;
+        };
+
+        const buildTooltip = () => {
+            const fmtInt = (n) => Math.round(Number(n || 0)).toLocaleString();
+            const gpp = this.goldPerPoint || 0;
+            const el = document.createElement('div');
+            el.className = 'mygold-tooltip';
+
+            const rows = buildContributions();
+            const rowsHtml = rows.length > 0 ? rows.map(r => {
+                const gold = Math.round((Number(r.points) || 0) * gpp);
+                const pts = Number(r.points) || 0;
+                const signedPts = pts > 0 ? `+${fmtInt(pts)}` : `${fmtInt(pts)}`;
+                return `<div class="mygold-key">${r.panel}:</div><div class="mygold-val">${signedPts} pts | ${fmtInt(gold)} Gold</div>`;
+            }).join('') : `<div class="mygold-key">No contributions</div><div class="mygold-val">--</div>`;
+
+            el.innerHTML = `
+                <div class="mygold-grid">
+                    ${rowsHtml}
+                </div>
+            `;
+            document.body.appendChild(el);
+            el.style.left = Math.max(8, lastPos.x + 12) + 'px';
+            el.style.top = Math.max(8, lastPos.y + 12) + 'px';
+            requestAnimationFrame(() => { el.classList.add('show'); });
+            return el;
+        };
+
+        const scheduleShow = () => {
+            clearTimeout(hoverTimer);
+            hoverTimer = setTimeout(() => {
+                tooltipEl = buildTooltip();
+                shown = true;
+            }, 1000);
+        };
+
+        const onMouseEnter = (e) => {
+            lastPos = { x: e.clientX, y: e.clientY };
+            scheduleShow();
+        };
+        const onMouseMove = (e) => {
+            if (!shown) {
+                lastPos = { x: e.clientX, y: e.clientY };
+                scheduleShow();
+            } else {
+                clearTimeout(hoverTimer);
+                removeTooltip();
+            }
+        };
+        const onMouseLeave = () => {
+            clearTimeout(hoverTimer);
+            removeTooltip();
+        };
+
+        card.addEventListener('mouseenter', onMouseEnter);
+        card.addEventListener('mousemove', onMouseMove);
+        card.addEventListener('mouseleave', onMouseLeave);
+
+        this._myGoldTooltipSetup = true;
+    }
+
     computeMyPointsAndGold() {
         const myPointsEl = document.getElementById('my-points-value');
         const myPointsDetailEl = document.getElementById('my-points-detail');
@@ -1849,7 +1998,9 @@ class RaidLogsManager {
                     const nameEl = item.querySelector('.character-name');
                     const pointsEl = item.querySelector('.performance-amount .amount-value');
                     if (!nameEl || !pointsEl) return;
-                    const nameText = String(nameEl.textContent || '').trim().toLowerCase().replace(/\s+/g, ' ');
+                    const rawNameText = String(nameEl.textContent || '').trim();
+                    if (this.shouldIgnorePlayer(rawNameText)) return;
+                    const nameText = rawNameText.toLowerCase().replace(/\s+/g, ' ');
                     // Match when the character name appears at the end (after any icon alt text)
                     const isMine = myNamesArr.some(nm => nameText.endsWith(nm));
                     if (!isMine) return;
@@ -1917,7 +2068,8 @@ class RaidLogsManager {
             .filter(player => {
                 const role = (player.role_detected || '').toLowerCase();
                 const damage = parseInt(player.damage_amount) || 0;
-                return (role === 'dps' || role === 'tank') && damage > 0;
+                const name = String(player.character_name || '');
+                return (role === 'dps' || role === 'tank') && damage > 0 && !this.shouldIgnorePlayer(name);
             })
             .sort((a, b) => (parseInt(b.damage_amount) || 0) - (parseInt(a.damage_amount) || 0));
 
@@ -1926,7 +2078,8 @@ class RaidLogsManager {
             .filter(player => {
                 const role = (player.role_detected || '').toLowerCase();
                 const healing = parseInt(player.healing_amount) || 0;
-                return role === 'healer' && healing > 0;
+                const name = String(player.character_name || '');
+                return role === 'healer' && healing > 0 && !this.shouldIgnorePlayer(name);
             })
             .sort((a, b) => (parseInt(b.healing_amount) || 0) - (parseInt(a.healing_amount) || 0));
 
@@ -1968,6 +2121,7 @@ class RaidLogsManager {
         this.displayPowerInfusionRankings(this.powerInfusionData);
                     this.displayDecursesRankings(this.decursesData);
             this.displayVoidDamageRankings(this.voidDamageData);
+        this.displayBigBuyerRankings(this.bigBuyerData);
         this.updateAbilitiesHeader();
         this.updateManaPotionsHeader();
         this.updateRunesHeader();
@@ -1984,6 +2138,7 @@ class RaidLogsManager {
         this.updatePowerInfusionHeader();
                     this.updateDecursesHeader();
             this.updateVoidDamageHeader();
+        this.updateBigBuyerHeader();
         this.updateArchiveButtons();
         this.displayWallOfShame();
         
@@ -2028,7 +2183,8 @@ class RaidLogsManager {
             { key: 'too_low_damage', name: 'Too Low Damage', containerId: 'too-low-damage-list' },
             { key: 'too_low_healing', name: 'Too Low Healing', containerId: 'too-low-healing-list' },
             { key: 'attendance_streaks', name: 'Attendance Streak Champions', containerId: 'player-streaks-list' },
-            { key: 'guild_members', name: 'Guild Members', containerId: 'guild-members-list' }
+            { key: 'guild_members', name: 'Guild Members', containerId: 'guild-members-list' },
+            { key: 'big_buyer', name: 'Big Buyer Bonus', containerId: 'big-buyer-list' }
         ];
 
         // Add Edit/Save buttons to each panel header
@@ -3467,7 +3623,8 @@ class RaidLogsManager {
 
         container.innerHTML = playersWithPotions.map((player, index) => {
             const position = index + 1;
-            const characterClass = this.normalizeClassName(player.character_class);
+            const resolvedClass = player.character_class || this.resolveClassForName(player.character_name) || 'Unknown';
+            const characterClass = this.normalizeClassName(resolvedClass);
             const fillPercentage = Math.max(5, (player.potions_used / maxPotions) * 100); // Minimum 5% for visibility
 
             return `
@@ -3477,7 +3634,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
+                            ${this.getClassIconHtml(resolvedClass)}${player.character_name}
                         </div>
                         <div class="character-details" title="${player.potions_used} potions used (${player.extra_potions} above threshold)">
                             ${this.truncateWithTooltip(`${player.potions_used} potions used (${player.extra_potions} above threshold)`).displayText}
@@ -3524,7 +3681,8 @@ class RaidLogsManager {
 
         container.innerHTML = playersWithRunes.map((player, index) => {
             const position = index + 1;
-            const characterClass = this.normalizeClassName(player.character_class);
+            const resolvedClass = player.character_class || this.resolveClassForName(player.character_name) || 'Unknown';
+            const characterClass = this.normalizeClassName(resolvedClass);
             const fillPercentage = Math.max(5, (player.total_runes / maxRunes) * 100); // Minimum 5% for visibility
 
             // Create breakdown of runes used
@@ -3541,7 +3699,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
+                            ${this.getClassIconHtml(resolvedClass)}${player.character_name}
                         </div>
                         <div class="character-details" title="${runesText} (${player.total_runes} total)">
                             ${this.truncateWithTooltip(`${runesText} (${player.total_runes} total)`).displayText}
@@ -3559,11 +3717,67 @@ class RaidLogsManager {
     updateRunesHeader() {
         const headerElement = document.querySelector('.runes-section .section-header p');
         if (headerElement && this.runesSettings) {
-            const { usage_divisor, points_per_division } = this.runesSettings;
+            const { usage_divisor, points_per_division, max_points } = this.runesSettings;
             const pointsText = points_per_division === 1 ? 'pt' : 'pts';
             const runesText = usage_divisor === 1 ? 'rune' : 'runes';
-            headerElement.textContent = `Ranked by points (${points_per_division} ${pointsText} per ${usage_divisor} ${runesText})`;
+            if (max_points) {
+                headerElement.textContent = `Ranked by points (${points_per_division} ${pointsText} per ${usage_divisor} ${runesText}, max ${max_points})`;
+            } else {
+                headerElement.textContent = `Ranked by points (${points_per_division} ${pointsText} per ${usage_divisor} ${runesText})`;
+            }
         }
+    }
+
+    displayBigBuyerRankings(players) {
+        const container = document.getElementById('big-buyer-list');
+        if (!container) return;
+        const section = container.closest('.rankings-section');
+        section.classList.add('big-buyer');
+
+        if (!players || players.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-coins"></i>
+                    <p>No eligible big buyers (≥25,000 gold)</p>
+                </div>
+            `;
+            return;
+        }
+
+        const maxSpent = Math.max(...players.map(p => p.spent_gold), 1);
+
+        container.innerHTML = players.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const fillPercentage = Math.max(5, (player.spent_gold / maxSpent) * 100);
+            const points = Number(player.points) || 0;
+            const trophyHtml = this.getTrophyHtml(position);
+            const spentText = `${player.spent_gold.toLocaleString()} gold`;
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        ${trophyHtml}
+                        ${position <= 3 ? '' : `<span class="ranking-number">#${position}</span>`}
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
+                        </div>
+                        <div class="character-details" title="${spentText}">
+                            ${this.truncateWithTooltip(spentText).displayText}
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="Spent ${player.spent_gold.toLocaleString()} gold">
+                        <div class="amount-value">${points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updateBigBuyerHeader() {
+        // Nothing dynamic for now; keep static descriptor
     }
 
     displayInterruptsRankings(players) {
@@ -3820,8 +4034,8 @@ class RaidLogsManager {
     updateCurseHeader() {
         const headerElement = document.querySelector('.curse-recklessness-section .section-header p');
         if (headerElement && this.curseSettings) {
-            const { uptime_threshold, points } = this.curseSettings;
-            headerElement.textContent = `Ranked by points (>${uptime_threshold}% uptime: ${points}pts)`;
+            const { points } = this.curseSettings;
+            headerElement.textContent = `Ranked by points (>70% uptime: ${points}pts)`;
         }
     }
 
@@ -3884,8 +4098,8 @@ class RaidLogsManager {
     updateCurseShadowHeader() {
         const headerElement = document.querySelector('.curse-shadow-section .section-header p');
         if (headerElement && this.curseShadowSettings) {
-            const { uptime_threshold, points } = this.curseShadowSettings;
-            headerElement.textContent = `Ranked by points (>${uptime_threshold}% uptime: ${points}pts)`;
+            const { points } = this.curseShadowSettings;
+            headerElement.textContent = `Ranked by points (>70% uptime: ${points}pts)`;
         }
     }
 
@@ -3948,8 +4162,8 @@ class RaidLogsManager {
     updateCurseElementsHeader() {
         const headerElement = document.querySelector('.curse-elements-section .section-header p');
         if (headerElement && this.curseElementsSettings) {
-            const { uptime_threshold, points } = this.curseElementsSettings;
-            headerElement.textContent = `Ranked by points (>${uptime_threshold}% uptime: ${points}pts)`;
+            const { points } = this.curseElementsSettings;
+            headerElement.textContent = `Ranked by points (>70% uptime: ${points}pts)`;
         }
     }
 
@@ -4012,8 +4226,8 @@ class RaidLogsManager {
     updateFaerieFireHeader() {
         const headerElement = document.querySelector('.faerie-fire-section .section-header p');
         if (headerElement && this.faerieFireSettings) {
-            const { uptime_threshold, points } = this.faerieFireSettings;
-            headerElement.textContent = `Ranked by points (>${uptime_threshold}% uptime: ${points}pts)`;
+            const { points } = this.faerieFireSettings;
+            headerElement.textContent = `Ranked by points (>70% uptime: ${points}pts)`;
         }
     }
 
@@ -4230,7 +4444,8 @@ class RaidLogsManager {
 
         container.innerHTML = playersWithInfusions.map((player, index) => {
             const position = index + 1;
-            const characterClass = this.normalizeClassName(player.character_class);
+            const resolvedClass = player.character_class || this.resolveClassForName(player.character_name) || 'Unknown';
+            const characterClass = this.normalizeClassName(resolvedClass);
             const fillPercentage = Math.max(5, (player.total_infusions / maxInfusions) * 100); // Minimum 5% for visibility
 
             // Create breakdown showing boss and trash separately
@@ -4253,7 +4468,7 @@ class RaidLogsManager {
                     </div>
                     <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                         <div class="character-name">
-                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
+                            ${this.getClassIconHtml(resolvedClass)}${player.character_name}
                         </div>
                         <div class="character-details" title="${tooltipText}">
                             ${this.truncateWithTooltip(infusionText).displayText}
@@ -4581,6 +4796,46 @@ class RaidLogsManager {
         if (lower.includes('warlock')) return 'warlock';
         if (lower.includes('warrior')) return 'warrior';
         return 'unknown';
+    }
+
+    // Helpers to filter out non-player entities and resolve missing class
+    shouldIgnorePlayer(name) {
+        if (!name) return false;
+        const n = String(name).toLowerCase();
+        // Filter common non-player entities: legacy zzOLD entries, totems, wards, traps, dummies
+        return /(zzold|totem|ward|trap|dummy)/i.test(n);
+    }
+
+    resolveClassForName(characterName) {
+        if (!characterName) return null;
+        const lower = String(characterName).toLowerCase();
+        // Prefer logData which usually has reliable classes
+        const logRow = (this.logData || []).find(p => String(p.character_name || '').toLowerCase() === lower);
+        if (logRow && logRow.character_class) return logRow.character_class;
+        // Roster cache
+        if (this.rosterMapByName && this.rosterMapByName.size > 0) {
+            const cls = this.rosterMapByName.get(lower);
+            if (cls) return cls;
+        }
+        // Players dropdown data
+        const p = (this.playersData || []).find(x => String(x.player_name || '').toLowerCase() === lower);
+        if (p && p.player_class) return p.player_class;
+        return null;
+    }
+
+    filterOutIgnored(arr) {
+        if (!Array.isArray(arr)) return [];
+        return arr.filter(p => !this.shouldIgnorePlayer(String(p.character_name || p.player_name || '')));
+    }
+
+    sanitizeDatasets() {
+        const keys = [
+            'abilitiesData','manaPotionsData','runesData','interruptsData','disarmsData','sunderData',
+            'curseData','curseShadowData','curseElementsData','faerieFireData','scorchData','demoShoutData',
+            'polymorphData','powerInfusionData','decursesData','frostResistanceData','worldBuffsData',
+            'voidDamageData','bigBuyerData','playerStreaksData','guildMembersData'
+        ];
+        keys.forEach(k => { if (this[k]) this[k] = this.filterOutIgnored(this[k]); });
     }
 
     // Fallback: return class icon based on character class

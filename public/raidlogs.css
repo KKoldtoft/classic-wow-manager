@@ -591,6 +591,15 @@
     font-size: 1.4em;
 }
 
+/* Big Buyer Bonus styling */
+.rankings-section.big-buyer-section { --panel-accent: #f59e0b; }
+.rankings-section.big-buyer-section .section-header {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+.rankings-section.big-buyer-section .amount-value {
+    color: #f59e0b;
+}
+
 /* Decurses container specific styling */
 .decurses-container {
     margin-top: 30px;
@@ -1041,16 +1050,38 @@
     color: #9b59b6;
 }
 
-.stat-card.total-points .stat-icon {
-    color: #f39c12;
-}
+.stat-card.total-points .stat-icon { color: #f59e0b; }
 
 /* Gold panel colored icons */
 .stat-card.gold-total .stat-icon { color: #f59e0b; }
-.stat-card.gold-shared .stat-icon { color: #10b981; }
-.stat-card.gold-management .stat-icon { color: #6366f1; }
-.stat-card.my-points .stat-icon { color: #3b82f6; }
-.stat-card.my-gold .stat-icon { color: #a855f7; }
+.stat-card.gold-shared .stat-icon { color: #f59e0b; }
+.stat-card.gold-management .stat-icon { color: #f59e0b; }
+.stat-card.my-points .stat-icon { color: #f59e0b; }
+.stat-card.my-gold .stat-icon { color: #8a5a00; }
+
+/* My Gold shiny card */
+.stat-card.my-gold {
+    background: linear-gradient(135deg, #f7e199 0%, #e5c558 35%, #d4b24c 60%, #f0d775 100%);
+    position: relative;
+    overflow: hidden;
+    border: 2px solid #FFD700;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.35), 0 0 16px rgba(255, 215, 0, 0.6), 0 0 32px rgba(255, 215, 0, 0.35);
+}
+.stat-card.my-gold::before {
+    content: "";
+    position: absolute;
+    top: -120%;
+    left: -120%;
+    width: 340%;
+    height: 340%;
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.35), rgba(255,255,255,0) 45%),
+                radial-gradient(circle at 70% 70%, rgba(255,255,255,0.2), rgba(255,255,255,0) 50%);
+    transform: rotate(25deg);
+    pointer-events: none;
+}
+.stat-card.my-gold .stat-label { color: #4c3800; }
+.stat-card.my-gold .stat-value { color: #3b2b00; }
+.stat-card.my-gold .stat-detail { color: #5a4300; }
 
 /* Management tooltip */
 .mgmt-tooltip {
@@ -1073,6 +1104,28 @@
 }
 .mgmt-key { color: #cfcfcf; white-space: nowrap; }
 .mgmt-val { color: #ffd166; white-space: nowrap; text-align: right; }
+
+/* My Gold tooltip */
+.mygold-tooltip {
+    position: fixed;
+    z-index: 9999;
+    background: rgba(20,20,22,0.98);
+    color: #f0f0f0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.55), 0 6px 18px rgba(0,0,0,0.35);
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    pointer-events: none;
+}
+.mygold-tooltip.show { opacity: 1; }
+.mygold-grid {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 6px 16px;
+}
+.mygold-key { color: #cfcfcf; white-space: nowrap; }
+.mygold-val { color: #ffd166; white-space: nowrap; text-align: right; }
 
 .stat-value {
     font-size: 1.8em;
