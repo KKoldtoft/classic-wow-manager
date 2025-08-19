@@ -2,6 +2,25 @@
 
 class RaidLogsManager {
     constructor() {
+        this.ensureAuthGate().then((ok)=>{ if(!ok) return; this._initAfterAuth(); });
+    }
+
+    async ensureAuthGate(){
+        try{
+            const res = await fetch('/user');
+            const user = res.ok ? await res.json() : {loggedIn:false};
+            if (user && user.loggedIn) return true;
+            const gate = document.getElementById('rl-auth-gate');
+            const container = document.getElementById('raid-logs-container');
+            if (gate) gate.style.display='block';
+            if (container) container.style.display='none';
+            const btn = document.getElementById('rlAuthLoginBtn');
+            if (btn){ const rt=encodeURIComponent(location.pathname+location.search+location.hash); btn.addEventListener('click',()=>{ location.href=`/auth/discord?returnTo=${rt}`; }); }
+            return false;
+        }catch{ return true; }
+    }
+
+    _initAfterAuth(){
         this.activeEventId = null;
         this.logData = null;
         this.abilitiesData = [];

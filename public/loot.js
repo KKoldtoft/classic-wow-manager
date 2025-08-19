@@ -1,3 +1,23 @@
+// Auth gate for loot page
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const res = await fetch('/user');
+    const user = res.ok ? await res.json() : { loggedIn: false };
+    const gate = document.getElementById('loot-auth-gate');
+    const main = document.querySelector('.main-content');
+    if (!user.loggedIn) {
+      if (gate) gate.style.display = 'block';
+      // hide existing sections
+      const sections = ['import-section','loot-section'];
+      sections.forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
+      const btn = document.getElementById('lootAuthLoginBtn');
+      if (btn) {
+        const rt = encodeURIComponent(location.pathname + location.search + location.hash);
+        btn.addEventListener('click', ()=>{ location.href = `/auth/discord?returnTo=${rt}`; });
+      }
+    }
+  } catch {}
+});
 // loot.js - Loot management functionality
 
 class LootManager {

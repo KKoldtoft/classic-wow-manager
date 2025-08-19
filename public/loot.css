@@ -14,6 +14,29 @@ body {
     padding: 20px;
 }
 
+/* Auth gate (match gold/raidlogs) */
+.auth-gate {
+    background: #111827;
+    color: #e5e7eb;
+    border: 1px solid #1f2937;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 720px;
+    margin: 24px auto;
+    text-align: center;
+    box-shadow: 0 10px 24px rgba(0,0,0,.25);
+}
+.auth-gate h2 { margin: 0 0 8px 0; font-size: 20px; }
+.auth-gate p { margin: 6px 0; color: #cbd5e1; }
+.auth-gate .lock {
+    width: 56px; height: 56px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #0b1220; border: 1px solid #1f2937; color: #93c5fd; margin-bottom: 10px;
+}
+.auth-gate .actions { display:flex; gap:12px; justify-content:center; margin-top: 10px; }
+.auth-gate .discord-button { display:inline-flex; align-items:center; gap:8px; }
+.auth-gate .join-link { display:block; margin-top:8px; color:#93c5fd; text-decoration:underline; }
+
 .import-section {
     background: #2c2c2c;
     border: 1px solid #444;

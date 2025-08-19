@@ -78,10 +78,14 @@ class GoldPotManager {
                 }
             }
             
-            if (!this.currentEventId) {
-                this.showError('No active event session found. Please select an event from the events page.');
+            // Gate by auth status
+            const user = await (await fetch('/user').catch(()=>({ok:false})) ).json().catch(()=>({loggedIn:false}))
+            if (!user || !user.loggedIn) {
+                this.showAuthGate();
                 return;
             }
+
+            if (!this.currentEventId) { this.showError('No active event session found. Please select an event from the events page.'); return; }
 
             console.log('Loading gold pot data for event:', this.currentEventId);
             
@@ -115,6 +119,24 @@ class GoldPotManager {
         } catch (error) {
             console.error('Error loading gold pot data:', error);
             this.showError(error.message || 'Failed to load gold pot data');
+        }
+    }
+
+    showAuthGate(){
+        const gate = document.getElementById('goldAuthGate');
+        const content = document.getElementById('goldContent');
+        const loading = document.getElementById('loadingIndicator');
+        const errorDisplay = document.getElementById('errorDisplay');
+        if (gate) gate.style.display = 'block';
+        if (content) content.style.display = 'none';
+        if (loading) loading.style.display = 'none';
+        if (errorDisplay) errorDisplay.style.display = 'none';
+        // Wire login button
+        const btn = document.getElementById('goldAuthLoginBtn');
+        if (btn) {
+            const currentPath = window.location.pathname + window.location.search + window.location.hash;
+            const encodedReturnTo = encodeURIComponent(currentPath);
+            btn.addEventListener('click', ()=>{ window.location.href = `/auth/discord?returnTo=${encodedReturnTo}`; });
         }
     }
 
