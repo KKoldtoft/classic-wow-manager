@@ -83,6 +83,23 @@
                 </div>
             </div>
 
+            <!-- Auth gate panel (non-blocking, spans 2 columns) -->
+            <div class="panel panel--span-2" id="home-auth-panel" style="display:none; background:#111827; color:#e5e7eb; border:1px solid #1f2937; border-radius:12px;">
+                <div style="display:flex; align-items:center; gap:16px; padding:20px;">
+                    <div class="lock" style="width:56px; height:56px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; background:#0b1220; border:1px solid #1f2937; color:#93c5fd; flex-shrink:0;">
+                        <i class="fas fa-lock"></i>
+                    </div>
+                    <div style="flex:1;">
+                        <h2 class="panel-title" style="margin:0 0 6px 0; color:#e5e7eb;">Log in to view more</h2>
+                        <p style="margin:0; color:#cbd5e1;">You need to log in with your discord, to view most of the content of this page. You also need to join 1Principles discord server if you are not already there.</p>
+                        <div style="margin-top:10px; display:flex; gap:10px; align-items:center;">
+                            <button class="discord-button" id="homeAuthLoginBtn"><i class="fab fa-discord discord-icon"></i> Sign in with Discord</button>
+                            <a class="join-link" href="https://discord.gg/U3vUpcFtjR" target="_blank" rel="noopener noreferrer" style="color:#93c5fd; text-decoration:underline;">Join 1Principles discord</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             
             <!-- Column 1: Upcoming Raids -->
             <div class="panel">
@@ -150,6 +167,23 @@
 
     <script src="/script.js"></script>
     <script src="/top-bar.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            const res = await fetch('/user');
+            const user = res.ok ? await res.json() : { loggedIn:false };
+            const panel = document.getElementById('home-auth-panel');
+            if (!user.loggedIn && panel) {
+                panel.style.display = 'block';
+                const btn = document.getElementById('homeAuthLoginBtn');
+                if (btn) {
+                    const rt = encodeURIComponent(location.pathname + location.search + location.hash);
+                    btn.addEventListener('click', ()=>{ location.href = `/auth/discord?returnTo=${rt}`; });
+                }
+            }
+        } catch {}
+    });
+    </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </body>
 </html>

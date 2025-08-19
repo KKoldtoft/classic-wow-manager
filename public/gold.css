@@ -4,8 +4,8 @@ body, html {
     margin: 0;
     padding: 0;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: var(--bg-primary, #1a1a1a);
-    color: var(--text-primary, #e0e0e0);
+    background: #ffffff;
+    color: #111827;
 }
 
 .content {
@@ -44,10 +44,10 @@ body, html {
 }
 
 .gold-container {
-    background: var(--secondary-bg, #2a2a2a);
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    background: transparent;
+    border-radius: 0;
+    overflow: visible;
+    box-shadow: none;
     max-width: 1200px;
     margin: 0 auto; /* center container */
 }
@@ -126,7 +126,7 @@ body, html {
     text-align: center;
     box-shadow: 0 10px 24px rgba(0,0,0,.25);
 }
-.auth-gate h2 { margin: 0 0 8px 0; font-size: 20px; }
+.auth-gate h2 { margin: 0 0 8px 0; font-size: 20px; color:#e5e7eb; }
 .auth-gate p { margin: 6px 0; color: #cbd5e1; }
 .auth-gate .lock {
     width: 56px; height: 56px; border-radius: 50%;

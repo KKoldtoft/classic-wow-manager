@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!user.loggedIn) {
       if (gate) gate.style.display = 'block';
       // hide existing sections
-      const sections = ['import-section','loot-section'];
+      const sections = ['import-section','loot-section','lootManagementTitle'];
       sections.forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
       const btn = document.getElementById('lootAuthLoginBtn');
       if (btn) {
