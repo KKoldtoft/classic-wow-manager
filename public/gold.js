@@ -505,7 +505,7 @@ class GoldPotManager {
 
         // Totals
         let totalPointsAll=0; nameToPlayer.forEach(v=>{ totalPointsAll+=v.points; }); this.totalPointsAll=totalPointsAll;
-        const gpp=(this.sharedGoldPot>0&&totalPointsAll>0)? this.sharedGoldPot/totalPointsAll : 0; this.goldPerPoint=gpp; nameToPlayer.forEach(v=>{ v.gold=Math.floor(v.points*gpp); });
+        const gpp=(this.sharedGoldPot>0&&totalPointsAll>0)? this.sharedGoldPot/totalPointsAll : 0; this.goldPerPoint=gpp; nameToPlayer.forEach(v=>{ const effPts=Math.max(0, v.points); v.gold=Math.floor(effPts*gpp); });
         this.playerTotals=nameToPlayer;
     }
 
@@ -698,6 +698,39 @@ class GoldPotManager {
         push('WorldBuffs', sumFrom(this.datasets.worldBuffsData));
         push('Frost Res', sumFrom(this.datasets.frostResistanceData));
         push('Void Dmg', sumFrom(this.datasets.voidDamageData));
+
+        // Too Low Damage / Healing
+        if (this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) {
+            const sumSnap = (panelKey) => (this.snapshotEntries||[]).reduce((acc, r) => {
+                if (String(r.panel_key) === panelKey && lower(r.character_name) === nameKey) {
+                    const pts = Number(r.point_value_edited != null ? r.point_value_edited : r.point_value_original) || 0;
+                    return acc + pts;
+                }
+                return acc;
+            }, 0);
+            const tlDmg = sumSnap('too_low_damage');
+            const tlHeal = sumSnap('too_low_healing');
+            if (tlDmg) push('Too Low Dmg', tlDmg);
+            if (tlHeal) push('Too Low Heal', tlHeal);
+        } else {
+            const aftMin = this.datasets.raidStats?.stats?.activeFightTime;
+            if (aftMin && this.primaryRoles) {
+                const sec = aftMin * 60;
+                const row = (this.logData||[]).find(p => lower(p.character_name)===nameKey);
+                if (row) {
+                    const role = String(this.primaryRoles[nameKey]||'').toLowerCase();
+                    if (role==='dps' || role==='tank') {
+                        const dps = (parseFloat(row.damage_amount)||0) / sec;
+                        let pts = 0; if (dps < 150) pts = -100; else if (dps < 200) pts = -50; else if (dps < 250) pts = -25;
+                        if (pts) push('Too Low Dmg', pts);
+                    } else if (role==='healer') {
+                        const hps = (parseFloat(row.healing_amount)||0) / sec;
+                        let pts = 0; if (hps < 85) pts = -100; else if (hps < 100) pts = -50; else if (hps < 125) pts = -25;
+                        if (pts) push('Too Low Heal', pts);
+                    }
+                }
+            }
+        }
 
         // Streaks / Guild
         const streakRow = (this.datasets.playerStreaks||[]).find(r=> lower(r.character_name)===nameKey);
