@@ -6,6 +6,15 @@
     <title>Gold Pot - Classic WoW Manager</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="stylesheet" href="/gold.css">
+    <style>
+        .summary { display:flex; gap:16px; flex-wrap:wrap; margin:16px 0; }
+        .card { background:#1e1e1e; border:1px solid #3a3a3a; border-radius:14px; padding:14px 16px; min-width:220px; position:relative; box-shadow:0 8px 22px rgba(0,0,0,.25); }
+        .card h3 { margin:0 0 6px 0; font-size:14px; color:#ccc; text-transform:uppercase; letter-spacing:.4px; }
+        .card .value { font-size:24px; font-weight:700; color:#f0f0f0; }
+        .tooltip { position:absolute; top:calc(100% + 8px); left:0; right:auto; background:#111827; color:#e5e7eb; border:1px solid #1f2937; border-radius:8px; padding:10px; box-shadow:0 10px 24px rgba(0,0,0,.4); display:none; max-height:260px; overflow:auto; min-width:320px; z-index:50; }
+        .players-grid-cards { display:grid; grid-auto-flow: column; grid-template-rows: repeat(10, auto); grid-auto-columns: 1fr; gap: 12px; align-items: start; }
+        .player-card::before { display:none !important; content:none !important; }
+    </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
@@ -61,61 +70,45 @@
     </div>
     
     <div class="content">
-        <div class="back-button-wrapper">
-            <button onclick="history.back()" class="back-button">
-                <i class="fas fa-arrow-left"></i> Back
-            </button>
-        </div>
-
         <div class="gold-container">
-
             <div class="loading-indicator" id="loadingIndicator">
                 <div class="spinner"></div>
-                <p>Loading confirmed players...</p>
+                <p>Loading...</p>
             </div>
-
             <div class="error-display" id="errorDisplay" style="display: none;">
                 <div class="error-content">
                     <h3>⚠️ Error</h3>
                     <p id="errorMessage"></p>
                 </div>
             </div>
-
-            <div class="gold-content" id="goldContent" style="display: none;">
-                <div class="gold-stats" id="goldStats" style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
-                    <div class="stat-card" style="background:#fff; border:1px solid rgba(0,0,0,0.08); border-radius:10px; padding:12px 14px; min-width:200px; box-shadow:0 6px 16px rgba(0,0,0,0.08);">
-                        <div style="display:flex; align-items:center; gap:8px; color:#6b7280; font-weight:600;"><i class="fas fa-users"></i> Players</div>
-                        <div style="font-size:1.5rem; font-weight:800; color:#111;" id="statPlayers">--</div>
+            <div class="gold-content" id="goldContent" style="display: none; max-width:1200px; margin:0 auto;">
+                <div class="summary">
+                    <div class="card" id="cardPlayers">
+                        <h3>Players</h3>
+                        <div class="value" id="playersCount">--</div>
+                        <div class="tooltip" id="playersTooltip"></div>
                     </div>
-                    <div class="stat-card" style="background:#fff; border:1px solid rgba(0,0,0,0.08); border-radius:10px; padding:12px 14px; min-width:200px; box-shadow:0 6px 16px rgba(0,0,0,0.08);">
-                        <div style="display:flex; align-items:center; gap:8px; color:#6b7280; font-weight:600;"><i class="fas fa-star"></i> Total Points</div>
-                        <div style="font-size:1.5rem; font-weight:800; color:#111;" id="statPoints">--</div>
+                    <div class="card">
+                        <h3>Total Points</h3>
+                        <div class="value" id="totalPoints">--</div>
                     </div>
-                    <div class="stat-card" style="background:#fff; border:1px solid rgba(0,0,0,0.08); border-radius:10px; padding:12px 14px; min-width:200px; box-shadow:0 6px 16px rgba(0,0,0,0.08);">
-                        <div style="display:flex; align-items:center; gap:8px; color:#6b7280; font-weight:600;"><i class="fas fa-coins"></i> Total Gold (Shared)</div>
-                        <div style="font-size:1.5rem; font-weight:800; color:#111;" id="statGold">--</div>
+                    <div class="card">
+                        <h3>Total Gold (Shared)</h3>
+                        <div class="value" id="totalGold">--</div>
                     </div>
-                </div>
-                <div class="filters">
-                    <div class="filter-group">
-                        <label>Filter by class:</label>
-                        <select id="classFilter">
-                            <option value="">All Classes</option>
-                            <option value="Warrior">Warrior</option>
-                            <option value="Paladin">Paladin</option>
-                            <option value="Hunter">Hunter</option>
-                            <option value="Rogue">Rogue</option>
-                            <option value="Priest">Priest</option>
-                            <option value="Shaman">Shaman</option>
-                            <option value="Mage">Mage</option>
-                            <option value="Warlock">Warlock</option>
-                            <option value="Druid">Druid</option>
-                        </select>
+                    <div class="card">
+                        <h3>Average Gold Cut</h3>
+                        <div class="value" id="averageGold">--</div>
                     </div>
                 </div>
-
-                <div class="players-grid" id="playersGrid">
-                    <!-- Players will be loaded here -->
+                <div id="playersGrid" class="players-grid-cards"></div>
+                <div class="gargul-export" id="gargulExportSection" style="margin-top:24px;">
+                    <h3 style="margin:0 0 8px 0; font-size:16px; color:#e5e7eb;">Gargul export string</h3>
+                    <div class="export-controls" style="display:flex; gap:10px; align-items:stretch;">
+                        <textarea id="gargulExport" rows="10" readonly style="flex:1; resize:vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:13px; line-height:1.4; padding:10px; border-radius:8px; border:1px solid #374151; background:#111827; color:#e5e7eb;"></textarea>
+                        <button id="copyGargul" class="copy-btn" style="white-space:nowrap; padding:10px 14px; border-radius:8px; border:1px solid #374151; background:#1f2937; color:#e5e7eb; cursor:pointer;">Copy</button>
+                    </div>
+                    <div id="gargulCopyStatus" style="margin-top:6px; font-size:12px; color:#9ca3af; display:none;">Copied!</div>
                 </div>
             </div>
         </div>

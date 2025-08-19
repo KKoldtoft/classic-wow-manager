@@ -48,6 +48,8 @@ body, html {
     border-radius: 12px;
     overflow: hidden;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    max-width: 1200px;
+    margin: 0 auto; /* center container */
 }
 
 
@@ -108,6 +110,21 @@ body, html {
     padding: 2rem;
 }
 
+.gargul-export .copy-btn:hover {
+    background: #374151;
+}
+
+/* Force summary cards to align to 4 equal columns matching player grid columns */
+.gold-content .summary {
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 12px !important;
+}
+
+.gold-content .summary .card {
+    min-width: 0 !important;
+}
+
 /* Filters */
 .filters {
     display: flex;
@@ -156,11 +173,15 @@ body, html {
 .player-card {
     background: var(--card-bg, #1e1e1e);
     border: 1px solid var(--border-color, #3a3a3a);
+    border-bottom: none !important;
     border-radius: 8px;
     padding: 1rem;
+    padding-bottom: 0px !important;
     transition: all 0.2s ease;
     position: relative;
     overflow: hidden;
+    box-sizing: border-box;
+    width: 275px; /* ensure exact visual width */
 }
 
 .player-card:hover {
@@ -176,6 +197,41 @@ body, html {
     right: 0;
     height: 4px;
     background: var(--class-color, #666);
+}
+
+/* Attached bottom panel under each player card */
+.player-breakdown {
+    border: 1px solid var(--border-color, #3a3a3a);
+    border-top: none;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    box-sizing: border-box;
+    width: 275px; /* exact same width as top */
+}
+
+/* Make the whole stack hover as one */
+.player-stack {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    will-change: transform;
+}
+.player-stack:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.player-card:hover {
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* Grid column fixed width to match cards */
+.players-grid-cards {
+    display: grid !important;
+    grid-template-columns: repeat(4, 275px) !important;
+    grid-auto-flow: row !important;
+    grid-auto-rows: auto;
+    gap: 12px;
+    align-items: start;
+    justify-content: center;
 }
 
 .player-info {

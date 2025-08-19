@@ -104,6 +104,10 @@
 
             <!-- Computed/Manual mode badge -->
             <div id="computed-manual-badge" class="mode-badge computed" title="Live computed from logs and data sources">Computed mode</div>
+            <div style="margin:8px 0 12px;">
+                <button id="rl-debug-toggle" class="btn-templates btn-mini"><i class="fas fa-bug"></i> Debug: Toggle breakdown</button>
+            </div>
+            <div id="rl-debug-panel" style="display:none; background:#111827; color:#e5e7eb; padding:12px; border-radius:8px; border:1px solid #1f2937; margin-bottom:16px; max-height:380px; overflow:auto;"></div>
             
             <!-- Stats Section -->
             <div class="stats-section scroll-target" id="stats-dashboard">
@@ -710,6 +714,19 @@
                     </div>
                     <div class="rankings-list" id="big-buyer-list">
                         <!-- Big Buyer rankings will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Points Breakdown Table Section -->
+            <div class="rankings-container">
+                <div class="rankings-section points-breakdown-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-table"></i> Points Breakdown (All Players)</h2>
+                        <p>Per-panel points for each player; non-players filtered out</p>
+                    </div>
+                    <div class="rankings-list" id="points-breakdown-table-container">
+                        <!-- Points breakdown table will be rendered here -->
                     </div>
                 </div>
             </div>

@@ -600,6 +600,31 @@
     color: #f59e0b;
 }
 
+/* Points Breakdown Table */
+.points-breakdown-section { --panel-accent: #0ea5e9; margin-bottom: 200px; }
+#points-breakdown-table-container { overflow-x: auto; overflow-y: hidden; }
+.points-breakdown-table {
+    width: max-content;
+    table-layout: auto;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.points-breakdown-table th, .points-breakdown-table td {
+    border: 1px solid var(--border-color, #3a3a3a);
+    padding: 6px 8px;
+    text-align: right;
+    color: #e5e7eb;
+    white-space: nowrap;
+}
+.points-breakdown-table td.rownum-cell, .points-breakdown-table th.rownum-cell { text-align: center; width: 40px; }
+.points-breakdown-table th { background: #111827; position: sticky; top: 0; z-index: 1; text-align: center; }
+.points-breakdown-table th { cursor: help; }
+.points-breakdown-table td.name-cell { text-align: left; }
+.points-breakdown-table td.positive { color: #22c55e; font-weight: 700; }
+.points-breakdown-table td.negative { color: #ef4444; font-weight: 700; }
+.points-breakdown-table td.zero { color: #ffffff; opacity: 0.8; }
+.points-breakdown-summary td { font-weight: 700; background: #0b1220; }
+
 /* Decurses container specific styling */
 .decurses-container {
     margin-top: 30px;

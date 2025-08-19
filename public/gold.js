@@ -13,6 +13,9 @@ class GoldPotManager {
         this.sharedGoldPot = 0;
         this.totalGoldPot = 0;
         this.playerTotals = new Map(); // name -> { class, points, gold }
+        // Snapshot/manual mode support
+        this.snapshotLocked = false;
+        this.snapshotEntries = [];
         
         this.initializeEventListeners();
         this.loadData();
@@ -24,6 +27,21 @@ class GoldPotManager {
         
         if (classFilter) {
             classFilter.addEventListener('change', () => this.applyFilters());
+        }
+
+        const debugToggle = document.getElementById('debugToggle');
+        const debugExport = document.getElementById('debugExport');
+        const debugPanel = document.getElementById('debugPanel');
+        if (debugToggle && debugPanel) {
+            debugToggle.addEventListener('click', () => {
+                const show = debugPanel.style.display === 'none';
+                debugPanel.style.display = show ? 'block' : 'none';
+                debugExport.style.display = show ? 'inline-flex' : 'none';
+                if (show) this.renderDebugPanel();
+            });
+        }
+        if (debugExport) {
+            debugExport.addEventListener('click', () => this.exportDebugJson());
         }
     }
 
@@ -77,13 +95,19 @@ class GoldPotManager {
             // Store and display players
             // Fetch raidlogs datasets needed to compute points
             await this.fetchRaidlogsDatasets();
+            // Fetch snapshot status/entries to mirror manual mode
+            await this.fetchSnapshotStatus();
+            if (this.snapshotLocked) {
+                await this.fetchSnapshotData();
+            }
+            // Fetch primary roles mapping to mirror raidlogs computed logic
+            await this.fetchPrimaryRoles();
             // Reconcile players strictly to confirmed logData roster and dedupe
             this.reconcilePlayersWithLogData(playersData || []);
             // Compute totals per player
             this.computeTotals();
-            this.applyFilters();
-            // Update top stats
-            this.updateTopStats();
+            // Render summary and list
+            this.renderSummaryAndList();
             
             // Show content
             this.showContent();
@@ -92,6 +116,40 @@ class GoldPotManager {
             console.error('Error loading gold pot data:', error);
             this.showError(error.message || 'Failed to load gold pot data');
         }
+    }
+
+    async fetchSnapshotStatus() {
+        try {
+            const res = await fetch(`/api/rewards-snapshot/${this.currentEventId}/status`);
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data && data.success) {
+                this.snapshotLocked = !!data.locked;
+            }
+        } catch {}
+    }
+
+    async fetchSnapshotData() {
+        try {
+            const res = await fetch(`/api/rewards-snapshot/${this.currentEventId}`);
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data && data.success) {
+                this.snapshotEntries = data.data || [];
+            }
+        } catch {}
+    }
+
+    async fetchPrimaryRoles() {
+        if (!this.currentEventId) return;
+        try {
+            const res = await fetch(`/api/player-role-mapping/${this.currentEventId}/primary-roles`);
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data && data.success && data.primaryRoles) {
+                this.primaryRoles = data.primaryRoles; // map of lowercased name -> 'dps' | 'healer' | 'tank'
+            }
+        } catch {}
     }
 
     async fetchEventDetails() {
@@ -290,46 +348,502 @@ class GoldPotManager {
         this.playerTotals = nameToPlayer;
     }
 
-    reconcilePlayersWithLogData(playersData) {
-        const confirmedNames = new Set((this.logData || [])
-            .filter(p => !this.shouldIgnorePlayer(p.character_name))
-            .map(p => String(p.character_name || '').trim().toLowerCase())
-        );
-
-        // Build a map of canonical class from logData for better accuracy
-        const nameToClass = new Map();
-        (this.logData || []).forEach(p => {
-            const n = String(p.character_name || '').trim().toLowerCase();
-            if (!confirmedNames.has(n)) return;
-            if (p.character_class) nameToClass.set(n, p.character_class);
+    // Compute totals consistent with raidlogs (computed vs manual modes)
+    computeTotals() {
+        // Map of lowercase name to { class, points }
+        const nameToPlayer = new Map();
+        this.allPlayers.forEach(p => {
+            nameToPlayer.set(String(p.character_name).toLowerCase(), { name: p.character_name, class: p.character_class, points: 0 });
         });
 
-        // Keep only players present in logData; dedupe by lowercase name
-        const dedup = new Map();
-        (playersData || []).forEach(p => {
-            const raw = String(p.character_name || '').trim();
-            if (this.shouldIgnorePlayer(raw)) return;
-            const n = raw.toLowerCase();
-            if (!confirmedNames.has(n)) return;
-            if (!dedup.has(n)) {
-                const klass = nameToClass.get(n) || p.character_class || 'Unknown';
-                dedup.set(n, { character_name: raw, character_class: klass });
+        // Base points
+        nameToPlayer.forEach(v => { v.points += 100; });
+
+        const confirmedNames = new Set((this.logData||[]).filter(p=>!this.shouldIgnorePlayer(p.character_name)).map(p=>String(p.character_name||'').toLowerCase()));
+
+        if (this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length > 0) {
+            // Build snapshot sums per panel and name
+            const lower = s=>String(s||'').toLowerCase();
+            const snapByPanelAndName = new Map();
+            const put = (panelKey, characterName, points) => {
+                const k = `${panelKey}__${lower(characterName)}`;
+                snapByPanelAndName.set(k, (snapByPanelAndName.get(k)||0) + points);
+            };
+            (this.snapshotEntries||[]).forEach(r=>{
+                const pts = Number(r.point_value_edited != null ? r.point_value_edited : r.point_value_original) || 0;
+                if (!pts) return;
+                put(r.panel_key, r.character_name, pts);
+            });
+            const mapFromPanel = (panelKey) => {
+                const m = new Map();
+                snapByPanelAndName.forEach((v, k) => {
+                    const [pk, nm] = k.split('__');
+                    if (pk === panelKey) m.set(nm, v);
+                });
+                return m;
+            };
+            const addMap = (m)=>{ m.forEach((v, nm)=>{ const p=nameToPlayer.get(nm); if(p) p.points+=v; }); };
+            // Per-panel adds
+            addMap(mapFromPanel('damage'));
+            addMap(mapFromPanel('healing'));
+            addMap(mapFromPanel('god_gamer_dps'));
+            addMap(mapFromPanel('god_gamer_healer'));
+            addMap(mapFromPanel('abilities'));
+            addMap(mapFromPanel('mana_potions'));
+            addMap(mapFromPanel('runes'));
+            addMap(mapFromPanel('interrupts'));
+            addMap(mapFromPanel('disarms'));
+            addMap(mapFromPanel('sunder'));
+            addMap(mapFromPanel('curse_recklessness'));
+            addMap(mapFromPanel('curse_shadow'));
+            addMap(mapFromPanel('curse_elements'));
+            addMap(mapFromPanel('faerie_fire'));
+            addMap(mapFromPanel('scorch'));
+            addMap(mapFromPanel('demo_shout'));
+            addMap(mapFromPanel('polymorph'));
+            addMap(mapFromPanel('power_infusion'));
+            addMap(mapFromPanel('decurses'));
+            addMap(mapFromPanel('frost_resistance'));
+            addMap(mapFromPanel('world_buffs_copy'));
+            addMap(mapFromPanel('void_damage'));
+            addMap(mapFromPanel('shaman_healers'));
+            addMap(mapFromPanel('priest_healers'));
+            addMap(mapFromPanel('druid_healers'));
+            addMap(mapFromPanel('too_low_damage'));
+            addMap(mapFromPanel('too_low_healing'));
+            addMap(mapFromPanel('attendance_streaks'));
+            addMap(mapFromPanel('guild_members'));
+            addMap(mapFromPanel('big_buyer'));
+
+            // Manual rewards (only for confirmed players)
+            (this.datasets.manualRewardsData||[]).forEach(e=>{ const k=String(e.player_name||'').toLowerCase(); if(!confirmedNames.has(k)) return; const p=nameToPlayer.get(k); if(p) p.points+=(Number(e.points)||0); });
+        } else {
+            // Computed mode: use datasets + derived awards
+            const damagePoints = this.rewardSettings.damage?.points_array || [];
+            const damageSorted = (this.logData || [])
+                .filter(p => !this.shouldIgnorePlayer(p.character_name))
+                .filter(p => ((p.role_detected||'').toLowerCase()==='dps' || (p.role_detected||'').toLowerCase()==='tank') && (parseInt(p.damage_amount)||0)>0)
+                .sort((a,b)=>(parseInt(b.damage_amount)||0)-(parseInt(a.damage_amount)||0));
+            damageSorted.forEach((p, idx) => { const pts = idx < damagePoints.length ? (damagePoints[idx] || 0) : 0; const v = nameToPlayer.get(String(p.character_name).toLowerCase()); if (v && pts) v.points += pts; });
+
+            const healingPoints = this.rewardSettings.healing?.points_array || [];
+            const healers = (this.logData || [])
+                .filter(p => !this.shouldIgnorePlayer(p.character_name))
+                .filter(p => (p.role_detected||'').toLowerCase()==='healer' && (parseInt(p.healing_amount)||0)>0)
+                .sort((a,b)=>(parseInt(b.healing_amount)||0)-(parseInt(a.healing_amount)||0));
+            healers.forEach((p, idx) => { const pts = idx < healingPoints.length ? (healingPoints[idx] || 0) : 0; const v = nameToPlayer.get(String(p.character_name).toLowerCase()); if (v && pts) v.points += pts; });
+
+            const addFrom = (arr) => { (arr||[]).forEach(row => { const nm=String(row.character_name||row.player_name||'').toLowerCase(); const v=nameToPlayer.get(nm); if(!v) return; const pts=Number(row.points)||0; v.points+=pts; }); };
+            addFrom(this.datasets.abilitiesData);
+            addFrom(this.datasets.manaPotionsData);
+            addFrom(this.datasets.runesData);
+            addFrom(this.datasets.interruptsData);
+            addFrom(this.datasets.disarmsData);
+            addFrom(this.datasets.sunderData);
+            addFrom(this.datasets.curseData);
+            addFrom(this.datasets.curseShadowData);
+            addFrom(this.datasets.curseElementsData);
+            addFrom(this.datasets.faerieFireData);
+            addFrom(this.datasets.scorchData);
+            addFrom(this.datasets.demoShoutData);
+            addFrom(this.datasets.polymorphData);
+            addFrom(this.datasets.powerInfusionData);
+            addFrom(this.datasets.decursesData);
+            // Frost Resistance: DPS-only (mirror raidlogs panel) — require explicit primary role mapping
+            if (this.primaryRoles) {
+                (this.datasets.frostResistanceData || []).forEach(row => {
+                    const nameKey = String(row.character_name || row.player_name || '').trim().toLowerCase();
+                    const v = nameToPlayer.get(nameKey);
+                    if (!v) return;
+                    const pr = String(this.primaryRoles[nameKey] || '').toLowerCase();
+                    if (pr !== 'dps') return; // only DPS qualifies
+                    const pts = Number(row.points) || 0;
+                    v.points += pts;
+                });
             }
-        });
+            addFrom(this.datasets.worldBuffsData);
+            addFrom(this.datasets.voidDamageData);
+            addFrom(this.datasets.bigBuyerData);
 
+            (this.datasets.playerStreaks||[]).forEach(r=>{ const key=String(r.character_name||'').toLowerCase(); const v=nameToPlayer.get(key); if(!v) return; const s=Number(r.player_streak)||0; let pts=0; if(s>=8)pts=15; else if(s===7)pts=12; else if(s===6)pts=9; else if(s===5)pts=6; else if(s===4)pts=3; v.points+=pts; });
+            (this.datasets.guildMembers||[]).forEach(r=>{ const key=String(r.character_name||'').toLowerCase(); const v=nameToPlayer.get(key); if(v) v.points+=10; });
+
+            // Manual rewards (only confirmed)
+            (this.datasets.manualRewardsData||[]).forEach(e=>{ const key=String(e.player_name||'').toLowerCase(); if(!confirmedNames.has(key)) return; const v=nameToPlayer.get(key); if(v) v.points+=(Number(e.points)||0); });
+
+            // God Gamer awards
+            if (damageSorted.length>=2){ const diff=(parseInt(damageSorted[0].damage_amount)||0)-(parseInt(damageSorted[1].damage_amount)||0); let pts=0; if(diff>=250000)pts=30; else if(diff>=150000)pts=20; const key=String(damageSorted[0].character_name||'').toLowerCase(); const v=nameToPlayer.get(key); if(v) v.points+=pts; }
+            if (healers.length>=2){ const diff=(parseInt(healers[0].healing_amount)||0)-(parseInt(healers[1].healing_amount)||0); let pts=0; if(diff>=250000)pts=20; else if(diff>=150000)pts=15; const key=String(healers[0].character_name||'').toLowerCase(); const v=nameToPlayer.get(key); if(v) v.points+=pts; }
+
+            // Class-specific healer awards
+            const byClass = (arr, cls) => arr.filter(p => String(p.character_class||'').toLowerCase().includes(cls));
+            const shamans = byClass(healers,'shaman').slice(0,3); const priests=byClass(healers,'priest').slice(0,2); const druids=byClass(healers,'druid').slice(0,1);
+            const award = (players, ptsArr)=>{ players.forEach((p,i)=>{ const key=String(p.character_name||'').toLowerCase(); const v=nameToPlayer.get(key); if(v) v.points+=(ptsArr[i]||0); }); };
+            award(shamans,[25,20,15]); award(priests,[20,15]); award(druids,[15]);
+
+            // Too Low DPS/HPS (exclude non-players) – only when we have primaryRoles mapping
+            const aftMin = this.datasets.raidStats?.stats?.activeFightTime;
+            if (aftMin && this.primaryRoles) {
+                const sec = aftMin * 60;
+                (this.logData || []).forEach(p => {
+                    if (this.shouldIgnorePlayer(p.character_name)) return;
+                    const key = String(p.character_name || '').trim().toLowerCase();
+                    const role = String(this.primaryRoles[key] || '').toLowerCase();
+                    const v = nameToPlayer.get(key); if (!v) return;
+                    if (role === 'dps' || role === 'tank') {
+                        const dps = (parseFloat(p.damage_amount) || 0) / sec; let pts = 0;
+                        if (dps < 150) pts = -100; else if (dps < 200) pts = -50; else if (dps < 250) pts = -25;
+                        v.points += pts;
+                    } else if (role === 'healer') {
+                        const hps = (parseFloat(p.healing_amount) || 0) / sec; let pts = 0;
+                        if (hps < 85) pts = -100; else if (hps < 100) pts = -50; else if (hps < 125) pts = -25;
+                        v.points += pts;
+                    }
+                });
+            }
+        }
+
+        // Totals
+        let totalPointsAll=0; nameToPlayer.forEach(v=>{ totalPointsAll+=v.points; }); this.totalPointsAll=totalPointsAll;
+        const gpp=(this.sharedGoldPot>0&&totalPointsAll>0)? this.sharedGoldPot/totalPointsAll : 0; this.goldPerPoint=gpp; nameToPlayer.forEach(v=>{ v.gold=Math.floor(v.points*gpp); });
+        this.playerTotals=nameToPlayer;
+    }
+
+    renderSummaryAndList() {
+        // Summary
+        const players = this.allPlayers;
+        const playersCountEl = document.getElementById('playersCount');
+        const playersTooltip = document.getElementById('playersTooltip');
+        const totalPointsEl = document.getElementById('totalPoints');
+        const totalGoldEl = document.getElementById('totalGold');
+        if (playersCountEl) playersCountEl.textContent = (players?.length||0).toLocaleString();
+        if (playersTooltip) playersTooltip.innerHTML = players.map(p=>`<div>${p.character_name}</div>`).join('');
+        const card = document.getElementById('cardPlayers');
+        if (card && playersTooltip) {
+            let timer=null; let shown=false;
+            const show=()=>{ playersTooltip.style.display='block'; shown=true; };
+            const hide=()=>{ playersTooltip.style.display='none'; shown=false; };
+            card.onmouseenter=()=>{ timer=setTimeout(show,350); };
+            card.onmousemove=()=>{ if(!shown){ clearTimeout(timer); timer=setTimeout(show,350);} };
+            card.onmouseleave=()=>{ clearTimeout(timer); hide(); };
+        }
+        if (totalPointsEl) totalPointsEl.textContent = Math.round(this.totalPointsAll).toLocaleString();
+
+        if (totalGoldEl) totalGoldEl.textContent = Number(this.sharedGoldPot || 0).toLocaleString();
+        const avgEl = document.getElementById('averageGold');
+        if (avgEl) {
+            const count = (this.allPlayers?.length || 0);
+            const avg = count > 0 ? Math.floor((this.sharedGoldPot || 0) / count) : 0;
+            avgEl.textContent = Number(avg).toLocaleString();
+        }
+
+        // Players grid of cards
+        const grid = document.getElementById('playersGrid');
+        if (!grid) return;
+        const sorted = this.allPlayers.slice().sort((a,b)=>{
+            const order = ['warrior','rogue','hunter','mage','warlock','shaman','paladin','priest','druid'];
+            const ai = order.indexOf(String(a.character_class||'').toLowerCase());
+            const bi = order.indexOf(String(b.character_class||'').toLowerCase());
+            if (ai !== bi) return ai - bi;
+            return String(a.character_name||'').localeCompare(String(b.character_name||''));
+        });
+        const classColor = (cls)=>{
+            const m={
+                'warrior':'#C79C6E','paladin':'#F58CBA','hunter':'#ABD473','rogue':'#FFF569','priest':'#FFFFFF','shaman':'#0070DE','mage':'#69CCF0','warlock':'#9482C9','druid':'#FF7D0A','unknown':'#9CA3AF'
+            }; return m[String(cls||'unknown').toLowerCase()]||'#9CA3AF';
+        };
+        const specIcon = (cls)=>{
+            const icon={
+                'warrior':'https://wow.zamimg.com/images/wow/icons/large/class_warrior.jpg',
+                'paladin':'https://wow.zamimg.com/images/wow/icons/large/class_paladin.jpg',
+                'hunter':'https://wow.zamimg.com/images/wow/icons/large/class_hunter.jpg',
+                'rogue':'https://wow.zamimg.com/images/wow/icons/large/class_rogue.jpg',
+                'priest':'https://wow.zamimg.com/images/wow/icons/large/class_priest.jpg',
+                'shaman':'https://wow.zamimg.com/images/wow/icons/large/class_shaman.jpg',
+                'mage':'https://wow.zamimg.com/images/wow/icons/large/class_mage.jpg',
+                'warlock':'https://wow.zamimg.com/images/wow/icons/large/class_warlock.jpg',
+                'druid':'https://wow.zamimg.com/images/wow/icons/large/class_druid.jpg'
+            }; const key=String(cls||'unknown').toLowerCase(); return icon[key]||icon['warrior'];
+        };
+        const cards = [];
+        sorted.forEach(p=>{
+            const key = String(p.character_name||'').trim().toLowerCase();
+            const totals = this.playerTotals.get(key) || { points:0, gold:0 };
+            const bg = classColor(p.character_class);
+            const icon = specIcon(p.character_class);
+            const rows = this.buildPlayerBreakdownRows(key);
+            cards.push(`
+                <div class="player-stack" style="display:flex; flex-direction:column; gap:0; align-items:center;">
+                    <div class="player-card" style="background:${bg}; display:flex; align-items:center; border-bottom-left-radius:0; border-bottom-right-radius:0; margin-bottom:0;">
+                        <img src="${icon}" alt="${p.character_class}" width="50" height="50" style="border-radius:6px; flex-shrink:0; margin-top:0; margin-right:12px;">
+                        <div style="display:flex; flex-direction:column; color:#111; margin-top:0; justify-content:center;">
+                            <div style="font-weight:900; font-size:20px; line-height:1.1; margin-top:2px;">${p.character_name}</div>
+                        </div>
+                    </div>
+                    <div class="player-breakdown" style="background:${bg}; border-top-left-radius:0; border-top-right-radius:0; border-bottom-left-radius:12px; border-bottom-right-radius:12px; margin-top:0; padding:10px 12px 62px 12px; position:relative;">
+                        ${rows}
+                    </div>
+                </div>
+            `);
+        });
+        grid.innerHTML = cards.join('');
+        // Show content
+        this.showContent();
+
+        // Normalize heights after render and image load
+        const normalize = () => this.normalizePlayerCardHeights();
+        setTimeout(normalize, 0);
+        setTimeout(normalize, 300);
+        setTimeout(normalize, 1000);
+        if (!this._resizeHooked) {
+            window.addEventListener('resize', normalize);
+            this._resizeHooked = true;
+        }
+
+        // Populate Gargul export
+        this.populateGargulExport(sorted);
+    }
+
+    populateGargulExport(sortedPlayers){
+        try {
+            const ta = document.getElementById('gargulExport');
+            if (!ta) return;
+            // Build CSV-like string: header + rows sorted by current display order
+            const lines = ['Player,Gold'];
+            sortedPlayers.forEach(p => {
+                const key = String(p.character_name||'').trim().toLowerCase();
+                const totals = this.playerTotals.get(key) || { gold: 0 };
+                lines.push(`${p.character_name},${Number(totals.gold||0)}`);
+            });
+            ta.value = lines.join('\n');
+
+            const btn = document.getElementById('copyGargul');
+            const status = document.getElementById('gargulCopyStatus');
+            if (btn && !btn._wired) {
+                btn.addEventListener('click', async () => {
+                    try {
+                        await navigator.clipboard.writeText(ta.value);
+                        if (status) { status.style.display = 'block'; setTimeout(()=> status.style.display='none', 1200); }
+                    } catch (e) {
+                        // Fallback
+                        ta.select(); document.execCommand('copy'); if (status) { status.style.display='block'; setTimeout(()=> status.style.display='none', 1200); }
+                    }
+                });
+                btn._wired = true;
+            }
+        } catch {}
+    }
+
+    normalizePlayerCardHeights() {
+        const grid = document.getElementById('playersGrid');
+        if (!grid) return;
+        const stacks = Array.from(grid.querySelectorAll(':scope > div'));
+        const breakdowns = Array.from(grid.querySelectorAll('.player-breakdown'));
+        if (!stacks.length) return;
+        // reset before measuring
+        stacks.forEach(el => { el.style.minHeight = ''; });
+        breakdowns.forEach(el => { el.style.minHeight = ''; });
+        let maxStack = 0, maxBreak = 0;
+        stacks.forEach(el => { maxStack = Math.max(maxStack, el.offsetHeight || 0); });
+        breakdowns.forEach(el => { maxBreak = Math.max(maxBreak, el.scrollHeight || el.offsetHeight || 0); });
+        if (maxStack > 0) stacks.forEach(el => { el.style.minHeight = maxStack + 'px'; });
+        if (maxBreak > 0) breakdowns.forEach(el => { el.style.minHeight = maxBreak + 'px'; });
+    }
+
+    buildPlayerBreakdownRows(nameKey) {
+        const lower = s=>String(s||'').toLowerCase();
+        const fmtTitle = (t)=>{
+            const full=String(t||'');
+            const short = full.length>10 ? full.slice(0,10)+'…' : full;
+            return `<span title="${full}">${short}</span>`;
+        };
+        const gpp = this.goldPerPoint || 0;
+
+        // Collect per-panel contributions similar to raidlogs breakdown order
+        const rows = [];
+        const push = (title, pts) => {
+            if (!pts) return;
+            const goldVal = Math.floor(pts * gpp);
+            rows.push(`
+                <div style="display:grid; grid-template-columns: 1.6fr 60px 85px; gap:8px; font-size:16px; line-height:1.45; color:#111;">
+                    <div>${fmtTitle(title)}</div>
+                    <div style="text-align:right;">${pts>0?`+${pts}`:pts}</div>
+                    <div style="text-align:right;">${goldVal>0?`+${goldVal}`:goldVal}</div>
+                </div>
+            `);
+        };
+
+        // Base
+        push('Base', 100);
+
+        // Helper to sum points for a name from a dataset
+        const sumFrom = (arr)=> (arr||[]).reduce((acc,row)=> acc + (lower(row.character_name||row.player_name||'')===nameKey ? (Number(row.points)||0) : 0), 0);
+
+        // Dataset-based panels
+        push('Abilities', sumFrom(this.datasets.abilitiesData));
+        push('Mana Potions', sumFrom(this.datasets.manaPotionsData));
+        push('Runes', sumFrom(this.datasets.runesData));
+        push('Interrupts', sumFrom(this.datasets.interruptsData));
+        push('Disarms', sumFrom(this.datasets.disarmsData));
+        push('Sunder', sumFrom(this.datasets.sunderData));
+        push('Curse Reck', sumFrom(this.datasets.curseData));
+        push('Curse Shad', sumFrom(this.datasets.curseShadowData));
+        push('Curse Elem', sumFrom(this.datasets.curseElementsData));
+        push('Faerie Fir', sumFrom(this.datasets.faerieFireData));
+        push('Scorch', sumFrom(this.datasets.scorchData));
+        push('Demo Shout', sumFrom(this.datasets.demoShoutData));
+        push('Polymorph', sumFrom(this.datasets.polymorphData));
+        push('Power Inf', sumFrom(this.datasets.powerInfusionData));
+        push('Decurses', sumFrom(this.datasets.decursesData));
+        push('WorldBuffs', sumFrom(this.datasets.worldBuffsData));
+        push('Frost Res', sumFrom(this.datasets.frostResistanceData));
+        push('Void Dmg', sumFrom(this.datasets.voidDamageData));
+
+        // Streaks / Guild
+        const streakRow = (this.datasets.playerStreaks||[]).find(r=> lower(r.character_name)===nameKey);
+        if (streakRow) {
+            const s = Number(streakRow.player_streak)||0; let pts=0; if(s>=8)pts=15; else if(s===7)pts=12; else if(s===6)pts=9; else if(s===5)pts=6; else if(s===4)pts=3;
+            push('Streak', pts);
+        }
+        const guildHit = (this.datasets.guildMembers||[]).some(r=> lower(r.character_name)===nameKey);
+        if (guildHit) push('Guild Mem', 10);
+
+        // Big Buyer
+        push('Big Buyer', sumFrom(this.datasets.bigBuyerData));
+
+        // Manual rewards (name-only)
+        const manualPts = (this.datasets.manualRewardsData||[]).reduce((acc,e)=> acc + (lower(e.player_name||'')===nameKey ? (Number(e.points)||0) : 0), 0);
+        push('Manual', manualPts);
+
+        const header = `
+            <div style="display:grid; grid-template-columns: 1.6fr 60px 85px; gap:8px; font-size:14px; line-height:1.3; color:#111; font-weight:700; border-bottom:1px solid rgba(0,0,0,.15); padding-bottom:6px; margin-bottom:8px;">
+                <div>Name</div>
+                <div style="text-align:right;">Points</div>
+                <div style="text-align:right;">Gold</div>
+            </div>
+        `;
+        const totalGold = Number(this.playerTotals?.get(nameKey)?.gold || 0);
+        const footer = `
+            <div style="position:absolute; left:0; right:0; bottom:0; height:50px; background:rgba(0,0,0,0.5); border-bottom-left-radius:12px; border-bottom-right-radius:12px; display:flex; align-items:center; justify-content:center;">
+                <div style=\"font-weight:900; font-size:20px; color:#f5c542;\">${totalGold.toLocaleString()} gold</div>
+            </div>
+        `;
+        const body = rows.length ? rows.join('') : '<div style="font-size:16px; opacity:.8; color:#111;">No breakdown</div>';
+        return header + body + footer;
+    }
+    reconcilePlayersWithLogData(playersData) {
+        // Build strictly from WoW log data; ignore non-players; dedupe by name
+        const dedup = new Map();
+        (this.logData || [])
+            .filter(p => !this.shouldIgnorePlayer(p.character_name))
+            .forEach(p => {
+                const raw = String(p.character_name || '').trim();
+                const key = raw.toLowerCase();
+                if (!dedup.has(key)) {
+                    const klass = p.character_class || 'Unknown';
+                    dedup.set(key, { character_name: raw, character_class: klass });
+                }
+            });
         this.allPlayers = Array.from(dedup.values());
     }
 
-    updateTopStats() {
-        const playersCount = this.allPlayers.length;
-        const pointsTotal = Math.round(this.totalPointsAll);
-        const goldShared = this.sharedGoldPot;
-        const sPlayers = document.getElementById('statPlayers');
-        const sPoints = document.getElementById('statPoints');
-        const sGold = document.getElementById('statGold');
-        if (sPlayers) sPlayers.textContent = playersCount.toLocaleString();
-        if (sPoints) sPoints.textContent = pointsTotal.toLocaleString();
-        if (sGold) sGold.textContent = goldShared.toLocaleString();
+    updateTopStats() { /* deprecated in rebuild */ }
+
+    // --- Debug helpers ---
+    getPerPlayerBreakdown() {
+        const breakdown = {};
+        const lower = s => String(s||'').toLowerCase();
+        // seed base
+        this.allPlayers.forEach(p => {
+            const key = lower(p.character_name);
+            breakdown[key] = breakdown[key] || { name: p.character_name, class: p.character_class, components: [], total: 0 };
+            breakdown[key].components.push({ panel: 'Base', points: 100 });
+            breakdown[key].total += 100;
+        });
+        const add = (panel, rows) => {
+            (rows||[]).forEach(r => {
+                const key = lower(r.character_name || r.player_name);
+                if (!breakdown[key]) return;
+                const pts = Number(r.points)||0; if (!pts) return;
+                breakdown[key].components.push({ panel, points: pts });
+                breakdown[key].total += pts;
+            });
+        };
+        // From rankings arrays
+        add('Abilities', this.datasets.abilitiesData);
+        add('Mana Potions', this.datasets.manaPotionsData);
+        add('Runes', this.datasets.runesData);
+        add('Interrupts', this.datasets.interruptsData);
+        add('Disarms', this.datasets.disarmsData);
+        add('Sunder', this.datasets.sunderData);
+        add('Curse of Recklessness', this.datasets.curseData);
+        add('Curse of Shadow', this.datasets.curseShadowData);
+        add('Curse of Elements', this.datasets.curseElementsData);
+        add('Faerie Fire', this.datasets.faerieFireData);
+        add('Scorch', this.datasets.scorchData);
+        add('Demo Shout', this.datasets.demoShoutData);
+        add('Polymorph', this.datasets.polymorphData);
+        add('Power Infusion', this.datasets.powerInfusionData);
+        add('Decurses', this.datasets.decursesData);
+        add('Frost Resistance', this.datasets.frostResistanceData);
+        add('World Buffs', this.datasets.worldBuffsData);
+        add('Void Damage', this.datasets.voidDamageData);
+        add('Big Buyer', this.datasets.bigBuyerData);
+        (this.datasets.playerStreaks||[]).forEach(r => {
+            const key = lower(r.character_name); if (!breakdown[key]) return;
+            const s = Number(r.player_streak)||0; let pts=0; if(s>=8)pts=15; else if(s===7)pts=12; else if(s===6)pts=9; else if(s===5)pts=6; else if(s===4)pts=3;
+            if (pts) { breakdown[key].components.push({ panel:'Attendance Streak', points: pts }); breakdown[key].total += pts; }
+        });
+        (this.datasets.guildMembers||[]).forEach(r => {
+            const key = lower(r.character_name); if (!breakdown[key]) return;
+            breakdown[key].components.push({ panel:'Guild Members', points: 10 }); breakdown[key].total += 10;
+        });
+        // Manual
+        (this.datasets.manualRewardsData||[]).forEach(e => {
+            const key = lower(e.player_name); if (!breakdown[key]) return;
+            const pts = Number(e.points)||0; if (!pts) return;
+            breakdown[key].components.push({ panel:'Manual', points: pts, desc: e.description||'' }); breakdown[key].total += pts;
+        });
+        return breakdown;
+    }
+
+    renderDebugPanel() {
+        const panel = document.getElementById('debugPanel');
+        if (!panel) return;
+        const breakdown = this.getPerPlayerBreakdown();
+        // Compare against computed totals used for display
+        let html = '';
+        html += `<div style="margin-bottom:10px; font-weight:700;">Players included (${this.allPlayers.length}): ${this.allPlayers.map(p=>p.character_name).join(', ')}</div>`;
+        Object.values(breakdown).forEach(p => {
+            const key = String(p.name||'');
+            const computed = this.playerTotals.get(key.toLowerCase());
+            const compTotal = Math.round(computed?.points || 0);
+            const status = compTotal === Math.round(p.total) ? '✅' : '⚠️';
+            html += `<div style="margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid #1f2937;">
+                <div style="font-weight:700; color:#f59e0b;">${status} ${p.name} <span style="color:#6b7280; font-weight:600;">(${p.class})</span> — calc: ${compTotal} vs breakdown: ${Math.round(p.total)}</div>
+                <ul style="margin:6px 0 0 14px;">
+                    ${p.components.map(c=>`<li>${c.panel}: ${c.points} ${c.desc?`- <em>${c.desc}</em>`:''}</li>`).join('')}
+                </ul>
+            </div>`;
+        });
+        panel.innerHTML = html || '<em>No data</em>';
+    }
+
+    exportDebugJson() {
+        const data = {
+            players: this.allPlayers,
+            totals: Array.from(this.playerTotals.entries()),
+            breakdown: this.getPerPlayerBreakdown(),
+            settings: this.rewardSettings,
+            gold: { total: this.totalGoldPot, shared: this.sharedGoldPot },
+            datasetsIncluded: Object.keys(this.datasets)
+        };
+        const blob = new Blob([JSON.stringify(data,null,2)], { type:'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `gold-debug-${this.currentEventId}.json`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 
     shouldIgnorePlayer(name) {
@@ -355,51 +869,7 @@ class GoldPotManager {
         this.renderPlayers();
     }
 
-    renderPlayers() {
-        const playersGrid = document.getElementById('playersGrid');
-        
-        if (!playersGrid) {
-            console.error('Players grid element not found');
-            return;
-        }
-
-        if (this.filteredPlayers.length === 0) {
-            this.showEmptyState();
-            return;
-        }
-
-        // Sort players by class, then by name
-        const sortedPlayers = this.filteredPlayers.slice().sort((a, b) => {
-            const classOrder = this.getClassSortOrder(a.character_class) - this.getClassSortOrder(b.character_class);
-            if (classOrder !== 0) return classOrder;
-            
-            return a.character_name.localeCompare(b.character_name);
-        });
-
-        let playersHtml = '';
-        
-        sortedPlayers.forEach(player => {
-            const classLower = (player.character_class || 'Unknown').toLowerCase();
-            const key = String(player.character_name || '').toLowerCase();
-            const totals = this.playerTotals.get(key) || { points: 0, gold: 0 };
-            playersHtml += `
-                <div class="player-card ${classLower}" data-class="${player.character_class}">
-                    <div class="player-info">
-                        <div class="player-details">
-                            <div class="player-name">${player.character_name}</div>
-                            <div class="player-class">${player.character_class}</div>
-                        </div>
-                        <div class="player-stats">
-                            <div class="player-points"><i class="fas fa-star"></i> ${Math.round(totals.points).toLocaleString()} pts</div>
-                            <div class="player-gold"><i class="fas fa-coins"></i> ${Number(totals.gold || 0).toLocaleString()} gold</div>
-                        </div>
-                    </div>
-                </div>
-            `;
-        });
-
-        playersGrid.innerHTML = playersHtml;
-    }
+    renderPlayers() { /* deprecated in rebuild */ }
 
     showEmptyState() {
         const playersGrid = document.getElementById('playersGrid');
