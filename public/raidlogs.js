@@ -1508,6 +1508,10 @@ class RaidLogsManager {
             // Calculate points from all rankings on the page
             let positivePoints = 0;
             let negativePoints = 0;
+
+            // Restrict all contributions to confirmed raiders (from logData)
+            const confirmedNameSet = new Set((this.logData || []).map(p => String(p.character_name || '').toLowerCase()));
+            const confirmedDiscordSet = new Set((this.logData || []).map(p => String(p.discord_id || '')));
             
             // Add points from damage rankings
             if (this.logData && this.rewardSettings.damage && this.rewardSettings.damage.points_array) {
@@ -1531,6 +1535,8 @@ class RaidLogsManager {
             // Add points from abilities
             if (this.abilitiesData && this.abilitiesSettings) {
                 this.abilitiesData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
                     else if (player.points < 0) negativePoints += Math.abs(player.points);
                 });
@@ -1539,6 +1545,8 @@ class RaidLogsManager {
             // Add points from mana potions
             if (this.manaPotionsData && this.manaPotionsSettings) {
                 this.manaPotionsData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
                 });
             }
@@ -1546,6 +1554,8 @@ class RaidLogsManager {
             // Add points from runes
             if (this.runesData && this.runesSettings) {
                 this.runesData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
                 });
             }
@@ -1553,6 +1563,8 @@ class RaidLogsManager {
             // Add points from interrupts
             if (this.interruptsData && this.interruptsSettings) {
                 this.interruptsData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
                 });
             }
@@ -1560,6 +1572,8 @@ class RaidLogsManager {
             // Add points from disarms
             if (this.disarmsData && this.disarmsSettings) {
                 this.disarmsData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
                 });
             }
@@ -1567,6 +1581,8 @@ class RaidLogsManager {
             // Add points from sunder armor
             if (this.sunderData && this.sunderSettings && this.sunderSettings.point_ranges) {
                 this.sunderData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
                     else if (player.points < 0) negativePoints += Math.abs(player.points);
                 });
@@ -1575,6 +1591,8 @@ class RaidLogsManager {
             // Add points from curses
             if (this.curseData && this.curseSettings) {
                 this.curseData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
                 });
             }
@@ -1582,6 +1600,8 @@ class RaidLogsManager {
             // Add points from curse shadow
             if (this.curseShadowData && this.curseShadowSettings) {
                 this.curseShadowData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
                 });
             }
@@ -1589,6 +1609,8 @@ class RaidLogsManager {
             // Add points from curse elements
             if (this.curseElementsData && this.curseElementsSettings) {
                 this.curseElementsData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
                 });
             }
@@ -1596,6 +1618,8 @@ class RaidLogsManager {
             // Add points from faerie fire
             if (this.faerieFireData && this.faerieFireSettings) {
                 this.faerieFireData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
                 });
             }
@@ -1603,6 +1627,8 @@ class RaidLogsManager {
             // Add points from scorch
             if (this.scorchData && this.scorchSettings) {
                 this.scorchData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
                 });
             }
@@ -1610,6 +1636,8 @@ class RaidLogsManager {
             // Add points from demoralizing shout
             if (this.demoShoutData && this.demoShoutSettings) {
                 this.demoShoutData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
                 });
             }
@@ -1617,6 +1645,8 @@ class RaidLogsManager {
             // Add points from polymorph
             if (this.polymorphData && this.polymorphSettings) {
                 this.polymorphData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
                 });
             }
@@ -1624,6 +1654,8 @@ class RaidLogsManager {
             // Add points from power infusion
             if (this.powerInfusionData && this.powerInfusionSettings) {
                 this.powerInfusionData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
                 });
             }
@@ -1631,6 +1663,8 @@ class RaidLogsManager {
             // Add points from decurses
             if (this.decursesData && this.decursesSettings) {
                 this.decursesData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
                     else if (player.points < 0) negativePoints += Math.abs(player.points);
                 });
@@ -1639,6 +1673,8 @@ class RaidLogsManager {
             // Include frost resistance penalties
             if (this.frostResistanceData && Array.isArray(this.frostResistanceData)) {
                 this.frostResistanceData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     const pts = Number(player.points) || 0;
                     if (pts > 0) positivePoints += pts; else if (pts < 0) negativePoints += Math.abs(pts);
                 });
@@ -1647,6 +1683,8 @@ class RaidLogsManager {
             // Include world buffs copy penalties
             if (this.worldBuffsData && Array.isArray(this.worldBuffsData)) {
                 this.worldBuffsData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     const pts = Number(player.points) || 0;
                     if (pts > 0) positivePoints += pts; else if (pts < 0) negativePoints += Math.abs(pts);
                 });
@@ -1655,6 +1693,8 @@ class RaidLogsManager {
             // Include void damage penalties
             if (this.voidDamageData && Array.isArray(this.voidDamageData)) {
                 this.voidDamageData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
                     const pts = Number(player.points) || 0;
                     if (pts > 0) positivePoints += pts; else if (pts < 0) negativePoints += Math.abs(pts);
                 });
@@ -1671,6 +1711,9 @@ class RaidLogsManager {
             // Add points from manual rewards/deductions
             if (this.manualRewardsData) {
                 this.manualRewardsData.forEach(entry => {
+                    const nm = String(entry.player_name || '').toLowerCase();
+                    const did = String(entry.discord_id || '');
+                    if (!confirmedNameSet.has(nm) && !confirmedDiscordSet.has(did)) return;
                     const points = parseFloat(entry.points);
                     if (points > 0) positivePoints += points;
                     else if (points < 0) negativePoints += Math.abs(points);
@@ -1682,6 +1725,9 @@ class RaidLogsManager {
                 positivePoints = 0;
                 negativePoints = 0;
                 this.snapshotEntries.forEach(row => {
+                    const nm = String(row.character_name || '').toLowerCase();
+                    const did = String(row.discord_user_id || '');
+                    if (!confirmedNameSet.has(nm) && !confirmedDiscordSet.has(did)) return;
                     const pts = Number(row.point_value_edited != null ? row.point_value_edited : row.point_value_original) || 0;
                     if (pts > 0) positivePoints += pts; else if (pts < 0) negativePoints += Math.abs(pts);
                 });
@@ -1698,8 +1744,8 @@ class RaidLogsManager {
             // Calculate final total
             const totalPoints = basePoints + positivePoints - negativePoints;
             
-            // Display the result
-            valueElement.textContent = this.formatNumber(totalPoints);
+            // Display the result (full number)
+            valueElement.textContent = Number(totalPoints).toLocaleString();
             // Store for gold calculations
             this.totalPointsComputed = totalPoints;
             

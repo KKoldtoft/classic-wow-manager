@@ -82,6 +82,20 @@
             </div>
 
             <div class="gold-content" id="goldContent" style="display: none;">
+                <div class="gold-stats" id="goldStats" style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+                    <div class="stat-card" style="background:#fff; border:1px solid rgba(0,0,0,0.08); border-radius:10px; padding:12px 14px; min-width:200px; box-shadow:0 6px 16px rgba(0,0,0,0.08);">
+                        <div style="display:flex; align-items:center; gap:8px; color:#6b7280; font-weight:600;"><i class="fas fa-users"></i> Players</div>
+                        <div style="font-size:1.5rem; font-weight:800; color:#111;" id="statPlayers">--</div>
+                    </div>
+                    <div class="stat-card" style="background:#fff; border:1px solid rgba(0,0,0,0.08); border-radius:10px; padding:12px 14px; min-width:200px; box-shadow:0 6px 16px rgba(0,0,0,0.08);">
+                        <div style="display:flex; align-items:center; gap:8px; color:#6b7280; font-weight:600;"><i class="fas fa-star"></i> Total Points</div>
+                        <div style="font-size:1.5rem; font-weight:800; color:#111;" id="statPoints">--</div>
+                    </div>
+                    <div class="stat-card" style="background:#fff; border:1px solid rgba(0,0,0,0.08); border-radius:10px; padding:12px 14px; min-width:200px; box-shadow:0 6px 16px rgba(0,0,0,0.08);">
+                        <div style="display:flex; align-items:center; gap:8px; color:#6b7280; font-weight:600;"><i class="fas fa-coins"></i> Total Gold (Shared)</div>
+                        <div style="font-size:1.5rem; font-weight:800; color:#111;" id="statGold">--</div>
+                    </div>
+                </div>
                 <div class="filters">
                     <div class="filter-group">
                         <label>Filter by class:</label>
