@@ -101,15 +101,41 @@
     <script>
     // Minimal voice monitor bootstrapping for /live, reusing server endpoints
     window.addEventListener('DOMContentLoaded', () => {
-        const CHANNEL_ID = '1400574971994181783';
+        const DEFAULT_CHANNEL_ID = '1400574971994181783';
+        let channelId = DEFAULT_CHANNEL_ID;
         const vmTitle = document.getElementById('vm-title');
         const vmStatus = document.getElementById('vm-status');
         const vmList = document.getElementById('vm-list');
         const vmUnmatched = document.getElementById('vm-unmatched');
         const vmMissing = document.getElementById('vm-missing');
         const simpleToggle = document.getElementById('vm-simple-names');
+        const channelInput = document.getElementById('vm-channel-id');
+        const saveBtn = document.getElementById('vm-save-channel');
+        let isManager = false;
         let simple = localStorage.getItem('discordtest_simple_names') === '1';
         if (simpleToggle) { simpleToggle.checked = simple; simpleToggle.addEventListener('change', () => { simple = simpleToggle.checked; localStorage.setItem('discordtest_simple_names', simple ? '1' : '0'); }); }
+        if (channelInput) { channelInput.style.display = 'none'; }
+        if (saveBtn) { saveBtn.style.display = 'none'; }
+        if (channelInput) { channelInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { if (saveBtn) saveBtn.click(); } }); }
+        if (saveBtn) {
+            saveBtn.addEventListener('click', async () => {
+                if (!isManager) return;
+                const extract = (raw) => { const s = String(raw ?? ''); const m = s.match(/\d{10,}/); return m ? m[0] : s.trim(); };
+                const newId = extract(channelInput ? channelInput.value : '');
+                if (!newId) { vmStatus.textContent = 'Invalid channel ID'; return; }
+                try {
+                    const resp = await fetch('/api/discord/voice-monitor/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channelId: newId }) });
+                    const body = await resp.json();
+                    if (!resp.ok || !body.ok) throw new Error(body && (body.error || body.details) || 'Failed to save');
+                    channelId = body.channelId || newId;
+                    if (channelInput) channelInput.value = channelId;
+                    refreshTitle();
+                    refresh();
+                } catch (e) {
+                    vmStatus.textContent = 'Error saving channel ID';
+                }
+            });
+        }
 
         function classToColor(cls) {
             const c = String(cls || '').toLowerCase();
@@ -118,14 +144,14 @@
         }
 
         async function refreshTitle() {
-            try { const r = await fetch(`/api/discord/channel/${CHANNEL_ID}`); const j = await r.json(); vmTitle.textContent = (j && j.ok && j.name) ? `Voice Monitor — ${j.name}` : `Voice Monitor — ${CHANNEL_ID}`; } catch { vmTitle.textContent = `Voice Monitor — ${CHANNEL_ID}`; }
+            try { const r = await fetch(`/api/discord/channel/${channelId}`); const j = await r.json(); vmTitle.textContent = (j && j.ok && j.name) ? `Voice Monitor — ${j.name}` : `Voice Monitor — ${channelId}`; } catch { vmTitle.textContent = `Voice Monitor — ${channelId}`; }
         }
 
         function extractId(raw) { const s = String(raw ?? ''); const m = s.match(/\d{10,}/); return m ? m[0] : s; }
 
         async function refresh() {
             try {
-                const res = await fetch(`/api/discord/voice/${CHANNEL_ID}`);
+                const res = await fetch(`/api/discord/voice/${channelId}`);
                 const data = await res.json();
                 // Normalize ids and states
                 const inferred = {}; const ids = []; const raw = Array.isArray(data.userIds) ? data.userIds : [];
@@ -179,7 +205,30 @@
             } catch (e) { vmStatus.textContent='Error loading voice data'; }
         }
 
-        refreshTitle(); refresh(); setInterval(refresh, 5000);
+        async function initVoiceMonitor() {
+            try {
+                // Determine permissions
+                try {
+                    const u = await fetch('/user').then(r => r.ok ? r.json() : null);
+                    isManager = !!(u && u.loggedIn && u.hasManagementRole);
+                    if (channelInput) channelInput.style.display = isManager ? 'inline-block' : 'none';
+                    if (saveBtn) saveBtn.style.display = isManager ? 'inline-block' : 'none';
+                } catch (_) { isManager = false; }
+
+                // Load shared config
+                try {
+                    const cfgResp = await fetch('/api/discord/voice-monitor/config');
+                    const cfg = await cfgResp.json();
+                    if (cfg && cfg.ok && cfg.channelId) channelId = String(cfg.channelId);
+                } catch (_) {}
+                if (channelInput) channelInput.value = channelId;
+                refreshTitle();
+                refresh();
+                setInterval(refresh, 5000);
+            } catch (_) {}
+        }
+
+        initVoiceMonitor();
     });
     </script>
     <script>
@@ -261,6 +310,8 @@
             <div class="vm-controls">
                 <label class="vm-switch"><input type="checkbox" id="vm-simple-names"><span class="vm-slider"></span></label>
                 <span style="color:#000;">Simple names</span>
+                <input type="text" id="vm-channel-id" placeholder="Channel ID" style="width:220px;padding:6px 8px;" />
+                <button id="vm-save-channel" type="button">Save</button>
             </div>
             <div id="vm-status" style="color:#ddd;">Users in channel (0)</div>
             <ul id="vm-list" class="vm-list"></ul>

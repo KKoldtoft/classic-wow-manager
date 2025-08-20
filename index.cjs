@@ -14106,6 +14106,61 @@ app.get('/api/discord/channel/:channelId', async (req, res) => {
     }
 });
 
+// Voice Monitor shared configuration (global, editable by Management only)
+app.get('/api/discord/voice-monitor/config', async (req, res) => {
+    try {
+        // Ensure table exists
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_by TEXT
+            )
+        `);
+
+        const result = await pool.query('SELECT value FROM app_settings WHERE key = $1', ['voice_monitor_channel_id']);
+        const defaultId = '1400574971994181783';
+        const channelId = (result.rows && result.rows[0] && result.rows[0].value) ? String(result.rows[0].value) : defaultId;
+        res.json({ ok: true, channelId });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
+    }
+});
+
+app.post('/api/discord/voice-monitor/config', async (req, res) => {
+    try {
+        if (!req.isAuthenticated || !req.isAuthenticated()) return res.status(401).json({ ok: false, error: 'Authentication required' });
+        const isMgmt = await hasManagementRole(req.user.accessToken);
+        if (!isMgmt) return res.status(403).json({ ok: false, error: 'Management role required' });
+
+        const raw = String(req.body && req.body.channelId != null ? req.body.channelId : '');
+        const m = raw.match(/\d{10,}/);
+        if (!m) return res.status(400).json({ ok: false, error: 'Invalid channelId' });
+        const channelId = m[0];
+
+        // Ensure table exists
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_by TEXT
+            )
+        `);
+
+        await pool.query(
+            `INSERT INTO app_settings (key, value, updated_at, updated_by)
+             VALUES ($1, $2, CURRENT_TIMESTAMP, $3)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP, updated_by = EXCLUDED.updated_by`,
+            ['voice_monitor_channel_id', channelId, String(req.user && req.user.id ? req.user.id : '')]
+        );
+        res.json({ ok: true, channelId });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
+    }
+});
+
 // This route will handle both the root path ('/') AND any other unmatched paths,
 // serving events.html. It MUST be the LAST route definition in your application.
 // BUT exclude API routes to avoid interfering with API endpoints.
