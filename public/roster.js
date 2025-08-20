@@ -2061,12 +2061,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             throw new Error(err.message || 'Failed to save assignments');
         }
 
-        // If Naxx channel, continue to per-wing panels
-        let isNax = false;
+        // If Naxx channel, continue to per-wing panels. For upcoming raids, default to NAX unless API explicitly says otherwise
+        let isNax = true;
         try {
             const flagsRes = await fetch(`/api/events/${eventId}/channel-flags`);
             const flags = await flagsRes.json();
-            isNax = !!(flags && flags.success && flags.isNax);
+            if (flags && flags.success && typeof flags.isNax === 'boolean' && flags.channelId) {
+                isNax = flags.isNax;
+            }
         } catch {}
 
         if (isNax) {
