@@ -31,6 +31,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     let isManaged = false;
+    let currentUserCanManage = false;
     let specData = {};
     let currentRosterData = {};
     let playerCharacterHistory = {}; // Track all characters each player has used
@@ -754,6 +755,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     try {
+        // Determine user management role to gate UI/menus
+        try {
+            const uRes = await fetch('/user');
+            if (uRes && uRes.ok) {
+                const u = await uRes.json();
+                currentUserCanManage = !!(u && u.loggedIn && u.hasManagementRole);
+            }
+        } catch {}
+
+        // Hide bench and top button panel for non-management users
+        if (!currentUserCanManage) {
+            try {
+                const btnPanel = document.querySelector('.button-panel');
+                if (btnPanel) btnPanel.style.display = 'none';
+                if (benchContainer) benchContainer.style.display = 'none';
+            } catch {}
+        }
+
         const response = await fetch('/api/specs');
         specData = await response.json();
     } catch (error) {
@@ -874,6 +893,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function renderBench(benchData) {
+        if (!currentUserCanManage) {
+            // Keep bench hidden for non-management
+            benchContainer.style.display = 'none';
+            return;
+        }
         if (benchData.length > 0) {
             benchContainer.style.display = 'block';
             benchedList.innerHTML = '';
@@ -1025,6 +1049,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
         async function buildDropdownContent(player, isBenched) {
+        if (!currentUserCanManage) {
+            return '<div class="dropdown-header">Only management can edit</div>';
+        }
         let content = '<div class="dropdown-header">Actions</div>';
 
         let moveSubmenuHTML = '<div class="move-submenu">';
@@ -1204,6 +1231,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function buildEmptySlotDropdownContent(partyId, slotId) {
+        if (!currentUserCanManage) {
+            return '<div class="dropdown-header">Only management can edit</div>';
+        }
         return `
             <div class="dropdown-header">Actions</div>
             <div class="dropdown-item" data-action="add-new-character" data-target-party="${partyId}" data-target-slot="${slotId}">

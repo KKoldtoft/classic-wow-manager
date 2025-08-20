@@ -2426,6 +2426,15 @@ class RaidLogsManager {
         if (revertBtn) {
             revertBtn.style.display = (this.currentUser?.hasManagementRole ? 'inline-flex' : 'none');
         }
+        // Gate Debug: Toggle breakdown button
+        const debugToggle = document.getElementById('rl-debug-toggle');
+        const debugPanel = document.getElementById('rl-debug-panel');
+        if (debugToggle) {
+            debugToggle.style.display = hasManagementRole ? 'inline-flex' : 'none';
+        }
+        if (!hasManagementRole && debugPanel) {
+            debugPanel.style.display = 'none';
+        }
     }
 
     async onEditPanel(cfg) {

@@ -1074,6 +1074,8 @@ const DISCORD_GUILD_ID = '777268886939893821'; // Your guild ID from the events 
 
 // Define management role - the only role that matters
 const MANAGEMENT_ROLE_NAME = 'Management';
+// Optional: prefer matching by Role ID to avoid needing guild roles name mapping
+const MANAGEMENT_ROLE_ID = process.env.MANAGEMENT_ROLE_ID || null;
 
 // Function to fetch user's guild member data including roles (with caching)
 async function fetchUserGuildMember(accessToken, guildId) {
@@ -1129,8 +1131,9 @@ let guildRolesCacheTime = 0;
 
 // Cache for user member data to avoid repeated API calls
 const userMemberCache = new Map();
-const USER_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
-const GUILD_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+// Allow overriding cache TTLs; default to short TTLs in non-production to avoid confusion while testing
+const USER_CACHE_TTL = process.env.USER_CACHE_TTL_MS ? parseInt(process.env.USER_CACHE_TTL_MS, 10) : (process.env.NODE_ENV === 'production' ? 15 * 60 * 1000 : 60 * 1000);
+const GUILD_CACHE_TTL = process.env.GUILD_CACHE_TTL_MS ? parseInt(process.env.GUILD_CACHE_TTL_MS, 10) : (process.env.NODE_ENV === 'production' ? 10 * 60 * 1000 : 60 * 1000);
 
 // Clean up old cache entries every 30 minutes
 setInterval(() => {
@@ -1199,40 +1202,25 @@ async function hasManagementRole(accessToken) {
         console.log('❌ No member data or roles found');
         return false;
     }
+    // If a specific role ID is provided, prefer ID matching (no guild roles name lookup)
+    if (MANAGEMENT_ROLE_ID) {
+        const hasById = memberData.roles.some(rid => String(rid) === String(MANAGEMENT_ROLE_ID));
+        console.log(`🔍 Checking for Management role by ID (${MANAGEMENT_ROLE_ID}): ${hasById ? '✅ FOUND' : '❌ NOT FOUND'}`);
+        return hasById;
+    }
 
+    // Fallback: resolve by role name via guild roles list
     const guildRoles = await fetchGuildRoles(DISCORD_GUILD_ID);
     if (guildRoles.length === 0) {
-        console.log('⚠️ No guild roles available - cannot verify Management role');
+        console.log('⚠️ No guild roles available - cannot verify Management role by name');
         return false;
     }
-    
     const roleMap = new Map(guildRoles.map(role => [role.id, role.name]));
-
-    // DEBUG: Show user's actual role names
-    const userRoleNames = memberData.roles
-        .map(roleId => roleMap.get(roleId))
-        .filter(roleName => roleName !== undefined);
-    console.log(`👤 User's actual role names: [${userRoleNames.join(', ')}]`);
-
-    // Check if user has "Management" role
-    const hasRole = memberData.roles.some(roleId => {
-        const roleName = roleMap.get(roleId);
-        return roleName === MANAGEMENT_ROLE_NAME;
-    });
-    
-    console.log(`🔍 Checking for "${MANAGEMENT_ROLE_NAME}" role: ${hasRole ? '✅ FOUND' : '❌ NOT FOUND'}`);
-    
-    // DEBUG: Check for similar role names
-    const similarRoles = userRoleNames.filter(name => 
-        name.toLowerCase().includes('manage') || 
-        name.toLowerCase().includes('admin') || 
-        name.toLowerCase().includes('officer')
-    );
-    if (similarRoles.length > 0) {
-        console.log(`💡 Found similar roles: [${similarRoles.join(', ')}]`);
-    }
-    
-    return hasRole;
+    const userRoleNames = memberData.roles.map(roleId => roleMap.get(roleId)).filter(Boolean);
+    console.log(`👤 User's role names: [${userRoleNames.join(', ')}]`);
+    const hasByName = userRoleNames.some(name => name === MANAGEMENT_ROLE_NAME);
+    console.log(`🔍 Checking for "${MANAGEMENT_ROLE_NAME}" role by name: ${hasByName ? '✅ FOUND' : '❌ NOT FOUND'}`);
+    return hasByName;
 }
 
 // Middleware to require Management role
@@ -13998,6 +13986,103 @@ app.post('/api/fix-archive-url/:eventId', async (req, res) => {
     }
 });
 
+// --- Discord identity/players caching for Voice Monitor ---
+const discordUserCache = new Map(); // userId -> { displayName, avatarUrl, cachedAt, expiresAt }
+const DISCORD_ID_TTL_MS = 45 * 60 * 1000; // 45 minutes
+let discordResolveCooldownUntil = 0; // epoch ms until which we avoid hitting Discord API
+
+async function getDiscordUserIdentity(userId) {
+    const key = String(userId);
+    const now = Date.now();
+    const cached = discordUserCache.get(key);
+    if (cached && cached.expiresAt > now) return { id: key, displayName: cached.displayName, avatarUrl: cached.avatarUrl };
+    // Respect global cooldown on rate limit
+    if (now < discordResolveCooldownUntil || !discordBotToken || !discordGuildId) {
+        return cached ? { id: key, displayName: cached.displayName, avatarUrl: cached.avatarUrl } : { id: key, displayName: null, avatarUrl: null };
+    }
+    try {
+        const r = await fetch(`https://discord.com/api/v10/guilds/${discordGuildId}/members/${key}`, {
+            headers: { 'Authorization': `Bot ${discordBotToken}` }
+        });
+        if (r.status === 429) {
+            const retryAfter = Number(r.headers.get('retry-after'));
+            const retryMs = isNaN(retryAfter) ? 5000 : Math.max(0, Math.floor(retryAfter * 1000));
+            discordResolveCooldownUntil = now + retryMs;
+            return cached ? { id: key, displayName: cached.displayName, avatarUrl: cached.avatarUrl } : { id: key, displayName: null, avatarUrl: null };
+        }
+        if (!r.ok) {
+            return cached ? { id: key, displayName: cached.displayName, avatarUrl: cached.avatarUrl } : { id: key, displayName: null, avatarUrl: null };
+        }
+        const m = await r.json();
+        const user = m.user || {};
+        const displayName = m.nick || user.global_name || user.username || key;
+        const buildCdn = (hash, base) => {
+            if (!hash) return null;
+            const isGif = String(hash).startsWith('a_');
+            const ext = isGif ? 'gif' : 'png';
+            return `${base}.${ext}?size=64`;
+        };
+        let avatarUrl = null;
+        if (m.avatar) {
+            avatarUrl = buildCdn(m.avatar, `https://cdn.discordapp.com/guilds/${discordGuildId}/users/${key}/avatars/${m.avatar}`);
+        }
+        if (!avatarUrl && user.avatar) {
+            avatarUrl = buildCdn(user.avatar, `https://cdn.discordapp.com/avatars/${key}/${user.avatar}`);
+        }
+        if (!avatarUrl) avatarUrl = 'https://cdn.discordapp.com/embed/avatars/0.png';
+        const rec = { displayName, avatarUrl, cachedAt: now, expiresAt: now + DISCORD_ID_TTL_MS };
+        discordUserCache.set(key, rec);
+        return { id: key, displayName, avatarUrl };
+    } catch (_) {
+        return cached ? { id: key, displayName: cached.displayName, avatarUrl: cached.avatarUrl } : { id: key, displayName: null, avatarUrl: null };
+    }
+}
+
+const discordCharsCache = new Map(); // userId -> { chars: [], expiresAt }
+const DISCORD_CHARS_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+async function getCharactersByDiscordIds(ids, pool) {
+    const now = Date.now();
+    const resultMap = {};
+    const toQuery = [];
+    for (const raw of ids) {
+        const id = String(raw);
+        const cached = discordCharsCache.get(id);
+        if (cached && cached.expiresAt > now) {
+            resultMap[id] = cached.chars;
+        } else {
+            toQuery.push(id);
+        }
+    }
+    if (toQuery.length) {
+        let client;
+        try {
+            client = await pool.connect();
+            const q = `SELECT discord_id, character_name, class FROM players WHERE discord_id = ANY($1::text[]) ORDER BY character_name`;
+            const r = await client.query(q, [toQuery]);
+            const grouped = toQuery.reduce((acc, id) => { acc[id] = []; return acc; }, {});
+            for (const row of r.rows) {
+                if (!grouped[row.discord_id]) grouped[row.discord_id] = [];
+                grouped[row.discord_id].push({ character_name: row.character_name, class: row.class });
+            }
+            for (const id of toQuery) {
+                const chars = grouped[id] || [];
+                discordCharsCache.set(id, { chars, expiresAt: now + DISCORD_CHARS_TTL_MS });
+                resultMap[id] = chars;
+            }
+        } catch (err) {
+            console.error('Error fetching characters by IDs (cached):', err);
+            // Fallback: ensure keys exist
+            for (const id of toQuery) {
+                resultMap[id] = [];
+            }
+        } finally {
+            if (client) client.release();
+        }
+    }
+    return resultMap;
+}
+
 // API to read current members in a given voice channel
 app.get('/api/discord/voice/:channelId', (req, res) => {
     const { channelId } = req.params;
@@ -14019,44 +14104,10 @@ app.post('/api/discord/resolve-users', async (req, res) => {
     try {
         const ids = Array.isArray(req.body?.userIds) ? req.body.userIds.map(String) : [];
         if (!ids.length) return res.json({ ok: true, users: {} });
-        if (!discordBotToken || !discordGuildId) {
-            return res.status(500).json({ ok: false, error: 'Discord bot not configured' });
-        }
         const results = {};
         for (const id of ids) {
-            try {
-                const r = await fetch(`https://discord.com/api/v10/guilds/${discordGuildId}/members/${id}`, {
-                    headers: { 'Authorization': `Bot ${discordBotToken}` }
-                });
-                if (!r.ok) {
-                    results[id] = { id, displayName: null, avatarUrl: null };
-                    continue;
-                }
-                const m = await r.json();
-                const user = m.user || {};
-                const displayName = m.nick || user.global_name || user.username || id;
-                // Build avatar URL: prefer guild profile avatar, then user avatar, else default
-                let avatarUrl = null;
-                const buildCdn = (hash, base) => {
-                    if (!hash) return null;
-                    const isGif = String(hash).startsWith('a_');
-                    const ext = isGif ? 'gif' : 'png';
-                    return `${base}.${ext}?size=64`;
-                };
-                if (m.avatar) {
-                    // Guild member avatar
-                    avatarUrl = buildCdn(m.avatar, `https://cdn.discordapp.com/guilds/${discordGuildId}/users/${id}/avatars/${m.avatar}`);
-                }
-                if (!avatarUrl && user.avatar) {
-                    avatarUrl = buildCdn(user.avatar, `https://cdn.discordapp.com/avatars/${id}/${user.avatar}`);
-                }
-                if (!avatarUrl) {
-                    avatarUrl = 'https://cdn.discordapp.com/embed/avatars/0.png';
-                }
-                results[id] = { id, displayName, avatarUrl };
-            } catch (_) {
-                results[id] = { id, displayName: null, avatarUrl: null };
-            }
+            const rec = await getDiscordUserIdentity(id);
+            results[id] = rec;
         }
         res.json({ ok: true, users: results });
     } catch (err) {
@@ -14068,22 +14119,12 @@ app.post('/api/discord/resolve-users', async (req, res) => {
 app.post('/api/players/by-discord-ids', async (req, res) => {
     const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
     if (!ids.length) return res.json({ ok: true, map: {} });
-    let client;
     try {
-        client = await pool.connect();
-        const q = `SELECT discord_id, character_name, class FROM players WHERE discord_id = ANY($1::text[]) ORDER BY character_name`;
-        const r = await client.query(q, [ids]);
-        const map = {};
-        for (const row of r.rows) {
-            if (!map[row.discord_id]) map[row.discord_id] = [];
-            map[row.discord_id].push({ character_name: row.character_name, class: row.class });
-        }
+        const map = await getCharactersByDiscordIds(ids, pool);
         res.json({ ok: true, map });
     } catch (err) {
         console.error('Error fetching characters by IDs:', err);
         res.status(500).json({ ok: false, error: err?.message || String(err) });
-    } finally {
-        if (client) client.release();
     }
 });
 
@@ -14103,6 +14144,50 @@ app.get('/api/discord/channel/:channelId', async (req, res) => {
         return res.json({ ok: true, id: ch.id, name: ch.name || null });
     } catch (err) {
         res.status(500).json({ ok: false, error: err?.message || String(err) });
+    }
+});
+
+// Enriched voice endpoint: returns users with cached Discord identities and character links
+app.get('/api/discord/voice-enriched/:channelId', async (req, res) => {
+    try {
+        const { channelId } = req.params;
+        const users = voiceStateMap.get(channelId);
+        const raw = users ? Array.from(users) : [];
+        // Normalize into arrays of ids and states
+        const ids = [];
+        const states = {};
+        for (const item of raw) {
+            if (Array.isArray(item)) {
+                const id = String(item[0]);
+                ids.push(id);
+                if (item[1] && typeof item[1] === 'object') states[id] = item[1];
+            } else if (item && typeof item === 'object') {
+                // Should not happen from Map iteration, but keep for safety
+                if (item.id) ids.push(String(item.id));
+            } else if (typeof item === 'string' || typeof item === 'number') {
+                ids.push(String(item));
+            }
+        }
+
+        // Resolve identities with cache
+        const identityMap = {};
+        for (const id of ids) identityMap[id] = await getDiscordUserIdentity(id);
+
+        // Resolve characters with cache
+        const charsMap = await getCharactersByDiscordIds(ids, pool);
+
+        // Build enriched array
+        const enriched = ids.map(id => ({
+            id,
+            displayName: identityMap[id]?.displayName || null,
+            avatarUrl: identityMap[id]?.avatarUrl || null,
+            chars: Array.isArray(charsMap[id]) ? charsMap[id] : [],
+            state: states[id] || {}
+        }));
+
+        res.json({ ok: true, channelId, users: enriched });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
     }
 });
 

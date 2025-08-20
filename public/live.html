@@ -151,15 +151,20 @@
 
         async function refresh() {
             try {
-                const res = await fetch(`/api/discord/voice/${channelId}`);
+                const res = await fetch(`/api/discord/voice-enriched/${channelId}`);
                 const data = await res.json();
-                // Normalize ids and states
-                const inferred = {}; const ids = []; const raw = Array.isArray(data.userIds) ? data.userIds : [];
-                for (const item of raw) { if (Array.isArray(item)) { const id = extractId(item[0]); if (id) ids.push(id); if (item[1] && typeof item[1]==='object') inferred[id]=item[1]; } else if (item && typeof item==='object' && item.id) { const id = extractId(item.id); if (id) ids.push(id); } else if (typeof item==='string'||typeof item==='number'){ const id=extractId(item); if(id) ids.push(id);} }
-                const states = Object.assign({}, data.states||{}, inferred);
-                // Resolve names and chars
-                const nameMap = (await (await fetch('/api/discord/resolve-users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userIds:ids})})).json()).users || {};
-                const charsMap = (await (await fetch('/api/players/by-discord-ids',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})})).json()).map || {};
+                const users = Array.isArray(data.users) ? data.users : [];
+                const ids = users.map(u => extractId(u.id)).filter(Boolean);
+                const nameMap = {};
+                const charsMap = {};
+                const states = {};
+                for (const u of users) {
+                    const id = extractId(u.id);
+                    if (!id) continue;
+                    nameMap[id] = { id, displayName: u.displayName || null, avatarUrl: u.avatarUrl || null };
+                    charsMap[id] = Array.isArray(u.chars) ? u.chars : [];
+                    if (u.state && typeof u.state === 'object') states[id] = u.state;
+                }
                 // Roster
                 const activeEventId = localStorage.getItem('activeEventSession');
                 let roster = []; if (activeEventId) { try { const rr = await fetch(`/api/assignments/${activeEventId}/roster`); const rj = await rr.json(); roster = Array.isArray(rj.roster)? rj.roster: []; } catch {}

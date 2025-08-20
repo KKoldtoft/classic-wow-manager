@@ -96,13 +96,19 @@ class LootManager {
             if (data.loggedIn && data.hasManagementRole) {
                 console.log('[LOOT] User has management role, showing import section');
                 document.getElementById('import-section').style.display = 'block';
+                const title = document.getElementById('lootManagementTitle');
+                if (title) title.style.display = 'none'; // Hide title for everyone as requested
             } else {
                 console.log('[LOOT] User does not have management role, hiding import section');
                 document.getElementById('import-section').style.display = 'none';
+                const title = document.getElementById('lootManagementTitle');
+                if (title) title.style.display = 'none'; // Hide title for everyone
             }
         } catch (error) {
             console.error('[LOOT] Error checking user permissions:', error);
             document.getElementById('import-section').style.display = 'none';
+            const title = document.getElementById('lootManagementTitle');
+            if (title) title.style.display = 'none'; // Hide title for everyone
         }
     }
 

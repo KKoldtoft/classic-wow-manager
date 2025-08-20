@@ -78,12 +78,18 @@ class GoldPotManager {
                 }
             }
             
-            // Gate by auth status
+            // Gate by auth status and management role for certain sections
             const user = await (await fetch('/user').catch(()=>({ok:false})) ).json().catch(()=>({loggedIn:false}))
             if (!user || !user.loggedIn) {
                 this.showAuthGate();
                 return;
             }
+
+            // Hide Gargul export for non-management
+            try {
+                const gargul = document.getElementById('gargulExportSection');
+                if (gargul) gargul.style.display = (user.hasManagementRole ? 'block' : 'none');
+            } catch {}
 
             if (!this.currentEventId) { this.showError('No active event session found. Please select an event from the events page.'); return; }
 

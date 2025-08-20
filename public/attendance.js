@@ -5,6 +5,7 @@ class AttendanceManager {
         this.attendanceData = null;
         this.isLoading = false;
         this.lastUpdated = null;
+        this.canManage = false;
         
         this.initializeEventListeners();
         this.loadAttendanceData();
@@ -23,6 +24,21 @@ class AttendanceManager {
     async loadAttendanceData() {
         if (this.isLoading) return;
         
+        // Determine management role and hide gated controls accordingly
+        try {
+            const uRes = await fetch('/user');
+            if (uRes && uRes.ok) {
+                const u = await uRes.json();
+                this.canManage = !!(u && u.loggedIn && u.hasManagementRole);
+            } else {
+                this.canManage = false;
+            }
+        } catch (_) { this.canManage = false; }
+        try {
+            const grp = document.querySelector('.rebuild-buttons-group');
+            if (grp) grp.style.display = this.canManage ? 'flex' : 'none';
+        } catch {}
+
         this.isLoading = true;
         this.showLoading();
         
@@ -355,10 +371,9 @@ class AttendanceManager {
             const statsText = `${week.characterCount || 0} Characters, ${week.playerCount || 0} Players`;
             const shortStatsText = statsText.length > 20 ? `${week.characterCount || 0}C, ${week.playerCount || 0}P` : statsText;
             
-            th.innerHTML = `
-                <div>Week ${week.weekNumber}</div>
-                <div style="font-size: 10px; opacity: 0.7;">${dateRange}</div>
-                <div style="font-size: 10px; opacity: 0.6; margin-top: 2px;" title="${statsText}">${shortStatsText}</div>
+            let rebuildHtml = '';
+            if (this.canManage) {
+                rebuildHtml = `
                 <div class="week-rebuild-container">
                     <button class="week-rebuild-btn" 
                             data-week-year="${week.weekYear}" 
@@ -366,16 +381,25 @@ class AttendanceManager {
                             title="Rebuild cache for Week ${week.weekNumber}, ${week.weekYear}">
                         <i class="fas fa-sync-alt"></i>
                     </button>
-                </div>
+                </div>`;
+            }
+
+            th.innerHTML = `
+                <div>Week ${week.weekNumber}</div>
+                <div style="font-size: 10px; opacity: 0.7;">${dateRange}</div>
+                <div style="font-size: 10px; opacity: 0.6; margin-top: 2px;" title="${statsText}">${shortStatsText}</div>
+                ${rebuildHtml}
             `;
             
-            // Add click handler for week rebuild button
+            // Add click handler for week rebuild button (management only)
             const rebuildBtn = th.querySelector('.week-rebuild-btn');
-            rebuildBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.rebuildWeekCache(week.weekYear, week.weekNumber, rebuildBtn);
-            });
+            if (rebuildBtn && this.canManage) {
+                rebuildBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.rebuildWeekCache(week.weekYear, week.weekNumber, rebuildBtn);
+                });
+            }
             
             headerRow.appendChild(th);
         });
