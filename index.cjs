@@ -1058,7 +1058,7 @@ passport.use(new DiscordStrategy({
     clientID: process.env.DISCORD_CLIENT_ID,
     clientSecret: process.env.DISCORD_CLIENT_SECRET,
     callbackURL: `${process.env.APP_BASE_URL}/auth/discord/callback`,
-    scope: ['identify', 'email', 'guilds', 'guilds.members.read']
+    scope: ['identify', 'guilds', 'guilds.members.read']
 },
 (accessToken, refreshToken, profile, done) => {
     // Store the access token in the profile for later use
