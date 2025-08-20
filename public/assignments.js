@@ -2887,25 +2887,30 @@
           return;
         }
         if (wing === 'frostwyrm_lair') {
+          // Prefer saved panels if present; otherwise fall back to defaults
+          const existingSapph = panels.find(p => String(p.boss || '').toLowerCase().includes('sapph'));
           const sapphPanel = {
-            dungeon: 'Naxxramas',
+            dungeon: existingSapph?.dungeon || 'Naxxramas',
             wing: 'Frostwyrm_Lair',
             boss: 'Sapphiron',
-            strategy_text: 'Positions & Pre-pop\nOdd groups left. Even groups right. Everyone pre-pop GFPP and GSPP when we unboon.\n\nLand phase\nMellee stand on max range. Avoid Blizzard and don\'t parry-haste the boss.\nCasters stack loosely for aoe healing and avoid Blizzard.\nShaman melee healers stand with your group so you can chain-heal yourself.\n\nAir phase\nSpread out in the half of the room towards the entrace of the room. When you get targeted for ice-block, pop a Greater Frost Protection Potion to stay alive.',
-            image_url: 'https://placehold.co/1200x675?text=Sapphiron',
-            video_url: 'https://www.youtube.com/embed/NwDFC6kFi7c',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755093137/oUwfSmi_mp74xg.gif',
-            entries: []
+            strategy_text: existingSapph?.strategy_text || 'Positions & Pre-pop\nOdd groups left. Even groups right. Everyone pre-pop GFPP and GSPP when we unboon.\n\nLand phase\nMellee stand on max range. Avoid Blizzard and don\'t parry-haste the boss.\nCasters stack loosely for aoe healing and avoid Blizzard.\nShaman melee healers stand with your group so you can chain-heal yourself.\n\nAir phase\nSpread out in the half of the room towards the entrace of the room. When you get targeted for ice-block, pop a Greater Frost Protection Potion to stay alive.',
+            image_url: existingSapph?.image_url || 'https://placehold.co/1200x675?text=Sapphiron',
+            video_url: existingSapph?.video_url || 'https://www.youtube.com/embed/NwDFC6kFi7c',
+            boss_icon_url: existingSapph?.boss_icon_url || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755093137/oUwfSmi_mp74xg.gif',
+            entries: Array.isArray(existingSapph?.entries) ? existingSapph.entries : []
           };
+          const existingKel = panels.find(p => String(p.boss || '').toLowerCase().includes('kel'));
           const kelPanel = {
-            dungeon: 'Naxxramas',
+            dungeon: existingKel?.dungeon || 'Naxxramas',
             wing: 'Frostwyrm_Lair',
             boss: "Kel'Thuzad",
-            strategy_text: "Phase 1\nDont't die. Don't multi shot. Stay in the circle. Kill adds fast. Prioritze shooting skellingtons over killing abos.\n\nPhase 2\nMelee stack perfectly on your marks and backpeddle out when ground gets black. Casters and healers spread out in the room.\n\nHealers, heal Frost Blast targets fast.\n\nPhase 3\nPriests, shackle adds BEFORE they get to the middle. Keep them shackled.",
-            image_url: 'https://placehold.co/1200x675?text=Kel%5C%27Thuzad',
-            video_url: 'https://www.youtube.com/embed/GUIftNHHKNs',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755109693/imgbin-heroes-of-the-storm-kel-thuzad-arthas-menethil-storm-za4EdhZSa9A2GBvAUf1Gi8t4q_qxel5s.jpg',
-            entries: []
+            strategy_text: existingKel?.strategy_text || "Phase 1\nDont't die. Don't multi shot. Stay in the circle. Kill adds fast. Prioritze shooting skellingtons over killing abos.\n\nPhase 2\nMelee stack perfectly on your marks and backpeddle out when ground gets black. Casters and healers spread out in the room.\n\nHealers, heal Frost Blast targets fast.\n\nPhase 3\nPriests, shackle adds BEFORE they get to the middle. Keep them shackled.",
+            image_url: existingKel?.image_url || 'https://placehold.co/1200x675?text=Kel%5C%27Thuzad',
+            video_url: existingKel?.video_url || 'https://www.youtube.com/embed/GUIftNHHKNs',
+            boss_icon_url: existingKel?.boss_icon_url || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755109693/imgbin-heroes-of-the-storm-kel-thuzad-arthas-menethil-storm-za4EdhZSa9A2GBvAUf1Gi8t4q_qxel5s.jpg',
+            // Preserve special grid state if present
+            kel_groups: existingKel?.kel_groups || undefined,
+            entries: Array.isArray(existingKel?.entries) ? existingKel.entries : []
           };
           container.innerHTML = '';
           container.appendChild(buildPanel(sapphPanel, user, roster));

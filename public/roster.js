@@ -5,6 +5,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const rosterEventTitle = document.getElementById('roster-event-title');
     const compToolButton = document.getElementById('comp-tool-button');
     const revertButton = document.getElementById('revert-roster-button');
+    const announceInvitesButton = document.getElementById('announce-invites-button');
+    const autoAssignmentsButton = document.getElementById('auto-assignments-button');
     const benchContainer = document.getElementById('bench-container');
     const benchedList = document.getElementById('benched-list');
 
@@ -1835,6 +1837,770 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         );
     });
+
+    // Announce invites placeholder
+    if (announceInvitesButton) {
+        announceInvitesButton.addEventListener('click', () => {
+            showAlert('Coming soon', 'Announce invites is coming soon.');
+        });
+    }
+
+    // Auto assignments runner entrypoint
+    if (autoAssignmentsButton) {
+        autoAssignmentsButton.addEventListener('click', async () => {
+            try {
+                autoAssignmentsButton.disabled = true;
+                autoAssignmentsButton.classList.add('active');
+                await runAutoAssignmentsEntry();
+            } catch (e) {
+                console.error('Auto assignments error:', e);
+                showAlert('Auto assignments error', e?.message || 'Unexpected error');
+            } finally {
+                autoAssignmentsButton.disabled = false;
+                autoAssignmentsButton.classList.remove('active');
+            }
+        });
+    }
+
+    async function runAutoAssignmentsEntry() {
+        // Load current assignments once to decide warning and proceed
+        const assignRes = await fetch(`/api/assignments/${eventId}`);
+        const assignData = await assignRes.json();
+        if (!assignData || !assignData.success) throw new Error('Failed to load assignments');
+        const allPanels = Array.isArray(assignData.panels) ? assignData.panels : [];
+
+        // Check if any MAIN page panel other than Tanking/Healing already has entries
+        const hasOtherMain = allPanels.some(p => {
+            const boss = String(p.boss || '').toLowerCase();
+            const isMainWing = (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main');
+            if (!isMainWing) return false;
+            if (boss === 'tanking' || boss === 'healing') return false;
+            return Array.isArray(p.entries) && p.entries.some(e => (e.character_name||'').trim());
+        });
+
+        if (hasOtherMain) {
+            showConfirm(
+                'Confirm Auto Assignments',
+                'Some assignments has already been set, are you sure you want to reset and redo all assignments?',
+                async () => { await runAutoAssignments(allPanels); }
+            );
+            return;
+        }
+
+        await runAutoAssignments(allPanels);
+    }
+
+    async function runAutoAssignments(preloadedPanels) {
+        // Load roster snapshot used by assignments page
+        const [rosterRes] = await Promise.all([
+            fetch(`/api/assignments/${eventId}/roster`)
+        ]);
+        const assignData = { success: true, panels: preloadedPanels || [] };
+        const rosterWrap = await rosterRes.json();
+        const allPanels = Array.isArray(assignData.panels) ? assignData.panels : [];
+        const roster = Array.isArray(rosterWrap?.roster) ? rosterWrap.roster : [];
+
+        // Ensure Tanking and Healing panels have data
+        const findMainPanel = (name) => allPanels.find(p => String(p.boss||'').toLowerCase() === name && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'));
+        const tankPanel = findMainPanel('tanking');
+        const healPanel = findMainPanel('healing');
+        const tankHas = !!(tankPanel && Array.isArray(tankPanel.entries) && tankPanel.entries.some(e => (e.character_name||'').trim()))
+        const healHas = !!(healPanel && Array.isArray(healPanel.entries) && healPanel.entries.some(e => (e.character_name||'').trim()))
+        if (!tankHas || !healHas) {
+            showAlert('Auto assignments', 'Please go to the main assignment page and do the Tanking and Healing assignments, before you run the auto assignments function');
+            return;
+        }
+
+        // Helper data and functions mirroring assignments defaults
+        const byClass = (cls) => roster.filter(r => String(r.class_name||'').toLowerCase() === cls);
+        const sortByGS = (a,b) => ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99));
+        const groups = [1,2,3,4,5,6,7,8];
+        const contiguousChunks = (count) => {
+            if (count <= 0) return [];
+            const base = Math.floor(groups.length / count);
+            const rem = groups.length % count;
+            const chunks = [];
+            let idx = 0;
+            for (let i=0;i<count;i++) {
+                const take = base + (i < rem ? 1 : 0);
+                chunks.push(groups.slice(idx, idx+take));
+                idx += take;
+            }
+            return chunks;
+        };
+
+        const piIcon = 'https://wow.zamimg.com/images/wow/icons/large/spell_holy_powerinfusion.jpg';
+        const iconFort = 'https://wow.zamimg.com/images/wow/icons/large/spell_holy_wordfortitude.jpg';
+        const iconInt  = 'https://wow.zamimg.com/images/wow/icons/large/spell_holy_magicalsentry.jpg';
+        const iconMotw = 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_regeneration.jpg';
+        const iconDecurse = 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_removecurse.jpg';
+        const iconDispel  = 'https://wow.zamimg.com/images/wow/icons/large/spell_holy_dispelmagic.jpg';
+        const iconCoR = 'https://wow.zamimg.com/images/wow/icons/large/spell_shadow_unholystrength.jpg';
+        const iconCoE = 'https://wow.zamimg.com/images/wow/icons/large/spell_shadow_chilltouch.jpg';
+        const iconCoS = 'https://wow.zamimg.com/images/wow/icons/large/spell_shadow_curseofachimonde.jpg';
+        const iconSS  = 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_orb_04.jpg';
+
+        const makeEntry = (r, icon, text) => ({ character_name: r.character_name, class_name: r.class_name, spec_name: r.spec_name, spec_emote: r.spec_emote, marker_icon_url: icon, assignment: text, accept_status: null });
+
+        // Tank targets (names) in order from existing Tanking panel
+        const tankTargets = (Array.isArray(tankPanel?.entries) ? tankPanel.entries : [])
+            .map(e => (e.character_name||'').trim())
+            .filter(Boolean);
+
+        const mages = byClass('mage').sort(sortByGS);
+        const priests = byClass('priest').sort(sortByGS);
+        const druids = byClass('druid').sort(sortByGS);
+        const warlocks = byClass('warlock').sort(sortByGS);
+
+        // Buffs defaults
+        const buffsToAdd = (() => {
+            const toAdd = [];
+            const assignGroups = (players, iconUrl) => {
+                if (!players.length) return;
+                const chunks = contiguousChunks(players.length);
+                const sorted = players.slice().sort(sortByGS).reverse();
+                for (let i=0;i<sorted.length;i++) {
+                    const r = sorted[i];
+                    const chunk = chunks[i] || [];
+                    if (!chunk.length) continue;
+                    let text = '';
+                    if (chunk.length === 8) text = 'All groups';
+                    else if (chunk.length === 1) text = `Group ${chunk[0]}`;
+                    else if (chunk.length === 2) text = `Group ${chunk[0]} and ${chunk[1]}`;
+                    else { const head = chunk.slice(0, -1).join(', '); text = `Group ${head} and ${chunk[chunk.length-1]}`; }
+                    toAdd.push(makeEntry(r, iconUrl, text));
+                }
+            };
+            assignGroups(mages, iconInt);
+            assignGroups(priests, iconFort);
+            assignGroups(druids, iconMotw);
+            return toAdd;
+        })();
+
+        // Decurse and Dispel defaults
+        const cursesDispToAdd = (() => {
+            const toAdd = [];
+            const assignGroups = (players, iconUrl) => {
+                if (!players.length) return;
+                const chunks = contiguousChunks(players.length);
+                const sorted = players.slice().sort(sortByGS).reverse();
+                for (let i=0;i<sorted.length;i++) {
+                    const r = sorted[i];
+                    const chunk = chunks[i] || [];
+                    if (!chunk.length) continue;
+                    let text = '';
+                    if (chunk.length === 8) text = 'All groups';
+                    else if (chunk.length === 1) text = `Group ${chunk[0]}`;
+                    else if (chunk.length === 2) text = `Group ${chunk[0]} and ${chunk[1]}`;
+                    else { const head = chunk.slice(0, -1).join(', '); text = `Group ${head} and ${chunk[chunk.length-1]}`; }
+                    toAdd.push(makeEntry(r, iconUrl, text));
+                }
+            };
+            assignGroups(mages, iconDecurse);
+            assignGroups(priests, iconDispel);
+            return toAdd;
+        })();
+
+        // Curses and Soul Stones defaults
+        const cursesSoulToAdd = (() => {
+            const toAdd = [];
+            if (warlocks[0]) toAdd.push(makeEntry(warlocks[0], iconCoR, 'Curse of Recklessness'));
+            if (warlocks[1]) toAdd.push(makeEntry(warlocks[1], iconCoE, 'Curse of the Elements'));
+            if (warlocks[2]) toAdd.push(makeEntry(warlocks[2], iconCoS, 'Curse of Shadow'));
+            for (let i=0;i<3;i++) {
+                if (warlocks[i] && priests[i]) toAdd.push(makeEntry(warlocks[i], iconSS, `Soulstone on ${priests[i].character_name}`));
+            }
+            return toAdd;
+        })();
+
+        // Power Infusion defaults
+        const piToAdd = (() => {
+            const toAdd = [];
+            const pairs = Math.min(priests.length, mages.length);
+            for (let i=0;i<pairs;i++) {
+                const pr = priests[i];
+                const mg = mages[i];
+                toAdd.push({ character_name: pr.character_name, class_name: pr.class_name, spec_name: pr.spec_name, spec_emote: pr.spec_emote, marker_icon_url: piIcon, assignment: mg.character_name, accept_status: null });
+            }
+            return toAdd;
+        })();
+
+        function buildPayloadFor(bossName, toAdd) {
+            const existing = findMainPanel(bossName.toLowerCase()) || { dungeon: 'Naxxramas', wing: '', boss: bossName, strategy_text: '', entries: [] };
+            // Replace existing entries instead of appending
+            const entries = [ ...toAdd ];
+            return {
+                dungeon: existing.dungeon || 'Naxxramas',
+                wing: '',
+                boss: bossName,
+                strategy_text: existing.strategy_text || '',
+                image_url: '',
+                video_url: '',
+                entries
+            };
+        }
+
+        const payloadPanels = [];
+        if (buffsToAdd.length) payloadPanels.push(buildPayloadFor('Buffs', buffsToAdd));
+        if (cursesDispToAdd.length) payloadPanels.push(buildPayloadFor('Decurse and Dispel', cursesDispToAdd));
+        if (cursesSoulToAdd.length) payloadPanels.push(buildPayloadFor('Curses and Soul Stones', cursesSoulToAdd));
+        if (piToAdd.length) payloadPanels.push(buildPayloadFor('Power Infusion', piToAdd));
+
+        if (!payloadPanels.length) {
+            showAlert('Auto assignments', 'No defaults could be generated based on current roster.');
+            return;
+        }
+
+        let saveRes = await fetch(`/api/assignments/${eventId}/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ panels: payloadPanels })
+        });
+        if (!saveRes.ok) {
+            const err = await saveRes.json().catch(() => ({}));
+            throw new Error(err.message || 'Failed to save assignments');
+        }
+
+        // If Naxx channel, continue to per-wing panels
+        let isNax = false;
+        try {
+            const flagsRes = await fetch(`/api/events/${eventId}/channel-flags`);
+            const flags = await flagsRes.json();
+            isNax = !!(flags && flags.success && flags.isNax);
+        } catch {}
+
+        if (isNax) {
+            const payloadWingPanels = [];
+            const byWingBoss = (wingSub, bossSub) => allPanels.find(p => String(p.wing||'').toLowerCase().includes(wingSub) && String(p.boss||'').toLowerCase().includes(bossSub));
+            const tankMainPanel = allPanels.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main')) || allPanels.find(p => String(p.boss||'').toLowerCase()==='tanking');
+            const findByPartySlot = (party, slot) => roster.find(r => Number(r.party_id) === Number(party) && Number(r.slot_id) === Number(slot));
+            const findByMarkerFromMain = (markerSubstr) => {
+                if (!tankMainPanel || !Array.isArray(tankMainPanel.entries)) return null;
+                const entry = tankMainPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                if (!entry || !entry.character_name) return null;
+                return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+            };
+            const icons = { skull:'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/1_skull_faqei8.png', cross:'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/2_cross_kj9wuf.png', square:'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/3_square_yqucv9.png', moon:'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/4_moon_vwhoen.png', triangle:'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/5_triangle_rbpjyi.png', diamond:'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/6_diamond_hre1uj.png', circle:'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/7_circle_zayctt.png', star:'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/8_star_kbuiaq.png', death:'https://wow.zamimg.com/images/wow/icons/large/spell_shadow_deathscream.jpg' };
+
+            // Spider: Anub'Rekhan
+            try {
+                const panel = byWingBoss('spider', 'anub');
+                if (panel) {
+                    const toAdd = [];
+                    const mt = findByPartySlot(1,1);
+                    const ot1 = findByPartySlot(1,2);
+                    const ot2 = findByPartySlot(1,3);
+                    if (mt)  toAdd.push(makeEntry(mt,  icons.skull,  'Main Tank. Pick up the boss and face it away from the raid.'));
+                    if (ot1) toAdd.push(makeEntry(ot1, icons.cross,  'Off Tank 1. Pick up the right add. Stack it on the boss and stand with the main tank. Use a FAP if needed.'));
+                    if (ot2) toAdd.push(makeEntry(ot2, icons.square, 'Off Tank 2. Pick up the left add. Stack it on the boss and stand with the main tank. Use a FAP if needed.'));
+                    payloadWingPanels.push({ dungeon: panel.dungeon||'Naxxramas', wing: panel.wing||'Spider Wing', boss: panel.boss, strategy_text: panel.strategy_text||'', image_url: panel.image_url||'', video_url: panel.video_url||'', entries: toAdd });
+                }
+            } catch {}
+
+            // Spider: Grand Widow Faerlina
+            try {
+                const panel = byWingBoss('spider', 'faerlina');
+                if (panel) {
+                    const toAdd = [];
+                    const pSorted = roster.filter(r => String(r.class_name).toLowerCase() === 'priest')
+                        .sort((a,b) => (Number(a.party_id)||99) - (Number(b.party_id)||99) || (Number(a.slot_id)||99) - (Number(b.slot_id)||99));
+                    const p1 = pSorted[0];
+                    const p2 = pSorted[1];
+                    const g11 = findByPartySlot(1,1); if (g11) toAdd.push(makeEntry(g11, icons.square,   'Tank the boss'));
+                    const g12 = findByPartySlot(1,2); if (g12) toAdd.push(makeEntry(g12, icons.triangle, 'Tank the left 2 adds'));
+                    if (g12)                          toAdd.push(makeEntry(g12, icons.moon,     'Tank the left 2 adds'));
+                    const g13 = findByPartySlot(1,3); if (g13) toAdd.push(makeEntry(g13, icons.diamond, 'Tank the right 2 adds'));
+                    if (g13)                          toAdd.push(makeEntry(g13, icons.circle,  'Tank the right 2 adds'));
+                    const g21 = findByPartySlot(2,1); if (g21) toAdd.push(makeEntry(g21, icons.skull,   'Tank Skull'));
+                    const g22 = findByPartySlot(2,2); if (g22) toAdd.push(makeEntry(g22, icons.cross,   'Tank Cross (pull it to boss)'));
+                    if (p1) toAdd.push(makeEntry(p1, icons.diamond, "Use mind control and Widow's Embrace to dispel Enrage from the boss. Start with Diamond and Circle targets."));
+                    if (p1) toAdd.push(makeEntry(p1, icons.circle,  "Use mind control and Widow's Embrace to dispel Enrage from the boss. Start with Diamond and Circle targets."));
+                    if (p2) toAdd.push(makeEntry(p2, icons.circle,  'Backup mindcontrol in case the assigned priest dies or fails.'));
+                    payloadWingPanels.push({ dungeon: panel.dungeon||'Naxxramas', wing: panel.wing||'Spider Wing', boss: panel.boss, strategy_text: panel.strategy_text||'', image_url: panel.image_url||'', video_url: panel.video_url||'', entries: toAdd });
+                }
+            } catch {}
+
+            // Spider: Maexxna
+            try {
+                const panel = byWingBoss('spider', 'maex');
+                const toAdd = [];
+                const skullEntry = tankMainPanel?.entries?.find(en => String(en.marker_icon_url||'').includes('skull')) || tankMainPanel?.entries?.[0];
+                if (skullEntry && skullEntry.character_name) {
+                    const rMatch = roster.find(r => String(r.character_name).toLowerCase() === String(skullEntry.character_name).toLowerCase());
+                    const rUse = rMatch || { character_name: skullEntry.character_name, class_name: skullEntry.class_name };
+                    toAdd.push(makeEntry(rUse, icons.skull, 'Tank the boss (face it away from the raid)'));
+                }
+                roster.filter(r=>String(r.class_name||'').toLowerCase()==='hunter').forEach(r=>toAdd.push(makeEntry(r, null, 'Kill the webs')));
+                roster.filter(r=>String(r.class_name||'').toLowerCase()==='warlock').forEach(r=>toAdd.push(makeEntry(r, null, 'Kill the webs')));
+                const magesDesc = roster.filter(r=>String(r.class_name||'').toLowerCase()==='mage')
+                    .sort((a,b)=> ((Number(b.party_id)||0)-(Number(a.party_id)||0)) || ((Number(b.slot_id)||0)-(Number(a.slot_id)||0)));
+                if (magesDesc[0]) toAdd.push(makeEntry(magesDesc[0], null, 'Kill the webs'));
+                if (magesDesc[1]) toAdd.push(makeEntry(magesDesc[1], null, 'Kill the webs'));
+                roster.filter(r=>String(r.class_name||'').toLowerCase()==='druid').forEach(r=>toAdd.push(makeEntry(r, null, 'Cleanse poison on Tank before webspray')));
+                const shamansAsc = roster.filter(r=>String(r.class_name||'').toLowerCase()==='shaman')
+                    .sort((a,b)=> ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99)));
+                if (shamansAsc[0]) toAdd.push(makeEntry(shamansAsc[0], null, 'Keep poison cleansing totem up for the tank before webspray.'));
+                // Use existing panel info if present; otherwise create new panel definition for save
+                const wing = (panel && panel.wing) || 'Spider Wing';
+                const boss = (panel && panel.boss) || 'Maexxna';
+                const dungeon = (panel && panel.dungeon) || 'Naxxramas';
+                payloadWingPanels.push({ dungeon, wing, boss, strategy_text: (panel && panel.strategy_text) || '', image_url: (panel && panel.image_url) || '', video_url: (panel && panel.video_url) || '', entries: toAdd });
+            } catch {}
+
+            // Military: Instructor Razuvious
+            try {
+                const panel = byWingBoss('military', 'razu');
+                const toAdd = [];
+                const pickTankByIndex = (idx) => {
+                    const en = tankMainPanel?.entries?.[idx-1];
+                    if (!en || !en.character_name) return null;
+                    return roster.find(r => String(r.character_name).toLowerCase() === String(en.character_name).toLowerCase()) || { character_name: en.character_name, class_name: en.class_name };
+                };
+                const t2 = pickTankByIndex(2);
+                const t3 = pickTankByIndex(3);
+                const t4 = pickTankByIndex(4);
+                if (t2) toAdd.push(makeEntry(t2, icons.cross,   'Tank the left 2 adds (near but not on top of the priests)'));
+                if (t2) toAdd.push(makeEntry(t2, icons.square,  'Tank the left 2 adds (near but not on top of the priests)'));
+                if (t3) toAdd.push(makeEntry(t3, icons.moon,    'Tank the right 2 adds (near but not on top of the priests)'));
+                if (t4) toAdd.push(makeEntry(t4, icons.diamond, 'Tank the right 2 adds (near but not on top of the priests)'));
+
+                const priestsAsc = roster.filter(r => String(r.class_name||'').toLowerCase()==='priest')
+                    .sort((a,b)=> ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99)));
+                if (priestsAsc[0]) toAdd.push(makeEntry(priestsAsc[0], icons.cross,  'Mind control duty (You pull)'));
+                if (priestsAsc[0]) toAdd.push(makeEntry(priestsAsc[0], icons.square, 'Mind control duty'));
+                if (priestsAsc[1]) toAdd.push(makeEntry(priestsAsc[1], icons.moon,   'Mind control duty'));
+                if (priestsAsc[1]) toAdd.push(makeEntry(priestsAsc[1], icons.diamond,'Mind control duty'));
+
+                const crate = 'https://wow.zamimg.com/images/wow/icons/large/inv_crate_06.jpg';
+                const warriorsG2 = roster.filter(r=>String(r.class_name||'').toLowerCase()==='warrior' && Number(r.party_id)===2)
+                    .sort((a,b)=> (Number(a.slot_id)||99)-(Number(b.slot_id)||99));
+                const warriorsG3 = roster.filter(r=>String(r.class_name||'').toLowerCase()==='warrior' && Number(r.party_id)===3)
+                    .sort((a,b)=> (Number(a.slot_id)||99)-(Number(b.slot_id)||99));
+                if (warriorsG2[0]) toAdd.push(makeEntry(warriorsG2[0], crate, 'Target Dummy #1'));
+                if (warriorsG2[1]) toAdd.push(makeEntry(warriorsG2[1], crate, 'Target Dummy #2'));
+                if (warriorsG2[2]) toAdd.push(makeEntry(warriorsG2[2], crate, 'Target Dummy #3'));
+                if (warriorsG3[0]) toAdd.push(makeEntry(warriorsG3[0], crate, 'Target Dummy #4'));
+                if (warriorsG3[1]) toAdd.push(makeEntry(warriorsG3[1], crate, 'Target Dummy #5'));
+                if (warriorsG3[2]) toAdd.push(makeEntry(warriorsG3[2], crate, 'Target Dummy #6'));
+
+                const wing = (panel && panel.wing) || 'Military';
+                const boss = (panel && panel.boss) || 'Razuvious';
+                const dungeon = (panel && panel.dungeon) || 'Naxxramas';
+                payloadWingPanels.push({ dungeon, wing, boss, strategy_text: (panel && panel.strategy_text) || '', image_url: (panel && panel.image_url) || '', video_url: (panel && panel.video_url) || '', entries: toAdd });
+            } catch {}
+
+            // Military: Gothik the Harvester
+            try {
+                const panel = byWingBoss('military', 'goth');
+                const toAdd = [];
+                const skull    = findByMarkerFromMain('skull');
+                const cross    = findByMarkerFromMain('cross');
+                const square   = findByMarkerFromMain('square');
+                const moon     = findByMarkerFromMain('moon');
+                const triangle = findByMarkerFromMain('triangle');
+                const diamond  = findByMarkerFromMain('diamond');
+                if (skull)    toAdd.push(makeEntry(skull,    icons.skull,    'Tank the middle platform'));
+                if (cross)    toAdd.push(makeEntry(cross,    icons.cross,    'Tank the left platform'));
+                if (square)   toAdd.push(makeEntry(square,   icons.square,   'Tank the right platform'));
+                if (moon)     toAdd.push(makeEntry(moon,     icons.moon,     'Tank the front pile'));
+                if (triangle) toAdd.push(makeEntry(triangle, icons.triangle, 'Tank the left pile'));
+                if (diamond)  toAdd.push(makeEntry(diamond,  icons.diamond,  'Tank the back right pile'));
+
+                roster.filter(r=>['warlock','hunter'].includes(String(r.class_name||'').toLowerCase()))
+                    .forEach(r=> toAdd.push(makeEntry(r, null, 'Place your Pet / Void Walker between the platforms to absorbe charge.')));
+
+                const isHealer = (r) => ['shaman','priest','druid'].includes(String(r.class_name||'').toLowerCase());
+                const inGroups = (r, groups) => groups.includes(Number(r.party_id));
+                const undeadHealers = roster.filter(r=>isHealer(r) && inGroups(r, [2,3,4,5]));
+                const humanHealers  = roster.filter(r=>isHealer(r) && inGroups(r, [1,6,7]));
+                undeadHealers.forEach(r=> toAdd.push(makeEntry(r, icons.star,   'Go heal Undead side.')));
+                humanHealers.forEach(r=> toAdd.push(makeEntry(r, icons.circle, 'Go heal Human side.')));
+                let undeadCount = undeadHealers.length;
+                let humanCount = humanHealers.length;
+                const group8Healers = roster.filter(r=>isHealer(r) && Number(r.party_id)===8);
+                group8Healers.forEach(r => {
+                    if (undeadCount <= humanCount) { toAdd.push(makeEntry(r, icons.star,   'Go heal Undead side.')); undeadCount += 1; }
+                    else {                           toAdd.push(makeEntry(r, icons.circle, 'Go heal Human side.'));  humanCount += 1; }
+                });
+
+                const wing = (panel && panel.wing) || 'Military';
+                const boss = (panel && panel.boss) || 'Gothik';
+                const dungeon = (panel && panel.dungeon) || 'Naxxramas';
+                payloadWingPanels.push({ dungeon, wing, boss, strategy_text: (panel && panel.strategy_text) || '', image_url: (panel && panel.image_url) || '', video_url: (panel && panel.video_url) || '', entries: toAdd });
+            } catch {}
+
+            // Military: The Four Horsemen
+            try {
+                const panel = byWingBoss('military', 'horse');
+                const toAdd = [];
+                const isHealer = (r) => ['shaman','priest','druid'].includes(String(r.class_name||'').toLowerCase());
+                const sortByGS = (a,b) => ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99));
+                const shamans = roster.filter(r=>isHealer(r) && String(r.class_name||'').toLowerCase()==='shaman').sort(sortByGS);
+                const priests = roster.filter(r=>isHealer(r) && String(r.class_name||'').toLowerCase()==='priest').sort(sortByGS);
+                const druids  = roster.filter(r=>isHealer(r) && String(r.class_name||'').toLowerCase()==='druid').sort(sortByGS);
+                const ordered = [...shamans, ...priests, ...druids].slice(0,12);
+                const raidOrder = [
+                    { name: 'skull', icon: icons.skull },
+                    { name: 'cross', icon: icons.cross },
+                    { name: 'square', icon: icons.square },
+                    { name: 'moon',  icon: icons.moon }
+                ];
+                for (let i=0;i<ordered.length;i++) {
+                    const block = Math.floor(i/3);
+                    const posInBlock = (i%3)+1;
+                    const raid = raidOrder[block] || raidOrder[raidOrder.length-1];
+                    const r = ordered[i];
+                    const text = `Start on ${raid.name} rotate on ${posInBlock}`;
+                    toAdd.push(makeEntry(r, raid.icon, text));
+                }
+                // Build Warriors / Marks (tanking rotation grid) from Main -> Tanking panel
+                const getTankByIndex = (idx) => {
+                    const en = tankMainPanel?.entries?.[idx-1];
+                    if (!en || !en.character_name) return null;
+                    return roster.find(r => String(r.character_name).toLowerCase() === String(en.character_name).toLowerCase()) || { character_name: en.character_name, class_name: en.class_name };
+                };
+                const indexMap = [null, 3, 2, 1, 4, 5, 6, 7, 8];
+                const horsemenTanks = {};
+                for (let row=1; row<=8; row++) {
+                    const srcIdx = indexMap[row] ?? row;
+                    const t = getTankByIndex(srcIdx);
+                    const name = t ? t.character_name : null;
+                    horsemenTanks[row] = [name];
+                    // also persist as hidden entries so UI can derive if object is missing
+                    toAdd.push({ character_name: name || '', class_name: null, spec_name: null, spec_emote: null, marker_icon_url: null, assignment: `__HGRID__:${row}:1`, accept_status: null });
+                }
+
+                const wing = (panel && panel.wing) || 'Military';
+                const boss = (panel && panel.boss) || 'The Four Horsemen';
+                const dungeon = (panel && panel.dungeon) || 'Naxxramas';
+                payloadWingPanels.push({ dungeon, wing, boss, strategy_text: (panel && panel.strategy_text) || '', image_url: (panel && panel.image_url) || '', video_url: (panel && panel.video_url) || '', entries: toAdd, horsemen_tanks: horsemenTanks });
+            } catch {}
+
+            // Plague: Noth The Plaguebringer
+            try {
+                const panel = byWingBoss('plague', 'noth');
+                const toAdd = [];
+                const getTankByIndex = (idx) => {
+                    const en = tankMainPanel?.entries?.[idx-1];
+                    if (!en || !en.character_name) return null;
+                    return roster.find(r => String(r.character_name).toLowerCase() === String(en.character_name).toLowerCase()) || { character_name: en.character_name, class_name: en.class_name };
+                };
+                const t1 = getTankByIndex(1);
+                const t2 = getTankByIndex(2);
+                const t3 = getTankByIndex(3);
+                const t4 = getTankByIndex(4);
+                if (t1) toAdd.push(makeEntry(t1, icons.skull,  'Tank the boss'));
+                if (t2) toAdd.push(makeEntry(t2, null,        'Save Deathwish for the blink and pick up boss after blink and agro reset.'));
+                if (t3) toAdd.push(makeEntry(t3, null,        'Pick up adds'));
+                if (t4) toAdd.push(makeEntry(t4, null,        'Pick up adds'));
+                const wing = (panel && panel.wing) || 'Plague';
+                const boss = (panel && panel.boss) || 'Noth The Plaguebringer';
+                const dungeon = (panel && panel.dungeon) || 'Naxxramas';
+                payloadWingPanels.push({ dungeon, wing, boss, strategy_text: (panel && panel.strategy_text) || '', image_url: (panel && panel.image_url) || '', video_url: (panel && panel.video_url) || '', entries: toAdd });
+            } catch {}
+
+            // Plague: Heigan The Unclean
+            try {
+                const panel = byWingBoss('plague', 'heig');
+                const toAdd = [];
+                const getTankByIndex = (idx) => {
+                    const en = tankMainPanel?.entries?.[idx-1];
+                    if (!en || !en.character_name) return null;
+                    return roster.find(r => String(r.character_name).toLowerCase() === String(en.character_name).toLowerCase()) || { character_name: en.character_name, class_name: en.class_name };
+                };
+                const t1 = getTankByIndex(1);
+                if (t1) toAdd.push(makeEntry(t1, icons.skull, 'Tank the boss'));
+                const priests = roster.filter(r => String(r.class_name||'').toLowerCase()==='priest')
+                    .sort((a,b)=> ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99)));
+                if (priests[0]) toAdd.push(makeEntry(priests[0], null, 'Instantly remove disease from the tank.'));
+                const wing = (panel && panel.wing) || 'Plague';
+                const boss = (panel && panel.boss) || 'Heigan The Unclean';
+                const dungeon = (panel && panel.dungeon) || 'Naxxramas';
+                payloadWingPanels.push({ dungeon, wing, boss, strategy_text: (panel && panel.strategy_text) || '', image_url: (panel && panel.image_url) || '', video_url: (panel && panel.video_url) || '', entries: toAdd });
+            } catch {}
+
+            // Plague: Loatheb (includes Spore Groups grid)
+            try {
+                const panel = byWingBoss('plague', 'loatheb');
+                const toAdd = [];
+                // Tanks
+                const getTankByIndex = (idx) => {
+                    const en = tankMainPanel?.entries?.[idx-1];
+                    if (!en || !en.character_name) return null;
+                    return roster.find(r => String(r.character_name).toLowerCase() === String(en.character_name).toLowerCase()) || { character_name: en.character_name, class_name: en.class_name };
+                };
+                const t1 = getTankByIndex(1);
+                const t2 = getTankByIndex(2);
+                if (t1) toAdd.push(makeEntry(t1, icons.skull, "Tank the boss. (turn it 90 degree to it's left and move it a few steps back)"));
+                if (t2) toAdd.push(makeEntry(t2, icons.skull, 'Backup tank. Get to 2nd on threat and put on a shield.'));
+                // Healers alphabetical
+                const healers = roster.filter(r=>['shaman','druid','priest'].includes(String(r.class_name||'').toLowerCase()))
+                    .sort((a,b)=> String(a.character_name||'').localeCompare(String(b.character_name||'')));
+                healers.forEach(r => toAdd.push(makeEntry(r, null, "Heal the tank when it's your turn to heal.")));
+
+                // Spore Groups auto-fill
+                // Exclude 4 tanks from Main->Tanking
+                const pickName = (idx) => {
+                    const en = tankMainPanel?.entries?.[idx-1];
+                    return en?.character_name ? String(en.character_name) : null;
+                };
+                const tankIds = [pickName(1), pickName(2), pickName(3), pickName(4)].filter(Boolean);
+                const mages = roster.filter(r=>String(r.class_name||'').toLowerCase()==='mage');
+                const warriorsAll = roster.filter(r=>String(r.class_name||'').toLowerCase()==='warrior');
+                const warriorNotTanks = warriorsAll.filter(r=>!tankIds.some(n=>String(n).toLowerCase()===String(r.character_name||'').toLowerCase()))
+                    .sort((a,b)=> ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99)));
+                const rogues = roster.filter(r=>String(r.class_name||'').toLowerCase()==='rogue');
+                const warlocks = roster.filter(r=>String(r.class_name||'').toLowerCase()==='warlock');
+                const hunters = roster.filter(r=>String(r.class_name||'').toLowerCase()==='hunter');
+                const tanksFinal = tankIds.map(name => roster.find(r=>String(r.character_name).toLowerCase()===String(name).toLowerCase()) || { character_name: name });
+                const ordered = [...mages, ...warriorNotTanks, ...rogues, ...warlocks, ...hunters, ...tanksFinal];
+                const sporeGroups = { 1:[],2:[],3:[],4:[],5:[],6:[] };
+                let ptr = 0;
+                for (let g=1; g<=6; g++) {
+                    for (let s=1; s<=5; s++) {
+                        const r = ordered[ptr++];
+                        const name = r ? r.character_name : null;
+                        sporeGroups[g][s-1] = name || null;
+                        // Hidden entry to persist grid state too
+                        toAdd.push({ character_name: name || '', class_name: null, spec_name: null, spec_emote: null, marker_icon_url: null, assignment: `__SPORE__:${g}:${s}`, accept_status: null });
+                    }
+                }
+
+                const wing = (panel && panel.wing) || 'Plague';
+                const boss = (panel && panel.boss) || 'Loatheb';
+                const dungeon = (panel && panel.dungeon) || 'Naxxramas';
+                payloadWingPanels.push({ dungeon, wing, boss, strategy_text: (panel && panel.strategy_text) || '', image_url: (panel && panel.image_url) || '', video_url: (panel && panel.video_url) || '', entries: toAdd, spore_groups: sporeGroups });
+            } catch {}
+
+            // Abomination: Patchwerk
+            try {
+                const panel = byWingBoss('abomination', 'patch');
+                const toAdd = [];
+                const findByMarker = (markerSubstr) => findByMarkerFromMain(markerSubstr);
+                const t1 = findByMarker('skull');
+                const t2 = findByMarker('cross');
+                const t3 = findByMarker('square');
+                if (t1) toAdd.push(makeEntry(t1, icons.circle,  'Tank Boss'));
+                if (t2) toAdd.push(makeEntry(t2, icons.star,    'Absorb hateful strike'));
+                if (t3) toAdd.push(makeEntry(t3, icons.diamond, 'Absorb hateful strike'));
+                const isHealer = (r) => ['shaman','priest','druid'].includes(String(r.class_name||'').toLowerCase());
+                const healers = roster.filter(isHealer).sort((a,b)=> String(a.character_name||'').localeCompare(String(b.character_name||'')));
+                const tankTargets = [ t1?.character_name || '', t2?.character_name || '', t3?.character_name || '' ];
+                const tankIcons = [ icons.circle, icons.star, icons.diamond ];
+                for (let i=0; i<healers.length; i++) {
+                    if (i < 12 && (t1 || t2 || t3)) {
+                        const block = Math.floor(i/4);
+                        const avail = tankTargets.filter(Boolean).length || 0;
+                        const tankIdx = avail ? Math.min(block, avail-1) : 0;
+                        const targetName = tankTargets[tankIdx] || '';
+                        if (targetName) toAdd.push(makeEntry(healers[i], tankIcons[tankIdx] || null, `Heal ${targetName}`));
+                        else toAdd.push(makeEntry(healers[i], null, 'FFA Heal tanks only'));
+                    } else {
+                        toAdd.push(makeEntry(healers[i], null, 'FFA Heal tanks only'));
+                    }
+                }
+                const wing = (panel && panel.wing) || 'Abomination';
+                const boss = (panel && panel.boss) || 'Patchwerk';
+                const dungeon = (panel && panel.dungeon) || 'Naxxramas';
+                payloadWingPanels.push({ dungeon, wing, boss, strategy_text: (panel && panel.strategy_text) || '', image_url: (panel && panel.image_url) || '', video_url: (panel && panel.video_url) || '', entries: toAdd });
+            } catch {}
+
+            // Abomination: Grobbulus
+            try {
+                const panel = byWingBoss('abomination', 'grobb');
+                const toAdd = [];
+                const t1 = findByMarkerFromMain('skull');
+                const t2 = findByMarkerFromMain('cross');
+                const t3 = findByMarkerFromMain('square');
+                if (t1) toAdd.push(makeEntry(t1, icons.skull, 'Tank Boss'));
+                if (t2) toAdd.push(makeEntry(t2, null,        'Tank slimes'));
+                if (t3) toAdd.push(makeEntry(t3, null,        'Tank slimes (backup)'));
+                const priests = roster.filter(r=>String(r.class_name||'').toLowerCase()==='priest')
+                    .sort((a,b)=> ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99)));
+                if (priests[0]) toAdd.push(makeEntry(priests[0], null, 'Dispel when players is at the edge.'));
+                const wing = (panel && panel.wing) || 'Abomination';
+                const boss = (panel && panel.boss) || 'Grobbulus';
+                const dungeon = (panel && panel.dungeon) || 'Naxxramas';
+                payloadWingPanels.push({ dungeon, wing, boss, strategy_text: (panel && panel.strategy_text) || '', image_url: (panel && panel.image_url) || '', video_url: (panel && panel.video_url) || '', entries: toAdd });
+            } catch {}
+
+            // Abomination: Gluth
+            try {
+                const panel = byWingBoss('abomination', 'gluth');
+                const toAdd = [];
+                const t1 = findByMarkerFromMain('skull');
+                const t2 = findByMarkerFromMain('cross');
+                const t3 = findByMarkerFromMain('square');
+                if (t1) toAdd.push(makeEntry(t1, icons.skull, 'Tank Boss'));
+                if (t2) toAdd.push(makeEntry(t2, icons.skull, 'Backup Tank Boss (in casee main tank fails fear dodge)'));
+                if (t3) toAdd.push(makeEntry(t3, icons.death, 'Piercing Howl Tank adds'));
+                const wing = (panel && panel.wing) || 'Abomination';
+                const boss = (panel && panel.boss) || 'Gluth';
+                const dungeon = (panel && panel.dungeon) || 'Naxxramas';
+                payloadWingPanels.push({ dungeon, wing, boss, strategy_text: (panel && panel.strategy_text) || '', image_url: (panel && panel.image_url) || '', video_url: (panel && panel.video_url) || '', entries: toAdd });
+            } catch {}
+
+            // Abomination: Thaddius
+            try {
+                const panel = byWingBoss('abomination', 'thadd');
+                const toAdd = [];
+                const findByMarker = (markerSubstr) => findByMarkerFromMain(markerSubstr);
+                const id1 = findByMarker('skull');
+                const id2 = findByMarker('cross');
+                const id3 = findByMarker('square');
+                const id4 = findByMarker('moon');
+                if (id1) toAdd.push(makeEntry(id1, icons.skull, 'Tank Stalagg (Right Side)'));
+                if (id3) toAdd.push(makeEntry(id3, icons.skull, 'Tank Stalagg (Right Side)'));
+                if (id2) toAdd.push(makeEntry(id2, icons.cross, 'Tank Feugen (Left Side)'));
+                if (id4) toAdd.push(makeEntry(id4, icons.cross, 'Tank Feugen (Left Side)'));
+                if (id1) toAdd.push(makeEntry(id1, icons.skull, 'Tank Boss'));
+
+                const healerClasses = new Set(['shaman','priest','druid']);
+                const g8HealersAll = roster
+                    .filter(r => Number(r.party_id) === 8 && healerClasses.has(String(r.class_name||'').toLowerCase()))
+                    .sort((a,b)=> (Number(a.slot_id)||99) - (Number(b.slot_id)||99));
+                const g8Healers = g8HealersAll.slice(0,5);
+                if (g8Healers.length > 0) {
+                    const classToPlayers = new Map();
+                    for (const r of g8Healers) {
+                        const cls = String(r.class_name||'').toLowerCase();
+                        if (!classToPlayers.has(cls)) classToPlayers.set(cls, []);
+                        classToPlayers.get(cls).push(r);
+                    }
+                    const left = [];
+                    const right = [];
+                    const placed = new Set();
+                    for (const [cls, arr] of classToPlayers.entries()) {
+                        if (arr.length >= 2) {
+                            const a = arr[0]; const b = arr[1];
+                            left.push(a);  placed.add(a.character_name);
+                            right.push(b); placed.add(b.character_name);
+                        }
+                    }
+                    const leftovers = g8Healers.filter(r => !placed.has(r.character_name));
+                    for (const r of leftovers) {
+                        if (left.length < right.length) left.push(r); else right.push(r);
+                    }
+                    for (const r of left)  toAdd.push(makeEntry(r, null, 'Go left side'));
+                    for (const r of right) toAdd.push(makeEntry(r, null, 'Go right side'));
+                }
+
+                const wing = (panel && panel.wing) || 'Abomination';
+                const boss = (panel && panel.boss) || 'Thaddius';
+                const dungeon = (panel && panel.dungeon) || 'Naxxramas';
+                payloadWingPanels.push({ dungeon, wing, boss, strategy_text: (panel && panel.strategy_text) || '', image_url: (panel && panel.image_url) || '', video_url: (panel && panel.video_url) || '', entries: toAdd });
+            } catch {}
+
+            // Frostwyrm Lair: Sapphiron
+            try {
+                const panel = byWingBoss('frost', 'sapph');
+                const toAdd = [];
+                const t1 = findByMarkerFromMain('skull');
+                const t2 = findByMarkerFromMain('cross');
+                if (t1) toAdd.push(makeEntry(t1, icons.skull, 'Tank Boss'));
+                if (t2) toAdd.push(makeEntry(t2, icons.skull, 'Backup Tank Boss (Stay 2nd on threat)'));
+
+                const mages = roster.filter(r => String(r.class_name||'').toLowerCase()==='mage');
+                const leftCap = Math.floor(mages.length / 2);
+                const rightCap = mages.length - leftCap;
+                const mageLeft = mages.slice(0, leftCap);
+                const mageRight = mages.slice(leftCap, leftCap + rightCap);
+                mageLeft.forEach(m => toAdd.push(makeEntry(m, null, 'Decurse Tank + left')));
+                mageRight.forEach(m => toAdd.push(makeEntry(m, null, 'Decurse Tank + right')));
+
+                const shamans = roster.filter(r => String(r.class_name||'').toLowerCase()==='shaman');
+                const priests = roster.filter(r => String(r.class_name||'').toLowerCase()==='priest');
+                const druidsH = roster.filter(r => String(r.class_name||'').toLowerCase()==='druid');
+                const healers = [...shamans, ...priests, ...druidsH];
+                healers.forEach((r, i) => {
+                    let text = '';
+                    if (i === 0) text = 'Heal Tank + Group';
+                    else if (i <= 4) text = 'Heal Group';
+                    else if (i <= 7) text = 'Heal Group + Tank';
+                    else if (i <= 11) text = 'Heal Tank';
+                    else text = 'Heal Raid';
+                    toAdd.push(makeEntry(r, null, text));
+                });
+
+                const wing = (panel && panel.wing) || 'Frostwyrm_Lair';
+                const boss = (panel && panel.boss) || 'Sapphiron';
+                const dungeon = (panel && panel.dungeon) || 'Naxxramas';
+                payloadWingPanels.push({ dungeon, wing, boss, strategy_text: (panel && panel.strategy_text) || '', image_url: (panel && panel.image_url) || '', video_url: (panel && panel.video_url) || '', entries: toAdd });
+            } catch {}
+
+            // Frostwyrm Lair: Kel'Thuzad (includes Kel Groups grid)
+            try {
+                const panel = byWingBoss('frost', 'kel');
+                const toAdd = [];
+                const findByMarker = (markerSubstr) => findByMarkerFromMain(markerSubstr);
+                const id1 = findByMarker('skull');
+                const id2 = findByMarker('cross');
+                const id3 = findByMarker('square');
+                const id4 = findByMarker('moon');
+                if (id1) toAdd.push(makeEntry(id1, icons.skull, 'Tank Boss'));
+                if (id2) toAdd.push(makeEntry(id2, icons.skull, 'Tank Boss'));
+                if (id3) toAdd.push(makeEntry(id3, icons.skull, 'Tank Boss'));
+                if (id4) toAdd.push(makeEntry(id4, icons.skull, 'Tank Boss'));
+
+                // Build Kel groups: D gets 4 tanks in order; B gets all rogues; remaining warriors spread across A,B,C
+                const kelGroups = { 1: [], 2: [], 3: [], 4: [] };
+                kelGroups[4] = [id1?.character_name||null, id2?.character_name||null, id3?.character_name||null, id4?.character_name||null].filter(Boolean);
+                const rogues = roster.filter(r => String(r.class_name||'').toLowerCase()==='rogue');
+                const allWarriors = roster.filter(r => String(r.class_name||'').toLowerCase()==='warrior');
+                const tankNamesLower = [id1?.character_name, id2?.character_name, id3?.character_name, id4?.character_name]
+                    .filter(Boolean).map(n => String(n).toLowerCase());
+                const remainingWarriors = allWarriors.filter(r => !tankNamesLower.includes(String(r.character_name||'').toLowerCase()));
+                kelGroups[2] = rogues.map(r => r.character_name);
+                const counts = { 1: (kelGroups[1]||[]).length, 2: (kelGroups[2]||[]).length, 3: (kelGroups[3]||[]).length };
+                for (const w of remainingWarriors) {
+                    const order = [1,3,2];
+                    let best = 1;
+                    for (const g of order) { if (counts[g] < counts[best]) best = g; }
+                    if (!kelGroups[best]) kelGroups[best] = [];
+                    kelGroups[best].push(w.character_name);
+                    counts[best] += 1;
+                }
+                // Hidden entries for grid persistence
+                Object.entries(kelGroups).forEach(([group, arr]) => {
+                    (arr||[]).forEach((name, idx) => {
+                        if (!name) return;
+                        toAdd.push({ character_name: name, class_name: null, spec_name: null, spec_emote: null, marker_icon_url: null, assignment: `__KEL__:${group}:${idx+1}`, accept_status: null });
+                    });
+                });
+
+                // Priests: 3 lowest by group/slot with shackle text
+                const priests = roster.filter(r => String(r.class_name||'').toLowerCase()==='priest')
+                    .sort((a,b)=> ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99)))
+                    .slice(0,3);
+                const priestIcons = [icons.star, icons.moon, icons.cross];
+                const priestTexts = ['Shackle Left, middle, right.', 'Shackle Left, middle, right.', 'Shackle Left, middle, right.'];
+                priests.forEach((p, i) => { toAdd.push(makeEntry(p, priestIcons[i] || null, priestTexts[i])); });
+
+                // Shamans: 4 lowest by group/slot with mark-specific text
+                const shamans4 = roster.filter(r => String(r.class_name||'').toLowerCase()==='shaman')
+                    .sort((a,b)=> ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99)))
+                    .slice(0,4);
+                const shamanIcons = [icons.triangle, icons.diamond, icons.square, icons.circle];
+                const shamanMarks = ['Triangle','Diamond','Square','Circle'];
+                shamans4.forEach((s, i) => { toAdd.push(makeEntry(s, shamanIcons[i] || null, `NF+Chain Heal on ${shamanMarks[i] || 'Triangle'}`)); });
+
+                const wing = (panel && panel.wing) || 'Frostwyrm_Lair';
+                const boss = (panel && panel.boss) || "Kel'Thuzad";
+                const dungeon = (panel && panel.dungeon) || 'Naxxramas';
+                payloadWingPanels.push({ dungeon, wing, boss, strategy_text: (panel && panel.strategy_text) || '', image_url: (panel && panel.image_url) || '', video_url: (panel && panel.video_url) || '', entries: toAdd, kel_groups: kelGroups });
+            } catch {}
+
+            if (payloadWingPanels.length) {
+                saveRes = await fetch(`/api/assignments/${eventId}/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ panels: payloadWingPanels }) });
+                if (!saveRes.ok) {
+                    const err2 = await saveRes.json().catch(() => ({}));
+                    throw new Error(err2.message || 'Failed to save wing assignments');
+                }
+            }
+        }
+
+        showAlert('Auto assignments', 'All assignments has been done');
+    }
 
     function handleAddNewCharacter(targetPartyId, targetSlotId) {
         // Close any open dropdowns
