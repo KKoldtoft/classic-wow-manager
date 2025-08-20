@@ -32,8 +32,9 @@
       if (eventId) {
         const res = await fetch(`/api/events/${eventId}/channel-flags`);
         const data = await res.json();
-        if (data && data.success) {
-          isNax = !!data.isNax;
+        // Only override when the API explicitly knows the channel flags
+        if (data && data.success && typeof data.isNax === 'boolean' && data.channelId) {
+          isNax = data.isNax;
         }
       }
     } catch {}
