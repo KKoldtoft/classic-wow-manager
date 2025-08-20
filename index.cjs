@@ -12,6 +12,7 @@ const multer = require('multer');
 const fs = require('fs');
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const WebSocket = require('ws');
 
 // --- Warcraft Logs API (v2 GraphQL) Configuration ---
 const WCL_TOKEN_URL = 'https://www.warcraftlogs.com/oauth/token';
@@ -1336,6 +1337,11 @@ app.get('/livehost', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'livehost.html'));
 });
 
+// Simple Discord test page
+app.get('/discordtest', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'discordtest.html'));
+});
+
 
 // All API and authentication routes should come AFTER express.static AND specific HTML routes
 app.get('/auth/discord', (req, res, next) => {
@@ -1375,6 +1381,78 @@ app.get('/auth/discord/callback',
     res.redirect(destination);
   }
 );
+
+// --- Discord test API endpoints ---
+// Sends a DM saying "Hello world" to a hard-coded Discord user ID for testing
+app.post('/api/discord/test/dm', async (req, res) => {
+    try {
+        const botToken = process.env.DISCORD_BOT_TOKEN;
+        if (!botToken) {
+            return res.status(500).json({ ok: false, error: 'DISCORD_BOT_TOKEN not set' });
+        }
+
+        const targetUserId = '492023474437619732';
+        // 1) Create (or fetch) a DM channel with the user
+        const dmResponse = await fetch('https://discord.com/api/v10/users/@me/channels', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bot ${botToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ recipient_id: targetUserId })
+        });
+
+        if (!dmResponse.ok) {
+            const errText = await dmResponse.text();
+            return res.status(dmResponse.status).json({ ok: false, step: 'create_dm', error: errText });
+        }
+
+        const dmChannel = await dmResponse.json();
+        const channelId = dmChannel.id;
+
+        // 2) Send the message
+        const msgResponse = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bot ${botToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ content: 'Hello world' })
+        });
+
+        if (!msgResponse.ok) {
+            const errText = await msgResponse.text();
+            return res.status(msgResponse.status).json({ ok: false, step: 'send_message', error: errText });
+        }
+
+        return res.json({ ok: true });
+    } catch (err) {
+        return res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
+    }
+});
+
+// Posts "Hello world" to a specific webhook URL for testing
+app.post('/api/discord/test/webhook', async (req, res) => {
+    try {
+        const webhookUrl = 'https://discord.com/api/webhooks/1407621923462189107/mucb9o6-PDBTB3A-m0KNGJ-FBeeCKCpoxPkSqSlhWKpGDpNCGgW8KoEpRNCr569649zX';
+        const response = await fetch(webhookUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ content: 'Hello world' })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            return res.status(response.status).json({ ok: false, error: errText });
+        }
+
+        return res.json({ ok: true });
+    } catch (err) {
+        return res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
+    }
+});
 
 app.get('/auth/logout', (req, res, next) => {
   req.logout((err) => {
@@ -13920,6 +13998,114 @@ app.post('/api/fix-archive-url/:eventId', async (req, res) => {
     }
 });
 
+// API to read current members in a given voice channel
+app.get('/api/discord/voice/:channelId', (req, res) => {
+    const { channelId } = req.params;
+    const users = voiceStateMap.get(channelId);
+    res.json({ ok: true, channelId, userIds: users ? Array.from(users) : [] });
+});
+
+// Debug endpoint to inspect all tracked channels
+app.get('/api/discord/voice-debug', (req, res) => {
+    const all = {};
+    for (const [channelId, users] of voiceStateMap.entries()) {
+        all[channelId] = Array.from(users);
+    }
+    res.json({ ok: true, channels: all });
+});
+
+// Resolve Discord usernames for a list of user IDs (guild-scoped)
+app.post('/api/discord/resolve-users', async (req, res) => {
+    try {
+        const ids = Array.isArray(req.body?.userIds) ? req.body.userIds.map(String) : [];
+        if (!ids.length) return res.json({ ok: true, users: {} });
+        if (!discordBotToken || !discordGuildId) {
+            return res.status(500).json({ ok: false, error: 'Discord bot not configured' });
+        }
+        const results = {};
+        for (const id of ids) {
+            try {
+                const r = await fetch(`https://discord.com/api/v10/guilds/${discordGuildId}/members/${id}`, {
+                    headers: { 'Authorization': `Bot ${discordBotToken}` }
+                });
+                if (!r.ok) {
+                    results[id] = { id, displayName: null, avatarUrl: null };
+                    continue;
+                }
+                const m = await r.json();
+                const user = m.user || {};
+                const displayName = m.nick || user.global_name || user.username || id;
+                // Build avatar URL: prefer guild profile avatar, then user avatar, else default
+                let avatarUrl = null;
+                const buildCdn = (hash, base) => {
+                    if (!hash) return null;
+                    const isGif = String(hash).startsWith('a_');
+                    const ext = isGif ? 'gif' : 'png';
+                    return `${base}.${ext}?size=64`;
+                };
+                if (m.avatar) {
+                    // Guild member avatar
+                    avatarUrl = buildCdn(m.avatar, `https://cdn.discordapp.com/guilds/${discordGuildId}/users/${id}/avatars/${m.avatar}`);
+                }
+                if (!avatarUrl && user.avatar) {
+                    avatarUrl = buildCdn(user.avatar, `https://cdn.discordapp.com/avatars/${id}/${user.avatar}`);
+                }
+                if (!avatarUrl) {
+                    avatarUrl = 'https://cdn.discordapp.com/embed/avatars/0.png';
+                }
+                results[id] = { id, displayName, avatarUrl };
+            } catch (_) {
+                results[id] = { id, displayName: null, avatarUrl: null };
+            }
+        }
+        res.json({ ok: true, users: results });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) });
+    }
+});
+
+// Batch fetch characters by Discord IDs
+app.post('/api/players/by-discord-ids', async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+    if (!ids.length) return res.json({ ok: true, map: {} });
+    let client;
+    try {
+        client = await pool.connect();
+        const q = `SELECT discord_id, character_name, class FROM players WHERE discord_id = ANY($1::text[]) ORDER BY character_name`;
+        const r = await client.query(q, [ids]);
+        const map = {};
+        for (const row of r.rows) {
+            if (!map[row.discord_id]) map[row.discord_id] = [];
+            map[row.discord_id].push({ character_name: row.character_name, class: row.class });
+        }
+        res.json({ ok: true, map });
+    } catch (err) {
+        console.error('Error fetching characters by IDs:', err);
+        res.status(500).json({ ok: false, error: err?.message || String(err) });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Resolve channel name by ID
+app.get('/api/discord/channel/:channelId', async (req, res) => {
+    try {
+        const { channelId } = req.params;
+        if (!discordBotToken) return res.status(500).json({ ok: false, error: 'Bot token not configured' });
+        const r = await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
+            headers: { 'Authorization': `Bot ${discordBotToken}` }
+        });
+        if (!r.ok) {
+            const text = await r.text();
+            return res.status(r.status).json({ ok: false, error: text });
+        }
+        const ch = await r.json();
+        return res.json({ ok: true, id: ch.id, name: ch.name || null });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) });
+    }
+});
+
 // This route will handle both the root path ('/') AND any other unmatched paths,
 // serving events.html. It MUST be the LAST route definition in your application.
 // BUT exclude API routes to avoid interfering with API endpoints.
@@ -13971,4 +14157,181 @@ process.on('SIGINT', () => {
     console.log('Database pool has ended.');
     process.exit(0);
   });
+});
+
+// --- Discord Gateway: Minimal Voice State Monitor ---
+const discordGatewayUrl = 'wss://gateway.discord.gg/?v=10&encoding=json';
+const discordBotToken = process.env.DISCORD_BOT_TOKEN;
+const discordGuildId = process.env.DISCORD_GUILD_ID;
+
+// voiceChannelId -> Map<userId, state>
+// state = { self_mute, self_deaf, mute, deaf, self_stream, self_video, suppress }
+const voiceStateMap = new Map();
+
+let ws;
+let heartbeatIntervalMs = null;
+let heartbeatTimer = null;
+let lastSeq = null;
+
+function startDiscordGateway() {
+    if (!discordBotToken || !discordGuildId) {
+        console.log('⚠️ Discord Gateway disabled (missing DISCORD_BOT_TOKEN or DISCORD_GUILD_ID)');
+        return;
+    }
+
+    function send(op, d) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ op, d, s: null, t: null }));
+        }
+    }
+
+    function identify() {
+        send(2, {
+            token: discordBotToken,
+            intents: (1 << 0) /* GUILDS */ | (1 << 7) /* GUILD_VOICE_STATES */,
+            properties: {
+                os: 'linux', browser: 'classic-wow-manager', device: 'classic-wow-manager'
+            }
+        });
+    }
+
+    function setupHeartbeat(interval) {
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        heartbeatIntervalMs = interval;
+        heartbeatTimer = setInterval(() => {
+            send(1, lastSeq);
+        }, heartbeatIntervalMs);
+    }
+
+    function handleDispatch(t, d, s) {
+        lastSeq = s;
+        switch (t) {
+            case 'READY':
+                console.log('✅ Discord Gateway READY');
+                // Reset state on READY
+                voiceStateMap.clear();
+                break;
+            case 'GUILD_CREATE': {
+                // Seed voice states on initial guild create
+                if (d.id === discordGuildId && Array.isArray(d.voice_states)) {
+                    console.log(`📥 GUILD_CREATE for guild ${d.id}, seeding ${d.voice_states.length} voice states`);
+                    for (const vs of d.voice_states) {
+                        const userId = vs.user_id;
+                        const channelId = vs.channel_id;
+                        if (!channelId) continue;
+                        if (!voiceStateMap.has(channelId)) voiceStateMap.set(channelId, new Map());
+                        voiceStateMap.get(channelId).set(userId, {
+                            self_mute: !!vs.self_mute,
+                            self_deaf: !!vs.self_deaf,
+                            mute: !!vs.mute,
+                            deaf: !!vs.deaf,
+                            self_stream: !!vs.self_stream,
+                            self_video: !!vs.self_video,
+                            suppress: !!vs.suppress
+                        });
+                    }
+                    console.log('📊 Seeded channels:', Array.from(voiceStateMap.keys()));
+                }
+                break;
+            }
+            case 'VOICE_STATE_UPDATE': {
+                const userId = d.user_id;
+                const channelId = d.channel_id; // can be null
+
+                // Remove user from all channels in our map
+                for (const [vcId, users] of voiceStateMap.entries()) {
+                    if (users.has(userId)) users.delete(userId);
+                    if (users.size === 0) voiceStateMap.delete(vcId);
+                }
+
+                // Add to new channel if present and in our guild
+                if (channelId && d.guild_id === discordGuildId) {
+                    if (!voiceStateMap.has(channelId)) voiceStateMap.set(channelId, new Map());
+                    voiceStateMap.get(channelId).set(userId, {
+                        self_mute: !!d.self_mute,
+                        self_deaf: !!d.self_deaf,
+                        mute: !!d.mute,
+                        deaf: !!d.deaf,
+                        self_stream: !!d.self_stream,
+                        self_video: !!d.self_video,
+                        suppress: !!d.suppress
+                    });
+                }
+                if (d.guild_id === discordGuildId) {
+                    console.log(`🔄 VOICE_STATE_UPDATE user ${userId} -> channel ${channelId || 'left all'}`);
+                }
+                break;
+            }
+            case 'VOICE_SERVER_UPDATE':
+                // Not needed for presence listing
+                break;
+            case 'GUILD_DELETE':
+                if (d.id === discordGuildId) {
+                    voiceStateMap.clear();
+                }
+                break;
+        }
+    }
+
+    function connect() {
+        console.log('🌐 Connecting to Discord Gateway...');
+        ws = new WebSocket(discordGatewayUrl);
+        ws.on('open', () => { console.log('🌐 Discord WS open'); });
+        ws.on('message', (data) => {
+            try {
+                const payload = JSON.parse(data.toString());
+                const { op, d, s, t } = payload;
+                switch (op) {
+                    case 10: // Hello
+                        console.log('👋 Discord Hello received; starting heartbeat');
+                        setupHeartbeat(d.heartbeat_interval);
+                        identify();
+                        break;
+                    case 0: // Dispatch
+                        handleDispatch(t, d, s);
+                        break;
+                    case 11: // Heartbeat ACK
+                        // no-op
+                        break;
+                    case 7: // Reconnect
+                        ws.close();
+                        break;
+                }
+            } catch (e) {
+                console.error('Discord WS message error:', e);
+            }
+        });
+        ws.on('close', () => {
+            console.log('🔌 Discord WS closed; retrying in 5s');
+            if (heartbeatTimer) clearInterval(heartbeatTimer);
+            setTimeout(connect, 5000);
+        });
+        ws.on('error', (err) => {
+            console.error('Discord WS error:', err);
+        });
+    }
+
+    connect();
+}
+
+startDiscordGateway();
+
+// API to read current members in a given voice channel
+app.get('/api/discord/voice/:channelId', (req, res) => {
+    const { channelId } = req.params;
+    const users = voiceStateMap.get(channelId);
+    if (!users) return res.json({ ok: true, channelId, userIds: [], states: {} });
+    const userIds = Array.from(users.keys());
+    const states = {};
+    for (const [uid, st] of users.entries()) states[uid] = st;
+    res.json({ ok: true, channelId, userIds, states });
+});
+
+// Debug endpoint to inspect all tracked channels
+app.get('/api/discord/voice-debug', (req, res) => {
+    const all = {};
+    for (const [channelId, users] of voiceStateMap.entries()) {
+        all[channelId] = Array.from(users);
+    }
+    res.json({ ok: true, channels: all });
 });
