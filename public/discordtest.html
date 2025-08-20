@@ -434,13 +434,13 @@
 <body>
     <div class="container">
         <h1>Discord Test</h1>
-        <p>Quick test actions:</p>
-        <div style="margin: 16px 0;">
+        <p style="display:none;">Quick test actions:</p>
+        <div id="dev-controls" style="margin: 16px 0; display:none;">
             <button onclick="sendTestDM()">Send DM to 492023474437619732</button>
             <button onclick="sendTestWebhook()">Post "Hello world" to webhook</button>
         </div>
-        <h3>Result</h3>
-        <pre id="status">Idle</pre>
+        <h3 style="display:none;">Result</h3>
+        <pre id="status" style="display:none;">Idle</pre>
 
         <h2 id="voice-title">Voice Monitor</h2>
         <div class="controls">

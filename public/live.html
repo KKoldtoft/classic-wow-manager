@@ -75,9 +75,113 @@
         }
         .death-card .title { font-weight: bold; margin-bottom: 6px; display: flex; justify-content: space-between; }
         .death-card .mini-stream { max-height: 180px; overflow-y: auto; overflow-x: auto; background: #0b0b0b; border-radius: 4px; padding: 6px; font-size: 12px; }
+
+        /* Voice monitor styles (scoped) */
+        .vm-list { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 8px; }
+        .vm-user { background: #333; border: 1px solid #000; border-radius: 12px; padding: 10px 12px; display: flex; gap: 12px; align-items: center; }
+        .vm-avatar { width: 60px; height: 60px; border-radius: 8px; flex: 0 0 60px; background: #222; border: 1px solid #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        .vm-avatar img { width: 60px; height: 60px; object-fit: cover; display: block; }
+        .vm-content { flex: 1 1 auto; background: #333; }
+        .vm-name { color: #fff; font-weight: 600; line-height: 1.2; }
+        .vm-chars { margin-top: 4px; }
+        .vm-badges { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+        .vm-badge { font-size: 12px; padding: 2px 6px; border-radius: 8px; background: #222; color: #ddd; border: 1px solid #000; }
+        .vm-badge.warn { background: #452; color: #f5c2c7; }
+        .vm-badge.info { background: #224; color: #c2d3f5; }
+        .vm-controls { margin: 8px 0 12px; display: flex; align-items: center; gap: 10px; }
+        .vm-switch { position: relative; display: inline-block; width: 46px; height: 24px; }
+        .vm-switch input { opacity: 0; width: 0; height: 0; }
+        .vm-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #555; transition: .2s; border-radius: 24px; border: 1px solid #000; }
+        .vm-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 2px; background-color: #ddd; transition: .2s; border-radius: 50%; }
+        .vm-switch input:checked + .vm-slider { background: #2d7; }
+        .vm-switch input:checked + .vm-slider:before { transform: translateX(20px); }
     </style>
     <script defer src="/top-bar.js"></script>
     <script defer src="/live.js"></script>
+    <script>
+    // Minimal voice monitor bootstrapping for /live, reusing server endpoints
+    window.addEventListener('DOMContentLoaded', () => {
+        const CHANNEL_ID = '1400574971994181783';
+        const vmTitle = document.getElementById('vm-title');
+        const vmStatus = document.getElementById('vm-status');
+        const vmList = document.getElementById('vm-list');
+        const vmUnmatched = document.getElementById('vm-unmatched');
+        const vmMissing = document.getElementById('vm-missing');
+        const simpleToggle = document.getElementById('vm-simple-names');
+        let simple = localStorage.getItem('discordtest_simple_names') === '1';
+        if (simpleToggle) { simpleToggle.checked = simple; simpleToggle.addEventListener('change', () => { simple = simpleToggle.checked; localStorage.setItem('discordtest_simple_names', simple ? '1' : '0'); }); }
+
+        function classToColor(cls) {
+            const c = String(cls || '').toLowerCase();
+            const colors = { warrior:'#C79C6E', paladin:'#F58CBA', hunter:'#ABD473', rogue:'#FFF569', priest:'#FFFFFF', deathknight:'#C41E3A', shaman:'#0070DE', mage:'#40C7EB', warlock:'#8787ED', monk:'#00FF96', druid:'#FF7D0A', demonhunter:'#A330C9' };
+            return colors[c] || '#AAAAAA';
+        }
+
+        async function refreshTitle() {
+            try { const r = await fetch(`/api/discord/channel/${CHANNEL_ID}`); const j = await r.json(); vmTitle.textContent = (j && j.ok && j.name) ? `Voice Monitor — ${j.name}` : `Voice Monitor — ${CHANNEL_ID}`; } catch { vmTitle.textContent = `Voice Monitor — ${CHANNEL_ID}`; }
+        }
+
+        function extractId(raw) { const s = String(raw ?? ''); const m = s.match(/\d{10,}/); return m ? m[0] : s; }
+
+        async function refresh() {
+            try {
+                const res = await fetch(`/api/discord/voice/${CHANNEL_ID}`);
+                const data = await res.json();
+                // Normalize ids and states
+                const inferred = {}; const ids = []; const raw = Array.isArray(data.userIds) ? data.userIds : [];
+                for (const item of raw) { if (Array.isArray(item)) { const id = extractId(item[0]); if (id) ids.push(id); if (item[1] && typeof item[1]==='object') inferred[id]=item[1]; } else if (item && typeof item==='object' && item.id) { const id = extractId(item.id); if (id) ids.push(id); } else if (typeof item==='string'||typeof item==='number'){ const id=extractId(item); if(id) ids.push(id);} }
+                const states = Object.assign({}, data.states||{}, inferred);
+                // Resolve names and chars
+                const nameMap = (await (await fetch('/api/discord/resolve-users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userIds:ids})})).json()).users || {};
+                const charsMap = (await (await fetch('/api/players/by-discord-ids',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})})).json()).map || {};
+                // Roster
+                const activeEventId = localStorage.getItem('activeEventSession');
+                let roster = []; if (activeEventId) { try { const rr = await fetch(`/api/assignments/${activeEventId}/roster`); const rj = await rr.json(); roster = Array.isArray(rj.roster)? rj.roster: []; } catch {}
+                }
+                const rosterNames = new Set(roster.map(r=>String(r.character_name||'').toLowerCase()));
+                const rosterByDiscord = new Map(); roster.forEach(r=>{ if(r.discord_user_id){ const k=String(r.discord_user_id); if(!rosterByDiscord.has(k)) rosterByDiscord.set(k,[]); rosterByDiscord.get(k).push(r);} });
+
+                // Render main list
+                vmList.innerHTML='';
+                ids.forEach(id=>{
+                    const info=nameMap[id]||{}; const display=info.displayName||id; const avatar=info.avatarUrl||'https://cdn.discordapp.com/embed/avatars/0.png';
+                    let chars=charsMap[id]||[]; if(!Array.isArray(chars)&&chars&&typeof chars==='object') chars=Object.values(chars);
+                    const matched = Array.isArray(chars)? chars.find(ch=> rosterNames.has(String(ch.character_name||'').toLowerCase())):null;
+                    const st = states[id] || {};
+                    const cantSpeak = !!(st.self_mute || st.mute);
+                    const cantHear = !!(st.self_deaf || st.deaf);
+                    const li=document.createElement('li'); li.className='vm-user';
+                    const av=document.createElement('div'); av.className='vm-avatar'; const img=document.createElement('img'); img.src=avatar; img.alt=''; av.appendChild(img);
+                    const ct=document.createElement('div'); ct.className='vm-content'; const nm=document.createElement('div'); nm.className='vm-name';
+                    if(simple && matched){ nm.innerHTML=`<b style="color:${classToColor(matched.class)}">${matched.character_name}</b>`; } else { nm.textContent=display; }
+                    ct.appendChild(nm);
+                    if(!simple || !matched){ if(Array.isArray(chars)&&chars.length){ const chd=document.createElement('div'); chd.className='vm-chars'; chars.forEach((ch,idx)=>{ const span=document.createElement('span'); span.style.color=classToColor(ch.class); const isMatch=rosterNames.has(String(ch.character_name||'').toLowerCase()); span.innerHTML=isMatch?`<u><b>${ch.character_name}</b></u>`:ch.character_name; chd.appendChild(span); if(idx<chars.length-1) chd.appendChild(document.createTextNode(', ')); }); ct.appendChild(chd);} }
+                    // badges
+                    const badgesDiv=document.createElement('div'); badgesDiv.className='vm-badges';
+                    if(cantSpeak){ const b=document.createElement('span'); b.className='vm-badge warn'; b.title='Muted (cannot speak)'; b.textContent='🎙️🚫'; badgesDiv.appendChild(b); }
+                    if(cantHear){ const b=document.createElement('span'); b.className='vm-badge warn'; b.title='Deafened (cannot hear)'; b.textContent='🎧🚫'; badgesDiv.appendChild(b); }
+                    if(st.self_stream){ const b=document.createElement('span'); b.className='vm-badge info'; b.title='Streaming'; b.textContent='📺'; badgesDiv.appendChild(b); }
+                    if(st.self_video){ const b=document.createElement('span'); b.className='vm-badge info'; b.title='Camera on'; b.textContent='🎥'; badgesDiv.appendChild(b); }
+                    if(st.suppress){ const b=document.createElement('span'); b.className='vm-badge info'; b.title='Stage audience / suppressed'; b.textContent='🎙️🚫'; badgesDiv.appendChild(b); }
+                    if(badgesDiv.childNodes.length) ct.appendChild(badgesDiv);
+                    li.appendChild(av); li.appendChild(ct); vmList.appendChild(li);
+                });
+                vmStatus.textContent = `Users in channel (${ids.length})`;
+
+                // Unmatched (on Discord but not in roster)
+                vmUnmatched.innerHTML=''; let uCount=0; ids.forEach(id=>{ const matches=rosterByDiscord.get(id)||[]; if(matches.length===0){ uCount++; const info=nameMap[id]||{}; const avatar=info.avatarUrl||'https://cdn.discordapp.com/embed/avatars/0.png'; const li=document.createElement('li'); li.className='vm-user'; const av=document.createElement('div'); av.className='vm-avatar'; const img=document.createElement('img'); img.src=avatar; av.appendChild(img); const ct=document.createElement('div'); ct.className='vm-content'; const nm=document.createElement('div'); nm.className='vm-name'; nm.textContent=info.displayName||id; ct.appendChild(nm); const hint=document.createElement('div'); hint.style.color='#bbb'; hint.textContent='No roster match'; ct.appendChild(hint); li.appendChild(av); li.appendChild(ct); vmUnmatched.appendChild(li); } });
+                document.getElementById('vm-unmatched-count').textContent=String(uCount);
+
+                // Missing (in roster but not on Discord)
+                vmMissing.innerHTML=''; let mCount=0; const presentSet=new Set(ids);
+                roster.forEach(r=>{ const did=r.discord_user_id?String(r.discord_user_id):null; const inVoice = did? presentSet.has(did):false; if(!inVoice){ mCount++; const li=document.createElement('li'); li.className='vm-user'; const av=document.createElement('div'); av.className='vm-avatar'; const img=document.createElement('img'); img.src='https://cdn.discordapp.com/embed/avatars/0.png'; av.appendChild(img); const ct=document.createElement('div'); ct.className='vm-content'; const nm=document.createElement('div'); nm.className='vm-name'; nm.innerHTML=`<b style="color:${classToColor(r.class_name)}">${r.character_name}</b>`; ct.appendChild(nm); const meta=document.createElement('div'); meta.style.color='#bbb'; const didText=did?`Discord ID: ${did}`:'Discord ID: N/A'; const group=(r.party_id!=null)?`Group ${r.party_id}`:'Group N/A'; const slot=(r.slot_id!=null)?`Slot ${r.slot_id}`:'Slot N/A'; meta.textContent=`${didText} • ${group} • ${slot}`; ct.appendChild(meta); li.appendChild(av); li.appendChild(ct); vmMissing.appendChild(li); } });
+                document.getElementById('vm-missing-count').textContent=String(mCount);
+            } catch (e) { vmStatus.textContent='Error loading voice data'; }
+        }
+
+        refreshTitle(); refresh(); setInterval(refresh, 5000);
+    });
+    </script>
     <script>
         window.addEventListener('DOMContentLoaded', () => {
             const params = new URLSearchParams(window.location.search);
@@ -134,32 +238,40 @@
     </div>
     <div class="live-panels">
         <div class="panel">
-            <h2 class="panel-title">Death Log</h2>
+            <h2 class="panel-title">Total Damage (Top 5)</h2>
+            <div id="top-dmg-list" class="meter-list"></div>
+
+            <h2 class="panel-title" style="margin-top:14px;">Total Healing (Top 5)</h2>
+            <div id="top-heal-list" class="meter-list"></div>
+
+            <h2 class="panel-title" style="margin-top:14px;">Encounter Damage (Top 5)</h2>
+            <div id="enc-dmg-list" class="meter-list"></div>
+
+            <h2 class="panel-title" style="margin-top:14px;">Encounter Healing (Top 5)</h2>
+            <div id="enc-heal-list" class="meter-list"></div>
+
+            <h2 class="panel-title" style="margin-top:14px;">Death Log</h2>
             <div id="death-panel-body" class="death-list"></div>
-        </div>
-        <div class="panel">
-            <h2 class="panel-title">Encounter Log</h2>
+
+            <h2 class="panel-title" style="margin-top:14px;">Encounter Log</h2>
             <div id="encounter-panel-body" class="encounter-grid"></div>
         </div>
         <div class="panel">
-            <h2 class="panel-title">Total Damage (Top 5)</h2>
-            <div id="top-dmg-list" class="meter-list"></div>
-        </div>
-        <div class="panel">
-            <h2 class="panel-title">Total Healing (Top 5)</h2>
-            <div id="top-heal-list" class="meter-list"></div>
-        </div>
-        <div class="panel">
-            <h2 class="panel-title">Encounter Damage (Top 5)</h2>
-            <div id="enc-dmg-list" class="meter-list"></div>
-        </div>
-        <div class="panel">
-            <h2 class="panel-title">Encounter Healing (Top 5)</h2>
-            <div id="enc-heal-list" class="meter-list"></div>
+            <h2 class="panel-title" id="vm-title">Voice Monitor</h2>
+            <div class="vm-controls">
+                <label class="vm-switch"><input type="checkbox" id="vm-simple-names"><span class="vm-slider"></span></label>
+                <span style="color:#000;">Simple names</span>
+            </div>
+            <div id="vm-status" style="color:#ddd;">Users in channel (0)</div>
+            <ul id="vm-list" class="vm-list"></ul>
+            <h3 style="margin-top:16px;">On Discord but not in roster (<span id="vm-unmatched-count">0</span>)</h3>
+            <ul id="vm-unmatched" class="vm-list"></ul>
+            <h3 style="margin-top:16px;">In roster but not on Discord (<span id="vm-missing-count">0</span>)</h3>
+            <ul id="vm-missing" class="vm-list"></ul>
         </div>
     </div>
 
-    <div class="live-container">
+    <div class="live-container" style="display:none;">
         <h2>Live View</h2>
         <div class="controls">
             <input id="reportInput" type="text" placeholder="Enter Warcraft Logs report code or URL" />
@@ -173,7 +285,7 @@
             <span class="status" id="status"></span>
         </div>
         
-        <div id="stream" class="stream" aria-live="polite"></div>
+        <div id="stream" class="stream" aria-live="polite" style="display:none;"></div>
         
     </div>
 </body>
