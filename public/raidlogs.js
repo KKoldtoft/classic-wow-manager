@@ -5287,8 +5287,9 @@ class RaidLogsManager {
     shouldIgnorePlayer(name) {
         if (!name) return false;
         const n = String(name).toLowerCase();
-        // Filter common non-player entities: legacy zzOLD entries, totems, wards, traps, dummies, battle chicken
-        return /(zzold|totem|ward|trap|dummy|battle\s*chicken)/i.test(n);
+        // Filter common non-player entities by whole words so real names like "Warduro" don't match
+        // Matches: zzOLD, totem/totems, ward/wards, trap/traps, dummy/dummies, battle chicken
+        return /\b(zzold|totems?|wards?|traps?|dumm(?:y|ies)|battle\s*chicken)\b/i.test(n);
     }
 
     resolveClassForName(characterName) {

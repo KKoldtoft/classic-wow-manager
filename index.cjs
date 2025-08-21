@@ -11162,7 +11162,19 @@ app.get('/api/rewards-snapshot/:eventId/status', async (req, res) => {
   let client;
   try {
     client = await pool.connect();
-    await ensureRewardsSnapshotTables(client);
+    // Do not attempt to create tables here; just detect presence to avoid 500s on read
+    const existsRes = await client.query(
+      `SELECT to_regclass('public.rewards_snapshot_status') AS status_table, to_regclass('public.rewards_snapshot_entries') AS entries_table;`
+    );
+    const haveTables = !!(existsRes.rows && existsRes.rows[0] && existsRes.rows[0].status_table);
+    if (!haveTables) {
+      return res.json({
+        success: true,
+        initialized: false,
+        status: { locked: false, lockedByUserId: null, lockedByUsername: null, lockedAt: null }
+      });
+    }
+
     const statusRes = await client.query(
       `SELECT locked, locked_by_user_id, locked_by_username, locked_at FROM rewards_snapshot_status WHERE event_id = $1`,
       [eventId]
@@ -11170,6 +11182,7 @@ app.get('/api/rewards-snapshot/:eventId/status', async (req, res) => {
     const row = statusRes.rows[0] || null;
     return res.json({
       success: true,
+      initialized: true,
       status: row ? {
         locked: !!row.locked,
         lockedByUserId: row.locked_by_user_id || null,
@@ -11185,6 +11198,25 @@ app.get('/api/rewards-snapshot/:eventId/status', async (req, res) => {
       message: 'Error fetching snapshot status',
       error: debug ? (error && (error.detail || error.message || String(error))) : undefined
     });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Explicit initializer to create snapshot tables (management-only)
+app.post('/api/rewards-snapshot/:eventId/init', requireManagement, async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ success: false, message: 'Authentication required' });
+  }
+  let client;
+  try {
+    client = await pool.connect();
+    await ensureRewardsSnapshotTables(client);
+    return res.json({ success: true });
+  } catch (error) {
+    const debug = String(req.query && req.query.debug || '') === '1';
+    console.error('❌ [SNAPSHOT INIT] Error creating tables:', error);
+    return res.status(500).json({ success: false, message: 'Error creating snapshot tables', error: debug ? (error.detail || error.message || String(error)) : undefined });
   } finally {
     if (client) client.release();
   }
@@ -13506,11 +13538,11 @@ app.post('/api/attendance/rebuild', async (req, res) => {
         await client.query('DELETE FROM attendance_cache');
         console.log('✅ [ATTENDANCE] Cleared existing cache');
         
-        // Get all log_data entries with event_id and discord_id
+        // Get all log_data entries with event_id; include rows missing discord_id so we can resolve via guildies
         const logDataResult = await client.query(`
             SELECT DISTINCT event_id, discord_id, character_name, character_class
             FROM log_data
-            WHERE event_id IS NOT NULL AND discord_id IS NOT NULL
+            WHERE event_id IS NOT NULL
             ORDER BY event_id
         `);
         
@@ -13599,9 +13631,24 @@ app.post('/api/attendance/rebuild', async (req, res) => {
                 
                 // Get all players for this event
                 const eventPlayers = logDataResult.rows.filter(row => row.event_id === eventId);
+
+                // Build a guildies lookup to resolve missing discord_id by name+class
+                const guildiesRes = await client.query(`
+                    SELECT LOWER(character_name) as name_lower, LOWER(character_class) as class_lower, discord_id
+                    FROM guildies
+                    WHERE discord_id IS NOT NULL
+                `);
+                const guildiesMap = new Map(guildiesRes.rows.map(r => [`${r.name_lower}|${r.class_lower}`, r.discord_id]));
                 
                 // Get discord usernames for these players
-                const discordIds = [...new Set(eventPlayers.map(p => p.discord_id))];
+                const resolvedPlayers = eventPlayers.map(p => {
+                    if (p.discord_id) return p;
+                    const key = `${String(p.character_name||'').toLowerCase()}|${String(p.character_class||'').toLowerCase()}`;
+                    const did = guildiesMap.get(key) || null;
+                    return { ...p, discord_id: did };
+                });
+
+                const discordIds = [...new Set(resolvedPlayers.filter(p=>p.discord_id).map(p => p.discord_id))];
                 const usernameResult = await client.query(`
                     SELECT DISTINCT discord_id, character_name as username
                     FROM guildies
@@ -13616,7 +13663,8 @@ app.post('/api/attendance/rebuild', async (req, res) => {
                 
                 // Insert attendance records
                 const processedPlayers = new Set();
-                for (const player of eventPlayers) {
+                for (const player of resolvedPlayers) {
+                    if (!player.discord_id) continue; // skip if still unresolved
                     const username = usernameMap[player.discord_id] || `user-${player.discord_id.slice(-4)}`;
                     
                     await client.query(`
@@ -13729,13 +13777,12 @@ app.post('/api/attendance/rebuild-week', async (req, res) => {
         
         console.log(`📅 [ATTENDANCE] Week ${weekNumber}, ${weekYear} date range: ${weekStartDate.toDateString()} to ${weekEndDate.toDateString()}`);
         
-        // Get all log_data entries for events in this week
+        // Get all log_data entries for events in this week (include rows missing discord_id for resolution)
         const logDataResult = await client.query(`
             SELECT DISTINCT ld.event_id, ld.discord_id, ld.character_name, ld.character_class
             FROM log_data ld
             JOIN raid_helper_events_cache rhec ON ld.event_id = rhec.event_id
             WHERE ld.event_id IS NOT NULL 
-            AND ld.discord_id IS NOT NULL
             AND rhec.event_data->>'date' IS NOT NULL
         `);
         
@@ -13833,8 +13880,23 @@ app.post('/api/attendance/rebuild-week', async (req, res) => {
                     channelDisplayName = `channel-${eventData.channelId.slice(-4)}`;
                 }
                 
+                // Resolve missing discord IDs using guildies name+class mapping
+                const guildiesRes = await client.query(`
+                    SELECT LOWER(character_name) as name_lower, LOWER(character_class) as class_lower, discord_id
+                    FROM guildies
+                    WHERE discord_id IS NOT NULL
+                `);
+                const guildiesMap = new Map(guildiesRes.rows.map(r => [`${r.name_lower}|${r.class_lower}`, r.discord_id]));
+
+                const resolvedPlayers = players.map(p => {
+                    if (p.discord_id) return p;
+                    const key = `${String(p.character_name||'').toLowerCase()}|${String(p.character_class||'').toLowerCase()}`;
+                    const did = guildiesMap.get(key) || null;
+                    return { ...p, discord_id: did };
+                });
+
                 // Get discord usernames for these players
-                const discordIds = [...new Set(players.map(p => p.discord_id))];
+                const discordIds = [...new Set(resolvedPlayers.filter(p=>p.discord_id).map(p => p.discord_id))];
                 const usernameResult = await client.query(`
                     SELECT DISTINCT discord_id, character_name as username
                     FROM guildies
@@ -13849,7 +13911,8 @@ app.post('/api/attendance/rebuild-week', async (req, res) => {
                 
                 // Insert attendance records
                 const processedPlayers = new Set();
-                for (const player of players) {
+                for (const player of resolvedPlayers) {
+                    if (!player.discord_id) continue; // skip unresolved
                     const username = usernameMap[player.discord_id] || `user-${player.discord_id.slice(-4)}`;
                     
                     await client.query(`

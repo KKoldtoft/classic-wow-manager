@@ -396,19 +396,36 @@ class WoWLogsAnalyzer {
             
             // Get roster players for Discord ID mapping
             const rosterPlayers = this.currentRosterPlayers || [];
+
+            // Build a quick lookup from guildies endpoint (discord_id by name+class) as a fallback
+            let guildiesByNameClass = new Map();
+            try {
+                const gRes = await fetch('/api/guild-members');
+                if (gRes && gRes.ok) {
+                    const gJson = await gRes.json();
+                    const rows = Array.isArray(gJson?.data) ? gJson.data : [];
+                    rows.forEach(row => {
+                        const key = `${String(row.character_name||'').toLowerCase()}|${String(row.character_class||'').toLowerCase()}`;
+                        if (row.discord_id) guildiesByNameClass.set(key, String(row.discord_id));
+                    });
+                }
+            } catch (_) {}
             
             // Convert to storage format
             allPlayers.forEach((playerData, playerName) => {
-                // Find Discord ID via roster matching
-                const rosterPlayer = rosterPlayers.find(p => 
-                    p.name && p.name.toLowerCase() === playerName.toLowerCase()
-                );
+                // Find Discord ID via roster matching (exact name), else fallback to guildies by name+class
+                const rosterPlayer = rosterPlayers.find(p => p.name && p.name.toLowerCase() === playerName.toLowerCase());
                 
                 // Get role information
                 let roleDetected = null;
                 let roleSource = null;
                 let specName = null;
                 let discordId = rosterPlayer?.discordId || null;
+                if (!discordId) {
+                    const key = `${String(playerData.characterName||'').toLowerCase()}|${String(playerData.characterClass||'').toLowerCase()}`;
+                    const fromGuildies = guildiesByNameClass.get(key) || null;
+                    if (fromGuildies) discordId = fromGuildies;
+                }
                 
                 if (discordId && roleMap[discordId]) {
                     const roleInfo = roleMap[discordId];
