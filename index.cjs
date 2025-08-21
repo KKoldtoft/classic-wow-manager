@@ -1442,6 +1442,144 @@ app.post('/api/discord/test/webhook', async (req, res) => {
     }
 });
 
+// Announce invites for the current event (test version posts a simple embed to a hard-coded webhook)
+app.post('/api/discord/announce-invites', async (req, res) => {
+  const { eventId, invitePerson, mentionContent } = req.body || {};
+  if (!eventId) return res.status(400).json({ ok: false, error: 'eventId is required' });
+  if (!invitePerson || !String(invitePerson).trim()) return res.status(400).json({ ok: false, error: 'invitePerson is required' });
+  const webhookUrl = 'https://discord.com/api/webhooks/1407621923462189107/mucb9o6-PDBTB3A-m0KNGJ-FBeeCKCpoxPkSqSlhWKpGDpNCGgW8KoEpRNCr569649zX';
+  let client;
+  try {
+    client = await pool.connect();
+    // Derive isNax flag using the same logic as channel-flags
+    let isNax = false;
+    let channelId = null;
+    let channelName = null;
+    try {
+      const ev = await client.query('SELECT event_data FROM raid_helper_events_cache WHERE event_id = $1', [String(eventId)]);
+      if (ev.rows.length > 0) {
+        const data = ev.rows[0].event_data || {};
+        channelId = data.channelId || data.channelID || data.channel_id || null;
+        channelName = data.channelName || data.channel_name || null;
+      }
+      if (channelId) {
+        const cf = await client.query('SELECT is_nax FROM channel_filters WHERE channel_id = $1', [channelId]);
+        if (cf.rows.length > 0) isNax = !!cf.rows[0].is_nax;
+      }
+      // Heuristic fallback if DB flag missing
+      if (!isNax && channelName) {
+        const lower = String(channelName).toLowerCase();
+        if (lower.includes('nax') || lower.includes('naxx')) isNax = true;
+      }
+    } catch (_) {}
+
+    const raidName = isNax ? 'Nax' : 'AQ40+';
+    const encodedEventId = encodeURIComponent(String(eventId));
+    const assignmentsUrl = `https://www.1principles.net/event/${encodedEventId}/assignments`;
+
+    const descriptionParts = [];
+    descriptionParts.push(`Please whisper ${invitePerson} the keyword \"inv\" for an automatic invite.`);
+    descriptionParts.push(`- ${invitePerson}`);
+    descriptionParts.push('');
+    descriptionParts.push('Once the summon team is ready, you can write \"123\" in the raid chat for a summon.');
+    descriptionParts.push('');
+    descriptionParts.push('**Remember your stuff:**');
+    descriptionParts.push('• Consumables & Flasks');
+    descriptionParts.push('• Frost and Shadow protection potions');
+    descriptionParts.push('• World Buffs');
+    descriptionParts.push('• Frost Resistance gear');
+    descriptionParts.push('• Target Dummies, sappers and dynamite');
+    descriptionParts.push('• Goblin Rocket Helmet');
+    descriptionParts.push('• 2 × Zanza flasks');
+    descriptionParts.push('');
+    descriptionParts.push('**Assignments:**');
+    // Use generic label to avoid mislabeling if flags are stale
+    descriptionParts.push(`If you have not read your assignments yet, go to [assignments](${assignmentsUrl}) and read through and confirm your assignments by clicking the grey checkmark icon next to your personal assignments (you must be logged in to confirm).`);
+    descriptionParts.push('');
+    descriptionParts.push('**Last chance:**');
+    descriptionParts.push('In order to get a full gold cut, you must be in the raid and ready to pull, no later than 20:20 (10 minutes before start).');
+
+    const embed = {
+      title: `🚨🚨 Invites are up! 🚨🚨`,
+      description: descriptionParts.join('\n'),
+      color: 0x5865F2,
+      url: assignmentsUrl,
+      thumbnail: { url: 'https://www.1principles.net/images/1p_logo.png' },
+      timestamp: new Date().toISOString(),
+      footer: { text: '1Principles' }
+    };
+
+    const content = mentionContent && String(mentionContent).trim() ? String(mentionContent) : undefined;
+    const payload = content ? { content, embeds: [embed] } : { embeds: [embed] };
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ ok: false, error: errText });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Prompt a specific user via DM to confirm (test version sends a simple message)
+app.post('/api/discord/prompt-confirmation', async (req, res) => {
+  try {
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    if (!botToken) {
+      return res.status(500).json({ ok: false, error: 'DISCORD_BOT_TOKEN not set' });
+    }
+    const body = req.body || {};
+    const userId = body.userId ? String(body.userId) : '';
+    const message = body.message || 'Hello World 456';
+    if (!userId) {
+      return res.status(400).json({ ok: false, error: 'userId is required' });
+    }
+
+    // 1) Ensure DM channel exists
+    const dmResponse = await fetch('https://discord.com/api/v10/users/@me/channels', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bot ${botToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ recipient_id: userId })
+    });
+    if (!dmResponse.ok) {
+      const errText = await dmResponse.text();
+      return res.status(dmResponse.status).json({ ok: false, step: 'create_dm', error: errText });
+    }
+    const dmJson = await dmResponse.json();
+    const dmChannelId = dmJson && dmJson.id;
+    if (!dmChannelId) {
+      return res.status(500).json({ ok: false, error: 'Failed to create DM channel' });
+    }
+
+    // 2) Send the DM
+    const msgResponse = await fetch(`https://discord.com/api/v10/channels/${dmChannelId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bot ${botToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ content: message })
+    });
+    if (!msgResponse.ok) {
+      const errText = await msgResponse.text();
+      return res.status(msgResponse.status).json({ ok: false, step: 'send_message', error: errText });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
+  }
+});
+
 app.get('/auth/logout', (req, res, next) => {
   req.logout((err) => {
     if (err) { return next(err); }

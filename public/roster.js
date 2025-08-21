@@ -32,6 +32,49 @@ document.addEventListener('DOMContentLoaded', async () => {
         compToolButton.href = `https://raid-helper.dev/raidplan/${eventId}`;
     }
 
+    // Wire up announce invites (test webhook with embed)
+    if (announceInvitesButton) {
+        announceInvitesButton.addEventListener('click', async () => {
+            try {
+                const invitePerson = prompt('Enter the name to whisper for invites (e.g., RaidLead):', '');
+                if (invitePerson === null) return; // cancelled
+                const trimmed = String(invitePerson || '').trim();
+                if (!trimmed) { alert('Please enter a valid name.'); return; }
+                announceInvitesButton.disabled = true;
+                // Build roster mentions from current roster data if available
+                let mentionContent = '';
+                try {
+                    const names = new Set();
+                    (currentRosterData.raidDrop || []).forEach(p => {
+                        if (p && p.name) names.add(`@${p.name}`);
+                    });
+                    (currentRosterData.bench || []).forEach(p => {
+                        if (p && p.name) names.add(`@${p.name}`);
+                    });
+                    const list = Array.from(names);
+                    if (list.length) mentionContent = list.join(' ');
+                } catch {}
+
+                const resp = await fetch('/api/discord/announce-invites', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ eventId, invitePerson: trimmed, mentionContent })
+                });
+                if (!resp.ok) {
+                    const t = await resp.text();
+                    console.error('Announce invites failed:', t);
+                    alert('Failed to announce invites');
+                } else {
+                    alert('Invites announced to Discord');
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Failed to announce invites');
+            } finally {
+                announceInvitesButton.disabled = false;
+            }
+        });
+    }
+
     let isManaged = false;
     let currentUserCanManage = false;
     let specData = {};
@@ -753,6 +796,29 @@ document.addEventListener('DOMContentLoaded', async () => {
                     openFixNameOverlay(player);
                 });
             });
+
+            // Prompt for confirmation action
+            cell.querySelectorAll('[data-action="prompt-confirmation"]').forEach(item => {
+                item.addEventListener('click', async (e) => {
+                    const { userid } = e.currentTarget.dataset;
+                    try {
+                        const r = await fetch('/api/discord/prompt-confirmation', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ userId: userid, eventId, message: 'Hello World 456' })
+                        });
+                        if (!r.ok) {
+                            const t = await r.text();
+                            console.error('Prompt confirmation failed:', t);
+                            alert('Failed to send prompt');
+                        } else {
+                            alert('Prompt sent');
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        alert('Failed to send prompt');
+                    }
+                });
+            });
         }
     };
 
@@ -1097,7 +1163,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Add Fix name action (available for both roster and bench players)
         content += `<div class="dropdown-item" data-action="fix-name" data-userid="${player.userid}"><i class="fas fa-edit menu-icon"></i>Fix name</div>`;
 
-        
+        // Prompt for confirmation (only when not confirmed)
+        try {
+            const isUnconfirmed = !(player.isConfirmed === 'confirmed' || player.isConfirmed === true);
+            if (isUnconfirmed && player.userid) {
+                content += `<div class=\"dropdown-item\" data-action=\"prompt-confirmation\" data-userid=\"${player.userid}\"><i class=\"fas fa-bell menu-icon\"></i>Prompt for confirmation</div>`;
+            }
+        } catch {}
 
                 // Build complete character list (main + alts)
         const allCharacters = [];
@@ -1838,10 +1910,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
     });
 
-    // Announce invites placeholder
+    // Announce invites wired to webhook prompt
     if (announceInvitesButton) {
-        announceInvitesButton.addEventListener('click', () => {
-            showAlert('Coming soon', 'Announce invites is coming soon.');
+        announceInvitesButton.addEventListener('click', async () => {
+            try {
+                const invitePerson = prompt('Enter the name to whisper for invites (e.g., RaidLead):', '');
+                if (invitePerson === null) return; // cancelled
+                const trimmed = String(invitePerson || '').trim();
+                if (!trimmed) { alert('Please enter a valid name.'); return; }
+                announceInvitesButton.disabled = true;
+                const resp = await fetch('/api/discord/announce-invites', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ eventId, invitePerson: trimmed })
+                });
+                if (!resp.ok) {
+                    const t = await resp.text();
+                    console.error('Announce invites failed:', t);
+                    alert('Failed to announce invites');
+                } else {
+                    alert('Invites announced to Discord');
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Failed to announce invites');
+            } finally {
+                announceInvitesButton.disabled = false;
+            }
         });
     }
 

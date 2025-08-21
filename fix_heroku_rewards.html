@@ -4,6 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fix Reward Settings - Heroku Migration</title>
+    <!-- Google tag (gtag.js) - guarded for localhost -->
+    <script>
+      (function(){
+        try {
+          var host = (window.location && window.location.hostname) || '';
+          var isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+          if (isLocal) return;
+          if (window.gtag) return;
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){ dataLayer.push(arguments); }
+          window.gtag = gtag;
+          var s = document.createElement('script');
+          s.async = true;
+          s.src = 'https://www.googletagmanager.com/gtag/js?id=G-JJJVQ34B6R';
+          (document.head || document.documentElement).appendChild(s);
+          gtag('js', new Date());
+          gtag('config', 'G-JJJVQ34B6R');
+        } catch (e) {}
+      })();
+    </script>
     <style>
         body {
             font-family: Arial, sans-serif;

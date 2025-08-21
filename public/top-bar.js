@@ -1,5 +1,26 @@
 // public/top-bar.js
 
+// Google Analytics (gtag) universal injection
+(function initGoogleAnalytics() {
+	try {
+		const host = window.location && window.location.hostname || '';
+		const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+		if (isLocal) return; // Skip GA on localhost
+		if (window.gtag) return; // Avoid duplicate init
+		window.dataLayer = window.dataLayer || [];
+		function gtag(){ dataLayer.push(arguments); }
+		window.gtag = gtag;
+		const gaScript = document.createElement('script');
+		gaScript.async = true;
+		gaScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-JJJVQ34B6R';
+		(document.head || document.documentElement).appendChild(gaScript);
+		gtag('js', new Date());
+		gtag('config', 'G-JJJVQ34B6R');
+	} catch (_) {
+		// no-op
+	}
+})();
+
 // This function fetches the user's login status from the server.
 async function getUserStatus() {
     try {
