@@ -576,8 +576,8 @@
       function getStatusIconHtml(status, interactive) {
         if (status === 'accept') return `<i class="fas fa-check-circle" style="color:#10b981; font-size:40px; line-height:40px;"></i>`;
         if (status === 'decline') return `<i class="fas fa-ban" style="color:#ef4444; font-size:40px; line-height:40px;"></i>`;
-        const unsetColor = interactive ? '#fbbf24' : '#9ca3af';
-        return `<i class="fas fa-question-circle" style="color:${unsetColor}; font-size:40px; line-height:40px;"></i>`;
+        const color = interactive ? '#fbbf24' : '#9ca3af';
+        return `<i class="fas fa-check-circle" style="color:${color}; font-size:40px; line-height:40px;"></i>`;
       }
 
       function renderAcceptArea() {
@@ -862,8 +862,8 @@
           function getStatusIconHtml(status, interactive) {
             if (status === 'accept') return `<i class="fas fa-check-circle" style="color:#10b981; font-size:40px; line-height:40px;"></i>`;
             if (status === 'decline') return `<i class="fas fa-ban" style="color:#ef4444; font-size:40px; line-height:40px;"></i>`;
-            const unsetColor = interactive ? '#fbbf24' : '#9ca3af';
-            return `<i class="fas fa-question-circle" style="color:${unsetColor}; font-size:40px; line-height:40px;"></i>`;
+            const color = interactive ? '#fbbf24' : '#9ca3af';
+            return `<i class="fas fa-check-circle" style="color:${color}; font-size:40px; line-height:40px;"></i>`;
           }
           function draw() {
             cell.innerHTML = '';
@@ -2238,8 +2238,8 @@
       function getStatusIconHtml(status, interactive) {
         if (status === 'accept') return `<i class=\"fas fa-check-circle\" style=\"color:#10b981; font-size:40px; line-height:40px;\"></i>`;
         if (status === 'decline') return `<i class=\"fas fa-ban\" style=\"color:#ef4444; font-size:40px; line-height:40px;\"></i>`;
-        const unsetColor = interactive ? '#fbbf24' : '#9ca3af';
-        return `<i class=\"fas fa-question-circle\" style=\"color:${unsetColor}; font-size:40px; line-height:40px;\"></i>`;
+        const color = interactive ? '#fbbf24' : '#9ca3af';
+        return `<i class=\"fas fa-check-circle\" style=\"color:${color}; font-size:40px; line-height:40px;\"></i>`;
       }
 
       function renderAcceptArea() {
