@@ -13,6 +13,7 @@ const fs = require('fs');
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const WebSocket = require('ws');
+const pgSession = require('connect-pg-simple')(session);
 
 // --- Warcraft Logs API (v2 GraphQL) Configuration ---
 const WCL_TOKEN_URL = 'https://www.warcraftlogs.com/oauth/token';
@@ -1033,6 +1034,11 @@ async function enrichHistoricEventsWithDiscordChannelNames(events) {
 
 // --- Session Configuration ---
 app.use(session({
+  store: new pgSession({
+    pool: pool,
+    tableName: 'session',
+    createTableIfMissing: true
+  }),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
@@ -1447,7 +1453,7 @@ app.post('/api/discord/announce-invites', async (req, res) => {
   const { eventId, invitePerson, mentionContent, mentionUserIds } = req.body || {};
   if (!eventId) return res.status(400).json({ ok: false, error: 'eventId is required' });
   if (!invitePerson || !String(invitePerson).trim()) return res.status(400).json({ ok: false, error: 'invitePerson is required' });
-  const webhookUrl = 'https://discord.com/api/webhooks/1407621923462189107/mucb9o6-PDBTB3A-m0KNGJ-FBeeCKCpoxPkSqSlhWKpGDpNCGgW8KoEpRNCr569649zX';
+  let webhookUrl = null;
   let client;
   try {
     client = await pool.connect();
@@ -1473,6 +1479,13 @@ app.post('/api/discord/announce-invites', async (req, res) => {
       }
     } catch (_) {}
 
+    // Lookup channel-specific webhook if configured
+    try {
+      if (channelId) {
+        const w = await client.query('SELECT webhook_url FROM channel_filters WHERE channel_id = $1', [channelId]);
+        if (w.rows.length > 0 && w.rows[0].webhook_url) webhookUrl = String(w.rows[0].webhook_url);
+      }
+    } catch (_) {}
     const raidName = isNax ? 'Nax' : 'AQ40+';
     const encodedEventId = encodeURIComponent(String(eventId));
     const assignmentsUrl = `https://www.1principles.net/event/${encodedEventId}/assignments`;
@@ -1521,6 +1534,10 @@ app.post('/api/discord/announce-invites', async (req, res) => {
     }
 
     const payload = content ? { content, embeds: [embed], allowed_mentions } : { embeds: [embed] };
+    // Require a webhook URL
+    if (!webhookUrl) {
+      return res.status(400).json({ ok: false, error: 'No webhook configured for this channel' });
+    }
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -5359,6 +5376,8 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 channel_id TEXT PRIMARY KEY,
                 channel_name TEXT,
                 is_visible BOOLEAN DEFAULT true,
+                webhook_url TEXT,
+                is_nax BOOLEAN DEFAULT false,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -12176,10 +12195,12 @@ app.get('/api/admin/channel-filters', async (req, res) => {
         channel_name TEXT,
         is_visible BOOLEAN DEFAULT true,
         is_nax BOOLEAN DEFAULT false,
+        webhook_url TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    await pool.query(`ALTER TABLE channel_filters ADD COLUMN IF NOT EXISTS webhook_url TEXT`);
     await pool.query(`ALTER TABLE channel_filters ADD COLUMN IF NOT EXISTS is_nax BOOLEAN DEFAULT false`);
 
     // Get both upcoming and completed events to find all channels with raids
@@ -12244,10 +12265,10 @@ app.get('/api/admin/channel-filters', async (req, res) => {
     console.log(`📊 Extracted ${channelMap.size} unique channels from both upcoming and completed events`);
 
     // Get existing filter settings from database
-    const filterResult = await pool.query('SELECT channel_id, is_visible, is_nax FROM channel_filters');
+    const filterResult = await pool.query('SELECT channel_id, is_visible, is_nax, webhook_url FROM channel_filters');
     const existingFilters = new Map();
     filterResult.rows.forEach(row => {
-      existingFilters.set(row.channel_id, { is_visible: row.is_visible, is_nax: row.is_nax });
+      existingFilters.set(row.channel_id, { is_visible: row.is_visible, is_nax: row.is_nax, webhook_url: row.webhook_url || null });
     });
 
     // Merge current channels with existing filter settings
@@ -12257,7 +12278,8 @@ app.get('/api/admin/channel-filters', async (req, res) => {
         ...channel,
         raid_count: (channel.upcoming_count || 0) + (channel.historic_count || 0), // Total count
         is_visible: existing ? existing.is_visible : true, // Default to visible for new channels
-        is_nax: existing ? !!existing.is_nax : false
+        is_nax: existing ? !!existing.is_nax : false,
+        webhook_url: existing ? existing.webhook_url : null
       };
     });
 
@@ -12307,11 +12329,13 @@ app.post('/api/admin/channel-filters', async (req, res) => {
         channel_name TEXT,
         is_visible BOOLEAN DEFAULT true,
         is_nax BOOLEAN DEFAULT false,
+        webhook_url TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
     await pool.query(`ALTER TABLE channel_filters ADD COLUMN IF NOT EXISTS is_nax BOOLEAN DEFAULT false`);
+    await pool.query(`ALTER TABLE channel_filters ADD COLUMN IF NOT EXISTS webhook_url TEXT`);
 
     // Clear events cache so changes take effect immediately
     await pool.query('DELETE FROM events_cache WHERE cache_key = $1', [EVENTS_CACHE_KEY]);
@@ -12319,21 +12343,22 @@ app.post('/api/admin/channel-filters', async (req, res) => {
 
     // Update each filter setting
     for (const filter of filters) {
-      const { channel_id, is_visible, is_nax } = filter;
+      const { channel_id, is_visible, is_nax, webhook_url } = filter;
       
       if (!channel_id || typeof is_visible !== 'boolean') {
         continue; // Skip invalid entries
       }
 
       await pool.query(`
-        INSERT INTO channel_filters (channel_id, is_visible, is_nax, updated_at)
-        VALUES ($1, $2, COALESCE($3, FALSE), CURRENT_TIMESTAMP)
+        INSERT INTO channel_filters (channel_id, is_visible, is_nax, webhook_url, updated_at)
+        VALUES ($1, $2, COALESCE($3, FALSE), $4, CURRENT_TIMESTAMP)
         ON CONFLICT (channel_id)
         DO UPDATE SET 
           is_visible = EXCLUDED.is_visible,
           is_nax = EXCLUDED.is_nax,
+          webhook_url = EXCLUDED.webhook_url,
           updated_at = CURRENT_TIMESTAMP
-      `, [channel_id, is_visible, is_nax]);
+      `, [channel_id, is_visible, is_nax, webhook_url || null]);
     }
 
     console.log(`📡 Updated channel filters for ${filters.length} channels`);

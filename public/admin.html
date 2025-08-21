@@ -1274,6 +1274,7 @@
             channels.forEach(channel => {
                 const isVisible = channel.is_visible !== false; // Default to true if not set
                 const isNax = !!channel.is_nax;
+                const webhookUrl = channel.webhook_url || '';
                 const toggleClass = isVisible ? 'toggle-on' : 'toggle-off';
                 const statusText = isVisible ? 'Shown' : 'Hidden';
                 const statusColor = isVisible ? '#28a745' : '#dc3545';
@@ -1305,6 +1306,10 @@
                                     <input type="checkbox" class="nax-toggle" data-channel-id="${channel.channel_id}" ${isNax ? 'checked' : ''} onchange="toggleNaxChannel('${channel.channel_id}', this.checked)">
                                     <span>${isNax ? 'Is NAX' : 'Is not NAX'}</span>
                                 </label>
+                                <div style="display:flex; flex-direction:column; gap:6px;">
+                                    <label style="font-size:12px; color:#6b7280;">Webhook URL</label>
+                                    <input type="url" class="webhook-input" data-channel-id="${channel.channel_id}" placeholder="https://discord.com/api/webhooks/..." value="${webhookUrl.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" style="width:360px; padding:8px 10px; border:1px solid #d1d5db; border-radius:6px;" />
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1411,10 +1416,13 @@
                 const isVisible = toggle.classList.contains('toggle-on');
                 const naxToggle = document.querySelector(`.nax-toggle[data-channel-id="${channelId}"]`);
                 const isNax = !!(naxToggle && naxToggle.checked);
+                const webhookInput = document.querySelector(`.webhook-input[data-channel-id="${channelId}"]`);
+                const webhookUrl = webhookInput ? webhookInput.value.trim() : '';
                 filterSettings.push({
                     channel_id: channelId,
                     is_visible: isVisible,
-                    is_nax: isNax
+                    is_nax: isNax,
+                    webhook_url: webhookUrl || null
                 });
             });
 
