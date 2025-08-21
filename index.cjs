@@ -11179,7 +11179,12 @@ app.get('/api/rewards-snapshot/:eventId/status', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ [SNAPSHOT] Error fetching status:', error);
-    return res.status(500).json({ success: false, message: 'Error fetching snapshot status' });
+    const debug = String(req.query && req.query.debug || '') === '1';
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching snapshot status',
+      error: debug ? (error && (error.detail || error.message || String(error))) : undefined
+    });
   } finally {
     if (client) client.release();
   }
