@@ -1079,8 +1079,8 @@ const MANAGEMENT_ROLE_ID = process.env.MANAGEMENT_ROLE_ID || null;
 
 // Function to fetch user's guild member data including roles (with caching)
 async function fetchUserGuildMember(accessToken, guildId) {
-    // Create cache key based on access token and guild ID
-    const cacheKey = `${accessToken.substring(0, 10)}_${guildId}`;
+    // Create cache key based on full access token and guild ID to avoid collisions
+    const cacheKey = `${accessToken}__${guildId}`;
     
     // Check cache first
     const cached = userMemberCache.get(cacheKey);
