@@ -13,6 +13,7 @@ const fs = require('fs');
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const WebSocket = require('ws');
+const pgSession = require('connect-pg-simple')(session);
 
 // --- Warcraft Logs API (v2 GraphQL) Configuration ---
 const WCL_TOKEN_URL = 'https://www.warcraftlogs.com/oauth/token';
@@ -1033,6 +1034,11 @@ async function enrichHistoricEventsWithDiscordChannelNames(events) {
 
 // --- Session Configuration ---
 app.use(session({
+  store: new pgSession({
+    pool: pool,
+    tableName: 'session',
+    createTableIfMissing: true
+  }),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
