@@ -32,46 +32,70 @@ document.addEventListener('DOMContentLoaded', async () => {
         compToolButton.href = `https://raid-helper.dev/raidplan/${eventId}`;
     }
 
-    // Wire up announce invites (test webhook with embed)
-    if (announceInvitesButton) {
-        announceInvitesButton.addEventListener('click', async () => {
-            try {
-                const invitePerson = prompt('Enter the name to whisper for invites (e.g., RaidLead):', '');
-                if (invitePerson === null) return; // cancelled
-                const trimmed = String(invitePerson || '').trim();
-                if (!trimmed) { alert('Please enter a valid name.'); return; }
-                announceInvitesButton.disabled = true;
-                // Build roster mentions from current roster data if available
-                let mentionContent = '';
+    // Custom modal for announce invites
+    function openAnnounceInvitesModal() {
+        const inputId = 'announce-invite-person-input';
+        const messageHtml = `
+            <label for="${inputId}">Invite person name</label>
+            <input id="${inputId}" type="text" class="player-search-input" placeholder="e.g., RaidLead" autocomplete="off" style="width:100%; margin-top:6px;">
+        `;
+        const modal = new ConfirmationModal({
+            type: 'custom',
+            title: 'Announce invites',
+            message: messageHtml,
+            allowHtmlContent: true,
+            buttons: [
+                { text: 'Cancel', action: 'cancel', style: 'secondary' },
+                { text: 'Send', action: 'confirm', style: 'primary' }
+            ],
+            onConfirm: async () => {
                 try {
-                    const names = new Set();
-                    (currentRosterData.raidDrop || []).forEach(p => {
-                        if (p && p.name) names.add(`@${p.name}`);
-                    });
-                    (currentRosterData.bench || []).forEach(p => {
-                        if (p && p.name) names.add(`@${p.name}`);
-                    });
-                    const list = Array.from(names);
-                    if (list.length) mentionContent = list.join(' ');
-                } catch {}
+                    const input = modal.modal ? modal.modal.querySelector(`#${inputId}`) : null;
+                    const trimmed = String(input && input.value ? input.value : '').trim();
+                    if (!trimmed) { showAlert('Missing name', 'Please enter a valid name.'); return; }
+                    announceInvitesButton.disabled = true;
+                    // Build roster mentions from current roster data if available
+                    let mentionContent = '';
+                    const mentionUserIds = [];
+                    try {
+                        const names = new Set();
+                        (currentRosterData.raidDrop || []).forEach(p => {
+                            if (p && p.userid) mentionUserIds.push(String(p.userid));
+                            if (p && p.name) names.add(`@${p.name}`);
+                        });
+                        (currentRosterData.bench || []).forEach(p => {
+                            if (p && p.userid) mentionUserIds.push(String(p.userid));
+                            if (p && p.name) names.add(`@${p.name}`);
+                        });
+                        const list = Array.from(names);
+                        if (list.length) mentionContent = list.join(' ');
+                    } catch {}
 
-                const resp = await fetch('/api/discord/announce-invites', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ eventId, invitePerson: trimmed, mentionContent })
-                });
-                if (!resp.ok) {
-                    const t = await resp.text();
-                    console.error('Announce invites failed:', t);
-                    alert('Failed to announce invites');
-                } else {
-                    alert('Invites announced to Discord');
+                    const resp = await fetch('/api/discord/announce-invites', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ eventId, invitePerson: trimmed, mentionContent, mentionUserIds })
+                    });
+                    if (!resp.ok) {
+                        const t = await resp.text();
+                        console.error('Announce invites failed:', t);
+                        showAlert('Announce failed', 'Failed to announce invites.');
+                    } else {
+                        showAlert('Invites sent', 'Your announcement was posted to Discord.');
+                    }
+                } catch (e) {
+                    console.error(e);
+                    showAlert('Announce failed', 'Failed to announce invites.');
+                } finally {
+                    announceInvitesButton.disabled = false;
                 }
-            } catch (e) {
-                console.error(e);
-                alert('Failed to announce invites');
-            } finally {
-                announceInvitesButton.disabled = false;
             }
+        });
+        modal.show();
+    }
+
+    if (announceInvitesButton) {
+        announceInvitesButton.addEventListener('click', () => {
+            openAnnounceInvitesModal();
         });
     }
 
@@ -1910,34 +1934,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
     });
 
-    // Announce invites wired to webhook prompt
-    if (announceInvitesButton) {
-        announceInvitesButton.addEventListener('click', async () => {
-            try {
-                const invitePerson = prompt('Enter the name to whisper for invites (e.g., RaidLead):', '');
-                if (invitePerson === null) return; // cancelled
-                const trimmed = String(invitePerson || '').trim();
-                if (!trimmed) { alert('Please enter a valid name.'); return; }
-                announceInvitesButton.disabled = true;
-                const resp = await fetch('/api/discord/announce-invites', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ eventId, invitePerson: trimmed })
-                });
-                if (!resp.ok) {
-                    const t = await resp.text();
-                    console.error('Announce invites failed:', t);
-                    alert('Failed to announce invites');
-                } else {
-                    alert('Invites announced to Discord');
-                }
-            } catch (e) {
-                console.error(e);
-                alert('Failed to announce invites');
-            } finally {
-                announceInvitesButton.disabled = false;
-            }
-        });
-    }
+    // Announce invites wired to custom modal (old prompt-based handler removed)
 
     // Auto assignments runner entrypoint
     if (autoAssignmentsButton) {

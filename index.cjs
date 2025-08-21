@@ -1444,7 +1444,7 @@ app.post('/api/discord/test/webhook', async (req, res) => {
 
 // Announce invites for the current event (test version posts a simple embed to a hard-coded webhook)
 app.post('/api/discord/announce-invites', async (req, res) => {
-  const { eventId, invitePerson, mentionContent } = req.body || {};
+  const { eventId, invitePerson, mentionContent, mentionUserIds } = req.body || {};
   if (!eventId) return res.status(400).json({ ok: false, error: 'eventId is required' });
   if (!invitePerson || !String(invitePerson).trim()) return res.status(400).json({ ok: false, error: 'invitePerson is required' });
   const webhookUrl = 'https://discord.com/api/webhooks/1407621923462189107/mucb9o6-PDBTB3A-m0KNGJ-FBeeCKCpoxPkSqSlhWKpGDpNCGgW8KoEpRNCr569649zX';
@@ -1509,8 +1509,18 @@ app.post('/api/discord/announce-invites', async (req, res) => {
       footer: { text: '1Principles' }
     };
 
-    const content = mentionContent && String(mentionContent).trim() ? String(mentionContent) : undefined;
-    const payload = content ? { content, embeds: [embed] } : { embeds: [embed] };
+    // Build proper Discord mentions using user IDs when provided
+    let content = undefined;
+    let allowed_mentions = undefined;
+    const ids = Array.isArray(mentionUserIds) ? mentionUserIds.filter(Boolean).map(String) : [];
+    if (ids.length > 0) {
+      content = ids.map(id => `<@${id}>`).join(' ');
+      allowed_mentions = { parse: [], users: ids };
+    } else if (mentionContent && String(mentionContent).trim()) {
+      content = String(mentionContent);
+    }
+
+    const payload = content ? { content, embeds: [embed], allowed_mentions } : { embeds: [embed] };
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
