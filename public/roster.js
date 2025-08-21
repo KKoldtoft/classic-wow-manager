@@ -828,7 +828,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     try {
                         const r = await fetch('/api/discord/prompt-confirmation', {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ userId: userid, eventId, message: 'Hello World 456' })
+                            body: JSON.stringify({ userId: userid, eventId })
                         });
                         if (!r.ok) {
                             const t = await r.text();

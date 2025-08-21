@@ -1548,6 +1548,7 @@ app.post('/api/discord/prompt-confirmation', async (req, res) => {
     const body = req.body || {};
     const userId = body.userId ? String(body.userId) : '';
     const message = body.message || 'Hello World 456';
+    const eventId = body.eventId ? String(body.eventId) : null;
     if (!userId) {
       return res.status(400).json({ ok: false, error: 'userId is required' });
     }
@@ -1571,14 +1572,214 @@ app.post('/api/discord/prompt-confirmation', async (req, res) => {
       return res.status(500).json({ ok: false, error: 'Failed to create DM channel' });
     }
 
-    // 2) Send the DM
+    // Compose context-aware message
+    let finalMessage = message;
+    if (eventId) {
+      try {
+        // Build day/date/time string and roster link
+        const encodedEventId = encodeURIComponent(String(eventId));
+        const rosterLink = `https://www.1principles.net/event/${encodedEventId}/roster`;
+        // Attempt to get event time and channel
+        let startsAtUtc = null;
+        let channelId = null;
+        let channelName = null;
+        const ev = await pool.query(`SELECT event_data FROM raid_helper_events_cache WHERE event_id = $1`, [eventId]);
+        if (ev.rows.length > 0) {
+          const data = ev.rows[0].event_data || {};
+          // Try to extract a start timestamp from multiple possible fields
+          const timeCandidates = [data.startsAt, data.startTime, data.time, data.date, data.scheduledTime, data.scheduled_at, data.start_timestamp, data.timestamp];
+          for (const t of timeCandidates) {
+            if (startsAtUtc) break;
+            if (t == null) continue;
+            if (typeof t === 'number') {
+              const secs = t > 1e12 ? Math.floor(t / 1000) : t;
+              startsAtUtc = new Date(secs * 1000);
+            } else if (typeof t === 'string') {
+              const digits = t.match(/^\d{10,13}$/) ? Number(t) : NaN;
+              if (!isNaN(digits)) {
+                const secs = digits > 1e12 ? Math.floor(digits / 1000) : digits;
+                startsAtUtc = new Date(secs * 1000);
+              } else {
+                const d = new Date(t);
+                if (!isNaN(d.getTime())) startsAtUtc = d;
+              }
+            }
+            if (startsAtUtc && isNaN(startsAtUtc.getTime())) startsAtUtc = null;
+          }
+          channelId = data.channelId || data.channelID || data.channel_id || null;
+          channelName = data.channelName || data.channel_name || null;
+        }
+        // Fallback 1 for time: try events cache blob posted events
+        if (!startsAtUtc) {
+          try {
+            const cached = await pool.query(
+              `SELECT events_data FROM events_cache WHERE cache_key = $1 AND expires_at > NOW()`,
+              ['raid_helper_events']
+            );
+            if (cached.rows.length > 0) {
+              const eventsBlob = cached.rows[0].events_data || {};
+              const list = Array.isArray(eventsBlob.postedEvents) ? eventsBlob.postedEvents : (Array.isArray(eventsBlob) ? eventsBlob : []);
+              const match = list.find(e => String(e.id) === String(eventId));
+              if (match) {
+                const mc = [match.startsAt, match.startTime, match.time, match.date, match.scheduledTime, match.scheduled_at, match.start_timestamp, match.timestamp];
+                for (const t of mc) {
+                  if (startsAtUtc) break;
+                  if (t == null) continue;
+                  if (typeof t === 'number') {
+                    const secs = t > 1e12 ? Math.floor(t / 1000) : t;
+                    startsAtUtc = new Date(secs * 1000);
+                  } else if (typeof t === 'string') {
+                    const digits = t.match(/^\d{10,13}$/) ? Number(t) : NaN;
+                    if (!isNaN(digits)) {
+                      const secs = digits > 1e12 ? Math.floor(digits / 1000) : digits;
+                      startsAtUtc = new Date(secs * 1000);
+                    } else {
+                      const d = new Date(t);
+                      if (!isNaN(d.getTime())) startsAtUtc = d;
+                    }
+                  }
+                  if (startsAtUtc && isNaN(startsAtUtc.getTime())) startsAtUtc = null;
+                }
+              }
+            }
+          } catch (_) {}
+        }
+        // Fallback 2 for time: query v3 servers endpoint
+        if (!startsAtUtc) {
+          try {
+            const raidHelperApiKey = process.env.RAID_HELPER_API_KEY;
+            const guildId = process.env.DISCORD_GUILD_ID || '777268886939893821';
+            if (raidHelperApiKey) {
+              const nowUnixTimestamp = Math.floor(Date.now() / 1000);
+              const oneYearInSeconds = 365 * 24 * 60 * 60;
+              const futureUnixTimestamp = nowUnixTimestamp + oneYearInSeconds;
+              const resp = await axios.get(`https://raid-helper.dev/api/v3/servers/${guildId}/events`, {
+                headers: { 'Authorization': `${raidHelperApiKey}`, 'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)' },
+                params: { StartTimeFilter: nowUnixTimestamp - 7 * 24 * 3600, EndTimeFilter: futureUnixTimestamp },
+                timeout: 10000
+              });
+              const events = resp.data && Array.isArray(resp.data.postedEvents) ? resp.data.postedEvents : [];
+              const match = events.find(e => String(e.id) === String(eventId));
+              if (match) {
+                const mc = [match.startsAt, match.startTime, match.time, match.date, match.scheduledTime, match.scheduled_at, match.start_timestamp, match.timestamp];
+                for (const t of mc) {
+                  if (startsAtUtc) break;
+                  if (t == null) continue;
+                  if (typeof t === 'number') {
+                    const secs = t > 1e12 ? Math.floor(t / 1000) : t;
+                    startsAtUtc = new Date(secs * 1000);
+                  } else if (typeof t === 'string') {
+                    const digits = t.match(/^\d{10,13}$/) ? Number(t) : NaN;
+                    if (!isNaN(digits)) {
+                      const secs = digits > 1e12 ? Math.floor(digits / 1000) : digits;
+                      startsAtUtc = new Date(secs * 1000);
+                    } else {
+                      const d = new Date(t);
+                      if (!isNaN(d.getTime())) startsAtUtc = d;
+                    }
+                  }
+                  if (startsAtUtc && isNaN(startsAtUtc.getTime())) startsAtUtc = null;
+                }
+              }
+            }
+          } catch (_) {}
+        }
+        // If unknown, show explicit placeholder instead of current time
+        let dayDateTime;
+        if (startsAtUtc) {
+          const dt = startsAtUtc;
+          const weekday = dt.toLocaleDateString('en-GB', { weekday: 'long' });
+          const ddmmyyyy = dt.toLocaleDateString('en-GB').replace(/\//g, '-');
+          const hhmm = dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+          dayDateTime = `${weekday} the ${ddmmyyyy} at ${hhmm}`;
+        } else {
+          dayDateTime = '[start time not found]';
+        }
+        const channelJump = channelId ? `https://discord.com/channels/${process.env.DISCORD_GUILD_ID || '@me'}/${channelId}` : (channelName ? `#${channelName}` : '#raid-channel');
+        finalMessage = `You have not yet confirmed your spot for ${dayDateTime}.`;
+      } catch (_) {}
+    }
+
+    // 2) Send the DM (as an embed for cleaner formatting and masked links)
+    let payload;
+    if (eventId) {
+      // Recompute pieces used for masked links
+      const encodedEventId = encodeURIComponent(String(eventId));
+      const rosterLink = `https://www.1principles.net/event/${encodedEventId}/roster`;
+      const ev2 = await pool.query(`SELECT event_data FROM raid_helper_events_cache WHERE event_id = $1`, [eventId]);
+      let channelId2 = null;
+      let channelName2 = null;
+      if (ev2.rows.length > 0) {
+        const data2 = ev2.rows[0].event_data || {};
+        channelId2 = data2.channelId || data2.channelID || data2.channel_id || null;
+        channelName2 = data2.channelName || data2.channel_name || null;
+      }
+      // Fallback 1: look into cached upcoming events blob for channelId
+      if (!channelId2) {
+        try {
+          const cached = await pool.query(
+            `SELECT events_data FROM events_cache WHERE cache_key = $1 AND expires_at > NOW()`,
+            ['raid_helper_events']
+          );
+          if (cached.rows.length > 0) {
+            const eventsBlob = cached.rows[0].events_data || {};
+            const list = Array.isArray(eventsBlob.postedEvents) ? eventsBlob.postedEvents : (Array.isArray(eventsBlob) ? eventsBlob : []);
+            const match = list.find(e => String(e.id) === String(eventId));
+            if (match) {
+              channelId2 = match.channelId || match.channelID || match.channel_id || null;
+              channelName2 = match.channelName || match.channel_name || null;
+            }
+          }
+        } catch (_) {}
+      }
+      // Fallback 2: query v3 servers endpoint directly
+      if (!channelId2) {
+        try {
+          const raidHelperApiKey = process.env.RAID_HELPER_API_KEY;
+          const guildId = process.env.DISCORD_GUILD_ID || '777268886939893821';
+          if (raidHelperApiKey) {
+            const nowUnixTimestamp = Math.floor(Date.now() / 1000);
+            const oneYearInSeconds = 365 * 24 * 60 * 60;
+            const futureUnixTimestamp = nowUnixTimestamp + oneYearInSeconds;
+            const resp = await axios.get(`https://raid-helper.dev/api/v3/servers/${guildId}/events`, {
+              headers: { 'Authorization': `${raidHelperApiKey}`, 'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)' },
+              params: { StartTimeFilter: nowUnixTimestamp - 7 * 24 * 3600, EndTimeFilter: futureUnixTimestamp },
+              timeout: 10000
+            });
+            const events = resp.data && Array.isArray(resp.data.postedEvents) ? resp.data.postedEvents : [];
+            const match = events.find(e => String(e.id) === String(eventId));
+            if (match) {
+              channelId2 = match.channelId || match.channelID || match.channel_id || null;
+              channelName2 = match.channelName || match.channel_name || null;
+            }
+          }
+        } catch (_) {}
+      }
+      const guildId = process.env.DISCORD_GUILD_ID || '@me';
+      const channelJump = channelId2 ? `https://discord.com/channels/${guildId}/${channelId2}` : null;
+      const channelLabel = channelName2 ? `#${channelName2}` : 'raid channel';
+      const channelPart = channelJump ? `[${channelLabel}](${channelJump})` : channelLabel;
+
+      const embedDescription = `${finalMessage}\n\nPlease go to our ${channelPart} channel and confirm your spot, so we can complete the raid assignments and secure a clean and smooth raid.`;
+      const embed = {
+        title: 'Confirm your spot',
+        description: embedDescription,
+        color: 0xF59E0B,
+        image: { url: 'https://res.cloudinary.com/duthjs0c3/image/upload/f_auto,q_auto,w_1280/v1755779009/8cc6a2d6-dafe-4348-969f-63fdb8d131f8_qflurq.png' },
+        timestamp: new Date().toISOString()
+      };
+      payload = { embeds: [embed] };
+    } else {
+      payload = { content: finalMessage };
+    }
+
     const msgResponse = await fetch(`https://discord.com/api/v10/channels/${dmChannelId}/messages`, {
       method: 'POST',
       headers: {
         'Authorization': `Bot ${botToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ content: message })
+      body: JSON.stringify(payload)
     });
     if (!msgResponse.ok) {
       const errText = await msgResponse.text();
