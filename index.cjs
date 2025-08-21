@@ -11115,6 +11115,256 @@ app.get('/api/rpb-tracking/:eventId', async (req, res) => {
   }
 });
 
+// --- Rewards Snapshot APIs ---
+// Stores a locked snapshot of the current raid log panels so managers can make manual adjustments
+
+// Ensure rewards snapshot tables exist
+async function ensureRewardsSnapshotTables(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS rewards_snapshot_status (
+      event_id VARCHAR(100) PRIMARY KEY,
+      locked BOOLEAN DEFAULT FALSE,
+      locked_by_user_id TEXT,
+      locked_by_username TEXT,
+      locked_at TIMESTAMP WITH TIME ZONE
+    );
+  `);
+
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS rewards_snapshot_entries (
+      id SERIAL PRIMARY KEY,
+      event_id VARCHAR(100) NOT NULL,
+      panel_key TEXT NOT NULL,
+      panel_name TEXT,
+      discord_user_id TEXT,
+      character_name TEXT NOT NULL,
+      character_class TEXT,
+      ranking_number_original INTEGER,
+      point_value_original INTEGER,
+      character_details_original TEXT,
+      primary_numeric_original INTEGER,
+      aux_json JSONB,
+      point_value_edited INTEGER,
+      character_details_edited TEXT,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      UNIQUE(event_id, panel_key, character_name)
+    );
+  `);
+}
+
+// Get snapshot lock status
+app.get('/api/rewards-snapshot/:eventId/status', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ success: false, message: 'Authentication required' });
+  }
+
+  const { eventId } = req.params;
+  let client;
+  try {
+    client = await pool.connect();
+    await ensureRewardsSnapshotTables(client);
+    const statusRes = await client.query(
+      `SELECT locked, locked_by_user_id, locked_by_username, locked_at FROM rewards_snapshot_status WHERE event_id = $1`,
+      [eventId]
+    );
+    const row = statusRes.rows[0] || null;
+    return res.json({
+      success: true,
+      status: row ? {
+        locked: !!row.locked,
+        lockedByUserId: row.locked_by_user_id || null,
+        lockedByUsername: row.locked_by_username || null,
+        lockedAt: row.locked_at || null
+      } : { locked: false, lockedByUserId: null, lockedByUsername: null, lockedAt: null }
+    });
+  } catch (error) {
+    console.error('❌ [SNAPSHOT] Error fetching status:', error);
+    return res.status(500).json({ success: false, message: 'Error fetching snapshot status' });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Get snapshot entries data
+app.get('/api/rewards-snapshot/:eventId/data', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ success: false, message: 'Authentication required' });
+  }
+
+  const { eventId } = req.params;
+  let client;
+  try {
+    client = await pool.connect();
+    await ensureRewardsSnapshotTables(client);
+    const entriesRes = await client.query(
+      `SELECT id, event_id, panel_key, panel_name, discord_user_id, character_name, character_class, ranking_number_original, point_value_original, character_details_original, primary_numeric_original, aux_json, point_value_edited, character_details_edited, updated_at
+       FROM rewards_snapshot_entries WHERE event_id = $1 ORDER BY panel_key, ranking_number_original, character_name`,
+      [eventId]
+    );
+    return res.json({ success: true, entries: entriesRes.rows });
+  } catch (error) {
+    console.error('❌ [SNAPSHOT] Error fetching entries:', error);
+    return res.status(500).json({ success: false, message: 'Error fetching snapshot entries' });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Lock snapshot from current view (replace entries for event)
+app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ success: false, message: 'Authentication required' });
+  }
+  const { eventId } = req.params;
+  const entries = Array.isArray(req.body && req.body.entries) ? req.body.entries : [];
+  if (!entries || entries.length === 0) {
+    return res.status(400).json({ success: false, message: 'entries array is required' });
+  }
+
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    await ensureRewardsSnapshotTables(client);
+
+    // If already locked, keep owner but allow replacing entries to reflect latest view
+    const statusRes = await client.query(`SELECT locked, locked_by_user_id FROM rewards_snapshot_status WHERE event_id = $1`, [eventId]);
+    if (statusRes.rows.length === 0) {
+      await client.query(
+        `INSERT INTO rewards_snapshot_status (event_id, locked, locked_by_user_id, locked_by_username, locked_at)
+         VALUES ($1, TRUE, $2, $3, NOW())`,
+        [eventId, req.user.id, `${req.user.username}#${req.user.discriminator}`]
+      );
+    } else if (!statusRes.rows[0].locked) {
+      await client.query(
+        `UPDATE rewards_snapshot_status SET locked = TRUE, locked_by_user_id = $2, locked_by_username = $3, locked_at = NOW() WHERE event_id = $1`,
+        [eventId, req.user.id, `${req.user.username}#${req.user.discriminator}`]
+      );
+    }
+
+    // Replace entries for event
+    await client.query(`DELETE FROM rewards_snapshot_entries WHERE event_id = $1`, [eventId]);
+
+    for (const e of entries) {
+      await client.query(
+        `INSERT INTO rewards_snapshot_entries (
+            event_id, panel_key, panel_name, discord_user_id, character_name, character_class,
+            ranking_number_original, point_value_original, character_details_original,
+            primary_numeric_original, aux_json, point_value_edited, character_details_edited
+         ) VALUES (
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13
+         ) ON CONFLICT (event_id, panel_key, character_name) DO UPDATE SET
+            panel_name = EXCLUDED.panel_name,
+            discord_user_id = EXCLUDED.discord_user_id,
+            character_class = EXCLUDED.character_class,
+            ranking_number_original = EXCLUDED.ranking_number_original,
+            point_value_original = EXCLUDED.point_value_original,
+            character_details_original = EXCLUDED.character_details_original,
+            primary_numeric_original = EXCLUDED.primary_numeric_original,
+            aux_json = EXCLUDED.aux_json,
+            updated_at = NOW()
+        `,
+        [
+          eventId,
+          e.panel_key || null,
+          e.panel_name || null,
+          e.discord_user_id || null,
+          e.character_name || null,
+          e.character_class || null,
+          Number(e.ranking_number_original) || null,
+          Number(e.point_value_original) || null,
+          e.character_details_original || null,
+          Number(e.primary_numeric_original) || null,
+          e.aux_json ? JSON.stringify(e.aux_json) : null,
+          e.point_value_edited != null ? Number(e.point_value_edited) : null,
+          e.character_details_edited != null ? e.character_details_edited : null
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+    return res.json({ success: true });
+  } catch (error) {
+    if (client) await client.query('ROLLBACK');
+    console.error('❌ [SNAPSHOT] Error locking snapshot:', error);
+    return res.status(500).json({ success: false, message: 'Error locking snapshot' });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Update a single snapshot entry (edited values)
+app.put('/api/rewards-snapshot/:eventId/entry', requireManagement, async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ success: false, message: 'Authentication required' });
+  }
+  const { eventId } = req.params;
+  const {
+    panel_key,
+    panel_name,
+    character_name,
+    character_class,
+    discord_user_id,
+    ranking_number_original,
+    point_value_edited,
+    character_details_edited
+  } = req.body || {};
+
+  if (!panel_key || !character_name) {
+    return res.status(400).json({ success: false, message: 'panel_key and character_name are required' });
+  }
+
+  let client;
+  try {
+    client = await pool.connect();
+    await ensureRewardsSnapshotTables(client);
+
+    // Require locked snapshot before edits
+    const statusRes = await client.query(`SELECT locked FROM rewards_snapshot_status WHERE event_id = $1`, [eventId]);
+    const locked = statusRes.rows[0] ? !!statusRes.rows[0].locked : false;
+    if (!locked) {
+      return res.status(409).json({ success: false, message: 'Snapshot must be locked before editing entries' });
+    }
+
+    // Upsert entry
+    const upsertRes = await client.query(
+      `INSERT INTO rewards_snapshot_entries (
+         event_id, panel_key, panel_name, discord_user_id, character_name, character_class, ranking_number_original,
+         point_value_edited, character_details_edited
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (event_id, panel_key, character_name) DO UPDATE SET
+         panel_name = COALESCE(EXCLUDED.panel_name, rewards_snapshot_entries.panel_name),
+         discord_user_id = COALESCE(EXCLUDED.discord_user_id, rewards_snapshot_entries.discord_user_id),
+         character_class = COALESCE(EXCLUDED.character_class, rewards_snapshot_entries.character_class),
+         ranking_number_original = COALESCE(EXCLUDED.ranking_number_original, rewards_snapshot_entries.ranking_number_original),
+         point_value_edited = EXCLUDED.point_value_edited,
+         character_details_edited = EXCLUDED.character_details_edited,
+         updated_at = NOW()
+       RETURNING id, event_id, panel_key, panel_name, discord_user_id, character_name, character_class, ranking_number_original, point_value_original, character_details_original, primary_numeric_original, aux_json, point_value_edited, character_details_edited, updated_at
+      `,
+      [
+        eventId,
+        panel_key,
+        panel_name || null,
+        discord_user_id || null,
+        character_name,
+        character_class || null,
+        ranking_number_original != null ? Number(ranking_number_original) : null,
+        point_value_edited != null ? Number(point_value_edited) : null,
+        character_details_edited != null ? character_details_edited : null
+      ]
+    );
+
+    const entry = upsertRes.rows[0];
+    return res.json({ success: true, entry });
+  } catch (error) {
+    console.error('❌ [SNAPSHOT] Error updating entry:', error);
+    return res.status(500).json({ success: false, message: 'Error updating snapshot entry' });
+  } finally {
+    if (client) client.release();
+  }
+});
+
 // --- Google Sheet Import Endpoints ---
 
 // Import World Buffs or Frost Resistance data from Google Sheet
