@@ -7075,16 +7075,27 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
 
     const dataResult = await client.query(`
       SELECT ld.discord_id,
+             ld.character_name,
+             ld.character_class,
              (ec.event_data->>'date') as event_date,
              (ec.event_data->>'channelId') as channel_id
       FROM log_data ld
       LEFT JOIN raid_helper_events_cache ec ON ec.event_id = ld.event_id
-      WHERE ld.discord_id IS NOT NULL AND ec.event_data->>'date' IS NOT NULL
+      WHERE ec.event_data->>'date' IS NOT NULL
     `);
 
     const attendanceByPlayer = {}; // discord_id -> Set(weekKey)
     for (const row of dataResult.rows) {
-      const did = String(row.discord_id);
+      let did = row.discord_id ? String(row.discord_id) : null;
+      if (!did) {
+        const key = `${String(row.character_name||'').toLowerCase()}|${String(row.character_class||'').toLowerCase()}`;
+        did = nameClassToDiscord.get(key) || null;
+        if (!did) {
+          const pDid = playersNameClassToDiscord.get(key);
+          if (pDid && pDid !== '__MULTI__') did = pDid;
+        }
+      }
+      if (!did) continue;
       const d = parseEventDate(row.event_date);
       if (!d) continue;
       const wk = getCustomWeekNumber(d);
