@@ -16,7 +16,7 @@ body.has-raid-bar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background-color: #2c2f33;
+    background-color: #000000;
     padding: 10px 20px;
     color: white;
     position: fixed;
@@ -184,7 +184,7 @@ body.has-raid-bar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: #001525;
+    background: #00233e;
     padding: 8px 20px;
     color: white;
     position: fixed;
@@ -892,6 +892,271 @@ body.has-raid-bar {
 
 
 /* Responsive Design for 4-Column Layout */
+/* --- Home (frontpage) dark theme --- */
+body.home {
+    background-color: #121214;
+    color: #e8e8e8;
+}
+
+/* Panels on frontpage */
+body.home .panel {
+    background-color: #1a191e;
+    border: 1px solid #555555;
+}
+
+/* Panel titles on frontpage */
+body.home .panel-title {
+    color: #e8e8e8;
+    border-bottom: 1px solid #24232a;
+}
+
+/* Direct text inside panels on frontpage */
+body.home .panel > p { color: #e8e8e8; }
+body.home .panel .panel-text,
+body.home .panel .panel-text p,
+body.home .panel .panel-text li,
+body.home .panel .panel-text h3 { color: #e8e8e8; }
+
+/* Ensure status text under refresh buttons is readable on dark panels */
+body.home .panel .refresh-status,
+body.home .panel .last-refresh {
+    color: #e8e8e8;
+}
+
+/* Keep sub-items (raids, items, characters) using their own colors */
+/* Keep nested sub-items' own styles; no global color override here */
+
+/* --- Guild Members dark theme --- */
+body.guild { background-color: #121214 !important; color: #e8e8e8 !important; }
+body.guild .stat-card,
+body.guild .search-filter,
+body.guild .members-table { background-color: #1a191e !important; border: 1px solid #555555 !important; }
+body.guild .members-table .table-container { background: transparent !important; }
+body.guild #members-table th { background: #232229 !important; color: #e8e8e8 !important; border-bottom: 1px solid #333 !important; }
+body.guild #members-table td { border-bottom: 1px solid #333 !important; }
+body.guild #members-table tr:hover { background: #1f1e24 !important; }
+body.guild .search-input,
+body.guild .filter-select { background: #232229 !important; color: #e8e8e8 !important; border: 1px solid #555555 !important; }
+body.guild .clear-btn { background: #e74c3c !important; color: white !important; }
+body.guild .loading { color: #c7c7c7 !important; }
+body.guild .error { background: #3a1f21 !important; color: #ffb3b8 !important; border: 1px solid #8a2f35 !important; }
+
+/* --- Attendance dark theme --- */
+body.attendance { background-color: #121214; color: #e8e8e8; }
+body.attendance .attendance-container { background-color: transparent; }
+body.attendance .attendance-controls,
+body.attendance .loading-indicator,
+body.attendance .error-display,
+body.attendance .no-data-message,
+body.attendance .attendance-table-container,
+body.attendance .attendance-stats,
+body.attendance .stat-card { background-color: #1a191e; border: 1px solid #555555; }
+body.attendance .attendance-info { color: #e8e8e8; }
+body.attendance .attendance-legend { background: #232229; border-bottom: 1px solid #333; }
+body.attendance .attendance-legend h4 { color: #e8e8e8; }
+body.attendance .legend-item { color: #c9c9c9; }
+body.attendance .attendance-table-wrapper { border: 1px solid #333; }
+body.attendance .attendance-table { background: #1a191e; }
+body.attendance .attendance-table th { background: #232229; color: #e8e8e8; border-bottom: 2px solid #333; }
+body.attendance .attendance-table td { border-bottom: 1px solid #333; }
+body.attendance .attendance-table tbody tr:hover { background: #1f1e24; }
+body.attendance .attendance-table tbody tr:hover .player-column { background: #232229; }
+body.attendance .attendance-table .player-column { background: #232229; border-right: 2px solid #333; color: #e8e8e8; }
+body.attendance .loading-indicator p { color: #c9c9c9; }
+body.attendance .error-content, body.attendance .no-data-content { color: #ffb3b8; }
+
+/* --- Rules dark theme --- */
+body.rules { background-color: #121214; color: #e8e8e8; }
+body.rules .content.rules-page { background: transparent; box-shadow: none; }
+body.rules .rules-page h1,
+body.rules .rules-page h2 { color: #e8e8e8; }
+body.rules .rule-card { background: #1a191e; border: 1px solid #555555; box-shadow: none; }
+body.rules .rule-icon { background: #232229; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06); }
+body.rules .rule-header { color: #e8e8e8; }
+body.rules .rule-body { color: #d0d0d0; }
+
+/* --- Roster dark theme --- */
+body.roster { background-color: #121214; color: #e8e8e8; }
+body.roster .content { background: transparent; }
+body.roster #roster-event-title { color: #e8e8e8; }
+body.roster .roster-container { background-color: #1a191e; border: 1px solid #555555; }
+body.roster #bench-container.bench-container { background-color: #1a191e !important; border: 1px solid #555555 !important; box-shadow: none; }
+body.roster .player-search-modal { background-color: #1a191e; border: 1px solid #555555; }
+body.roster .player-search-header { color: #e8e8e8; }
+body.roster .player-search-input { background-color: #232229; border: 1px solid #555555; color: #e8e8e8; }
+body.roster .player-search-results { background-color: #232229; border: 1px solid #555555; }
+body.roster .player-search-item { color: #e8e8e8; border-bottom: 1px solid #444; }
+body.roster .button-panel { background-color: #1a191e; border: 1px solid #555555; }
+body.roster .toggle-container { background-color: #232229; border: 1px solid #555; }
+body.roster .toggle-label { color: #e8e8e8; }
+body.roster .dropdown-item { color: #ddd; }
+body.roster .roster-cell { border: 1px solid #555; }
+body.roster .roster-cell.empty-slot-clickable { background-color: #333; }
+
+/* --- Assignments dark theme --- */
+body.assignments { background-color: #121214; color: #e8e8e8; }
+body.assignments .container { background: transparent; }
+body.assignments .manual-rewards-section { --panel-accent: #555555; background: #1a191e; border: 1px solid #555555; box-shadow: none; }
+body.assignments .manual-rewards-section .section-header { background: #232229; color: #e8e8e8; }
+body.assignments .manual-rewards-content { color: #e8e8e8; }
+body.assignments .assignment-entry-row { border-bottom: 1px solid #333; }
+body.assignments .assignment-editable { background: #232229; color: #e8e8e8; border: 1px solid #555555; }
+body.assignments .assignment-editable::placeholder { color: #9a9a9a; }
+body.assignments .assignment-img { border: 1px solid #555555; }
+body.assignments .floating-nav { background: rgba(26, 25, 30, 0.95); border: 1px solid rgba(255,255,255,0.08); }
+body.assignments .nav-buttons { border-color: rgba(255,255,255,0.12); }
+
+/* --- Raidlogs dark theme --- */
+body.raidlogs { background-color: #121214; color: #e8e8e8; }
+body.raidlogs .container { background: transparent; }
+body.raidlogs .auth-gate { background: #1a191e; border: 1px solid #555555; color: #e8e8e8; }
+body.raidlogs .auth-gate .lock { background:#0b1220; border:1px solid #1f2937; color:#93c5fd; }
+body.raidlogs .loading-indicator,
+body.raidlogs .no-data-message,
+body.raidlogs .error-display { background: #1a191e; border: 1px solid #555555; }
+body.raidlogs .no-data-content, body.raidlogs .error-content { color: #e8e8e8; }
+body.raidlogs .floating-nav { background: rgba(26,25,30,0.95); border: 1px solid rgba(255,255,255,0.08); }
+body.raidlogs .nav-buttons { border-color: rgba(255,255,255,0.12); }
+body.raidlogs .section-header { background: #232229; color: #e8e8e8; }
+body.raidlogs .ranking-item { border-bottom: 1px solid #333; }
+body.raidlogs .ranking-item:hover { background: #1f1e24; }
+body.raidlogs .manual-rewards-section { background: #1a191e; border: 1px solid #555555; box-shadow: none; }
+body.raidlogs .manual-rewards-section .section-header { background: #232229; }
+body.raidlogs .manual-rewards-templates { background: #232229; border: 1px solid #333; }
+body.raidlogs .mode-badge { background: #232229; color: #e8e8e8; }
+body.raidlogs .manual-rewards-form { background: #232229; border: 1px solid #333; }
+body.raidlogs .player-dropdown { background: #232229; border: 1px solid #333; }
+body.raidlogs .player-dropdown-item { border-bottom: 1px solid rgba(255,255,255,0.08); }
+
+/* --- Gold dark theme --- */
+body.gold { background-color: #121214; color: #e8e8e8; }
+body.gold .content { background: transparent; }
+body.gold .auth-gate { background: #1a191e; border: 1px solid #555555; color: #e8e8e8; }
+body.gold .gold-container .loading-indicator,
+body.gold .gold-container .error-display,
+body.gold .gold-content { background: #1a191e; border: 1px solid #555555; }
+body.gold .summary .card { background:#1a191e !important; border:1px solid #555555 !important; }
+body.gold .summary .card h3 { color:#c9c9c9 !important; }
+body.gold .summary .card .value { color:#e8e8e8 !important; }
+body.gold .summary .card .tooltip { background:#232229; border:1px solid #333; color:#e8e8e8; }
+body.gold #gargulExport { background:#111827; color:#e5e7eb; border:1px solid #374151; }
+body.gold #copyGargul { background:#1f2937; color:#e5e7eb; border:1px solid #374151; }
+body.gold #gargulCopyStatus { color:#9ca3af; }
+
+/* --- Loot dark theme --- */
+body.loot { background-color: #121214; color: #e8e8e8; }
+body.loot .main-content { background: transparent; }
+body.loot .auth-gate { background:#1a191e; border:1px solid #555555; color:#e8e8e8; }
+body.loot .import-section { background:#1a191e; border:1px solid #555555; }
+body.loot .import-input-container textarea { background:#232229; color:#e8e8e8; border:1px solid #555555; }
+body.loot .loot-section { background:#1a191e; border:1px solid #555555; }
+body.loot .loot-section h3 { color:#e8e8e8; }
+body.loot .stat-card { background: linear-gradient(135deg, #1a1a1a, #232229); border:1px solid #555; }
+body.loot .loot-item { background:#1a1a1a; border:1px solid #555; }
+body.loot .no-items { background:#1a1a1a; border-color:#555; color:#9a9a9a; }
+
+/* --- User Settings dark theme --- */
+body.user-settings { background-color: #121214; color: #e8e8e8; }
+body.user-settings .content { background: transparent; box-shadow: none; }
+body.user-settings .settings-section { background: #1a191e; border: 1px solid #555555; box-shadow: none; }
+body.user-settings .settings-section h2 { color: #e8e8e8; border-bottom-color: #333; }
+body.user-settings .characters-grid .character-card { background: linear-gradient(135deg, #1a1a1a, #232229); border-left-color: #3498db; }
+body.user-settings .character-name, body.user-settings .character-details, body.user-settings .account-info-text, body.user-settings .info-row strong { color: #e8e8e8; }
+body.user-settings .character-race { color: #bbbbbb; }
+body.user-settings .character-meta small { color: #9aa0a6; }
+body.user-settings .btn-primary { background: #2563eb; }
+
+/* --- Logs dark theme --- */
+body.logs { background-color: #121214; color: #e8e8e8; }
+body.logs .container { background: transparent; }
+body.logs .workflow-progress, body.logs .data-section, body.logs .logs-input-section, body.logs .loading-indicator, body.logs .log-data-container, body.logs .workflow-container { background: #1a191e; border: 1px solid #555555; }
+body.logs .data-section h2, body.logs .progress-header h3 { color: #e8e8e8; background: #232229; border-bottom: 1px solid #333; }
+body.logs .workflow-steps-checkboxes { background: #1a1a1a; border: 1px solid #333; }
+body.logs .checkbox-item { background: #232229; border: 1px solid #444; }
+body.logs .checkbox-item:hover { background: #2b2a31; border-color: #5865F2; }
+body.logs .checkbox-label { color: #ddd; }
+body.logs .btn-secondary { background: #232229; border: 1px solid #555; color: #e8e8e8; }
+
+/* --- Admin dark theme --- */
+body.admin { background-color: #121214; color: #e8e8e8; }
+body.admin .container, body.admin .content { background: transparent; }
+body.admin .panel, body.admin .card, body.admin .section, body.admin .admin-section { background: #1a191e; border: 1px solid #555555; box-shadow: none; }
+body.admin h1, body.admin h2, body.admin h3 { color: #e8e8e8; }
+/* Admin specific panels/tables (override inline whites) */
+body.admin .management-panel,
+body.admin .permission-card,
+body.admin .settings-section { background: #1a191e !important; border: 1px solid #555555 !important; box-shadow: none !important; }
+body.admin .data-table { background: #1a191e !important; border: 1px solid #555555 !important; }
+body.admin .data-table th { background: #232229 !important; color: #e8e8e8 !important; border-bottom: 1px solid #333 !important; }
+body.admin .data-table td { color: #e8e8e8 !important; border-bottom: 1px solid #333 !important; }
+body.admin .data-table tr:hover { background: #1f1e24 !important; }
+/* Blanket override of inline white cards within admin */
+body.admin div[style*="background: white"],
+body.admin div[style*="background:white"],
+body.admin div[style*="background:#ffffff"],
+body.admin div[style*="background: #ffffff"] { background: #1a191e !important; border-color: #555555 !important; color: #e8e8e8 !important; }
+body.admin [style*="border: 1px solid #dee2e6"],
+body.admin [style*="border:1px solid #dee2e6"],
+body.admin [style*="border: 1px solid #e0e0e0"],
+body.admin [style*="border:1px solid #e0e0e0"] { border-color: #555555 !important; }
+/* Warning/info boxes to darker theme */
+body.admin div[style*="#fff3cd"], body.admin div[style*="ffeaa7"] {
+    background: rgba(255,193,7,0.08) !important;
+    border-color: rgba(255,193,7,0.35) !important;
+    color: #e8e8e8 !important;
+}
+/* Admin user info card */
+body.admin .admin-user-info { background: #1a191e !important; border: 1px solid #555555 !important; color: #e8e8e8 !important; border-radius: 8px; }
+/* Background Blur/Darken control cards and other light panels */
+body.admin div[style*="#f8f9fa"],
+body.admin div[style*="background: #f8f9fa"],
+body.admin div[style*="background:#f8f9fa"] { background: #1a191e !important; border-color: #555555 !important; color: #e8e8e8 !important; }
+/* Inline light text colors inside admin panels */
+body.admin h4[style*="#2c3e50"],
+body.admin h4[style*="#2C3E50"] { color: #e8e8e8 !important; }
+body.admin p[style*="#6c757d"],
+body.admin p[style*="#6C757D"],
+body.admin span[style*="#6c757d"],
+body.admin label[style*="#495057"],
+body.admin label[style*="#495057"] { color: #c9c9c9 !important; }
+/* Inline light borders/inputs */
+body.admin [style*="border: 1px solid #ddd"],
+body.admin [style*="border:1px solid #ddd"] { border-color: #555555 !important; }
+body.admin input[type="number"],
+body.admin input[type="range"],
+body.admin input[style*="border: 1px solid #ddd"],
+body.admin textarea[style*="border: 1px solid #ddd"] { background: #232229 !important; color: #e8e8e8 !important; }
+/* Universal readable text on dark backgrounds (avoid item/player names) */
+body.home :where(p, li, span, small, label),
+body.guild :where(p, li, span, small, label),
+body.attendance :where(p, li, span, small, label),
+body.rules :where(p, li, span, small, label),
+body.roster :where(p, li, span, small, label),
+body.assignments :where(p, li, span, small, label),
+body.raidlogs :where(p, li, span, small, label),
+body.gold :where(p, li, span, small, label),
+body.loot :where(p, li, span, small, label),
+body.logs :where(p, li, span, small, label),
+body.user-settings :where(p, li, span, small, label),
+body.admin :where(p, li, span, small, label) {
+    color: #e8e8e8;
+}
+
+body.home :where(h1,h2,h3,h4),
+body.guild :where(h1,h2,h3,h4),
+body.attendance :where(h1,h2,h3,h4),
+body.rules :where(h1,h2,h3,h4),
+body.roster :where(h1,h2,h3,h4),
+body.assignments :where(h1,h2,h3,h4),
+body.raidlogs :where(h1,h2,h3,h4),
+body.gold :where(h1,h2,h3,h4),
+body.loot :where(h1,h2,h3,h4),
+body.logs :where(h1,h2,h3,h4),
+body.user-settings :where(h1,h2,h3,h4),
+body.admin :where(h1,h2,h3,h4) {
+    color: #e8e8e8;
+}
+
 @media (max-width: 1400px) {
     .main-content-grid {
         grid-template-columns: 1fr 1fr; /* 2 columns on medium screens */

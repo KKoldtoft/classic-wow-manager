@@ -240,16 +240,33 @@
     } else if (panelKeyLower.includes('gluth')) {
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755150437/Gluth_mid_ju7cbx.jpg';
       defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755150438/Gluth_full_bkqgdj.png';
+    } else if (panelKeyLower.includes('noth')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+    } else if (panelKeyLower.includes('heig')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+    } else if (panelKeyLower.includes('loatheb')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+    } else if (panelKeyLower.includes('thadd')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+    } else if (panelKeyLower.includes('horse')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848571/4h_mid_gorjji.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848571/4h_full_o1bgfc.png';
+    } else if (panelKeyLower.includes('sapph')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755847769/Saph_mid_ix6tiz.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755847779/Saph_full_kwkgel.png';
+    } else if (panelKeyLower.includes('kel')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755847769/KT_mid_yuhor1.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755847769/KT_full_pmo4fd.png';
     }
     let displayImageUrl = (image_url && !String(image_url).includes('placehold.co')) ? image_url : defaultMid;
-    if (panelKeyLower.includes('faerlina') || panelKeyLower.includes('maex') || panelKeyLower.includes('razu') || panelKeyLower.includes('goth') || panelKeyLower.includes('patch') || panelKeyLower.includes('grobb') || panelKeyLower.includes('gluth')) {
+    if (panelKeyLower.includes('faerlina') || panelKeyLower.includes('maex') || panelKeyLower.includes('razu') || panelKeyLower.includes('goth') || panelKeyLower.includes('patch') || panelKeyLower.includes('grobb') || panelKeyLower.includes('gluth') || panelKeyLower.includes('noth') || panelKeyLower.includes('heig') || panelKeyLower.includes('loatheb') || panelKeyLower.includes('thadd') || panelKeyLower.includes('horse') || panelKeyLower.includes('sapph') || panelKeyLower.includes('kel')) {
       displayImageUrl = defaultMid;
     }
 
     const imgLink = document.createElement('a');
     imgLink.href = (panel.image_url_full && panel.image_url_full.trim().length > 0)
       ? panel.image_url_full
-      : ((panelKeyLower.includes('faerlina') || panelKeyLower.includes('maex') || panelKeyLower.includes('razu') || panelKeyLower.includes('goth') || panelKeyLower.includes('patch') || panelKeyLower.includes('grobb') || panelKeyLower.includes('gluth')) ? defaultFull : displayImageUrl);
+      : ((panelKeyLower.includes('faerlina') || panelKeyLower.includes('maex') || panelKeyLower.includes('razu') || panelKeyLower.includes('goth') || panelKeyLower.includes('patch') || panelKeyLower.includes('grobb') || panelKeyLower.includes('gluth') || panelKeyLower.includes('noth') || panelKeyLower.includes('heig') || panelKeyLower.includes('loatheb') || panelKeyLower.includes('thadd') || panelKeyLower.includes('horse') || panelKeyLower.includes('sapph') || panelKeyLower.includes('kel')) ? defaultFull : displayImageUrl);
     imgLink.target = '_blank';
     imgLink.rel = 'noopener noreferrer';
     const img = document.createElement('img');

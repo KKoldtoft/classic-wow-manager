@@ -478,7 +478,7 @@ class WoWLogsAnalyzer {
                 
                 // Show the role mapping button and display results
                 this.showRoleMappingButton();
-                await this.displayRoleMappingResults(activeEventSession);
+                try { localStorage.setItem('logs:showRoleMappingButton', '1'); } catch {}
                 
             } else {
                 console.error('❌ [STORE DATA] Failed to store log data:', result.message);
@@ -994,6 +994,22 @@ class WoWLogsAnalyzer {
         // ====================================
         // UNIFIED WORKFLOW EVENT LISTENERS
         // ====================================
+
+        // Restore persisted UI state
+        try {
+            if (localStorage.getItem('logs:showRoleMappingButton') === '1') {
+                this.showRoleMappingButton();
+            }
+            const saved = localStorage.getItem('logs:completionHTML');
+            if (saved) {
+                const container = document.querySelector('#logData .data-section') || document.querySelector('.container');
+                if (container && !document.getElementById('workflowCompletionMessage')) {
+                    const tmp = document.createElement('div');
+                    tmp.innerHTML = saved;
+                    container.parentElement?.insertBefore(tmp.firstElementChild, container.nextSibling);
+                }
+            }
+        } catch {}
 
         // Complete workflow button click
         document.getElementById('runCompleteWorkflowBtn').addEventListener('click', () => {
@@ -6036,10 +6052,7 @@ class WoWLogsAnalyzer {
                     this.workflowState.currentStep = 4;
                     await this.runWorkflowStep4(eventId, logUrl);
                     // Fall through to run remaining steps
-                case 5:
-                    this.workflowState.currentStep = 5;
-                    await this.runWorkflowStep5(logUrl);
-                    // Fall through to run remaining steps
+                // case 5 removed
                 case 6:
                     this.workflowState.currentStep = 6;
                     await this.runWorkflowStep6(logUrl);

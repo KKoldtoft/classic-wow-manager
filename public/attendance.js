@@ -250,35 +250,11 @@ class AttendanceManager {
             const statsText = `${week.characterCount || 0} Characters, ${week.playerCount || 0} Players`;
             const shortStatsText = statsText.length > 20 ? `${week.characterCount || 0}C, ${week.playerCount || 0}P` : statsText;
             
-            let rebuildHtml = '';
-            if (this.canManage) {
-                rebuildHtml = `
-                <div class="week-rebuild-container">
-                    <button class="week-rebuild-btn" 
-                            data-week-year="${week.weekYear}" 
-                            data-week-number="${week.weekNumber}"
-                            title="Rebuild cache for Week ${week.weekNumber}, ${week.weekYear}">
-                        <i class="fas fa-sync-alt"></i>
-                    </button>
-                </div>`;
-            }
-
             th.innerHTML = `
                 <div>Week ${week.weekNumber}</div>
                 <div style="font-size: 10px; opacity: 0.7;">${dateRange}</div>
                 <div style="font-size: 10px; opacity: 0.6; margin-top: 2px;" title="${statsText}">${shortStatsText}</div>
-                ${rebuildHtml}
             `;
-            
-            // Add click handler for week rebuild button (management only)
-            const rebuildBtn = th.querySelector('.week-rebuild-btn');
-            if (rebuildBtn && this.canManage) {
-                rebuildBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    this.rebuildWeekCache(week.weekYear, week.weekNumber, rebuildBtn);
-                });
-            }
             
             headerRow.appendChild(th);
         });
