@@ -7030,18 +7030,6 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
       return res.json({ success: true, data: [] });
     }
 
-    // Get event date from local cache to anchor week window
-    const eventCache = await client.query(`
-      SELECT (event_data->>'date') as date
-      FROM raid_helper_events_cache
-      WHERE event_id = $1
-      LIMIT 1
-    `, [eventId]);
-    if (eventCache.rows.length === 0 || !eventCache.rows[0].date) {
-      console.log('⚠️ [PLAYER STREAKS] Event metadata not found in cache');
-      return res.json({ success: true, data: [] });
-    }
-
     const parseEventDate = (dateStr) => {
       const parts = String(dateStr).split('-');
       if (parts.length !== 3) return null;
@@ -7052,14 +7040,12 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
       return new Date(year, month, day);
     };
 
-    const anchorDate = parseEventDate(eventCache.rows[0].date);
-    if (!anchorDate) return res.json({ success: true, data: [] });
-
-    // Build 15-week window ending on the event week
-    const currentWeekInfo = getCustomWeekNumber(anchorDate);
+    // Build 15-week window up to NOW (match /api/attendance behavior)
+    const now = new Date();
+    const currentWeekInfo = getCustomWeekNumber(now);
     const weeks = [];
     for (let i = 14; i >= 0; i--) {
-      const d = new Date(anchorDate);
+      const d = new Date(now);
       d.setDate(d.getDate() - (i * 7));
       weeks.push(getCustomWeekNumber(d));
     }
@@ -7083,9 +7069,14 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
     const eventDiscordIds = new Set(inEvent.rows.map(r => String(r.discord_id)));
 
     // Pull all local log rows with cached event dates to compute attendance across window
+    // Channel filters map
+    const filtersResult = await client.query(`SELECT channel_id, is_included FROM attendance_channel_filters`);
+    const channelFilterMap = new Map(filtersResult.rows.map(r => [String(r.channel_id), r.is_included]));
+
     const dataResult = await client.query(`
       SELECT ld.discord_id,
-             (ec.event_data->>'date') as event_date
+             (ec.event_data->>'date') as event_date,
+             (ec.event_data->>'channelId') as channel_id
       FROM log_data ld
       LEFT JOIN raid_helper_events_cache ec ON ec.event_id = ld.event_id
       WHERE ld.discord_id IS NOT NULL AND ec.event_data->>'date' IS NOT NULL
@@ -7099,6 +7090,12 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
       const wk = getCustomWeekNumber(d);
       const wkKey = `${wk.weekYear}-${wk.weekNumber}`;
       if (!allowedWeekKeys.has(wkKey)) continue;
+      // Apply channel filters to match attendance page
+      const chId = row.channel_id ? String(row.channel_id) : null;
+      if (chId && channelFilterMap.has(chId)) {
+        const inc = channelFilterMap.get(chId);
+        if (inc === false) continue;
+      }
       if (!attendanceByPlayer[did]) attendanceByPlayer[did] = new Set();
       attendanceByPlayer[did].add(wkKey);
     }
