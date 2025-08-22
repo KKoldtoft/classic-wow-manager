@@ -689,17 +689,11 @@ class GoldPotManager {
         const role = String(this.primaryRoles?.[nameKey] || '').toLowerCase();
 
         // Collect per-panel contributions similar to raidlogs breakdown order
-        const rows = [];
+        const items = [];
         const push = (title, pts) => {
             if (!pts) return;
             const goldVal = Math.floor(pts * gpp);
-            rows.push(`
-                <div style="display:grid; grid-template-columns: 1.6fr 60px 85px; gap:8px; font-size:16px; line-height:1.45; color:#111;">
-                    <div>${fmtTitle(title)}</div>
-                    <div style="text-align:right;">${pts>0?`+${pts}`:pts}</div>
-                    <div style="text-align:right;">${goldVal>0?`+${goldVal}`:goldVal}</div>
-                </div>
-            `);
+            items.push({ title, pts, gold: goldVal });
         };
 
         // Base
@@ -848,6 +842,15 @@ class GoldPotManager {
         const manualPts = (this.datasets.manualRewardsData||[]).reduce((acc,e)=> acc + (lower(e.player_name||'')===nameKey ? (Number(e.points)||0) : 0), 0);
         push('Manual', manualPts);
 
+        // Ensure per-row gold sums to total (distribute rounding remainder to Base)
+        const computedTotalGold = Number(this.playerTotals?.get(nameKey)?.gold || 0);
+        const sumRowGold = items.reduce((acc, it) => acc + (Number(it.gold)||0), 0);
+        const remainder = computedTotalGold - sumRowGold;
+        if (remainder) {
+            const base = items.find(it => it.title === 'Base');
+            if (base) base.gold += remainder; else items.push({ title: 'Base', pts: 0, gold: remainder });
+        }
+
         const header = `
             <div style="display:grid; grid-template-columns: 1.6fr 60px 85px; gap:8px; font-size:14px; line-height:1.3; color:#111; font-weight:700; border-bottom:1px solid rgba(0,0,0,.15); padding-bottom:6px; margin-bottom:8px;">
                 <div>Name</div>
@@ -855,13 +858,18 @@ class GoldPotManager {
                 <div style="text-align:right;">Gold</div>
             </div>
         `;
-        const totalGold = Number(this.playerTotals?.get(nameKey)?.gold || 0);
+        const totalGold = computedTotalGold;
         const footer = `
             <div style="position:absolute; left:0; right:0; bottom:0; height:50px; background:rgba(0,0,0,0.5); border-bottom-left-radius:12px; border-bottom-right-radius:12px; display:flex; align-items:center; justify-content:center;">
                 <div style=\"font-weight:900; font-size:20px; color:#f5c542;\">${totalGold.toLocaleString()} gold</div>
             </div>
         `;
-        const body = rows.length ? rows.join('') : '<div style="font-size:16px; opacity:.8; color:#111;">No breakdown</div>';
+        const body = items.length ? items.map(it => `
+                <div style="display:grid; grid-template-columns: 1.6fr 60px 85px; gap:8px; font-size:16px; line-height:1.45; color:#111;">
+                    <div>${fmtTitle(it.title)}</div>
+                    <div style="text-align:right;">${it.pts>0?`+${it.pts}`:it.pts}</div>
+                    <div style="text-align:right;">${it.gold>0?`+${it.gold}`:it.gold}</div>
+                </div>`).join('') : '<div style="font-size:16px; opacity:.8; color:#111;">No breakdown</div>';
         return header + body + footer;
     }
     reconcilePlayersWithLogData(playersData) {
