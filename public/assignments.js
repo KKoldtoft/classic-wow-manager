@@ -740,7 +740,13 @@
       try { horseGridState.acceptByRow = deriveHorseAcceptFromEntries(panel.entries) || {}; } catch {}
 
       function getWarriorOptionsHtml(selectedName) {
-        const warriors = Array.isArray(roster) ? roster.filter(r => String(r.class_name||'').toLowerCase()==='warrior') : [];
+        const warriors = Array.isArray(roster)
+          ? roster.filter(r => {
+              const normalized = canonicalizeClass(String(r.class_name||''));
+              // Include any roster row that normalizes to warrior (covers Tank/Tanking etc.)
+              return String(normalized) === 'warrior';
+            })
+          : [];
         const opts = ['<option value="">Select warrior...</option>'].concat(
           warriors.map(r => `<option value="${r.character_name}" ${String(r.character_name)===String(selectedName)?'selected':''}>${r.character_name}</option>`)
         );

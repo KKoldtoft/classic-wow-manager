@@ -21,6 +21,20 @@
 	}
 })();
 
+// Helper: get event ID from URL (/event/:id/*)
+function getEventIdFromUrl() {
+    try {
+        const parts = window.location.pathname.split('/').filter(Boolean);
+        const idx = parts.indexOf('event');
+        if (idx >= 0 && parts[idx + 1]) {
+            return parts[idx + 1];
+        }
+        return null;
+    } catch (_) {
+        return null;
+    }
+}
+
 // This function fetches the user's login status from the server.
 async function getUserStatus() {
     try {
@@ -327,15 +341,11 @@ function setupUpcomingRaidsDropdown() {
 
 // Raid Bar functionality
 async function updateRaidBar() {
-    let activeEventId = localStorage.getItem('activeEventSession');
-    // Fallback: derive from URL /event/:eventId/*
-    if (!activeEventId) {
-        const parts = window.location.pathname.split('/').filter(Boolean);
-        const idx = parts.indexOf('event');
-        if (idx >= 0 && parts[idx + 1]) {
-            activeEventId = parts[idx + 1];
-            localStorage.setItem('activeEventSession', activeEventId);
-        }
+    const urlEventId = getEventIdFromUrl();
+    let activeEventId = urlEventId || localStorage.getItem('activeEventSession');
+    // Keep localStorage in sync with URL when present
+    if (urlEventId && localStorage.getItem('activeEventSession') !== urlEventId) {
+        localStorage.setItem('activeEventSession', urlEventId);
     }
     const raidBar = document.getElementById('raid-bar');
     const raidTitle = document.getElementById('raid-title');
@@ -410,9 +420,8 @@ function updateRaidNavigation(eventId) {
     }
     
     if (logsLink) {
-        // Prefer the dedicated Logs page if present, else keep raid logs
-        const preferEventLogs = logsLink.getAttribute('data-prefer-logs') === 'true';
-        logsLink.href = preferEventLogs ? `/event/${eventId}/logs` : `/event/${eventId}/raidlogs`;
+        // Always point Raid Logs to the event-specific raidlogs page
+        logsLink.href = `/event/${eventId}/raidlogs`;
     }
 
     if (lootLink) {
@@ -440,6 +449,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'activeEventSession') {
             updateRaidBar();
         }
+    });
+
+    // Update raid bar if history navigation changes the URL (URL is source of truth)
+    window.addEventListener('popstate', () => {
+        updateRaidBar();
     });
 
     // Global click listener to close dropdowns

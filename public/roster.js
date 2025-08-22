@@ -22,6 +22,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Set active event session in localStorage when visiting roster directly
     localStorage.setItem('activeEventSession', eventId);
     console.log('🎯 Set active event session from roster page:', eventId);
+    // Refresh raid bar links immediately in this tab (URL is source of truth)
+    if (typeof updateRaidBar === 'function') {
+        setTimeout(() => updateRaidBar(), 0);
+    }
     
     // Update raid bar if function is available
     if (typeof updateRaidBar === 'function') {

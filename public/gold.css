@@ -8,6 +8,9 @@ body, html {
     color: #111827;
 }
 
+/* Ensure reward/deduction titles in player breakdown are black on the gold page */
+body.gold .player-breakdown span { color: #111 !important; }
+
 .content {
     margin: 0 auto;
     padding: 2rem;

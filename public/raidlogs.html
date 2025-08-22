@@ -111,13 +111,6 @@
                 </div>
             </nav>
 
-            <!-- Computed/Manual mode badge -->
-            <div id="computed-manual-badge" class="mode-badge computed" title="Live computed from logs and data sources">Computed mode</div>
-            <div style="margin:8px 0 12px;">
-                <button id="rl-debug-toggle" class="btn-templates btn-mini"><i class="fas fa-bug"></i> Debug: Toggle breakdown</button>
-            </div>
-            <div id="rl-debug-panel" style="display:none; background:#111827; color:#e5e7eb; padding:12px; border-radius:8px; border:1px solid #1f2937; margin-bottom:16px; max-height:380px; overflow:auto;"></div>
-            
             <!-- Stats Section -->
             <div class="stats-section scroll-target" id="stats-dashboard">
                 <!-- Stats Panel Toggle Buttons -->
@@ -739,6 +732,13 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Moved to bottom: Computed/Manual mode badge and Debug toggle/panel -->
+            <div id="computed-manual-badge" class="mode-badge computed" title="Live computed from logs and data sources">Computed mode</div>
+            <div style="margin:8px 0 12px;">
+                <button id="rl-debug-toggle" class="btn-templates btn-mini"><i class="fas fa-bug"></i> Debug: Toggle breakdown</button>
+            </div>
+            <div id="rl-debug-panel" style="display:none; background:#111827; color:#e5e7eb; padding:12px; border-radius:8px; border:1px solid #1f2937; margin-bottom:16px; max-height:380px; overflow:auto;"></div>
 
         </div>
 
