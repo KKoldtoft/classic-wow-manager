@@ -13420,107 +13420,177 @@ app.get('/api/attendance', async (req, res) => {
     let client;
     try {
         client = await pool.connect();
-        
-        // Get current week info
+
+        // Current week and last 15-week window
         const now = new Date();
         const currentWeekInfo = getCustomWeekNumber(now);
-        
-        // Calculate the last 15 weeks
         const weeks = [];
         for (let i = 14; i >= 0; i--) {
-            const weekDate = new Date(now);
-            weekDate.setDate(weekDate.getDate() - (i * 7));
-            const weekInfo = getCustomWeekNumber(weekDate);
-            weeks.push(weekInfo);
+            const d = new Date(now);
+            d.setDate(d.getDate() - (i * 7));
+            weeks.push(getCustomWeekNumber(d));
         }
-        
-        // Get all unique discord IDs from the attendance data, respecting channel filters
-        // We'll get the most recent player_streak for each player
-        const playersResult = await client.query(`
-            SELECT DISTINCT ON (ac.discord_id) 
-                ac.discord_id, 
-                ac.discord_username, 
-                ac.player_streak
-            FROM attendance_cache ac
-            LEFT JOIN attendance_channel_filters acf ON ac.channel_id = acf.channel_id
-            WHERE (ac.week_year, ac.week_number) IN (${weeks.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ')})
-            AND (acf.is_included IS NULL OR acf.is_included = true)
-            ORDER BY ac.discord_id, ac.week_year DESC, ac.week_number DESC, ac.cached_at DESC
-        `, weeks.flatMap(w => [w.weekYear, w.weekNumber]));
-        
-        // Get attendance data for all players and weeks, respecting channel filters
-        const attendanceResult = await client.query(`
-            SELECT ac.discord_id, ac.week_year, ac.week_number, ac.event_id, ac.channel_name, ac.character_name, ac.character_class, ac.player_streak
-            FROM attendance_cache ac
-            LEFT JOIN attendance_channel_filters acf ON ac.channel_id = acf.channel_id
-            WHERE (ac.week_year, ac.week_number) IN (${weeks.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ')})
-            AND (acf.is_included IS NULL OR acf.is_included = true)
-            ORDER BY ac.discord_id, ac.week_year, ac.week_number, ac.event_id
-        `, weeks.flatMap(w => [w.weekYear, w.weekNumber]));
-        
-        // Organize attendance data by player and week
-        const attendanceByPlayer = {};
-        const weekStats = {};
-        
-        attendanceResult.rows.forEach(row => {
-            if (!attendanceByPlayer[row.discord_id]) {
-                attendanceByPlayer[row.discord_id] = {};
-            }
-            const weekKey = `${row.week_year}-${row.week_number}`;
-            if (!attendanceByPlayer[row.discord_id][weekKey]) {
-                attendanceByPlayer[row.discord_id][weekKey] = [];
-            }
-            attendanceByPlayer[row.discord_id][weekKey].push({
-                eventId: row.event_id,
-                channelName: row.channel_name,
-                characterName: row.character_name,
-                characterClass: row.character_class
-            });
-            
-            // Track stats for each week
-            if (!weekStats[weekKey]) {
-                weekStats[weekKey] = {
-                    players: new Set(),
-                    characters: new Set()
-                };
-            }
-            weekStats[weekKey].players.add(row.discord_id);
-            if (row.character_name) {
-                weekStats[weekKey].characters.add(`${row.discord_id}-${row.character_name}`);
+        const allowedWeekKeys = new Set(weeks.map(w => `${w.weekYear}-${w.weekNumber}`));
+
+        // Channel filters map
+        const filtersResult = await client.query(`SELECT channel_id, is_included FROM attendance_channel_filters`);
+        const channelFilterMap = new Map(filtersResult.rows.map(r => [String(r.channel_id), r.is_included]));
+
+        // Build resolvers from log_data itself (guild-agnostic)
+        const ldResolver = await client.query(`
+            SELECT DISTINCT LOWER(character_name) AS name_lower,
+                            LOWER(character_class) AS class_lower,
+                            discord_id
+            FROM log_data
+            WHERE discord_id IS NOT NULL
+        `);
+        const nameClassToDiscord = new Map(ldResolver.rows.map(r => [`${r.name_lower}|${r.class_lower}`, String(r.discord_id)]));
+
+        // Players table fallback: use only when unique mapping by (name,class)
+        const playersResolver = await client.query(`
+            SELECT LOWER(character_name) AS name_lower,
+                   LOWER(class) AS class_lower,
+                   discord_id
+            FROM players
+            WHERE discord_id IS NOT NULL
+        `);
+        const playersNameClassToDiscord = new Map(); // key -> discord_id or '__MULTI__'
+        playersResolver.rows.forEach(r => {
+            const key = `${r.name_lower}|${r.class_lower}`;
+            const did = String(r.discord_id);
+            if (!playersNameClassToDiscord.has(key)) {
+                playersNameClassToDiscord.set(key, did);
+            } else {
+                const existing = playersNameClassToDiscord.get(key);
+                if (existing !== did) playersNameClassToDiscord.set(key, '__MULTI__');
             }
         });
-        
-        // Convert sets to counts and add to weeks data
+
+        // Pull local log data joined with local event cache (no external calls)
+        const dataResult = await client.query(`
+            SELECT 
+                ld.event_id,
+                ld.discord_id,
+                ld.character_name,
+                ld.character_class,
+                (ec.event_data->>'channelId') as channel_id,
+                (ec.event_data->>'channelName') as channel_name,
+                (ec.event_data->>'date') as event_date
+            FROM log_data ld
+            LEFT JOIN raid_helper_events_cache ec ON ec.event_id = ld.event_id
+            WHERE ld.event_id IS NOT NULL
+        `);
+
+        // Build attendance in-memory for the last 15 weeks window
+        const attendanceByPlayer = {}; // discord_id -> { weekKey: [events] }
+        const weekStats = {}; // weekKey -> { players:Set, characters:Set }
+
+        const parseEventDate = (dateStr) => {
+            if (!dateStr) return null; // expected format: d-m-yyyy
+            const parts = String(dateStr).split('-');
+            if (parts.length !== 3) return null;
+            const day = parseInt(parts[0]);
+            const month = parseInt(parts[1]) - 1;
+            const year = parseInt(parts[2]);
+            if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+            return new Date(year, month, day);
+        };
+
+        for (const row of dataResult.rows) {
+            // Resolve discord_id if missing using guildies name+class
+            let did = row.discord_id ? String(row.discord_id) : null;
+            let inferredFromPlayers = false;
+            if (!did) {
+                const key = `${String(row.character_name||'').toLowerCase()}|${String(row.character_class||'').toLowerCase()}`;
+                did = nameClassToDiscord.get(key) || null;
+                if (!did) {
+                    const pDid = playersNameClassToDiscord.get(key);
+                    if (pDid && pDid !== '__MULTI__') {
+                        did = pDid;
+                        inferredFromPlayers = true;
+                    }
+                }
+            }
+            if (!did) continue; // cannot attribute attendance without a user
+
+            // Parse event date and map to our 15-week window
+            const eventDate = parseEventDate(row.event_date);
+            if (!eventDate) continue;
+            const wk = getCustomWeekNumber(eventDate);
+            const wkKey = `${wk.weekYear}-${wk.weekNumber}`;
+            if (!allowedWeekKeys.has(wkKey)) continue;
+
+            // Channel filter
+            const chId = row.channel_id ? String(row.channel_id) : null;
+            if (chId && channelFilterMap.has(chId)) {
+                const inc = channelFilterMap.get(chId);
+                if (inc === false) continue;
+            }
+
+            // Clean channel name
+            let channelDisplayName = '#unknown-channel';
+            if (row.channel_name && row.channel_name.trim() && row.channel_name !== row.channel_id && !String(row.channel_name).match(/^\d+$/)) {
+                channelDisplayName = String(row.channel_name).replace(/^📅/, '').trim();
+            } else if (chId) {
+                channelDisplayName = `channel-${chId.slice(-4)}`;
+            }
+
+            if (!attendanceByPlayer[did]) attendanceByPlayer[did] = {};
+            if (!attendanceByPlayer[did][wkKey]) attendanceByPlayer[did][wkKey] = [];
+            attendanceByPlayer[did][wkKey].push({
+                eventId: row.event_id,
+                channelName: channelDisplayName,
+                characterName: row.character_name,
+                characterClass: row.character_class,
+                inferredFromPlayers: inferredFromPlayers === true
+            });
+
+            if (!weekStats[wkKey]) weekStats[wkKey] = { players: new Set(), characters: new Set() };
+            weekStats[wkKey].players.add(did);
+            if (row.character_name) weekStats[wkKey].characters.add(`${did}-${row.character_name}`);
+        }
+
+        // Derive players list with streaks from in-memory attendance
+        const computeStreak = (did) => {
+            let streak = 0;
+            // Walk from current week backwards across our 15 weeks
+            for (let i = weeks.length - 1; i >= 0; i--) {
+                const wkKey = `${weeks[i].weekYear}-${weeks[i].weekNumber}`;
+                const has = attendanceByPlayer[did] && attendanceByPlayer[did][wkKey] && attendanceByPlayer[did][wkKey].length > 0;
+                if (has) streak++; else break;
+            }
+            return streak;
+        };
+
+        const players = Object.keys(attendanceByPlayer).map(did => ({
+            discord_id: did,
+            discord_username: `user-${String(did).slice(-4)}`,
+            player_streak: computeStreak(did)
+        }));
+
+        // Convert sets to counts for week stats
         const enrichedWeeks = weeks.map(week => {
-            const weekKey = `${week.weekYear}-${week.weekNumber}`;
-            const stats = weekStats[weekKey];
-            const playerCount = stats ? stats.players.size : 0;
-            const characterCount = stats ? stats.characters.size : 0;
-            
+            const wkKey = `${week.weekYear}-${week.weekNumber}`;
+            const stats = weekStats[wkKey];
             return {
                 ...week,
-                playerCount: playerCount,
-                characterCount: characterCount
+                playerCount: stats ? stats.players.size : 0,
+                characterCount: stats ? stats.characters.size : 0
             };
         });
-        
-        res.json({
+
+        return res.json({
             success: true,
             data: {
                 weeks: enrichedWeeks,
-                players: playersResult.rows,
+                players,
                 attendance: attendanceByPlayer,
                 currentWeek: currentWeekInfo
             }
         });
-        
     } catch (error) {
-        console.error('❌ [ATTENDANCE] Error fetching attendance data:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error fetching attendance data',
-            error: error.message
-        });
+        console.error('❌ [ATTENDANCE] Error fetching attendance data (local mode):', error);
+        return res.status(500).json({ success: false, message: 'Error fetching attendance data', error: error.message });
     } finally {
         if (client) client.release();
     }
