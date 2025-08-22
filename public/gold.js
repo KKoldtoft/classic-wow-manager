@@ -863,7 +863,9 @@ class GoldPotManager {
                 <div style=\"font-weight:900; font-size:20px; color:#f5c542;\">${totalGold.toLocaleString()} gold</div>
             </div>
         `;
-        const body = items.length ? items.map(it => `
+        const body = items.length ? items
+                .filter(it => it.title !== 'Rounding')
+                .map(it => `
                 <div style="display:grid; grid-template-columns: 1.6fr 60px 85px; gap:8px; font-size:16px; line-height:1.45; color:#111;">
                     <div>${fmtTitle(it.title)}</div>
                     <div style="text-align:right;">${it.pts>0?`+${it.pts}`:it.pts}</div>
