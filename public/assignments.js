@@ -276,6 +276,112 @@
     imgLink.appendChild(img);
     imgWrapper.appendChild(imgLink);
 
+    // Sapphiron & Kel'Thuzad: autoplay a short preview video overlay on first scroll into view
+    try {
+      const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const saveData = navigator.connection && navigator.connection.saveData;
+      const isSapphiron = panelKeyLower.includes('sapph');
+      const isKelthuzad = panelKeyLower.includes('kel');
+      if (isSapphiron || isKelthuzad) {
+        const previewUrl = isSapphiron
+          ? 'https://res.cloudinary.com/duthjs0c3/video/upload/f_auto,q_auto/v1755864926/Saph-Small-1_cgscco.mp4'
+          : 'https://res.cloudinary.com/duthjs0c3/video/upload/f_auto,q_auto/v1755867358/KT-small_p55l1i.mp4';
+        imgWrapper.style.position = 'relative';
+        try { imgWrapper.style.maxWidth = '720px'; } catch {}
+        try { imgWrapper.style.overflow = 'hidden'; } catch {}
+        let played = false;
+
+        function startPreview(io) {
+          if (played) return;
+          played = true;
+          // Create an overlay exactly sized to the rendered image
+          const overlay = document.createElement('div');
+          overlay.style.position = 'absolute';
+          overlay.style.left = '0';
+          overlay.style.top = '0';
+          overlay.style.width = '100%';
+          overlay.style.pointerEvents = 'none';
+          overlay.style.display = 'flex';
+          overlay.style.alignItems = 'center';
+          overlay.style.justifyContent = 'center';
+          overlay.style.borderRadius = '8px';
+          overlay.style.zIndex = '2';
+          overlay.style.background = '#000';
+          function syncOverlaySize() {
+            try {
+              overlay.style.height = (img?.clientHeight ? (img.clientHeight + 'px') : 'auto');
+            } catch {}
+          }
+          syncOverlaySize();
+          imgWrapper.appendChild(overlay);
+          try { window.addEventListener('resize', syncOverlaySize); } catch {}
+
+          const video = document.createElement('video');
+          video.muted = true;
+          try { video.setAttribute('playsinline', ''); } catch {}
+          video.playsInline = true;
+          video.autoplay = true;
+          video.preload = 'none';
+          video.poster = displayImageUrl;
+          video.src = previewUrl;
+          video.style.maxWidth = '100%';
+          video.style.maxHeight = '100%';
+          video.style.width = '100%';
+          video.style.height = 'auto';
+          video.style.objectFit = 'contain';
+          video.style.borderRadius = '8px';
+          video.style.opacity = '0';
+          video.style.transition = 'opacity 1000ms ease';
+          overlay.appendChild(video);
+          // Crossfade: image fades out while video fades in
+          try { img.style.transition = 'opacity 1000ms ease'; } catch {}
+          requestAnimationFrame(() => {
+            try { img.style.opacity = '0'; } catch {}
+            video.style.opacity = '1';
+          });
+          try { const p = video.play(); if (p && typeof p.then === 'function') p.catch(()=>{}); } catch {}
+
+          const cleanup = () => {
+            // Crossfade back: image fades in while video fades out
+            try { img.style.opacity = '1'; } catch {}
+            video.style.opacity = '0';
+            setTimeout(() => {
+              try {
+                video.pause();
+                video.removeAttribute('src');
+                video.load();
+                video.remove();
+                overlay.remove();
+              } catch {}
+            }, 1000);
+            if (io) try { io.disconnect(); } catch {}
+            try { window.removeEventListener('resize', syncOverlaySize); } catch {}
+          };
+          video.addEventListener('ended', cleanup);
+          setTimeout(() => { if (document.body.contains(video)) cleanup(); }, 8000);
+        }
+
+        // Observer trigger: wait until (almost) fully visible
+        const io = new IntersectionObserver((entries) => {
+          const entry = entries[0];
+          if (entry && entry.isIntersecting && (entry.intersectionRatio >= 0.98)) {
+            startPreview(io);
+          }
+        }, { threshold: 0.98 });
+        io.observe(imgWrapper);
+        // If already fully visible on load, trigger immediately
+        requestAnimationFrame(() => {
+          try {
+            const r = imgWrapper.getBoundingClientRect();
+            const vh = window.innerHeight || document.documentElement.clientHeight;
+            const vw = window.innerWidth || document.documentElement.clientWidth;
+            const fullyInView = r.top >= 0 && r.left >= 0 && r.bottom <= vh && r.right <= vw;
+            if (fullyInView) startPreview(io);
+          } catch {}
+        });
+      }
+    } catch {}
+
     // Gothik: add a right-side slider arrow to toggle between Human and Undead side images
     if (panelKeyLower.includes('goth')) {
       try {
@@ -399,7 +505,15 @@
       const isLoatheb = key.includes('loatheb');
       const fallback = isFourHorsemen ? fourHorsemenDefault : (isNoth ? nothDefault : (isHeigan ? heiganDefault : (isLoatheb ? loathebDefault : genericDefault)));
       const url = currentVideoUrl && currentVideoUrl.trim().length > 0 ? currentVideoUrl : fallback;
-      ytWrap.innerHTML = `<iframe width="100%" height="215" src="${url}" title="Strategy video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
+      let embedUrl = url;
+      try {
+        const u = new URL(url);
+        if (u.hostname.includes('youtube.com')) {
+          u.hostname = 'www.youtube-nocookie.com';
+          embedUrl = u.toString();
+        }
+      } catch {}
+      ytWrap.innerHTML = `<iframe width="100%" height="215" src="${embedUrl}" title="Strategy video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" loading="lazy" allowfullscreen></iframe>`;
     }
     renderVideo();
     rightCol.appendChild(ytWrap);
