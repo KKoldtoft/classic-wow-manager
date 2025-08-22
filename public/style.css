@@ -918,6 +918,9 @@ body.home .panel .panel-text p,
 body.home .panel .panel-text li,
 body.home .panel .panel-text h3 { color: #e8e8e8; }
 
+/* Ensure any paragraph anywhere inside a frontpage panel is readable */
+body.home .panel p { color: #e8e8e8 !important; }
+
 /* Ensure status text under refresh buttons is readable on dark panels */
 body.home .panel .refresh-status,
 body.home .panel .last-refresh {
