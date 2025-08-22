@@ -341,8 +341,10 @@
           });
           try { const p = video.play(); if (p && typeof p.then === 'function') p.catch(()=>{}); } catch {}
 
-          const cleanup = () => {
-            // Crossfade back: image fades in while video fades out
+          let fadeStarted = false;
+          function startFadeOut() {
+            if (fadeStarted) return;
+            fadeStarted = true;
             try { img.style.opacity = '1'; } catch {}
             video.style.opacity = '0';
             setTimeout(() => {
@@ -353,12 +355,24 @@
                 video.remove();
                 overlay.remove();
               } catch {}
+              if (io) try { io.disconnect(); } catch {}
+              try { window.removeEventListener('resize', syncOverlaySize); } catch {}
             }, 1000);
-            if (io) try { io.disconnect(); } catch {}
-            try { window.removeEventListener('resize', syncOverlaySize); } catch {}
-          };
-          video.addEventListener('ended', cleanup);
-          setTimeout(() => { if (document.body.contains(video)) cleanup(); }, 8000);
+          }
+          // Begin fade-out 1s before video ends
+          try {
+            video.addEventListener('loadedmetadata', () => {
+              try {
+                const durMs = Number.isFinite(video.duration) ? (video.duration * 1000) : 0;
+                const startMs = Math.max(durMs - 1000, 0);
+                setTimeout(startFadeOut, startMs);
+              } catch {}
+            }, { once: true });
+          } catch {}
+          // Fallback: if ended fires before metadata or timers, ensure fade
+          video.addEventListener('ended', startFadeOut, { once: true });
+          // Safety: if metadata never loads, fade out after 8s
+          setTimeout(() => { if (document.body.contains(video)) startFadeOut(); }, 8000);
         }
 
         // Observer trigger: wait until (almost) fully visible
