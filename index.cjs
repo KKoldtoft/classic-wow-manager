@@ -1037,14 +1037,17 @@ app.use(session({
   store: new pgSession({
     pool: pool,
     tableName: 'session',
-    createTableIfMissing: true
+    createTableIfMissing: true,
+    ttl: 30 * 24 * 60 * 60 // keep sessions for 30 days in store
   }),
+  name: 'sid',
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  rolling: true, // refresh cookie expiration on every response
   proxy: true,
   cookie: {
-    maxAge: 60 * 60 * 1000,
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days cookie lifetime
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax'
   }

@@ -740,6 +740,7 @@ body.has-raid-bar {
 .char-text {
     display: flex;
     flex-direction: column;
+    color: #000;
 }
 
 /* Left class icon similar to raidlogs spec icon positioning */
@@ -1139,7 +1140,7 @@ body.loot :where(p, li, span, small, label),
 body.logs :where(p, li, span, small, label),
 body.user-settings :where(p, li, span, small, label),
 body.admin :where(p, li, span, small, label) {
-    color: #e8e8e8;
+    color: #000000;
 }
 
 body.home :where(h1,h2,h3,h4),
