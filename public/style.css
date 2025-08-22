@@ -743,6 +743,11 @@ body.has-raid-bar {
     color: #000;
 }
 
+/* Frontpage: force character card name and class to black only in Home */
+body.home .character-card .char-name,
+body.home .character-card .char-details,
+body.home .character-card .char-text { color: #000 !important; }
+
 /* Left class icon similar to raidlogs spec icon positioning */
 .class-icon {
     width: 60px;
