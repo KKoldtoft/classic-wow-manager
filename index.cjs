@@ -7068,6 +7068,31 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
 
     const eventDiscordIds = new Set(inEvent.rows.map(r => String(r.discord_id)));
 
+    // Build resolvers (same approach as /api/attendance)
+    const ldResolver = await client.query(`
+      SELECT DISTINCT LOWER(character_name) AS name_lower,
+                      LOWER(character_class) AS class_lower,
+                      discord_id
+      FROM log_data
+      WHERE discord_id IS NOT NULL
+    `);
+    const nameClassToDiscord = new Map(ldResolver.rows.map(r => [`${r.name_lower}|${r.class_lower}`, String(r.discord_id)]));
+
+    const playersResolver = await client.query(`
+      SELECT LOWER(character_name) AS name_lower,
+             LOWER(class) AS class_lower,
+             discord_id
+      FROM players
+      WHERE discord_id IS NOT NULL
+    `);
+    const playersNameClassToDiscord = new Map();
+    playersResolver.rows.forEach(r => {
+      const key = `${r.name_lower}|${r.class_lower}`;
+      const did = String(r.discord_id);
+      if (!playersNameClassToDiscord.has(key)) playersNameClassToDiscord.set(key, did);
+      else if (playersNameClassToDiscord.get(key) !== did) playersNameClassToDiscord.set(key, '__MULTI__');
+    });
+
     // Pull all local log rows with cached event dates to compute attendance across window
     // Channel filters map
     const filtersResult = await client.query(`SELECT channel_id, is_included FROM attendance_channel_filters`);
