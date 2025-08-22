@@ -847,8 +847,7 @@ class GoldPotManager {
         const sumRowGold = items.reduce((acc, it) => acc + (Number(it.gold)||0), 0);
         const remainder = computedTotalGold - sumRowGold;
         if (remainder) {
-            const base = items.find(it => it.title === 'Base');
-            if (base) base.gold += remainder; else items.push({ title: 'Base', pts: 0, gold: remainder });
+            items.push({ title: 'Rounding', pts: 0, gold: remainder });
         }
 
         const header = `
