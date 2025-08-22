@@ -686,6 +686,7 @@ class GoldPotManager {
             return `<span title="${full}">${short}</span>`;
         };
         const gpp = this.goldPerPoint || 0;
+        const role = String(this.primaryRoles?.[nameKey] || '').toLowerCase();
 
         // Collect per-panel contributions similar to raidlogs breakdown order
         const rows = [];
@@ -724,8 +725,79 @@ class GoldPotManager {
         push('Power Inf', sumFrom(this.datasets.powerInfusionData));
         push('Decurses', sumFrom(this.datasets.decursesData));
         push('WorldBuffs', sumFrom(this.datasets.worldBuffsData));
-        push('Frost Res', sumFrom(this.datasets.frostResistanceData));
+        // Only show frost resistance row for DPS to match totals logic
+        if (role === 'dps') {
+            push('Frost Res', sumFrom(this.datasets.frostResistanceData));
+        }
         push('Void Dmg', sumFrom(this.datasets.voidDamageData));
+
+        // Rankings and awards so the card matches totals
+        if (this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) {
+            const sumSnap = (panelKey) => (this.snapshotEntries||[]).reduce((acc, r) => {
+                if (String(r.panel_key) === panelKey && lower(r.character_name) === nameKey) {
+                    const pts = Number(r.point_value_edited != null ? r.point_value_edited : r.point_value_original) || 0;
+                    return acc + pts;
+                }
+                return acc;
+            }, 0);
+            push('Dmg Rank', sumSnap('damage'));
+            push('Heal Rank', sumSnap('healing'));
+            push('God Gamer DPS', sumSnap('god_gamer_dps'));
+            push('God Gamer Heal', sumSnap('god_gamer_healer'));
+            push('Shaman Healer', sumSnap('shaman_healers'));
+            push('Priest Healer', sumSnap('priest_healers'));
+            push('Druid Healer', sumSnap('druid_healers'));
+        } else {
+            const damagePoints = this.rewardSettings?.damage?.points_array || [];
+            const damageSorted = (this.logData || [])
+                .filter(p => !this.shouldIgnorePlayer(p.character_name))
+                .filter(p => ((p.role_detected||'').toLowerCase()==='dps' || (p.role_detected||'').toLowerCase()==='tank') && (parseInt(p.damage_amount)||0) > 0)
+                .sort((a,b)=>(parseInt(b.damage_amount)||0)-(parseInt(a.damage_amount)||0));
+            const healers = (this.logData || [])
+                .filter(p => !this.shouldIgnorePlayer(p.character_name))
+                .filter(p => (p.role_detected||'').toLowerCase()==='healer' && (parseInt(p.healing_amount)||0) > 0)
+                .sort((a,b)=>(parseInt(b.healing_amount)||0)-(parseInt(a.healing_amount)||0));
+
+            const idxDamage = damageSorted.findIndex(p => lower(p.character_name) === nameKey);
+            if (idxDamage >= 0 && idxDamage < damagePoints.length) {
+                const pts = damagePoints[idxDamage] || 0; if (pts) push('Dmg Rank', pts);
+            }
+
+            const healingPoints = this.rewardSettings?.healing?.points_array || [];
+            const idxHeal = healers.findIndex(p => lower(p.character_name) === nameKey);
+            if (idxHeal >= 0 && idxHeal < healingPoints.length) {
+                const pts = healingPoints[idxHeal] || 0; if (pts) push('Heal Rank', pts);
+            }
+
+            // God Gamer awards
+            if (damageSorted.length >= 2) {
+                const first = parseInt(damageSorted[0].damage_amount)||0;
+                const second = parseInt(damageSorted[1].damage_amount)||0;
+                const diff = first - second; let pts = 0;
+                if (diff >= 250000) pts = 30; else if (diff >= 150000) pts = 20;
+                if (pts && lower(damageSorted[0].character_name) === nameKey) push('God Gamer DPS', pts);
+            }
+            if (healers.length >= 2) {
+                const first = parseInt(healers[0].healing_amount)||0;
+                const second = parseInt(healers[1].healing_amount)||0;
+                const diff = first - second; let pts = 0;
+                if (diff >= 250000) pts = 20; else if (diff >= 150000) pts = 15;
+                if (pts && lower(healers[0].character_name) === nameKey) push('God Gamer Heal', pts);
+            }
+
+            // Class-specific healer awards
+            const byClass = (arr, cls) => arr.filter(p => String(p.character_class||'').toLowerCase().includes(cls));
+            const shamans = byClass(healers, 'shaman').slice(0,3);
+            const priests = byClass(healers, 'priest').slice(0,2);
+            const druids  = byClass(healers, 'druid').slice(0,1);
+            const addAward = (label, arr, ptsArr) => {
+                const i = arr.findIndex(p => lower(p.character_name) === nameKey);
+                if (i >= 0 && i < ptsArr.length) { const pts = ptsArr[i] || 0; if (pts) push(label, pts); }
+            };
+            addAward('Shaman Healer', shamans, [25,20,15]);
+            addAward('Priest Healer', priests, [20,15]);
+            addAward('Druid Healer', druids, [15]);
+        }
 
         // Too Low Damage / Healing
         if (this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) {
