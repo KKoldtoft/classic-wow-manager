@@ -7011,90 +7011,137 @@ app.get('/api/character/last-raid', async (req, res) => {
 
 // Get player streak data for raid logs
 app.get('/api/player-streaks/:eventId', async (req, res) => {
-    const { eventId } = req.params;
-    
-    console.log(`🔥 [PLAYER STREAKS] Retrieving player streak data for event: ${eventId}`);
-    
-    let client;
-    try {
-        client = await pool.connect();
-        
-        // Check if log_data table exists
-        const logTableCheck = await client.query(`
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_name = 'log_data'
-            );
-        `);
-        
-        if (!logTableCheck.rows[0].exists) {
-            console.log('⚠️ [PLAYER STREAKS] log_data table does not exist, returning empty data');
-            return res.json({ success: true, data: [] });
-        }
-        
-        // Check if attendance_cache table exists
-        const attendanceTableCheck = await client.query(`
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_name = 'attendance_cache'
-            );
-        `);
-        
-        if (!attendanceTableCheck.rows[0].exists) {
-            console.log('⚠️ [PLAYER STREAKS] attendance_cache table does not exist, returning empty data');
-            return res.json({ success: true, data: [] });
-        }
-        
-        // Get players from the raid log and their streak data
-        const result = await client.query(`
-            SELECT 
-                ld.character_name,
-                ld.character_class,
-                ld.discord_id,
-                ac.player_streak,
-                ac.discord_username
-            FROM log_data ld
-            LEFT JOIN (
-                SELECT DISTINCT ON (discord_id) 
-                    discord_id, 
-                    player_streak,
-                    discord_username
-                FROM attendance_cache 
-                ORDER BY discord_id, cached_at DESC
-            ) ac ON ld.discord_id = ac.discord_id
-            WHERE ld.event_id = $1
-            AND ac.player_streak >= 4
-            ORDER BY ac.player_streak DESC, ld.character_name ASC
-        `, [eventId]);
-        
-        console.log(`🔥 [PLAYER STREAKS] Found ${result.rows.length} players with streak >= 4 for event: ${eventId}`);
-        
-        const playersWithStreaks = result.rows.map(row => ({
-            character_name: row.character_name,
-            character_class: row.character_class,
-            discord_id: row.discord_id,
-            discord_username: row.discord_username || `user-${row.discord_id.slice(-4)}`,
-            player_streak: row.player_streak || 0
-        }));
-        
-        res.json({ 
-            success: true, 
-            data: playersWithStreaks,
-            eventId: eventId,
-            minStreak: 4,
-            totalCount: playersWithStreaks.length
-        });
-        
-    } catch (error) {
-        console.error('❌ [PLAYER STREAKS] Error retrieving player streak data:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Error retrieving player streak data',
-            error: error.message 
-        });
-    } finally {
-        if (client) client.release();
+  const { eventId } = req.params;
+  console.log(`🔥 [PLAYER STREAKS] Retrieving player streak data (local) for event: ${eventId}`);
+
+  let client;
+  try {
+    client = await pool.connect();
+
+    // Ensure log_data exists
+    const logTableCheck = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'log_data'
+      );
+    `);
+    if (!logTableCheck.rows[0].exists) {
+      console.log('⚠️ [PLAYER STREAKS] log_data table missing');
+      return res.json({ success: true, data: [] });
     }
+
+    // Get event date from local cache to anchor week window
+    const eventCache = await client.query(`
+      SELECT (event_data->>'date') as date
+      FROM raid_helper_events_cache
+      WHERE event_id = $1
+      LIMIT 1
+    `, [eventId]);
+    if (eventCache.rows.length === 0 || !eventCache.rows[0].date) {
+      console.log('⚠️ [PLAYER STREAKS] Event metadata not found in cache');
+      return res.json({ success: true, data: [] });
+    }
+
+    const parseEventDate = (dateStr) => {
+      const parts = String(dateStr).split('-');
+      if (parts.length !== 3) return null;
+      const day = parseInt(parts[0]);
+      const month = parseInt(parts[1]) - 1;
+      const year = parseInt(parts[2]);
+      if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+      return new Date(year, month, day);
+    };
+
+    const anchorDate = parseEventDate(eventCache.rows[0].date);
+    if (!anchorDate) return res.json({ success: true, data: [] });
+
+    // Build 15-week window ending on the event week
+    const currentWeekInfo = getCustomWeekNumber(anchorDate);
+    const weeks = [];
+    for (let i = 14; i >= 0; i--) {
+      const d = new Date(anchorDate);
+      d.setDate(d.getDate() - (i * 7));
+      weeks.push(getCustomWeekNumber(d));
+    }
+    const allowedWeekKeys = new Set(weeks.map(w => `${w.weekYear}-${w.weekNumber}`));
+
+    // Players in this event (with discord_id) and their displayed character info for the panel
+    const inEvent = await client.query(`
+      SELECT DISTINCT ON (discord_id)
+        discord_id,
+        character_name,
+        character_class
+      FROM log_data
+      WHERE event_id = $1 AND discord_id IS NOT NULL
+      ORDER BY discord_id, damage_amount DESC, healing_amount DESC
+    `, [eventId]);
+
+    if (inEvent.rows.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const eventDiscordIds = new Set(inEvent.rows.map(r => String(r.discord_id)));
+
+    // Pull all local log rows with cached event dates to compute attendance across window
+    const dataResult = await client.query(`
+      SELECT ld.discord_id,
+             (ec.event_data->>'date') as event_date
+      FROM log_data ld
+      LEFT JOIN raid_helper_events_cache ec ON ec.event_id = ld.event_id
+      WHERE ld.discord_id IS NOT NULL AND ec.event_data->>'date' IS NOT NULL
+    `);
+
+    const attendanceByPlayer = {}; // discord_id -> Set(weekKey)
+    for (const row of dataResult.rows) {
+      const did = String(row.discord_id);
+      const d = parseEventDate(row.event_date);
+      if (!d) continue;
+      const wk = getCustomWeekNumber(d);
+      const wkKey = `${wk.weekYear}-${wk.weekNumber}`;
+      if (!allowedWeekKeys.has(wkKey)) continue;
+      if (!attendanceByPlayer[did]) attendanceByPlayer[did] = new Set();
+      attendanceByPlayer[did].add(wkKey);
+    }
+
+    const computeStreak = (did) => {
+      let streak = 0;
+      for (let i = weeks.length - 1; i >= 0; i--) {
+        const wkKey = `${weeks[i].weekYear}-${weeks[i].weekNumber}`;
+        const has = attendanceByPlayer[did] && attendanceByPlayer[did].has(wkKey);
+        if (has) streak++; else break;
+      }
+      return streak;
+    };
+
+    // Build response for players in the event with streak >= 4
+    const playersWithStreaks = inEvent.rows.map(r => {
+      const did = String(r.discord_id);
+      const s = computeStreak(did);
+      return {
+        character_name: r.character_name,
+        character_class: r.character_class,
+        discord_id: did,
+        discord_username: `user-${did.slice(-4)}`,
+        player_streak: s
+      };
+    }).filter(p => p.player_streak >= 4)
+      .sort((a, b) => b.player_streak - a.player_streak || a.character_name.localeCompare(b.character_name));
+
+    console.log(`🔥 [PLAYER STREAKS] Found ${playersWithStreaks.length} players (streak >= 4) for event ${eventId}`);
+
+    return res.json({
+      success: true,
+      data: playersWithStreaks,
+      eventId: eventId,
+      minStreak: 4,
+      totalCount: playersWithStreaks.length
+    });
+  } catch (error) {
+    console.error('❌ [PLAYER STREAKS] Error (local):', error);
+    return res.status(500).json({ success: false, message: 'Error retrieving player streak data', error: error.message });
+  } finally {
+    if (client) client.release();
+  }
 });
 
 // Get guild membership data for raid logs
