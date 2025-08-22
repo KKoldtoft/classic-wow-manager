@@ -1032,13 +1032,21 @@ async function enrichHistoricEventsWithDiscordChannelNames(events) {
 }
 
 // --- Session Configuration ---
+const pgSession = require('connect-pg-simple')(session);
 app.use(session({
+  store: new pgSession({
+    pool: pool,
+    tableName: 'session',
+    createTableIfMissing: true
+  }),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  proxy: true,
   cookie: {
     maxAge: 60 * 60 * 1000,
-    secure: process.env.NODE_ENV === 'production'
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax'
   }
 }));
 

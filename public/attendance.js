@@ -12,13 +12,7 @@ class AttendanceManager {
     }
     
     initializeEventListeners() {
-        // Rebuild buttons for different week ranges
-        for (let i = 1; i <= 3; i++) {
-            const rebuildBtn = document.getElementById(`rebuild-weeks-${i}-btn`);
-            if (rebuildBtn) {
-                rebuildBtn.addEventListener('click', () => this.rebuildWeekRange(i));
-            }
-        }
+        // No rebuild buttons anymore; attendance is computed live
     }
     
     async loadAttendanceData() {
@@ -34,10 +28,7 @@ class AttendanceManager {
                 this.canManage = false;
             }
         } catch (_) { this.canManage = false; }
-        try {
-            const grp = document.querySelector('.rebuild-buttons-group');
-            if (grp) grp.style.display = this.canManage ? 'flex' : 'none';
-        } catch {}
+        // Rebuild controls removed
 
         this.isLoading = true;
         this.showLoading();
@@ -64,7 +55,6 @@ class AttendanceManager {
             this.renderAttendanceTable();
             this.updateCurrentWeekInfo();
             this.updateStatistics();
-            this.updateRebuildButtonTexts();
             this.showContent();
             
         } catch (error) {
@@ -75,96 +65,7 @@ class AttendanceManager {
         }
     }
     
-    async rebuildWeekRange(rangeNumber) {
-        if (this.isLoading) return;
-        
-        if (!this.attendanceData || !this.attendanceData.currentWeek) {
-            alert('Please load attendance data first');
-            return;
-        }
-        
-        const currentWeek = this.attendanceData.currentWeek;
-        const { startWeek, endWeek } = this.calculateWeekRange(currentWeek, rangeNumber);
-        
-        if (!confirm(`Rebuild attendance cache for weeks ${startWeek.weekNumber}-${endWeek.weekNumber} (${startWeek.weekYear}-${endWeek.weekYear})?\n\nThis will clear and rebuild attendance data for these weeks.`)) {
-            return;
-        }
-        
-        this.isLoading = true;
-        
-        // Disable all rebuild buttons and show loading state
-        for (let i = 1; i <= 3; i++) {
-            const btn = document.getElementById(`rebuild-weeks-${i}-btn`);
-            if (btn) {
-                btn.disabled = true;
-                if (i === rangeNumber) {
-                    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Rebuilding...';
-                }
-            }
-        }
-        
-        try {
-            console.log(`🔄 Rebuilding attendance cache for week range ${rangeNumber}...`);
-            
-            // Rebuild each week in the range
-            let totalProcessed = 0;
-            let totalSkipped = 0;
-            let totalEvents = 0;
-            
-            for (let weekYear = startWeek.weekYear; weekYear <= endWeek.weekYear; weekYear++) {
-                const startWeekNum = weekYear === startWeek.weekYear ? startWeek.weekNumber : 1;
-                const endWeekNum = weekYear === endWeek.weekYear ? endWeek.weekNumber : 52;
-                
-                for (let weekNumber = startWeekNum; weekNumber <= endWeekNum; weekNumber++) {
-                    const response = await fetch('/api/attendance/rebuild-week', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            weekYear: weekYear,
-                            weekNumber: weekNumber
-                        })
-                    });
-                    
-                    if (response.ok) {
-                        const result = await response.json();
-                        if (result.success) {
-                            totalProcessed += result.stats.processed;
-                            totalSkipped += result.stats.skipped;
-                            totalEvents += result.stats.total;
-                        }
-                    }
-                    
-                    // Small delay between requests
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                }
-            }
-            
-            console.log(`✅ Week range ${rangeNumber} cache rebuild completed`);
-            
-            // Show success message
-            alert(`Week range ${rangeNumber} cache rebuild completed!\n\nProcessed: ${totalProcessed} events\nSkipped: ${totalSkipped} events\nTotal: ${totalEvents} events`);
-            
-            // Reload data to show updated results
-            await this.loadAttendanceData();
-            
-        } catch (error) {
-            console.error(`❌ Error rebuilding cache for week range ${rangeNumber}:`, error);
-            alert(`Week range ${rangeNumber} cache rebuild failed:\n${error.message}`);
-        } finally {
-            this.isLoading = false;
-            
-            // Reset button states
-            this.updateRebuildButtonTexts();
-            for (let i = 1; i <= 3; i++) {
-                const btn = document.getElementById(`rebuild-weeks-${i}-btn`);
-                if (btn) {
-                    btn.disabled = false;
-                }
-            }
-        }
-    }
+    // rebuildWeekRange removed
     
     calculateWeekRange(currentWeek, rangeNumber) {
         // Calculate the last 15 weeks split into 3 ranges of 5 weeks each
@@ -215,29 +116,7 @@ class AttendanceManager {
         };
     }
     
-    updateRebuildButtonTexts() {
-        if (!this.attendanceData || !this.attendanceData.currentWeek) {
-            return;
-        }
-        
-        const currentWeek = this.attendanceData.currentWeek;
-        
-        for (let i = 1; i <= 3; i++) {
-            const { startWeek, endWeek } = this.calculateWeekRange(currentWeek, i);
-            const textElement = document.getElementById(`rebuild-weeks-${i}-text`);
-            
-            if (textElement) {
-                let yearText = '';
-                if (startWeek.weekYear !== endWeek.weekYear) {
-                    yearText = ` (${startWeek.weekYear}-${endWeek.weekYear})`;
-                } else if (startWeek.weekYear !== currentWeek.weekYear) {
-                    yearText = ` (${startWeek.weekYear})`;
-                }
-                
-                textElement.textContent = `Clear Cache & Rebuild Weeks ${startWeek.weekNumber}-${endWeek.weekNumber}${yearText}`;
-            }
-        }
-    }
+    // updateRebuildButtonTexts removed
     
     async rebuildWeekCache(weekYear, weekNumber, buttonElement) {
         if (this.isLoading) return;
