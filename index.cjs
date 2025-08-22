@@ -1484,7 +1484,51 @@ app.post('/api/discord/announce-invites', async (req, res) => {
       }
     } catch (_) {}
 
-    // Lookup channel-specific webhook if configured
+    // Fallbacks to resolve channel for upcoming events if not in per-event cache
+    if (!channelId) {
+      // Fallback 1: look into cached upcoming events blob for channelId
+      try {
+        const cached = await client.query(
+          `SELECT events_data FROM events_cache WHERE cache_key = $1 AND expires_at > NOW()`,
+          ['raid_helper_events']
+        );
+        if (cached.rows.length > 0) {
+          const eventsBlob = cached.rows[0].events_data || {};
+          const list = Array.isArray(eventsBlob.postedEvents) ? eventsBlob.postedEvents : (Array.isArray(eventsBlob) ? eventsBlob : []);
+          const match = list.find(e => String(e.id) === String(eventId));
+          if (match) {
+            channelId = match.channelId || match.channelID || match.channel_id || null;
+            channelName = match.channelName || match.channel_name || null;
+          }
+        }
+      } catch (_) {}
+
+      // Fallback 2: query v3 servers endpoint directly
+      if (!channelId) {
+        try {
+          const raidHelperApiKey = process.env.RAID_HELPER_API_KEY;
+          const guildId = process.env.DISCORD_GUILD_ID || '777268886939893821';
+          if (raidHelperApiKey) {
+            const nowUnixTimestamp = Math.floor(Date.now() / 1000);
+            const oneYearInSeconds = 365 * 24 * 60 * 60;
+            const futureUnixTimestamp = nowUnixTimestamp + oneYearInSeconds;
+            const resp = await axios.get(`https://raid-helper.dev/api/v3/servers/${guildId}/events`, {
+              headers: { 'Authorization': `${raidHelperApiKey}`, 'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)' },
+              params: { StartTimeFilter: nowUnixTimestamp - 7 * 24 * 3600, EndTimeFilter: futureUnixTimestamp },
+              timeout: 10000
+            });
+            const events = resp.data && Array.isArray(resp.data.postedEvents) ? resp.data.postedEvents : [];
+            const match = events.find(e => String(e.id) === String(eventId));
+            if (match) {
+              channelId = match.channelId || match.channelID || match.channel_id || null;
+              channelName = match.channelName || match.channel_name || null;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    // Lookup channel-specific webhook if configured (after resolving channelId via fallbacks)
     try {
       if (channelId) {
         const w = await client.query('SELECT webhook_url FROM channel_filters WHERE channel_id = $1', [channelId]);
