@@ -1042,6 +1042,94 @@ class WoWLogsAnalyzer {
             this.deselectAllWorkflowSteps();
         });
 
+        // Per-step run buttons
+        const ensureWorkflowState = () => {
+            if (!this.workflowState) {
+                const input = document.getElementById('workflowLogInput')?.value || document.getElementById('logInput')?.value || '';
+                const eventId = this.getActiveEventSession();
+                this.workflowState = { currentStep: 0, failedStep: null, logUrl: input, eventId };
+                // Ensure progress UI is visible to reflect statuses
+                try { this.showWorkflowProgress(); } catch {}
+            }
+        };
+
+        const getLogUrl = () => {
+            const input = document.getElementById('workflowLogInput')?.value || document.getElementById('logInput')?.value || '';
+            return input;
+        };
+
+        const getEventId = () => this.getActiveEventSession();
+
+        const safeAdd = (id, handler) => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('click', handler);
+        };
+
+        safeAdd('runStep1Btn', async () => {
+            ensureWorkflowState();
+            await this.runWorkflowStep1(getLogUrl());
+        });
+
+        safeAdd('runStep2Btn', async () => {
+            ensureWorkflowState();
+            await this.runWorkflowStep2(getLogUrl());
+        });
+
+        safeAdd('runStep3Btn', async () => {
+            ensureWorkflowState();
+            await this.runWorkflowStep3(getLogUrl());
+        });
+
+        safeAdd('runStep4Btn', async () => {
+            ensureWorkflowState();
+            await this.runWorkflowStep4(getLogUrl());
+        });
+
+        safeAdd('runStep6Btn', async () => {
+            ensureWorkflowState();
+            await this.runWorkflowStep6(getLogUrl());
+        });
+
+        safeAdd('runStep7Btn', async () => {
+            ensureWorkflowState();
+            await this.runWorkflowStep7(getLogUrl());
+        });
+
+        safeAdd('runStep8Btn', async () => {
+            ensureWorkflowState();
+            await this.runWorkflowStep8(getLogUrl());
+        });
+
+        safeAdd('runStep9Btn', async () => {
+            ensureWorkflowState();
+            const eventId = getEventId();
+            if (!eventId) {
+                alert('No active event selected. Select an event to import into.');
+                return;
+            }
+            await this.runWorkflowStep9(eventId, getLogUrl());
+        });
+
+        safeAdd('runStep10Btn', async () => {
+            ensureWorkflowState();
+            const eventId = getEventId();
+            if (!eventId) {
+                alert('No active event selected. Select an event to import into.');
+                return;
+            }
+            await this.runWorkflowStep10(eventId);
+        });
+
+        safeAdd('runStep11Btn', async () => {
+            ensureWorkflowState();
+            const eventId = getEventId();
+            if (!eventId) {
+                alert('No active event selected. Select an event to import into.');
+                return;
+            }
+            await this.runWorkflowStep11(eventId);
+        });
+
         // Role mapping button click
         document.getElementById('showRoleMappingBtn').addEventListener('click', () => {
             const eventId = this.getActiveEventSession();
