@@ -5154,7 +5154,8 @@ class RaidLogsManager {
             };
             let rowTotal = 0;
             columns.forEach(c=>{ const v=Number(val(c.key))||0; playerRow[c.key]=v; if(c.key!=='total') rowTotal+=v; });
-            playerRow.total = rowTotal;
+            // Total column bottoms out at 0
+            playerRow.total = Math.max(0, rowTotal);
             columns.forEach(c=>{ totals.set(c.key,(totals.get(c.key)||0)+(playerRow[c.key]||0)); });
             rows.push(playerRow);
         });
@@ -5170,14 +5171,14 @@ class RaidLogsManager {
             const tr=document.createElement('tr');
             const idxTd=document.createElement('td'); idxTd.className='rownum-cell'; idxTd.textContent=String(i+1); tr.appendChild(idxTd);
             const nameTd=document.createElement('td'); nameTd.className='name-cell'; nameTd.textContent=r.name; tr.appendChild(nameTd);
-            columns.forEach(c=>{ const td=document.createElement('td'); const v=Number(r[c.key])||0; td.textContent=(v>0?`+${v}`:v); td.className = v===0?'zero':(v>0?'positive':'negative'); tr.appendChild(td); });
+            columns.forEach(c=>{ const td=document.createElement('td'); const v=Number(r[c.key])||0; const shown = (c.key==='total')? Math.max(0,v) : v; td.textContent=(shown>0?`+${shown}`:shown); td.className = shown===0?'zero':(shown>0?'positive':'negative'); tr.appendChild(td); });
             tbody.appendChild(tr);
         });
         // Summary row
         const trSum=document.createElement('tr'); trSum.className='points-breakdown-summary';
         const sumIdx=document.createElement('td'); sumIdx.className='rownum-cell'; sumIdx.textContent=''; trSum.appendChild(sumIdx);
         const sumName=document.createElement('td'); sumName.className='name-cell'; sumName.textContent='Sum'; trSum.appendChild(sumName);
-        columns.forEach(c=>{ const td=document.createElement('td'); const v=Number(totals.get(c.key)||0); td.textContent=(v>0?`+${v}`:v); td.className = v===0?'zero':(v>0?'positive':'negative'); trSum.appendChild(td); });
+        columns.forEach(c=>{ const td=document.createElement('td'); let v=Number(totals.get(c.key)||0); if(c.key==='total') v=Math.max(0,v); td.textContent=(v>0?`+${v}`:v); td.className = v===0?'zero':(v>0?'positive':'negative'); trSum.appendChild(td); });
         tbody.appendChild(trSum);
         table.appendChild(tbody);
         container.innerHTML='';
