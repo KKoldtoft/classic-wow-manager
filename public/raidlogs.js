@@ -1882,7 +1882,10 @@ class RaidLogsManager {
               } catch {}
             }
 
-            const totalPoints = basePoints + positivePoints - negativePoints;
+            // Cap negative contributions per player at 0 when summing across the raid.
+            // We approximate by capping total negative net effect at the raid level:
+            const rawTotal = basePoints + positivePoints - negativePoints;
+            const totalPoints = Math.max(0, rawTotal);
             
             // Display the result (full number)
             valueElement.textContent = Number(totalPoints).toLocaleString();
@@ -2214,7 +2217,7 @@ class RaidLogsManager {
         }
 
         // Compute gold per point and my gold
-        const totalPts = Number(this.totalPointsComputed) || 0;
+        const totalPts = Math.max(0, Number(this.totalPointsComputed) || 0);
         const shared = Number(this.sharedGoldPot) || Math.floor((this.totalGoldPot || 0) * 0.85);
         if (totalPts > 0 && shared > 0) {
             const goldPerPoint = shared / totalPts;

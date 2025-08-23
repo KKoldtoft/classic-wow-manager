@@ -363,7 +363,7 @@ class GoldPotManager {
 
         // Compute total points (base + all contributions)
         let totalPointsAll = 0;
-        nameToPlayer.forEach(v => { totalPointsAll += v.points; });
+        nameToPlayer.forEach(v => { totalPointsAll += Math.max(0, v.points); });
         this.totalPointsAll = totalPointsAll;
 
         // Gold per point
@@ -532,7 +532,7 @@ class GoldPotManager {
         }
 
         // Totals
-        let totalPointsAll=0; nameToPlayer.forEach(v=>{ totalPointsAll+=v.points; }); this.totalPointsAll=totalPointsAll;
+        let totalPointsAll=0; nameToPlayer.forEach(v=>{ totalPointsAll+=Math.max(0, v.points); }); this.totalPointsAll=totalPointsAll;
         const gpp=(this.sharedGoldPot>0&&totalPointsAll>0)? this.sharedGoldPot/totalPointsAll : 0; this.goldPerPoint=gpp; nameToPlayer.forEach(v=>{ const effPts=Math.max(0, v.points); v.gold=Math.floor(effPts*gpp); });
         this.playerTotals=nameToPlayer;
     }
