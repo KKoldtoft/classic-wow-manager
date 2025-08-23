@@ -1535,6 +1535,12 @@ class RaidLogsManager {
         
         if (!valueElement) return;
         
+        // If we already computed a per-player capped total elsewhere (e.g., breakdown table), prefer it
+        if (typeof this.totalPointsComputed === 'number') {
+            valueElement.textContent = Number(this.totalPointsComputed).toLocaleString();
+            return;
+        }
+
         try {
             // Calculate total points using the formula:
             // (Number of players in raid) × 100 + (all positive values) - (all negative values)
@@ -5184,6 +5190,9 @@ class RaidLogsManager {
         container.innerHTML='';
         container.appendChild(table);
 
+        // Compute raid total from rows (per-player totals already capped at 0)
+        const newRaidTotal = rows.reduce((acc, r) => acc + (Number(r.total) || 0), 0);
+        this.totalPointsComputed = newRaidTotal;
         // Also keep the Total Points card in sync after edits or recompute
         this.updateTotalPointsCard();
     }
