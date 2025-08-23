@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classic WoW Manager - Events</title> <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body class="home">
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Home</a>
+                <div class="top-nav-dropdown">
+                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+                        Upcoming Raids <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="upcoming-raids-menu">
+                        <div class="dropdown-loading">Loading raids...</div>
+                    </div>
+                </div>
+                <a href="/guild-members" class="top-nav-link">Guild Members</a>
+                <a href="/attendance" class="top-nav-link">Regular Attendance</a>
+            </nav>
+        </div>
+        <div id="auth-container">
+            <!-- Auth content is now loaded by top-bar.js -->
+        </div>
+    </div>
+
+    <!-- Active Raid Bar (shown when raid is selected) -->
+    <div class="raid-bar" id="raid-bar" style="display: none;">
+        <div class="raid-bar-left">
+            <span class="raid-title" id="raid-title">Loading...</span>
+            <nav class="raid-nav">
+                <a href="#" class="raid-nav-link" id="raid-roster-link">
+                    <i class="fas fa-users"></i> Roster
+                </a>
+                <a href="#" class="raid-nav-link" id="raid-assignments-link">
+                    <i class="fas fa-tasks"></i> Assignments
+                </a>
+                <a href="/raidlogs" class="raid-nav-link" id="raid-logs-link">
+                    <i class="fas fa-chart-line"></i> Raid Logs
+                </a>
+                <a href="/gold" class="raid-nav-link" id="raid-goldpot-link">
+                    <i class="fas fa-coins"></i> Gold Pot
+                </a>
+                <a href="/loot" class="raid-nav-link" id="raid-loot-link">
+                    <i class="fas fa-shield-alt"></i> Loot
+                </a>
+            </nav>
+        </div>
+        <div class="raid-bar-right">
+            <button class="raid-close-btn" onclick="localStorage.removeItem('activeEventSession'); location.reload();">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="main-content-grid">
+            <!-- Spanning (2-column) promo panel -->
+            <div class="panel panel--span-2">
+                <div class="panel-split">
+                    <div class="panel-image">
+                        <img src="https://res.cloudinary.com/duthjs0c3/image/upload/v1755160576/44659136-ee79-44cf-a137-aaac4d8c107e_bjvgxm.png" alt="1Principles recruitment poster">
+                    </div>
+                    <div class="panel-text">
+                        <h2 class="panel-title">1PRINCIPLES WANTS YOU!</h2>
+                        <p>We’re expanding our raid portfolio and looking for passionate raidleaders to run fun, clean, and well-organized raids.</p>
+                        <p>As a raidleader, you’ll guide your team through victories and setbacks alike, keeping the vibe positive and the strategy sharp.</p>
+                        <h3>We offer:</h3>
+                        <ul>
+                            <li>Training and support until you’re ready to solo lead</li>
+                            <li>Full control over roster, invites, and assignments (optional)</li>
+                            <li>A seat in the 1Principles management team</li>
+                            <li>Competitive cut (up to 5% raidleader share)</li>
+                            <li>The respect of every Orc, Troll, Night Elf, and Tauren in our ranks</li>
+                        </ul>
+                        <p>Interested? Contact TheZapper on Discord for a friendly, no-obligation chat.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Auth gate panel (non-blocking, spans 2 columns) -->
+            <div class="panel panel--span-2" id="home-auth-panel" style="display:none; border-radius:12px;">
+                <div style="display:flex; align-items:center; gap:16px; padding:20px;">
+                    <div class="lock" style="width:56px; height:56px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; background:#0b1220; border:1px solid #1f2937; color:#93c5fd; flex-shrink:0;">
+                        <i class="fas fa-lock"></i>
+                    </div>
+                    <div style="flex:1;">
+                        <h2 class="panel-title" style="margin:0 0 6px 0;">Log in to view more</h2>
+                        <p style="margin:0; color:#cbd5e1;">You need to log in with your discord, to view most of the content of this page. You also need to join 1Principles discord server if you are not already there.</p>
+                        <div style="margin-top:10px; display:flex; gap:10px; align-items:center;">
+                            <button class="discord-button" id="homeAuthLoginBtn"><i class="fab fa-discord discord-icon"></i> Sign in with Discord</button>
+                            <a class="join-link" href="https://discord.gg/U3vUpcFtjR" target="_blank" rel="noopener noreferrer" style="color:#93c5fd; text-decoration:underline;">Join 1Principles discord</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            
+            <!-- Column 1: Upcoming Raids -->
+            <div class="panel">
+                <h1 class="panel-title">Upcoming Raids</h1>
+                <div id="events-list" class="events-container">
+                    <!-- Events will be dynamically inserted here -->
+                </div>
+                <div class="refresh-section">
+                    <button id="refresh-events-btn" class="refresh-button">
+                        <i class="fas fa-sync-alt"></i>
+                        Refresh Events
+                    </button>
+                    <div id="refresh-status" class="refresh-status"></div>
+                    <div id="last-refresh" class="last-refresh">Last refresh: Never</div>
+                </div>
+            </div>
+
+            <!-- Column 2: Completed Raids -->
+            <div class="panel">
+                <h1 class="panel-title">Completed Raids</h1>
+                <div id="historic-events-list" class="events-container">
+                    <!-- Completed events will be dynamically inserted here -->
+                </div>
+                <div class="refresh-section">
+                    <button id="refresh-historic-events-btn" class="refresh-button">
+                        <i class="fas fa-sync-alt"></i>
+                        Refresh Events
+                    </button>
+                    <button id="show-more-historic-btn" class="refresh-button" style="display: none;">
+                        <i class="fas fa-plus"></i>
+                        Show more
+                    </button>
+                    <div id="refresh-historic-status" class="refresh-status"></div>
+                    <div id="last-historic-refresh" class="last-refresh">Last refresh: Never</div>
+                    <div id="historic-events-count" class="events-count" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- Column 3: My Characters -->
+            <div class="panel">
+                <h1 class="panel-title">My Characters</h1>
+                <div id="my-characters-list">
+                    <!-- User's characters will be dynamically inserted here -->
+                </div>
+            </div>
+
+            <!-- Column 4: Items Hall of Fame -->
+            <div class="panel">
+                <h1 class="panel-title">Items Hall of Fame</h1>
+                <div id="items-hall-of-fame-list">
+                    <!-- Top 10 most expensive items will be dynamically inserted here -->
+                </div>
+            </div>
+
+            <!-- Rules promo panel (single column, bottom) -->
+            <div class="panel">
+                <h1 class="panel-title">Read the Rules. Earn More Gold</h1>
+                <p>At 1Principles, gold isn’t earned by topping damage or healing meters alone. We reward meaningful contributions and balance payouts so that those who strengthen the raid are rewarded, while slackers and griefers are deducted.</p>
+                <p>Every action matters: Interrupts, Decurses, Polymorphs, Sapper Charges, Consumables, Raid Prep, Summons, Curses, Faerie Fire, Scorches, Dispels, Sunders, and more. If it pushes the raid forward, it most likely counts toward your reward.</p>
+                <p>Our system is 100% transparent. We keep it as fair and balanced as we can, while ensuring our raids stay fun and clean, with teamwork, discipline, and efficiency at the core.</p>
+                <p>Click the <strong>Rules</strong> link in the header to read the full guidelines and make sure you maximize your cut of the gold.</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/script.js"></script>
+    <script src="/top-bar.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            const res = await fetch('/user');
+            const user = res.ok ? await res.json() : { loggedIn:false };
+            const panel = document.getElementById('home-auth-panel');
+            if (!user.loggedIn && panel) {
+                panel.style.display = 'block';
+                const btn = document.getElementById('homeAuthLoginBtn');
+                if (btn) {
+                    const rt = encodeURIComponent(location.pathname + location.search + location.hash);
+                    btn.addEventListener('click', ()=>{ location.href = `/auth/discord?returnTo=${rt}`; });
+                }
+            }
+        } catch {}
+    });
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</body>
+</html>

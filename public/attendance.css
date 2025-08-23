@@ -1,0 +1,605 @@
+/* public/attendance.css */
+
+/* Page Layout */
+.attendance-container {
+    margin: 0 auto;
+    padding: 20px;
+    background-color: transparent;
+    min-height: calc(100vh - 54px);
+}
+
+/* Page Header */
+.page-header {
+    text-align: center;
+    margin-bottom: 30px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 30px;
+    border-radius: 15px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.page-header h1 {
+    margin: 0 0 10px 0;
+    font-size: 2.5rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+}
+
+.page-header h1 i {
+    font-size: 2rem;
+}
+
+.page-header p {
+    margin: 0;
+    font-size: 1.1rem;
+    opacity: 0.9;
+    font-weight: 400;
+}
+
+/* Controls */
+.attendance-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    padding: 20px;
+    background: #1a191e;
+    border-radius: 10px;
+    box-shadow: none;
+    gap: 20px;
+}
+
+.rebuild-buttons-group {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.attendance-controls .btn {
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+}
+
+.attendance-controls .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.attendance-controls .btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.btn-secondary {
+    background-color: #5865F2;
+    color: white;
+    font-weight: bold;
+}
+
+.attendance-info {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    font-size: 14px;
+    color: #666;
+}
+
+.attendance-info .separator {
+    opacity: 0.5;
+}
+
+/* Loading, Error, No Data States */
+.loading-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    background: #1a191e;
+    border-radius: 10px;
+    box-shadow: none;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #5865F2;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 20px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-indicator p {
+    margin: 0;
+    color: #c9c9c9;
+    font-size: 16px;
+}
+
+.error-display, .no-data-message {
+    background: #1a191e;
+    border-radius: 10px;
+    box-shadow: none;
+    padding: 40px;
+    text-align: center;
+}
+
+.error-content, .no-data-content {
+    color: #e74c3c;
+}
+
+.error-content h3, .no-data-content h3 {
+    margin: 0 0 15px 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.error-content i, .no-data-content i {
+    font-size: 3rem;
+    margin-bottom: 15px;
+}
+
+.error-content p, .no-data-content p {
+    margin: 0;
+    font-size: 16px;
+}
+
+/* Attendance Table Container */
+.attendance-table-container {
+    background: #1a191e;
+    border-radius: 10px;
+    box-shadow: none;
+    overflow: hidden;
+}
+
+/* Legend */
+.attendance-legend {
+    padding: 20px;
+    border-bottom: 1px solid #333;
+    background: #232229;
+}
+
+.attendance-legend h4 {
+    margin: 0 0 15px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #e8e8e8;
+    font-size: 16px;
+}
+
+.legend-items {
+    display: flex;
+    gap: 25px;
+    flex-wrap: wrap;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #c9c9c9;
+}
+
+.legend-indicator {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+.legend-indicator.attended {
+    background: #3c426c;
+}
+
+.legend-indicator.not-attended {
+    background: linear-gradient(135deg, #bdc3c7 0%, #95a5a6 100%);
+}
+
+.legend-indicator.current-week {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 2px #f093fb;
+}
+
+/* Table Wrapper */
+.attendance-table-wrapper {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: 70vh;
+    width: 100%;
+    border: 1px solid #333;
+    border-radius: 8px;
+}
+
+/* Add smooth scrolling */
+.attendance-table-wrapper::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+}
+
+.attendance-table-wrapper::-webkit-scrollbar-track {
+    background: #232229;
+    border-radius: 4px;
+}
+
+.attendance-table-wrapper::-webkit-scrollbar-thumb {
+    background: #777;
+    border-radius: 4px;
+}
+
+.attendance-table-wrapper::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+/* Attendance Table */
+.attendance-table {
+    width: 100%;
+    min-width: 800px; /* Minimum width to trigger horizontal scrolling */
+    border-collapse: collapse;
+    font-size: 14px;
+    background: #1a191e;
+}
+
+.attendance-table th,
+.attendance-table td {
+    padding: 12px 8px;
+    text-align: center;
+    border-bottom: 1px solid #333;
+    vertical-align: middle;
+}
+
+.attendance-table th {
+    background: #232229;
+    font-weight: 600;
+    color: #e8e8e8;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    border-bottom: 2px solid #333;
+}
+
+/* Week Rebuild Buttons */
+.week-rebuild-container {
+    margin-top: 5px;
+}
+
+.week-rebuild-btn {
+    background: #6c757d;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 24px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.week-rebuild-btn:hover {
+    background: #5a6268;
+    transform: translateY(-1px);
+}
+
+.week-rebuild-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.week-rebuild-btn.loading {
+    background: #007bff;
+}
+
+.attendance-table .player-column {
+    text-align: left;
+    min-width: 180px;
+    max-width: 200px;
+    position: sticky;
+    left: 0;
+    background: #232229;
+    z-index: 11;
+    border-right: 2px solid #333;
+}
+
+.attendance-table tbody .player-column {
+    background: #232229;
+    font-weight: 600;
+    color: #e8e8e8;
+}
+
+.player-characters {
+    margin-bottom: 8px;
+}
+
+.character-name-line {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.3;
+    margin-bottom: 2px;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.character-name-line:last-child {
+    margin-bottom: 0;
+}
+
+/* WoW Class Colors for character names with drop shadow */
+.character-name-line.class-warrior { color: #C79C6E; }
+.character-name-line.class-paladin { color: #F58CBA; }
+.character-name-line.class-hunter { color: #ABD473; }
+.character-name-line.class-rogue { color: #FFF569; }
+.character-name-line.class-priest { color: #FFFFFF; }
+.character-name-line.class-shaman { color: #0070DE; }
+.character-name-line.class-mage { color: #69CCF0; }
+.character-name-line.class-warlock { color: #9482C9; }
+.character-name-line.class-druid { color: #FF7D0A; }
+.character-name-line.class-unknown { color: #999; }
+
+.player-streak {
+    font-size: 12px;
+    font-weight: 500;
+    color: #666;
+    opacity: 0.8;
+}
+
+.attendance-table .week-column {
+    min-width: 80px;
+    width: 80px;
+    font-size: 12px;
+}
+
+.attendance-table .week-column.current-week {
+    background: #2a2a1f;
+    border-left: 3px solid #f093fb;
+    border-right: 3px solid #f093fb;
+}
+
+.attendance-table tbody tr:hover {
+    background: #1f1e24;
+}
+
+.attendance-table tbody tr:hover .player-column {
+    background: #232229;
+}
+
+/* Attendance Cell Styles */
+.attendance-cell {
+    position: relative;
+    cursor: pointer;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    margin: 2px;
+    transition: all 0.2s ease;
+}
+
+.attendance-cell.attended {
+    background: #3c426c;
+    color: white;
+    font-weight: 500;
+    min-width: 120px;
+}
+
+.attendance-cell.not-attended {
+    background: linear-gradient(135deg, #bdc3c7 0%, #95a5a6 100%);
+    color: #666;
+    font-weight: 500;
+    min-width: 120px;
+}
+
+.attendance-cell.current-week {
+    border: 2px solid #f093fb;
+    box-shadow: 0 0 8px rgba(240, 147, 251, 0.3);
+}
+
+.attendance-cell:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* Attendance Details Tooltip */
+.attendance-details {
+    font-size: 12px;
+    line-height: 1.3;
+}
+
+/* Multiple Attendance Events */
+.attendance-cell.multiple-events {
+    flex-direction: column;
+    gap: 2px;
+    padding: 2px;
+}
+
+.attendance-event-box {
+    background: #3c426c;
+    color: white;
+    font-weight: 500;
+    padding: 4px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    line-height: 1.2;
+    min-height: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+}
+
+.character-name {
+    font-weight: 600;
+}
+
+/* WoW Class Colors */
+.character-name.class-warrior { color: #C79C6E; }
+.character-name.class-paladin { color: #F58CBA; }
+.character-name.class-hunter { color: #ABD473; }
+.character-name.class-rogue { color: #FFF569; }
+.character-name.class-priest { color: #FFFFFF; }
+.character-name.class-shaman { color: #0070DE; }
+.character-name.class-mage { color: #69CCF0; }
+.character-name.class-warlock { color: #9482C9; }
+.character-name.class-druid { color: #FF7D0A; }
+.character-name.class-unknown { color: #999; }
+
+/* Statistics */
+.attendance-stats {
+    padding: 25px;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    margin-bottom: 25px;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+}
+
+.stat-card {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #667eea;
+    margin-bottom: 5px;
+}
+
+.stat-label {
+    font-size: 14px;
+    color: #666;
+    font-weight: 500;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    .attendance-container {
+        padding: 15px;
+    }
+    
+    .attendance-controls {
+        flex-direction: column;
+        gap: 15px;
+        align-items: stretch;
+    }
+    
+    .rebuild-buttons-group {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .attendance-info {
+        justify-content: center;
+    }
+}
+
+@media (max-width: 768px) {
+    .page-header h1 {
+        font-size: 2rem;
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .page-header h1 i {
+        font-size: 1.5rem;
+    }
+    
+    .attendance-controls .btn {
+        width: 100%;
+        justify-content: center;
+        font-size: 12px;
+        padding: 10px 15px;
+    }
+    
+    .legend-items {
+        justify-content: center;
+    }
+    
+    .attendance-table .player-column {
+        min-width: 140px;
+        max-width: 160px;
+    }
+    
+    .attendance-table .week-column {
+        min-width: 60px;
+        width: 60px;
+    }
+    
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 480px) {
+    .page-header {
+        padding: 20px;
+    }
+    
+    .page-header h1 {
+        font-size: 1.5rem;
+    }
+    
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .attendance-table .player-column {
+        min-width: 120px;
+        max-width: 140px;
+        font-size: 12px;
+    }
+    
+    .attendance-table .week-column {
+        min-width: 50px;
+        width: 50px;
+    }
+    
+    .attendance-cell {
+        font-size: 10px;
+        min-height: 35px;
+    }
+} 

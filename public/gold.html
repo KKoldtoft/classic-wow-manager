@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gold Pot - Classic WoW Manager</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/gold.css">
+    <style>
+        .summary { display:flex; gap:16px; flex-wrap:wrap; margin:16px 0; }
+        .card { background:#1e1e1e; border:1px solid #3a3a3a; border-radius:14px; padding:14px 16px; min-width:220px; position:relative; box-shadow:0 8px 22px rgba(0,0,0,.25); }
+        .card h3 { margin:0 0 6px 0; font-size:14px; color:#ccc; text-transform:uppercase; letter-spacing:.4px; }
+        .card .value { font-size:24px; font-weight:700; color:#f0f0f0; }
+        .tooltip { position:absolute; top:calc(100% + 8px); left:0; right:auto; background:#111827; color:#e5e7eb; border:1px solid #1f2937; border-radius:8px; padding:10px; box-shadow:0 10px 24px rgba(0,0,0,.4); display:none; max-height:260px; overflow:auto; min-width:320px; z-index:50; }
+        .players-grid-cards { display:grid; grid-auto-flow: column; grid-template-rows: repeat(10, auto); grid-auto-columns: 1fr; gap: 12px; align-items: start; }
+        .player-card::before { display:none !important; content:none !important; }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="gold">
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Home</a>
+                <div class="top-nav-dropdown">
+                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+                        Upcoming Raids <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="upcoming-raids-menu">
+                        <div class="dropdown-loading">Loading raids...</div>
+                    </div>
+                </div>
+                <a href="/guild-members" class="top-nav-link">Guild Members</a>
+                <a href="/attendance" class="top-nav-link">Regular Attendance</a>
+            </nav>
+        </div>
+        <div id="auth-container">
+            <!-- Auth content is now loaded by top-bar.js -->
+        </div>
+    </div>
+
+    <!-- Active Raid Bar (shown when raid is selected) -->
+    <div class="raid-bar" id="raid-bar" style="display: none;">
+        <div class="raid-bar-left">
+            <span class="raid-title" id="raid-title">Loading...</span>
+            <nav class="raid-nav">
+                <a href="#" class="raid-nav-link" id="raid-roster-link">
+                    <i class="fas fa-users"></i> Roster
+                </a>
+                <a href="#" class="raid-nav-link" id="raid-assignments-link">
+                    <i class="fas fa-tasks"></i> Assignments
+                </a>
+                <a href="/raidlogs" class="raid-nav-link" id="raid-logs-link">
+                    <i class="fas fa-chart-line"></i> Raid Logs
+                </a>
+                <a href="/gold" class="raid-nav-link active" id="raid-goldpot-link">
+                    <i class="fas fa-coins"></i> Gold Pot
+                </a>
+                <a href="/loot" class="raid-nav-link" id="raid-loot-link">
+                    <i class="fas fa-shield-alt"></i> Loot
+                </a>
+            </nav>
+        </div>
+        <div class="raid-bar-right">
+            <button class="raid-close-btn" onclick="localStorage.removeItem('activeEventSession'); location.reload();">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+    
+    <div class="content">
+        <div id="goldAuthGate" class="auth-gate" style="display:none;">
+            <div class="lock"><i class="fas fa-lock"></i></div>
+            <h2>Log in to view page</h2>
+            <p>You need to log in with your discord, to view the content of this page. You also need to join 1Principles discord server if you are not already there.</p>
+            <div class="actions">
+                <button class="discord-button" id="goldAuthLoginBtn"><i class="fab fa-discord discord-icon"></i> Sign in with Discord</button>
+            </div>
+            <a class="join-link" href="https://discord.gg/U3vUpcFtjR" target="_blank" rel="noopener noreferrer">Join 1Principles discord</a>
+        </div>
+        <div class="gold-container">
+            <div class="loading-indicator" id="loadingIndicator" style="display:none;">
+                <div class="spinner"></div>
+                <p>Loading...</p>
+            </div>
+            <div class="error-display" id="errorDisplay" style="display: none;">
+                <div class="error-content">
+                    <h3>⚠️ Error</h3>
+                    <p id="errorMessage"></p>
+                </div>
+            </div>
+            <div class="gold-content" id="goldContent" style="display: none; max-width:1200px; margin:0 auto;">
+                <div class="summary">
+                    <div class="card" id="cardPlayers">
+                        <h3>Players</h3>
+                        <div class="value" id="playersCount">--</div>
+                        <div class="tooltip" id="playersTooltip"></div>
+                    </div>
+                    <div class="card">
+                        <h3>Total Points</h3>
+                        <div class="value" id="totalPoints">--</div>
+                    </div>
+                    <div class="card">
+                        <h3>Total Gold (Shared)</h3>
+                        <div class="value" id="totalGold">--</div>
+                    </div>
+                    <div class="card">
+                        <h3>Average Gold Cut</h3>
+                        <div class="value" id="averageGold">--</div>
+                    </div>
+                </div>
+                <div id="playersGrid" class="players-grid-cards"></div>
+                <div class="gargul-export" id="gargulExportSection" style="margin-top:24px;">
+                    <h3 style="margin:0 0 8px 0; font-size:16px; color:#e5e7eb;">Gargul export string</h3>
+                    <div class="export-controls" style="display:flex; gap:10px; align-items:stretch;">
+                        <textarea id="gargulExport" rows="10" readonly style="flex:1; resize:vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:13px; line-height:1.4; padding:10px; border-radius:8px; border:1px solid #374151; background:#111827; color:#e5e7eb;"></textarea>
+                        <button id="copyGargul" class="copy-btn" style="white-space:nowrap; padding:10px 14px; border-radius:8px; border:1px solid #374151; background:#1f2937; color:#e5e7eb; cursor:pointer;">Copy</button>
+                    </div>
+                    <div id="gargulCopyStatus" style="margin-top:6px; font-size:12px; color:#9ca3af; display:none;">Copied!</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/top-bar.js"></script>
+    <script src="/gold.js"></script>
+</body>
+</html> 

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Roster - Classic WoW Manager</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/roster.css">
+    <link rel="stylesheet" href="/roster-buttons.css">
+    <link rel="stylesheet" href="/add-character.css">
+    <link rel="stylesheet" href="/confirmation-modal.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body class="roster">
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Home</a>
+                <div class="top-nav-dropdown">
+                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+                        Upcoming Raids <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="upcoming-raids-menu">
+                        <div class="dropdown-loading">Loading raids...</div>
+                    </div>
+                </div>
+                <a href="/guild-members" class="top-nav-link">Guild Members</a>
+                <a href="/attendance" class="top-nav-link">Regular Attendance</a>
+            </nav>
+        </div>
+        <div id="auth-container">
+            <!-- Auth content is now loaded by top-bar.js -->
+        </div>
+    </div>
+
+    <!-- Active Raid Bar (shown when raid is selected) -->
+    <div class="raid-bar" id="raid-bar" style="display: none;">
+        <div class="raid-bar-left">
+            <span class="raid-title" id="raid-title">Loading...</span>
+            <nav class="raid-nav">
+                <a href="#" class="raid-nav-link active" id="raid-roster-link">
+                    <i class="fas fa-users"></i> Roster
+                </a>
+                <a href="#" class="raid-nav-link" id="raid-assignments-link">
+                    <i class="fas fa-tasks"></i> Assignments
+                </a>
+                <a href="/raidlogs" class="raid-nav-link" id="raid-logs-link">
+                    <i class="fas fa-chart-line"></i> Raid Logs
+                </a>
+                <a href="/gold" class="raid-nav-link" id="raid-goldpot-link">
+                    <i class="fas fa-coins"></i> Gold Pot
+                </a>
+                <a href="/loot" class="raid-nav-link" id="raid-loot-link">
+                    <i class="fas fa-shield-alt"></i> Loot
+                </a>
+            </nav>
+        </div>
+        <div class="raid-bar-right">
+            <button class="raid-close-btn" onclick="localStorage.removeItem('activeEventSession'); location.reload();">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="content">
+        <div class="back-button-wrapper">
+            <a href="/" class="back-button"><i class="fas fa-arrow-left"></i> Back to Home</a>
+        </div>
+
+        <h1 id="roster-event-title">Loading Roster...</h1>
+        <div class="roster-container">
+            <div id="roster-grid">
+                <p>Loading roster data...</p>
+            </div>
+        </div>
+
+        <div id="bench-container" class="bench-container" style="display: none;">
+            <h2 id="bench-title">Bench</h2>
+            <div id="bench-list-container" class="bench-list-container">
+                <div id="benched-list" class="benched-list"></div>
+            </div>
+        </div>
+
+        <div class="button-panel">
+            <a id="comp-tool-button" href="#" class="panel-button" target="_blank">
+                <i class="fas fa-wrench"></i>
+                <span>Comp-tool</span>
+            </a>
+            <button id="revert-roster-button" class="panel-button" style="display: none;">
+                <i class="fas fa-undo"></i>
+                <span>Revert</span>
+            </button>
+            <button id="announce-invites-button" class="panel-button">
+                <i class="fas fa-bullhorn"></i>
+                <span>Announce invites</span>
+            </button>
+            <button id="auto-assignments-button" class="panel-button">
+                <i class="fas fa-magic"></i>
+                <span>Auto assignments</span>
+            </button>
+            
+            <!-- Toggle switches -->
+            <div class="toggle-container">
+                <span class="toggle-label">Disc names</span>
+                <div id="toggle-names-switch" class="toggle-switch">
+                    <div class="toggle-slider"></div>
+                </div>
+            </div>
+            
+            <div class="toggle-container">
+                <span class="toggle-label">Hide in raid</span>
+                <div id="hide-in-raid-switch" class="toggle-switch active">
+                    <div class="toggle-slider"></div>
+                </div>
+            </div>
+            
+            <div class="toggle-container">
+                <span class="toggle-label">Hide bench</span>
+                <div id="hide-bench-switch" class="toggle-switch">
+                    <div class="toggle-slider"></div>
+                </div>
+            </div>
+            
+            <div class="toggle-container">
+                <span class="toggle-label">Hide confirmed</span>
+                <div id="hide-confirmed-switch" class="toggle-switch">
+                    <div class="toggle-slider"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Player Search Overlay -->
+    <div id="player-search-overlay" class="player-search-overlay">
+        <div class="player-search-modal">
+            <button class="player-search-close">&times;</button>
+            <div class="player-search-header">Search for Player</div>
+            <input type="text" id="player-search-input" class="player-search-input" placeholder="Type player name (min 3 characters)..." autocomplete="off">
+            <div id="player-search-results" class="player-search-results">
+                <div class="player-search-no-results">Type at least 3 characters to search</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fix Name Overlay -->
+    <div id="fix-name-overlay" class="player-search-overlay">
+        <div class="player-search-modal">
+            <button class="fix-name-close">&times;</button>
+            <div class="player-search-header">Fix Player Name</div>
+            <div class="fix-name-form">
+                <div class="fix-name-row"><label>Discord ID</label><div id="fix-discord-id" class="fix-name-value"></div></div>
+                <div class="fix-name-row"><label>Class</label><div id="fix-class" class="fix-name-value"></div></div>
+                <div class="fix-name-row"><label>Role</label><div id="fix-role" class="fix-name-value"></div></div>
+                <div class="fix-name-row"><label>Name</label><input id="fix-name-input" type="text" class="player-search-input" autocomplete="off"></div>
+                <div class="fix-name-actions" style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
+                    <button id="fix-name-cancel" class="panel-button" type="button"><i class="fas fa-times"></i><span>Cancel</span></button>
+                    <button id="fix-name-save" class="panel-button" type="button"><i class="fas fa-save"></i><span>Save</span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/confirmation-modal.js"></script>
+    <script src="/add-character.js"></script>
+    <script src="/roster-api.js"></script>
+    <script src="/roster.js"></script>
+    <script src="/top-bar.js"></script>
+</body>
+</html>

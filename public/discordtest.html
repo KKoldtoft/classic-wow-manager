@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Discord Test</title>
+    <!-- Google tag (gtag.js) - guarded for localhost -->
+    <script>
+      (function(){
+        try {
+          var host = (window.location && window.location.hostname) || '';
+          var isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+          if (isLocal) return;
+          if (window.gtag) return;
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){ dataLayer.push(arguments); }
+          window.gtag = gtag;
+          var s = document.createElement('script');
+          s.async = true;
+          s.src = 'https://www.googletagmanager.com/gtag/js?id=G-JJJVQ34B6R';
+          (document.head || document.documentElement).appendChild(s);
+          gtag('js', new Date());
+          gtag('config', 'G-JJJVQ34B6R');
+        } catch (e) {}
+      })();
+    </script>
+    <link rel="stylesheet" href="/style.css" />
+    <style>
+        .container { max-width: 720px; margin: 40px auto; padding: 20px; }
+        button { padding: 10px 14px; margin-right: 10px; }
+        pre { background: #111; color: #eee; padding: 10px; border-radius: 6px; overflow: auto; }
+        #voice-list { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 8px; }
+        .voice-user { background: #333; border: 1px solid #000; border-radius: 12px; padding: 10px 12px; display: flex; gap: 12px; align-items: center; }
+        .voice-user .avatar { width: 60px; height: 60px; border-radius: 8px; flex: 0 0 60px; background: #222; border: 1px solid #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        .voice-user .avatar img { width: 60px; height: 60px; object-fit: cover; display: block; }
+        .voice-user .content { flex: 1 1 auto; background: #333; }
+        .voice-user .name { color: #fff; font-weight: 600; line-height: 1.2; }
+        .voice-user .chars { margin-top: 4px; }
+        .badges { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+        .badge { font-size: 12px; padding: 2px 6px; border-radius: 8px; background: #222; color: #ddd; border: 1px solid #000; }
+        .badge.warn { background: #452; color: #f5c2c7; }
+        .badge.info { background: #224; color: #c2d3f5; }
+        .controls { margin: 8px 0 12px; display: flex; align-items: center; gap: 10px; }
+        .controls label { color: #ddd; }
+        /* Switch */
+        .switch { position: relative; display: inline-block; width: 46px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #555; transition: .2s; border-radius: 24px; border: 1px solid #000; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 2px; background-color: #ddd; transition: .2s; border-radius: 50%; }
+        .switch input:checked + .slider { background: #2d7; }
+        .switch input:checked + .slider:before { transform: translateX(20px); }
+    </style>
+    <script>
+        async function postJson(url, body) {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body || {})
+            });
+            const text = await res.text();
+            let data;
+            try { data = JSON.parse(text); } catch (_) { data = { raw: text }; }
+            return { status: res.status, ok: res.ok, data };
+        }
+
+        async function sendTestDM() {
+            setStatus('Sending DM...');
+            const result = await postJson('/api/discord/test/dm');
+            setStatus(JSON.stringify(result, null, 2));
+        }
+
+        async function sendTestWebhook() {
+            setStatus('Posting to webhook...');
+            const result = await postJson('/api/discord/test/webhook');
+            setStatus(JSON.stringify(result, null, 2));
+        }
+
+        function classToColor(cls) {
+            const c = String(cls || '').toLowerCase();
+            const colors = {
+                warrior: '#C79C6E', paladin: '#F58CBA', hunter: '#ABD473', rogue: '#FFF569', priest: '#FFFFFF',
+                deathknight: '#C41E3A', shaman: '#0070DE', mage: '#40C7EB', warlock: '#8787ED', monk: '#00FF96',
+                druid: '#FF7D0A', demonhunter: '#A330C9'
+            };
+            return colors[c] || '#AAAAAA';
+        }
+
+        function strongIf(text, makeStrong) {
+            return makeStrong ? `<b><u>${text}</u></b>` : text;
+        }
+
+        // Stable DOM nodes keyed by Discord user ID to avoid flicker
+        const voiceNodes = new Map();
+        let lastCount = 0;
+        let simpleNames = false;
+
+        const CHANNEL_ID = '1400574971994181783';
+        async function refreshTitle() {
+            try {
+                const r = await fetch(`/api/discord/channel/${CHANNEL_ID}`);
+                const j = await r.json();
+                const title = document.getElementById('voice-title');
+                if (j && j.ok && j.name) {
+                    title.textContent = `Voice Monitor — ${j.name}`;
+                } else {
+                    title.textContent = `Voice Monitor — ${CHANNEL_ID}`;
+                }
+            } catch (_) {
+                const title = document.getElementById('voice-title');
+                title.textContent = `Voice Monitor — ${CHANNEL_ID}`;
+            }
+        }
+
+        async function refreshVoice() {
+            try {
+                const res = await fetch(`/api/discord/voice/${CHANNEL_ID}`);
+                const data = await res.json();
+                const list = document.getElementById('voice-list');
+                // One-time cleanup: remove any legacy nodes without a uid (from earlier versions)
+                if (!list.dataset.initialized) {
+                    list.innerHTML = '';
+                    list.dataset.initialized = '1';
+                }
+                function extractId(raw) {
+                    const s = String(raw ?? '');
+                    const m = s.match(/\d{10,}/);
+                    return m ? m[0] : s;
+                }
+
+                const inferredStates = {};
+                const ids = [];
+                const rawList = Array.isArray(data.userIds) ? data.userIds : [];
+                for (const item of rawList) {
+                    if (Array.isArray(item)) {
+                        const id = extractId(item[0]);
+                        if (id) ids.push(id);
+                        if (item[1] && typeof item[1] === 'object') inferredStates[id] = item[1];
+                    } else if (item && typeof item === 'object' && item.id) {
+                        const id = extractId(item.id);
+                        if (id) ids.push(id);
+                    } else if (typeof item === 'string' || typeof item === 'number') {
+                        const id = extractId(item);
+                        if (id) ids.push(id);
+                    }
+                }
+                const states = Object.assign({}, data.states || {}, inferredStates);
+
+                // Resolve Discord display names
+                const nameRes = await fetch('/api/discord/resolve-users', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userIds: ids })
+                });
+                const nameJson = await nameRes.json();
+                const nameMap = (nameJson && nameJson.users && typeof nameJson.users === 'object') ? nameJson.users : {};
+
+                // Fetch characters for all IDs
+                const charsRes = await fetch('/api/players/by-discord-ids', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids })
+                });
+                const charsJson = await charsRes.json();
+                const charsMap = (charsJson && charsJson.map && typeof charsJson.map === 'object') ? charsJson.map : {};
+
+                // Get active roster to bold/underline matching character
+                const activeEventId = localStorage.getItem('activeEventSession');
+                let rosterNames = new Set();
+                if (activeEventId) {
+                    try {
+                        const rosterRes = await fetch(`/api/assignments/${activeEventId}/roster`);
+                        const rosterJson = await rosterRes.json();
+                        const names = (rosterJson.roster || []).map(r => String(r.character_name || '').toLowerCase());
+                        rosterNames = new Set(names);
+                    } catch(_) {}
+                }
+
+                // Build set/map for quick membership checks
+                const present = new Set(ids);
+                const presentMap = new Map(ids.map(id => [id, true]));
+
+                // Remove nodes for users no longer present
+                for (const [uid, node] of Array.from(voiceNodes.entries())) {
+                    if (!present.has(uid)) {
+                        if (node && node.parentNode === list) list.removeChild(node);
+                        voiceNodes.delete(uid);
+                    }
+                }
+
+                // Add/update nodes for present users without clearing the list
+                const frag = document.createDocumentFragment();
+                ids.forEach(id => {
+                    const info = nameMap[id] || {};
+                    const displayName = String(info.displayName || id);
+                    let characters = charsMap[id] || [];
+                    if (!Array.isArray(characters) && characters && typeof characters === 'object') {
+                        characters = Object.values(characters);
+                    }
+                    const matched = Array.isArray(characters) ? characters.find(ch => {
+                        const n = String(ch.character_name || '').toLowerCase();
+                        return rosterNames.has(n);
+                    }) : null;
+                    const matchedName = matched ? String(matched.character_name || '') : null;
+
+                    const st = states[id] || {};
+                    const cantSpeak = !!(st.self_mute || st.mute);
+                    const cantHear = !!(st.self_deaf || st.deaf);
+                    const badges = [];
+                    if (cantSpeak) badges.push('<span class=\"badge warn\" title=\"Muted (cannot speak)\">🎙️🚫</span>');
+                    if (cantHear) badges.push('<span class=\"badge warn\" title=\"Deafened (cannot hear)\">🎧🚫</span>');
+                    if (st.self_stream) badges.push('<span class=\"badge info\" title=\"Streaming\">📺</span>');
+                    if (st.self_video) badges.push('<span class=\"badge info\" title=\"Camera on\">🎥</span>');
+                    if (st.suppress) badges.push('<span class=\"badge info\" title=\"Stage audience / suppressed\">🎙️🚫</span>');
+                    
+                    let li = voiceNodes.get(id);
+                    if (!li) {
+                        li = document.createElement('li');
+                        li.dataset.uid = id;
+                        li.className = 'voice-user';
+                        // Build content nodes to avoid accidental [object Object]
+                        const avatar = document.createElement('div');
+                        avatar.className = 'avatar';
+                        const img = document.createElement('img');
+                        img.alt = '';
+                        img.src = info.avatarUrl || 'https://cdn.discordapp.com/embed/avatars/0.png';
+                        avatar.appendChild(img);
+
+                        const content = document.createElement('div');
+                        content.className = 'content';
+                        const nameDiv = document.createElement('div');
+                        nameDiv.className = 'name';
+                        if (simpleNames && matchedName) {
+                            // Keep class color on main name
+                            const matchedClass = (matched && matched.class) ? matched.class : null;
+                            const color = classToColor(matchedClass);
+                            nameDiv.innerHTML = `<b style="color:${color}">${matchedName}</b>`;
+                        } else {
+                            nameDiv.textContent = displayName;
+                        }
+
+                        content.appendChild(nameDiv);
+
+                        if (!simpleNames || !matchedName) {
+                            if (Array.isArray(characters) && characters.length > 0) {
+                            const charsDiv = document.createElement('div');
+                            charsDiv.className = 'chars';
+                            characters.forEach((ch, idx) => {
+                                const name = String(ch.character_name || '');
+                                const isInRoster = rosterNames.has(name.toLowerCase());
+                                const color = classToColor(ch.class);
+
+                                const span = document.createElement('span');
+                                span.style.color = color;
+                                if (isInRoster) {
+                                    const u = document.createElement('u');
+                                    const b = document.createElement('b');
+                                    b.textContent = name;
+                                    u.appendChild(b);
+                                    span.appendChild(u);
+                                } else {
+                                    span.textContent = name;
+                                }
+                                charsDiv.appendChild(span);
+                                if (idx < characters.length - 1) charsDiv.appendChild(document.createTextNode(', '));
+                            });
+                            content.appendChild(charsDiv);
+                            }
+                        }
+
+                        if (badges.length) {
+                            const badgesDiv = document.createElement('div');
+                            badgesDiv.className = 'badges';
+                            badges.forEach(html => {
+                                const wrapper = document.createElement('span');
+                                wrapper.innerHTML = html;
+                                // Move the real badge element inside wrapper to badgesDiv
+                                badgesDiv.appendChild(wrapper.firstChild);
+                            });
+                            content.appendChild(badgesDiv);
+                        }
+                        li.appendChild(avatar);
+                        li.appendChild(content);
+                        voiceNodes.set(id, li);
+                        frag.appendChild(li);
+                    } else {
+                        // Update existing node only if something changed
+                        // Update name
+                        const nameDiv = li.querySelector('.name');
+                        if (simpleNames && matchedName) {
+                            const matchedClass = (matched && matched.class) ? matched.class : null;
+                            const color = classToColor(matchedClass);
+                            const html = `<b style="color:${color}">${matchedName}</b>`;
+                            if (nameDiv && nameDiv.innerHTML !== html) {
+                                nameDiv.innerHTML = html;
+                            }
+                        } else {
+                            if (nameDiv && nameDiv.textContent !== displayName) {
+                                nameDiv.textContent = displayName;
+                            }
+                        }
+                        const img = li.querySelector('.avatar img');
+                        if (img) {
+                            const nextSrc = info.avatarUrl || 'https://cdn.discordapp.com/embed/avatars/0.png';
+                            if (img.src !== nextSrc) img.src = nextSrc;
+                        }
+                        // Rebuild chars section
+                        let charsDiv = li.querySelector('.chars');
+                        const contentNode = li.querySelector('.content') || li;
+                        if (charsDiv && charsDiv.parentNode) charsDiv.parentNode.removeChild(charsDiv);
+                        if (!simpleNames || !matchedName) {
+                            if (Array.isArray(characters) && characters.length > 0) {
+                            charsDiv = document.createElement('div');
+                            charsDiv.className = 'chars';
+                            characters.forEach((ch, idx) => {
+                                const name = String(ch.character_name || '');
+                                const isInRoster = rosterNames.has(name.toLowerCase());
+                                const color = classToColor(ch.class);
+                                const span = document.createElement('span');
+                                span.style.color = color;
+                                if (isInRoster) {
+                                    const u = document.createElement('u');
+                                    const b = document.createElement('b');
+                                    b.textContent = name;
+                                    u.appendChild(b);
+                                    span.appendChild(u);
+                                } else {
+                                    span.textContent = name;
+                                }
+                                charsDiv.appendChild(span);
+                                if (idx < characters.length - 1) charsDiv.appendChild(document.createTextNode(', '));
+                            });
+                            const content = li.querySelector('.content') || li;
+                            content.appendChild(charsDiv);
+                            }
+                        }
+                        // Rebuild badges section
+                        let badgesDiv = li.querySelector('.badges');
+                        if (badgesDiv && badgesDiv.parentNode) badgesDiv.parentNode.removeChild(badgesDiv);
+                        if (badges.length) {
+                            badgesDiv = document.createElement('div');
+                            badgesDiv.className = 'badges';
+                            badges.forEach(html => {
+                                const wrapper = document.createElement('span');
+                                wrapper.innerHTML = html;
+                                badgesDiv.appendChild(wrapper.firstChild);
+                            });
+                            const content = li.querySelector('.content') || li;
+                            content.appendChild(badgesDiv);
+                        }
+                    }
+                });
+                if (frag.childNodes.length > 0) list.appendChild(frag);
+
+                const count = ids.length;
+                if (count !== lastCount) {
+                    document.getElementById('voice-status').textContent = `Users in channel (${count})`;
+                    lastCount = count;
+                }
+
+                // Build helper: roster lookup for current event
+                const rosterItems = Array.from((await (async () => {
+                    const activeEventId = localStorage.getItem('activeEventSession');
+                    if (!activeEventId) return [];
+                    try {
+                        const rr = await fetch(`/api/assignments/${activeEventId}/roster`);
+                        const rj = await rr.json();
+                        return Array.isArray(rj.roster) ? rj.roster : [];
+                    } catch (_) { return []; }
+                })()));
+                const rosterByDiscord = new Map();
+                rosterItems.forEach(r => {
+                    if (r.discord_user_id) {
+                        const key = String(r.discord_user_id);
+                        if (!rosterByDiscord.has(key)) rosterByDiscord.set(key, []);
+                        rosterByDiscord.get(key).push(r);
+                    }
+                });
+                const rosterNamesSet = new Set(rosterItems.map(r => String(r.character_name || '').toLowerCase()));
+
+                // 1) On Discord but not in roster
+                const unmatchedList = document.getElementById('voice-unmatched-list');
+                unmatchedList.innerHTML = '';
+                let unmatchedCount = 0;
+                ids.forEach(id => {
+                    const rosterMatches = rosterByDiscord.get(id) || [];
+                    if (rosterMatches.length === 0) {
+                        unmatchedCount++;
+                        const li = document.createElement('li');
+                        li.className = 'voice-user';
+                        const info = nameMap[id] || {};
+                        const avatarUrl = info.avatarUrl || 'https://cdn.discordapp.com/embed/avatars/0.png';
+                        const avatar = document.createElement('div'); avatar.className = 'avatar';
+                        const img = document.createElement('img'); img.src = avatarUrl; img.alt=''; avatar.appendChild(img);
+                        const content = document.createElement('div'); content.className = 'content';
+                        const nameDiv = document.createElement('div'); nameDiv.className = 'name'; nameDiv.textContent = info.displayName || id; content.appendChild(nameDiv);
+                        const hint = document.createElement('div'); hint.style.color = '#bbb'; hint.textContent = 'No roster match'; content.appendChild(hint);
+                        li.appendChild(avatar); li.appendChild(content);
+                        unmatchedList.appendChild(li);
+                    }
+                });
+                document.getElementById('unmatched-count').textContent = String(unmatchedCount);
+
+                // 2) In roster but not on Discord
+                const missingList = document.getElementById('roster-missing-list');
+                missingList.innerHTML = '';
+                let missingCount = 0;
+                rosterItems.forEach(r => {
+                    const did = r.discord_user_id ? String(r.discord_user_id) : null;
+                    const inVoice = did ? presentMap.has(did) : false;
+                    if (!inVoice) {
+                        missingCount++;
+                        const li = document.createElement('li'); li.className = 'voice-user';
+                        const avatar = document.createElement('div'); avatar.className = 'avatar';
+                        const img = document.createElement('img'); img.src = 'https://cdn.discordapp.com/embed/avatars/0.png'; img.alt=''; avatar.appendChild(img);
+                        const content = document.createElement('div'); content.className = 'content';
+                        const nameDiv = document.createElement('div'); nameDiv.className = 'name';
+                        const color = classToColor(r.class_name);
+                        nameDiv.innerHTML = `<b style="color:${color}">${r.character_name}</b>`;
+                        content.appendChild(nameDiv);
+                        const meta = document.createElement('div'); meta.style.color = '#bbb';
+                        const didText = did ? `Discord ID: ${did}` : 'Discord ID: N/A';
+                        const group = (r.party_id != null) ? `Group ${r.party_id}` : 'Group N/A';
+                        const slot = (r.slot_id != null) ? `Slot ${r.slot_id}` : 'Slot N/A';
+                        meta.textContent = `${didText} • ${group} • ${slot}`;
+                        content.appendChild(meta);
+                        li.appendChild(avatar); li.appendChild(content);
+                        missingList.appendChild(li);
+                    }
+                });
+                document.getElementById('missing-count').textContent = String(missingCount);
+            } catch (e) {
+                document.getElementById('voice-status').textContent = 'Error loading voice data';
+            }
+        }
+        setInterval(refreshVoice, 5000);
+        window.addEventListener('load', () => { refreshTitle(); refreshVoice(); });
+
+        // Toggle: Simple names
+        window.addEventListener('load', () => {
+            const cb = document.getElementById('simple-names-toggle');
+            if (!cb) return;
+            const saved = localStorage.getItem('discordtest_simple_names');
+            if (saved === '1') { cb.checked = true; simpleNames = true; }
+            cb.addEventListener('change', () => {
+                simpleNames = cb.checked;
+                localStorage.setItem('discordtest_simple_names', simpleNames ? '1' : '0');
+                refreshVoice();
+            });
+        });
+
+        function setStatus(message) {
+            document.getElementById('status').textContent = message;
+        }
+    </script>
+    </head>
+<body>
+    <div class="container">
+        <h1>Discord Test</h1>
+        <p style="display:none;">Quick test actions:</p>
+        <div id="dev-controls" style="margin: 16px 0; display:none;">
+            <button onclick="sendTestDM()">Send DM to 492023474437619732</button>
+            <button onclick="sendTestWebhook()">Post "Hello world" to webhook</button>
+        </div>
+        <h3 style="display:none;">Result</h3>
+        <pre id="status" style="display:none;">Idle</pre>
+
+        <h2 id="voice-title">Voice Monitor</h2>
+        <div class="controls">
+            <label class="switch"><input type="checkbox" id="simple-names-toggle"><span class="slider"></span></label>
+            <span style="color:#000;">Simple names</span>
+        </div>
+        <div id="voice-status">Users in channel (0)</div>
+        <ul id="voice-list"></ul>
+
+        <h3 style="margin-top:16px;">On Discord but not in roster (<span id="unmatched-count">0</span>)</h3>
+        <ul id="voice-unmatched-list" style="list-style:none; padding:0; display:flex; flex-direction:column; gap:8px;"></ul>
+
+        <h3 style="margin-top:16px;">In roster but not on Discord (<span id="missing-count">0</span>)</h3>
+        <ul id="roster-missing-list" style="list-style:none; padding:0; display:flex; flex-direction:column; gap:8px;"></ul>
+    </div>
+</body>
+</html>
+
+

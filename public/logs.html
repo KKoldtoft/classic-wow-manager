@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WoW Logs Analysis - Classic WoW Manager</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/logs.css">
+</head>
+<body class="logs">
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Home</a>
+                <div class="top-nav-dropdown">
+                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+                        Upcoming Raids <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="upcoming-raids-menu">
+                        <div class="dropdown-loading">Loading raids...</div>
+                    </div>
+                </div>
+                <a href="/guild-members" class="top-nav-link">Guild Members</a>
+                <a href="/attendance" class="top-nav-link">Regular Attendance</a>
+            </nav>
+        </div>
+        <div id="auth-container">
+            <!-- Auth content is now loaded by top-bar.js -->
+        </div>
+    </div>
+
+    <!-- Active Raid Bar (shown when raid is selected) -->
+    <div class="raid-bar" id="raid-bar" style="display: none;">
+        <div class="raid-bar-left">
+            <span class="raid-title" id="raid-title">Loading...</span>
+            <nav class="raid-nav">
+                <a href="#" class="raid-nav-link" id="raid-roster-link">
+                    <i class="fas fa-users"></i> Roster
+                </a>
+                <a href="#" class="raid-nav-link" id="raid-assignments-link">
+                    <i class="fas fa-tasks"></i> Assignments
+                </a>
+                <a href="/raidlogs" class="raid-nav-link" id="raid-logs-link" data-prefer-logs="true">
+                    <i class="fas fa-chart-line"></i> Raid Logs
+                </a>
+                <a href="/gold" class="raid-nav-link" id="raid-goldpot-link">
+                    <i class="fas fa-coins"></i> Gold Pot
+                </a>
+                <a href="/loot" class="raid-nav-link" id="raid-loot-link">
+                    <i class="fas fa-shield-alt"></i> Loot
+                </a>
+            </nav>
+        </div>
+        <div class="raid-bar-right">
+            <button class="raid-close-btn" onclick="localStorage.removeItem('activeEventSession'); location.reload();">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="page-header">
+        </div>
+
+        <!-- Combined Workflow Section -->
+        <div class="unified-workflow-section">
+            <!-- This will be moved into the workflow progress container -->
+        </div>
+
+        <!-- Hidden logs input section (kept for JavaScript compatibility) -->
+        <div class="logs-input-section" style="display: none;">
+            <div class="input-container">
+                <input type="text" id="logInput" placeholder="Enter wowlogs link">
+                <button id="analyzeBtn" class="run-btn">Step 1 - Confirm logs</button>
+                <button id="runRpbBtn" class="run-btn rpb-btn">Step 2 - Run RPB</button>
+            </div>
+        </div>
+
+        <!-- World Buffs Section - Hidden -->
+        <div class="world-buffs-section" style="display: none;">
+            <div class="workflow-container">
+                <h3>🌍 World Buffs Analysis</h3>
+                <p>Populate world buffs data for the current raid</p>
+                <div class="workflow-input-container">
+                    <input type="text" id="worldBuffsLogInput" placeholder="Enter wowlogs link for world buffs analysis">
+                    <button id="runWorldBuffsBtn" class="workflow-btn">🌍 Populate World Buffs</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Frost Resistance Section - Hidden -->
+        <div class="frost-res-section" style="display: none;">
+            <div class="workflow-container">
+                <h3>🧊 Frost Resistance Analysis</h3>
+                <p>Analyze frost resistance gear for Sapphiron encounters</p>
+                <div class="workflow-input-container">
+                    <input type="text" id="frostResLogInput" placeholder="Enter wowlogs link for frost resistance analysis">
+                    <button id="runFrostResBtn" class="workflow-btn">🧊 Analyze Frost Resistance</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Workflow Progress Indicator -->
+        <div id="workflowProgress" class="workflow-progress">
+            <!-- Workflow Input Section -->
+            <div class="workflow-input-section" id="workflowInputSection">
+                <div class="progress-header">
+                    <h3>🚀 Complete Workflow</h3>
+                    <p>Run all steps automatically: RPB Analysis → World Buffs → Frost Resistance (with archive & import for each)</p>
+                </div>
+                <div class="workflow-input-container">
+                    <input type="text" id="workflowLogInput" placeholder="Enter wowlogs link for complete workflow">
+                    <button id="runCompleteWorkflowBtn" class="workflow-btn-attached">Run Complete Workflow</button>
+                </div>
+                
+                <!-- Workflow Step Checkboxes -->
+                <div class="workflow-steps-checkboxes">
+                    <h4>Select Steps to Include:</h4>
+                    <div class="checkbox-grid">
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="step1Checkbox" checked>
+                            <span class="checkbox-label">1. Confirm Logs</span>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="step2Checkbox" checked>
+                            <span class="checkbox-label">2. RPB Analysis</span>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="step3Checkbox" checked>
+                            <span class="checkbox-label">3. World Buffs Analysis</span>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="step4Checkbox" checked>
+                            <span class="checkbox-label">4. Frost Resistance Analysis</span>
+                        </label>
+                        
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="step6Checkbox" checked>
+                            <span class="checkbox-label">6. Archive RPB Results</span>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="step7Checkbox" checked>
+                            <span class="checkbox-label">7. Archive World Buffs</span>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="step8Checkbox" checked>
+                            <span class="checkbox-label">8. Archive Frost Resistance</span>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="step9Checkbox" checked>
+                            <span class="checkbox-label">9. Import RPB Data</span>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="step10Checkbox" checked>
+                            <span class="checkbox-label">10. Import World Buffs Data</span>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="step11Checkbox" checked>
+                            <span class="checkbox-label">11. Import Frost Resistance Data</span>
+                        </label>
+                    </div>
+                    <div class="checkbox-actions">
+                        <button id="selectAllStepsBtn" class="btn btn-secondary btn-small">Select All</button>
+                        <button id="deselectAllStepsBtn" class="btn btn-secondary btn-small">Deselect All</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Progress Steps (hidden initially) -->
+            <div class="progress-steps-section" id="progressStepsSection" style="display: none;">
+                <div class="progress-header">
+                    <h3>Workflow Progress</h3>
+                </div>
+            <div class="progress-steps">
+                <div class="progress-step" id="step1Progress">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <div class="step-title">Confirm Logs</div>
+                        <div class="step-status" id="step1Status">Waiting...</div>
+                        <button id="runStep1Btn" class="btn btn-primary btn-small">Run</button>
+                    </div>
+                    <div class="step-indicator" id="step1Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step2Progress">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <div class="step-title">RPB Analysis</div>
+                        <div class="step-status" id="step2Status">Waiting...</div>
+                        <button id="runStep2Btn" class="btn btn-primary btn-small">Run</button>
+                    </div>
+                    <div class="step-indicator" id="step2Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step3Progress">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <div class="step-title">World Buffs Analysis</div>
+                        <div class="step-status" id="step3Status">Waiting...</div>
+                        <button id="runStep3Btn" class="btn btn-primary btn-small">Run</button>
+                    </div>
+                    <div class="step-indicator" id="step3Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step4Progress">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <div class="step-title">Frost Resistance Analysis</div>
+                        <div class="step-status" id="step4Status">Waiting...</div>
+                        <button id="runStep4Btn" class="btn btn-primary btn-small">Run</button>
+                    </div>
+                    <div class="step-indicator" id="step4Indicator">⏳</div>
+                </div>
+                
+                <div class="progress-step" id="step6Progress">
+                    <div class="step-number">6</div>
+                    <div class="step-content">
+                        <div class="step-title">Archive RPB Results</div>
+                        <div class="step-status" id="step6Status">Waiting...</div>
+                        <button id="runStep6Btn" class="btn btn-primary btn-small">Run</button>
+                    </div>
+                    <div class="step-indicator" id="step6Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step7Progress">
+                    <div class="step-number">7</div>
+                    <div class="step-content">
+                        <div class="step-title">Archive World Buffs</div>
+                        <div class="step-status" id="step7Status">Waiting...</div>
+                        <button id="runStep7Btn" class="btn btn-primary btn-small">Run</button>
+                    </div>
+                    <div class="step-indicator" id="step7Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step8Progress">
+                    <div class="step-number">8</div>
+                    <div class="step-content">
+                        <div class="step-title">Archive Frost Resistance</div>
+                        <div class="step-status" id="step8Status">Waiting...</div>
+                        <button id="runStep8Btn" class="btn btn-primary btn-small">Run</button>
+                    </div>
+                    <div class="step-indicator" id="step8Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step9Progress">
+                    <div class="step-number">9</div>
+                    <div class="step-content">
+                        <div class="step-title">Import RPB Data</div>
+                        <div class="step-status" id="step9Status">Waiting...</div>
+                        <button id="runStep9Btn" class="btn btn-primary btn-small">Run</button>
+                    </div>
+                    <div class="step-indicator" id="step9Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step10Progress">
+                    <div class="step-number">10</div>
+                    <div class="step-content">
+                        <div class="step-title">Import World Buffs Data</div>
+                        <div class="step-status" id="step10Status">Waiting...</div>
+                        <button id="runStep10Btn" class="btn btn-primary btn-small">Run</button>
+                    </div>
+                    <div class="step-indicator" id="step10Indicator">⏳</div>
+                </div>
+                <div class="progress-step" id="step11Progress">
+                    <div class="step-number">11</div>
+                    <div class="step-content">
+                        <div class="step-title">Import Frost Resistance Data</div>
+                        <div class="step-status" id="step11Status">Waiting...</div>
+                        <button id="runStep11Btn" class="btn btn-primary btn-small">Run</button>
+                    </div>
+                    <div class="step-indicator" id="step11Indicator">⏳</div>
+                </div>
+                <div class="progress-actions" id="workflowActions" style="display: none;">
+                    <button id="retryWorkflowBtn" class="btn btn-secondary">Retry Failed Step</button>
+                    <button id="resetWorkflowBtn" class="btn btn-secondary">Start Over</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="loadingIndicator" class="loading-indicator" style="display: none;">
+            <div class="spinner"></div>
+            <p>Fetching log data...</p>
+        </div>
+
+        <div id="errorDisplay" class="error-display" style="display: none;">
+            <div class="error-content">
+                <h3>Error</h3>
+                <p id="errorMessage"></p>
+            </div>
+        </div>
+
+        <div id="logData" class="log-data-container" style="display: none;">
+            <!-- Fight Data Section -->
+            <div class="data-section">
+                <h2>📊 Fight Data</h2>
+                <div id="fightDataContent" class="data-content">
+                    <!-- Fight data will be populated here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Role Mapping Tools Section -->
+        <div class="role-mapping-tools-section" style="margin: 20px 0; text-align: center;">
+            <button id="showRoleMappingBtn" class="btn-success" style="padding: 12px 20px; font-size: 16px; display: none;">
+                🎯 View Role Mapping Results
+            </button>
+        </div>
+
+        <!-- Separate Characters Section -->
+        <div id="charactersContainer" class="log-data-container" style="display: none;">
+            <div class="data-section">
+                <h2>👥 Characters</h2>
+                <div id="charactersDataContent" class="data-content">
+                    <!-- Characters data will be populated here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Continue with other sections -->
+        <div id="otherLogData" class="log-data-container" style="display: none;">
+            <!-- Damage Data Section -->
+            <div class="data-section">
+                <h2>⚔️ Damage Done by Source</h2>
+                <div id="damageDataContent" class="data-content">
+                    <!-- Damage data will be populated here -->
+                </div>
+            </div>
+
+            <!-- Healing Data Section -->
+            <div class="data-section">
+                <h2>💚 Healing Done by Source</h2>
+                <div id="healingDataContent" class="data-content">
+                    <!-- Healing data will be populated here -->
+                </div>
+            </div>
+
+            <!-- Summary Data Section -->
+            <div class="data-section">
+                <h2>📊 Raid Summary</h2>
+                <div id="summaryDataContent" class="data-content">
+                    <!-- Summary data will be populated here -->
+                </div>
+            </div>
+
+            <!-- Raw Data Section (collapsible) -->
+            <div class="data-section">
+                <h2>🔧 Raw API Data <button id="toggleRawData" class="btn btn-secondary btn-small">Show</button></h2>
+                <div id="rawDataContent" class="data-content raw-data" style="display: none;">
+                    <div class="raw-data-tabs">
+                        <button class="tab-btn active" data-tab="fights">Fights Data</button>
+                        <button class="tab-btn" data-tab="summary">Summary Data</button>
+                        <button class="tab-btn" data-tab="damage">Damage Data</button>
+                        <button class="tab-btn" data-tab="healing">Healing Data</button>
+                    </div>
+                    <div class="tab-content">
+                        <div id="rawFightsData" class="tab-pane active">
+                            <pre id="rawFightsJson"></pre>
+                        </div>
+                        <div id="rawSummaryData" class="tab-pane">
+                            <pre id="rawSummaryJson"></pre>
+                        </div>
+                        <div id="rawDamageData" class="tab-pane">
+                            <pre id="rawDamageJson"></pre>
+                        </div>
+                        <div id="rawHealingData" class="tab-pane">
+                            <pre id="rawHealingJson"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        <!--/ otherLogData -->
+        </div>
+    </div>
+
+    <script src="/top-bar.js"></script>
+    <script src="/logs.js"></script>
+</body>
+</html> 

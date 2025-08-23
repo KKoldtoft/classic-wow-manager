@@ -1,0 +1,141 @@
+/* public/roster-buttons.css */
+
+.button-panel {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr); /* 2 columns for buttons */
+    gap: 8px; /* Small gap between buttons */
+    width: 390px; /* Width for 2 columns of 150px buttons */
+    margin: 20px auto; /* Center the panel horizontally */
+    background-color: #2c2f33; /* Dark panel background */
+    padding: 12px;
+    border-radius: 0px;
+    border: 1px solid #000;
+    text-align: left; /* Override parent's center alignment */
+}
+
+.panel-button {
+    background-color: #5865F2; /* Discord blue */
+    color: white;
+    padding: 6px 12px; /* Padding for wider, shorter buttons */
+    border: none;
+    border-radius: 4px; /* Small border radius */
+    text-decoration: none;
+    font-size: 0.8em; /* Slightly larger font for wider buttons */
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    display: flex;
+    flex-direction: row; /* Icon and text side by side */
+    align-items: center;
+    justify-content: center;
+    width: 190px; /* Fixed width */
+    height: 30px; /* Fixed height */
+    text-align: center;
+    white-space: nowrap; /* Prevent text wrapping */
+    overflow: hidden;
+    box-sizing: border-box; /* Include padding and border in dimensions */
+}
+
+/* Ensure anchor tags have same styling as buttons */
+a.panel-button {
+    line-height: normal; /* Reset line-height for anchor tags */
+}
+
+.panel-button.active {
+    background-color: #7289da; /* Lighter blue for active state */
+}
+
+.panel-button:hover {
+    background-color: #4752C4;
+}
+
+.panel-button i {
+    margin-right: 6px; /* Space between icon and text */
+    margin-bottom: 0; /* Remove vertical margin */
+    font-size: 0.9em; /* Slightly larger icon relative to text */
+}
+
+/* Toggle Switch Styles */
+.toggle-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 190px;
+    height: 30px;
+    padding: 0 8px;
+    background-color: #3c3f43; /* Slightly different from panel background */
+    border: 1px solid #444;
+    border-radius: 4px;
+    box-sizing: border-box; /* Include padding and border in dimensions */
+}
+
+.toggle-label {
+    color: white;
+    font-size: 0.8em;
+    white-space: nowrap;
+    margin-right: 8px;
+}
+
+.toggle-switch {
+    position: relative;
+    width: 50px;
+    height: 22px;
+    background-color: #555;
+    border-radius: 11px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    border: 1px solid #666;
+}
+
+.toggle-switch::before {
+    content: 'OFF';
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 8px;
+    color: #999;
+    font-weight: bold;
+    z-index: 1;
+}
+
+.toggle-switch::after {
+    content: 'ON';
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 8px;
+    color: #999;
+    font-weight: bold;
+    z-index: 1;
+}
+
+.toggle-switch .toggle-slider {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background-color: #ccc;
+    border-radius: 50%;
+    transition: transform 0.3s ease, background-color 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    z-index: 2;
+}
+
+.toggle-switch.active {
+    background-color: #4CAF50;
+}
+
+.toggle-switch.active .toggle-slider {
+    transform: translateX(28px);
+    background-color: white;
+}
+
+.toggle-switch.active::before {
+    color: white;
+}
+
+.toggle-switch.active::after {
+    color: #333;
+} 

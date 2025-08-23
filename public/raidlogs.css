@@ -1,0 +1,2641 @@
+/* Raid Logs Page Styles */
+
+.page-header {
+    text-align: center;
+    margin-bottom: 30px;
+    padding: 20px;
+}
+
+.page-header h1 {
+    color: var(--text-primary, #e0e0e0);
+    margin-bottom: 10px;
+    font-size: 2.5em;
+    font-weight: 700;
+}
+
+.page-header p {
+    color: var(--text-secondary, #a0a0a0);
+    font-size: 1.1em;
+    margin: 0;
+}
+
+/* Loading indicator */
+.loading-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    text-align: center;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #5865F2;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 20px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-indicator p {
+    color: var(--text-secondary, #a0a0a0);
+    font-size: 1.1em;
+    margin: 0;
+}
+
+/* Auth gate */
+.auth-gate {
+    background: #111827;
+    color: #e5e7eb;
+    border: 1px solid #1f2937;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 720px;
+    margin: 24px auto;
+    text-align: center;
+    box-shadow: 0 10px 24px rgba(0,0,0,.25);
+}
+.auth-gate h2 { margin: 0 0 8px 0; font-size: 20px; }
+.auth-gate p { margin: 6px 0; color: #cbd5e1; }
+.auth-gate .lock {
+    width: 56px; height: 56px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #0b1220; border: 1px solid #1f2937; color: #93c5fd; margin-bottom: 10px;
+}
+.auth-gate .actions { display:flex; gap:12px; justify-content:center; margin-top: 10px; }
+.auth-gate .discord-button { display:inline-flex; align-items:center; gap:8px; }
+.auth-gate .join-link { display:block; margin-top:8px; color:#93c5fd; text-decoration:underline; }
+
+/* No data message */
+.no-data-message {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 60px 20px;
+}
+
+.no-data-content {
+    text-align: center;
+    background: var(--card-bg, #1e1e1e);
+    border: 1px solid var(--border-color, #3a3a3a);
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    max-width: 500px;
+}
+
+.no-data-content i {
+    font-size: 3em;
+    color: var(--text-secondary, #a0a0a0);
+    margin-bottom: 20px;
+}
+
+.no-data-content h3 {
+    color: var(--text-primary, #e0e0e0);
+    margin-bottom: 15px;
+    font-size: 1.5em;
+}
+
+.no-data-content p {
+    color: var(--text-secondary, #a0a0a0);
+    margin-bottom: 10px;
+}
+
+/* Error display */
+.error-display {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 60px 20px;
+}
+
+.error-content {
+    background: #fee;
+    padding: 30px;
+    border-radius: 12px;
+    border: 1px solid #fcc;
+    text-align: center;
+    max-width: 500px;
+}
+
+.error-content h3 {
+    color: #c33;
+    margin-bottom: 15px;
+}
+
+.error-content p {
+    color: #666;
+    margin: 0;
+}
+
+/* Main content container */
+.raid-logs-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Rankings sections */
+.rankings-section {
+    --panel-accent: #5865F2;
+    background: var(--card-bg, #1e1e1e);
+    border: 4px solid var(--panel-accent);
+    border-radius: 12px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+    margin-bottom: 30px;
+    overflow: hidden;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Stats page layout tweaks */
+body.stats .top-item-layout {
+    display: contents;
+}
+
+body.stats .stats-item-list .hall-of-fame-item {
+    cursor: default;
+    border-width: 1px;
+}
+
+/* Remove extra bottom spacing under ApexCharts */
+body.stats #top-item-prices-section {
+    margin-bottom: -13px;
+}
+
+/* Stats: purple accent and header gradient for the Top 15 panel */
+body.stats #top-item-prices-section {
+    --panel-accent: #a335ee;
+}
+body.stats #top-item-prices-section .section-header {
+    background: linear-gradient(135deg, #a335ee 0%, #7b1fa2 100%);
+}
+
+/* Stats stacked layout: chart then 3-column grid of items */
+body.stats .stats-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px;
+}
+
+body.stats .stats-item-chart {
+    min-height: 520px;
+    background: #1e1e1e;
+    border-radius: 8px;
+}
+
+/* Ensure embedded SVG/foreignObject backgrounds match panel */
+body.stats .stats-item-chart svg { background: #1e1e1e !important; }
+body.stats .stats-item-chart foreignObject { background: #1e1e1e !important; border: none !important; outline: none !important; }
+body.stats .stats-item-chart .apexcharts-canvas { background: #1e1e1e !important; border: none !important; outline: none !important; }
+
+body.stats .stats-item-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+}
+
+body.stats .stats-item-list .hall-of-fame-item .hall-of-fame-item-name,
+body.stats .stats-item-list .hall-of-fame-item .hall-of-fame-item-name a {
+    color: #a335ee !important;
+}
+body.stats .stats-item-list .hall-of-fame-item .hall-of-fame-item-name a {
+    text-decoration: none;
+}
+body.stats .stats-item-chart .apexcharts-tooltip-dark a {
+    color: #a335ee !important;
+    text-decoration: none !important;
+}
+
+/* Container for side-by-side sections */
+.rankings-container {
+    display: flex;
+    gap: 30px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.section-header {
+    background: linear-gradient(135deg, #5865F2 0%, #4752C4 100%);
+    color: white;
+    padding: 20px 25px;
+    text-align: center;
+}
+
+/* Add subtle drop shadow to all section headers on raidlogs page */
+.raidlogs .section-header,
+.raidlogs .section-header h2,
+.raidlogs .section-header p {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.section-header h2 {
+    margin: 0 0 8px 0;
+    font-size: 1.5em;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.section-header h2 i {
+    font-size: 1.2em;
+}
+
+.section-header p {
+    margin: 0;
+    opacity: 0.9;
+    font-size: 0.95em;
+}
+
+/* Rankings list */
+.rankings-list {
+    padding: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.ranking-item {
+    display: flex;
+    align-items: center;
+    padding: 15px 25px;
+    border-bottom: 1px solid var(--border-color, #3a3a3a);
+    transition: background-color 0.2s ease;
+}
+
+.ranking-item:hover {
+    background-color: var(--secondary-bg, #2a2a2a);
+}
+
+.ranking-item:last-child {
+    border-bottom: none;
+}
+
+/* Ranking position and trophy */
+.ranking-position {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    flex-shrink: 0;
+    font-weight: 700;
+    font-size: 1.2em;
+}
+
+.trophy-icon {
+    font-size: 1.4em;
+    margin-right: 8px;
+}
+
+.trophy-icon.gold {
+    color: #FFD700;
+}
+
+.trophy-icon.silver {
+    color: #C0C0C0;
+}
+
+.trophy-icon.bronze {
+    color: #CD7F32;
+}
+
+.ranking-number {
+    color: var(--text-secondary, #a0a0a0);
+    font-size: 1.1em;
+}
+
+/* Character info */
+.character-info {
+    flex: 1;
+    margin-left: 20px;
+    padding: 0px 0px 0px 70px; /* left padding for 50px icon + spacing */
+    border-radius: 6px;
+    position: relative;
+    min-height: 70px; /* target height for compact layout */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* Visual meter background using CSS gradients */
+.character-info.class-warrior {
+    background: linear-gradient(to right, #C79C6E var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.character-info.class-paladin {
+    background: linear-gradient(to right, #F58CBA var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.character-info.class-hunter {
+    background: linear-gradient(to right, #ABD473 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.character-info.class-rogue {
+    background: linear-gradient(to right, #FFF569 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.character-info.class-priest {
+    background: linear-gradient(to right, #FFFFFF var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.character-info.class-shaman {
+    background: linear-gradient(to right, #0070DE var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.character-info.class-mage {
+    background: linear-gradient(to right, #69CCF0 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.character-info.class-warlock {
+    background: linear-gradient(to right, #9482C9 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.character-info.class-druid {
+    background: linear-gradient(to right, #FF7D0A var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.character-info.class-unknown {
+    background: linear-gradient(to right, var(--secondary-bg, #2a2a2a) var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.character-name {
+    font-weight: 600;
+    font-size: 1.1em;
+    margin-bottom: 4px;
+    color: #000 !important;
+}
+
+.character-details {
+    font-size: 0.9em;
+    color: #000 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: help;
+    display: block;
+}
+
+.character-spec {
+    font-size: 0.9em;
+    color: var(--text-secondary, #a0a0a0);
+    font-weight: normal;
+}
+
+/* WoW class colors */
+.character-name.class-warrior { color: #C79C6E; }
+.character-name.class-paladin { color: #F58CBA; }
+.character-name.class-hunter { color: #ABD473; }
+.character-name.class-rogue { color: #FFF569; }
+.character-name.class-priest { color: #FFFFFF; }
+.character-name.class-shaman { color: #0070DE; }
+.character-name.class-mage { color: #69CCF0; }
+.character-name.class-warlock { color: #9482C9; }
+.character-name.class-druid { color: #FF7D0A; }
+
+/* Performance amount */
+.performance-amount {
+    text-align: right;
+    flex-shrink: 0;
+    min-width: 50px;
+    cursor: help;
+}
+
+.amount-value {
+    font-size: 1.3em;
+    font-weight: 700;
+    color: var(--text-primary, #e0e0e0);
+}
+
+/* Damage specific styling */
+.rankings-section.damage {
+    --panel-accent: #dc3545;
+}
+
+.rankings-section.damage .section-header {
+    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+}
+
+.rankings-section.damage .amount-value {
+    color: #ff6b35;
+}
+
+/* Healing specific styling */
+.rankings-section.healing {
+    --panel-accent: #28a745;
+}
+
+.rankings-section.healing .section-header {
+    background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+}
+
+.rankings-section.healing .amount-value {
+    color: #ff6b35;
+}
+
+/* Abilities specific styling */
+.rankings-section.abilities { --panel-accent: #ff6b35; }
+.rankings-section.abilities-section { --panel-accent: #ff6b35; }
+
+.rankings-section.abilities .section-header {
+    background: linear-gradient(135deg, #ff6b35 0%, #e55a2b 100%);
+}
+
+.rankings-section.abilities .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+.points-label {
+    font-size: 0.8em;
+    color: var(--text-secondary, #a0a0a0);
+    margin-top: 2px;
+}
+
+/* Rewards container specific styling (contains engineering, mana potions, and runes) */
+.rewards-container {
+    margin-top: 30px;
+}
+
+/* Combat container specific styling (contains interrupts and disarms) */
+.combat-container {
+    margin-top: 30px;
+}
+
+/* Mana Potions specific styling */
+.rankings-section.mana-potions { --panel-accent: #4a9eff; }
+.rankings-section.mana-potions-section { --panel-accent: #4a9eff; }
+
+.rankings-section.mana-potions .section-header {
+    background: linear-gradient(135deg, #4a9eff 0%, #3d82e6 100%);
+}
+
+.rankings-section.mana-potions .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Runes specific styling */
+.rankings-section.runes { --panel-accent: #8b5cf6; }
+.rankings-section.runes-section { --panel-accent: #8b5cf6; }
+
+.rankings-section.runes .section-header {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+}
+
+.rankings-section.runes .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Interrupts specific styling */
+.rankings-section.interrupts { --panel-accent: #f59e0b; }
+.rankings-section.interrupts-section { --panel-accent: #f59e0b; }
+
+.rankings-section.interrupts .section-header {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+
+.rankings-section.interrupts .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Disarms specific styling */
+.rankings-section.disarms { --panel-accent: #dc3545; }
+.rankings-section.disarms-section { --panel-accent: #dc3545; }
+
+.rankings-section.disarms .section-header {
+    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+}
+
+.rankings-section.disarms .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Sunder specific styling */
+.rankings-section.sunder { --panel-accent: #6f42c1; }
+.rankings-section.sunder-section { --panel-accent: #6f42c1; }
+
+.rankings-section.sunder .section-header {
+    background: linear-gradient(135deg, #6f42c1 0%, #5a3499 100%);
+}
+
+.rankings-section.sunder .amount-value {
+    color: #ff6b35; /* This will be overridden by inline styles for different point ranges */
+    font-size: 1.4em;
+}
+
+/* Sunder container specific styling */
+.sunder-container {
+    margin-top: 30px;
+}
+
+/* Curse specific styling */
+.rankings-section.curse { --panel-accent: #8b5cf6; }
+
+.rankings-section.curse .section-header {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+}
+
+.rankings-section.curse .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Curse of Recklessness specific styling */
+.rankings-section.curse-recklessness { --panel-accent: #8b5cf6; }
+.rankings-section.curse-recklessness-section { --panel-accent: #8b5cf6; }
+
+.rankings-section.curse-recklessness .section-header {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+}
+
+.rankings-section.curse-recklessness .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Curse of Shadow specific styling */
+.rankings-section.curse-shadow { --panel-accent: #6b46c1; }
+.rankings-section.curse-shadow-section { --panel-accent: #6b46c1; }
+
+.rankings-section.curse-shadow .section-header {
+    background: linear-gradient(135deg, #6b46c1 0%, #553c9a 100%);
+}
+
+.rankings-section.curse-shadow .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Curse of Elements specific styling */
+.rankings-section.curse-elements { --panel-accent: #3b82f6; }
+.rankings-section.curse-elements-section { --panel-accent: #3b82f6; }
+
+.rankings-section.curse-elements .section-header {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
+.rankings-section.curse-elements .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Faerie Fire specific styling */
+.rankings-section.faerie-fire { --panel-accent: #10b981; }
+.rankings-section.faerie-fire-section { --panel-accent: #10b981; }
+
+.rankings-section.faerie-fire .section-header {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.rankings-section.faerie-fire .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Curse container specific styling */
+.curse-container {
+    margin-top: 30px;
+}
+
+/* Scorch specific styling */
+.rankings-section.scorch { --panel-accent: #dc3545; }
+.rankings-section.scorch-section { --panel-accent: #dc3545; }
+
+.rankings-section.scorch .section-header {
+    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+}
+
+.rankings-section.scorch .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Demoralizing Shout specific styling */
+.rankings-section.demo-shout { --panel-accent: #d2691e; }
+.rankings-section.demo-shout-section { --panel-accent: #d2691e; }
+
+.rankings-section.demo-shout .section-header {
+    background: linear-gradient(135deg, #d2691e 0%, #b8860b 100%);
+}
+
+.rankings-section.demo-shout .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Debuffs container specific styling (contains Faerie Fire, Scorch, and Demoralizing Shout) */
+.debuffs-container {
+    margin-top: 30px;
+}
+
+/* Polymorph specific styling */
+.rankings-section.polymorph { --panel-accent: #8b5cf6; }
+.rankings-section.polymorph-section { --panel-accent: #8b5cf6; }
+
+.rankings-section.polymorph .section-header {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+}
+
+.rankings-section.polymorph .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Power Infusion specific styling */
+.rankings-section.power-infusion { --panel-accent: #ffd700; }
+.rankings-section.power-infusion-section { --panel-accent: #ffd700; }
+
+.rankings-section.power-infusion .section-header {
+    background: linear-gradient(135deg, #ffd700 0%, #ffb347 100%);
+}
+
+.rankings-section.power-infusion .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Decurses specific styling */
+.rankings-section.decurses { --panel-accent: #69CCF0; }
+.rankings-section.decurses-section { --panel-accent: #69CCF0; }
+
+.rankings-section.decurses .section-header {
+    background: linear-gradient(135deg, #69CCF0 0%, #4a9eff 100%);
+}
+
+.rankings-section.decurses .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Big Buyer Bonus styling */
+.rankings-section.big-buyer-section { --panel-accent: #f59e0b; }
+.rankings-section.big-buyer-section .section-header {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+.rankings-section.big-buyer-section .amount-value {
+    color: #f59e0b;
+}
+
+/* Points Breakdown Table */
+.points-breakdown-section { --panel-accent: #0ea5e9; margin-bottom: 200px; }
+#points-breakdown-table-container { overflow-x: auto; overflow-y: hidden; }
+.points-breakdown-table {
+    width: max-content;
+    table-layout: auto;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.points-breakdown-table th, .points-breakdown-table td {
+    border: 1px solid var(--border-color, #3a3a3a);
+    padding: 6px 8px;
+    text-align: right;
+    color: #e5e7eb;
+    white-space: nowrap;
+}
+.points-breakdown-table td.rownum-cell, .points-breakdown-table th.rownum-cell { text-align: center; width: 40px; }
+.points-breakdown-table th { background: #111827; position: sticky; top: 0; z-index: 1; text-align: center; }
+.points-breakdown-table th { cursor: help; }
+.points-breakdown-table td.name-cell { text-align: left; }
+.points-breakdown-table td.positive { color: #22c55e; font-weight: 700; }
+.points-breakdown-table td.negative { color: #ef4444; font-weight: 700; }
+.points-breakdown-table td.zero { color: #ffffff; opacity: 0.8; }
+.points-breakdown-summary td { font-weight: 700; background: #0b1220; }
+
+/* Decurses container specific styling */
+.decurses-container {
+    margin-top: 30px;
+}
+
+/* Void Damage specific styling */
+.rankings-section.void-damage { --panel-accent: #9b59b6; }
+.rankings-section.void-damage-section { --panel-accent: #9b59b6; }
+
+.rankings-section.void-damage .section-header {
+    background: linear-gradient(135deg, #9b59b6, #8e44ad);
+}
+
+.rankings-section.void-damage .amount-value {
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+.rankings-section.void-damage .character-name {
+    color: #000 !important;
+}
+
+.rankings-section.void-damage .character-details {
+    color: #000 !important;
+}
+
+.rankings-section.void-damage .void-details {
+    color: #000 !important;
+}
+
+.void-details {
+    font-size: 11px;
+    color: #bbb;
+    margin-top: 2px;
+}
+
+/* Polymorph & Power Infusion container specific styling */
+.polymorph-power-infusion-container {
+    margin-top: 30px;
+}
+
+/* God Gamer specific styling */
+.god-gamer-container {
+    margin-bottom: 30px;
+}
+
+.rankings-section.god-gamer-dps { --panel-accent: #FFD700; }
+.rankings-section.god-gamer-dps-section { --panel-accent: #FFD700; }
+
+.rankings-section.god-gamer-dps .section-header {
+    background: linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FF8C00 100%);
+    color: #000;
+    font-weight: 700;
+    text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.3);
+}
+
+.rankings-section.god-gamer-dps .amount-value {
+    color: #FFD700;
+    font-size: 1.6em;
+    font-weight: 800;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+.rankings-section.god-gamer-healer { --panel-accent: #FFD700; }
+.rankings-section.god-gamer-healer-section { --panel-accent: #FFD700; }
+
+.rankings-section.god-gamer-healer .section-header {
+    background: linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FF8C00 100%);
+    color: #000;
+    font-weight: 700;
+    text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.3);
+}
+
+.rankings-section.god-gamer-healer .amount-value {
+    color: #FFD700;
+    font-size: 1.6em;
+    font-weight: 800;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+/* Special animations for God Gamer panels */
+.rankings-section.god-gamer-dps:hover,
+.rankings-section.god-gamer-healer:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(255, 215, 0, 0.6);
+    transition: all 0.3s ease;
+}
+
+/* Class-Specific Healing Panels */
+.class-healing-container {
+    margin-bottom: 30px;
+}
+
+/* Shaman Healers specific styling */
+.rankings-section.shaman-healers { --panel-accent: #0070DE; }
+.rankings-section.shaman-healers-section { --panel-accent: #0070DE; }
+
+.rankings-section.shaman-healers .section-header {
+    background: linear-gradient(135deg, #0070DE 0%, #005bb5 100%);
+}
+
+.rankings-section.shaman-healers .amount-value {
+    color: #0070DE;
+    font-size: 1.4em;
+}
+
+/* Priest Healers specific styling */
+.rankings-section.priest-healers { --panel-accent: #FFFFFF; }
+.rankings-section.priest-healers-section { --panel-accent: #FFFFFF; }
+
+.rankings-section.priest-healers .section-header {
+    background: linear-gradient(135deg, #FFFFFF 0%, #F0F0F0 100%);
+    color: #333;
+}
+
+.rankings-section.priest-healers .amount-value {
+    color: #FFFFFF;
+    font-size: 1.4em;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+/* Druid Healers specific styling */
+.rankings-section.druid-healers { --panel-accent: #FF7D0A; }
+.rankings-section.druid-healers-section { --panel-accent: #FF7D0A; }
+
+.rankings-section.druid-healers .section-header {
+    background: linear-gradient(135deg, #FF7D0A 0%, #e56600 100%);
+}
+
+.rankings-section.druid-healers .amount-value {
+    color: #FF7D0A;
+    font-size: 1.4em;
+}
+
+/* Player Streaks and Guild Members specific styling */
+.streak-guild-container {
+    margin-bottom: 30px;
+}
+
+.rankings-section.streak-section {
+    --panel-accent: #ff6b35;
+}
+
+.rankings-section.streak-section .section-header {
+    background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+}
+
+.rankings-section.streak-section .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Guild Members specific styling */
+.rankings-section.guild-section {
+    --panel-accent: #28a745;
+}
+
+.rankings-section.guild-section .section-header {
+    background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+}
+
+.rankings-section.guild-section .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Role badge - removed as requested */
+
+/* Empty state for rankings */
+.rankings-empty {
+    padding: 40px 25px;
+    text-align: center;
+    color: var(--text-secondary, #a0a0a0);
+}
+
+.rankings-empty i {
+    font-size: 2em;
+    margin-bottom: 15px;
+    opacity: 0.5;
+}
+
+.rankings-empty p {
+    margin: 0;
+    font-size: 1.1em;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .raid-logs-container {
+        padding: 15px;
+    }
+    
+    .rankings-container {
+        flex-direction: column;
+        gap: 20px;
+    }
+    
+    .page-header {
+        padding: 15px;
+    }
+    
+    .page-header h1 {
+        font-size: 2em;
+    }
+    
+    .section-header {
+        padding: 15px 20px;
+    }
+    
+    .section-header h2 {
+        font-size: 1.3em;
+    }
+    
+    .ranking-item {
+        padding: 12px 20px;
+        flex-wrap: wrap;
+    }
+    
+    .ranking-position {
+        width: 50px;
+    }
+    
+    .character-info {
+        margin-left: 15px;
+        width: 200px;
+    }
+    
+    .performance-amount {
+        min-width: 100px;
+        margin-top: 8px;
+        width: 100%;
+        text-align: left;
+    }
+}
+
+@media (max-width: 480px) {
+    .section-header h2 {
+        font-size: 1.2em;
+        flex-direction: column;
+        gap: 5px;
+    }
+    
+    .ranking-item {
+        padding: 10px 15px;
+    }
+    
+    .character-info {
+        margin-left: 10px;
+    }
+    
+    .ranking-position {
+        width: 40px;
+    }
+    
+    .trophy-icon {
+        font-size: 1.2em;
+    }
+}
+
+/* WoW Class colors now handled by character-info gradients above */ 
+
+/* Spec icon styling for raid logs */
+.spec-icon {
+    width: 50px;
+    height: 50px;
+    margin-right: 12px;
+    flex-shrink: 0;
+    vertical-align: middle;
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+/* FontAwesome spec icon fallbacks */
+.spec-icon.null-spec,
+.spec-icon.unknown-spec {
+    width: auto;
+    height: auto;
+    font-size: 50px;
+} 
+
+/* Hide removed elements */
+.buff-details,
+.missing-buffs,
+.frost-res-details {
+    display: none !important;
+}
+
+/* Stats section styling */
+.stats-section {
+    --panel-accent: #5865F2;
+    background: #2c2c2c;
+    border: 4px solid var(--panel-accent);
+    border-radius: 8px;
+    padding: 20px;
+    margin: 40px auto 30px auto;
+    max-width: 1025px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+    position: relative;
+}
+
+/* Stats Panel Toggle Buttons */
+.stats-panel-toggle {
+    position: absolute;
+    top: -30px;
+    left: 20px;
+    display: flex;
+    gap: 0;
+    z-index: 5;
+}
+
+.stats-toggle-btn {
+    background: #2c2c2c;
+    border: 1px solid var(--border-color, #3a3a3a);
+    border-bottom: none;
+    color: rgba(255, 255, 255, 0.7);
+    padding: 8px 16px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    white-space: nowrap;
+    border-radius: 8px 8px 0 0;
+    margin-right: 12px;
+}
+
+.stats-toggle-btn:hover {
+    background: #2c2c2c;
+    color: rgba(255, 255, 255, 0.9);
+    transform: translateY(-2px);
+}
+
+.stats-toggle-btn.active {
+    background: #2c2c2c;
+    color: #ffffff;
+    border-color: #3a3a3a;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(44, 44, 44, 0.3);
+}
+
+.stats-toggle-btn.active:hover {
+    background: #2c2c2c;
+    transform: translateY(-2px);
+}
+
+.stats-toggle-btn i {
+    margin-right: 6px;
+    font-size: 0.9em;
+}
+
+/* Special styling for shame button */
+.stats-toggle-btn[data-panel="shame"] {
+    background: #2c2c2c;
+    border-color: #3a3a3a;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.stats-toggle-btn[data-panel="shame"]:hover {
+    background: #2c2c2c;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.stats-toggle-btn[data-panel="shame"].active {
+    background: #2c2c2c;
+    color: #ffffff;
+    border-color: #3a3a3a;
+    box-shadow: 0 4px 12px rgba(44, 44, 44, 0.3);
+}
+
+.stats-toggle-btn[data-panel="shame"].active:hover {
+    background: #2c2c2c;
+}
+
+.stats-section h3 {
+    color: #f0f0f0;
+    margin-bottom: 20px;
+    font-size: 1.4em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.stats-section h3 i {
+    color: #007acc;
+}
+
+/* Add stats dashboard styles */
+.stats-dashboard {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 2px;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #1a1a1a, #252525);
+    border: 1px solid #444;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    border-color: #007acc;
+    box-shadow: 0 8px 25px rgba(0, 122, 204, 0.15);
+}
+
+.stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #007acc, #20c997);
+}
+
+.stat-icon {
+    font-size: 2.2em;
+    margin-bottom: 12px;
+    display: block;
+}
+
+.stat-card.rpb-archive .stat-icon {
+    color: #20c997;
+}
+
+.stat-card.raid-duration .stat-icon {
+    color: #007acc;
+}
+
+.stat-card.bosses-killed .stat-icon {
+    color: #e74c3c;
+}
+
+.stat-card.last-boss .stat-icon {
+    color: #ffd700;
+}
+
+.stat-card.wow-logs .stat-icon {
+    color: #9b59b6;
+}
+
+.stat-card.total-points .stat-icon { color: #f59e0b; }
+
+/* Gold panel colored icons */
+.stat-card.gold-total .stat-icon { color: #f59e0b; }
+.stat-card.gold-shared .stat-icon { color: #f59e0b; }
+.stat-card.gold-management .stat-icon { color: #f59e0b; }
+.stat-card.my-points .stat-icon { color: #f59e0b; }
+.stat-card.my-gold .stat-icon { color: #8a5a00; }
+
+/* My Gold shiny card */
+.stat-card.my-gold {
+    background: linear-gradient(135deg, #f7e199 0%, #e5c558 35%, #d4b24c 60%, #f0d775 100%);
+    position: relative;
+    overflow: hidden;
+    border: 2px solid #FFD700;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.35), 0 0 16px rgba(255, 215, 0, 0.6), 0 0 32px rgba(255, 215, 0, 0.35);
+}
+.stat-card.my-gold::before {
+    content: "";
+    position: absolute;
+    top: -120%;
+    left: -120%;
+    width: 340%;
+    height: 340%;
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.35), rgba(255,255,255,0) 45%),
+                radial-gradient(circle at 70% 70%, rgba(255,255,255,0.2), rgba(255,255,255,0) 50%);
+    transform: rotate(25deg);
+    pointer-events: none;
+}
+.stat-card.my-gold .stat-label { color: #4c3800; }
+.stat-card.my-gold .stat-value { color: #3b2b00; }
+.stat-card.my-gold .stat-detail { color: #5a4300; }
+
+/* Management tooltip */
+.mgmt-tooltip {
+    position: fixed;
+    z-index: 9999;
+    background: rgba(20,20,22,0.98);
+    color: #f0f0f0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.55), 0 6px 18px rgba(0,0,0,0.35);
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    pointer-events: none;
+}
+.mgmt-tooltip.show { opacity: 1; }
+.mgmt-grid {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 6px 16px;
+}
+.mgmt-key { color: #cfcfcf; white-space: nowrap; }
+.mgmt-val { color: #ffd166; white-space: nowrap; text-align: right; }
+
+/* My Gold tooltip */
+.mygold-tooltip {
+    position: fixed;
+    z-index: 9999;
+    background: rgba(20,20,22,0.98);
+    color: #f0f0f0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.55), 0 6px 18px rgba(0,0,0,0.35);
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    pointer-events: none;
+}
+.mygold-tooltip.show { opacity: 1; }
+.mygold-grid {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 6px 16px;
+}
+.mygold-key { color: #cfcfcf; white-space: nowrap; }
+.mygold-val { color: #ffd166; white-space: nowrap; text-align: right; }
+
+.stat-value {
+    font-size: 1.8em;
+    font-weight: 700;
+    color: #f0f0f0;
+    margin-bottom: 8px;
+    display: block;
+}
+
+.stat-label {
+    font-size: 0.9em;
+    color: #ccc;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 5px;
+}
+
+.stat-detail {
+    font-size: 0.85em;
+    color: #aaa;
+    font-style: italic;
+    margin-top: 8px;
+}
+
+.stat-card.no-data {
+    opacity: 0.6;
+    background: linear-gradient(135deg, #1a1a1a, #1f1f1f);
+}
+
+.stat-card.no-data .stat-value {
+    color: #888;
+}
+
+.stat-card.no-data::before {
+    background: #555;
+}
+
+/* RPB Button Styles */
+.rpb-button {
+    background: linear-gradient(135deg, #5865F2, #4752C4);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    padding: 8px 16px;
+    font-size: 0.6em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    min-width: 80px;
+    justify-content: center;
+}
+
+.rpb-button:hover:not(:disabled) {
+    background: linear-gradient(135deg, #4752C4, #3C4296);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(88, 101, 242, 0.3);
+}
+
+.rpb-button:disabled {
+    background: linear-gradient(135deg, #555, #666);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+
+
+/* WoW Logs Button Styles */
+.wow-logs-button {
+    background: linear-gradient(135deg, #5865F2, #4752C4);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    padding: 8px 16px;
+    font-size: 0.6em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    min-width: 80px;
+    justify-content: center;
+}
+
+.wow-logs-button:hover:not(:disabled) {
+    background: linear-gradient(135deg, #4752C4, #3C4296);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(88, 101, 242, 0.3);
+}
+
+.wow-logs-button:disabled {
+    background: linear-gradient(135deg, #555, #666);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+
+
+@media (max-width: 768px) {
+    .stats-dashboard {
+        grid-template-columns: 1fr;
+        grid-template-rows: repeat(5, auto);
+        gap: 15px;
+        margin-bottom: 25px;
+    }
+    
+    .stat-card {
+        padding: 15px;
+    }
+    
+    .stat-icon {
+        font-size: 1.8em;
+    }
+    
+    .stat-value {
+        font-size: 1.5em;
+    }
+    
+    .rpb-button, .wow-logs-button {
+        padding: 6px 12px;
+        font-size: 0.6em;
+        min-width: 70px;
+    }
+}
+
+@media (max-width: 480px) {
+    .stats-dashboard {
+        gap: 12px;
+    }
+    
+    .stat-card {
+        padding: 12px;
+    }
+    
+    .stat-icon {
+        font-size: 1.6em;
+        margin-bottom: 8px;
+    }
+}
+
+/* Medium screens - show 2 columns to handle 5 cards better */
+@media (max-width: 1024px) and (min-width: 769px) {
+    .stats-dashboard {
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: repeat(3, auto);
+    }
+    
+    .stat-card:last-child {
+        grid-column: 1 / -1;
+        max-width: 50%;
+        margin: 0 auto;
+    }
+}
+
+/* Buffs Container Styles */
+.buffs-container {
+    margin-bottom: 30px;
+}
+
+.rankings-section.world-buffs-section {
+    --panel-accent: #10b981;
+}
+
+.rankings-section.world-buffs-section .section-header {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.rankings-section.world-buffs-section .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Make text black inside world buffs player frames */
+.rankings-section.world-buffs-section .character-name,
+.rankings-section.world-buffs-section .character-details,
+.rankings-section.world-buffs-section .buff-count,
+.rankings-section.world-buffs-section .buff-details {
+    color: #000000 !important;
+}
+
+/* Frost resistance section uses standard styling like other panels */
+.rankings-section.frost-resistance-section { --panel-accent: #5865F2; }
+
+/* Match World Buffs text colors inside frost player frames */
+.rankings-section.frost-resistance-section .character-name,
+.rankings-section.frost-resistance-section .character-details,
+.rankings-section.frost-resistance-section .frost-res-amount {
+    color: #000000 !important;
+}
+
+/* Buff-specific styles */
+.buff-details {
+    font-size: 0.85em;
+    color: #666;
+    margin-top: 4px;
+    line-height: 1.3;
+}
+
+.missing-buffs {
+    color: #e74c3c;
+    font-style: italic;
+}
+
+.buff-count {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.buff-count.low {
+    color: #e74c3c;
+}
+
+.buff-count.medium {
+    color: #f39c12;
+}
+
+.buff-count.high {
+    color: #27ae60;
+}
+
+/* Responsive adjustments for buffs container */
+@media (max-width: 768px) {
+    .buffs-container .rankings-section {
+        margin-bottom: 20px;
+    }
+    
+    .buff-details {
+        font-size: 0.8em;
+    }
+}
+
+/* Full width World Buffs when Frost Resistance is hidden */
+.buffs-container .rankings-section.world-buffs-section:only-child {
+    width: 100%;
+}
+
+/* Negative point styling */
+.amount-value.negative {
+    color: #e74c3c !important;
+    font-weight: 700;
+}
+
+/* Low Performance Sections */
+.low-performance-container {
+    margin-bottom: 30px;
+}
+
+.rankings-section.too-low-damage-section .amount-value,
+.rankings-section.too-low-healing-section .amount-value {
+    color: #e74c3c !important;
+    font-weight: bold;
+}
+
+/* Frost Resistance specific styles */
+.frost-res-amount {
+    font-size: 0.85rem;
+    font-weight: 600; /* Match weight with world buffs count */
+    color: #000000; /* Black text */
+}
+
+.frost-res-amount.very-low {
+    color: #000000; /* Black text */
+}
+
+.frost-res-amount.low {
+    color: #000000; /* Black text */
+}
+
+.frost-res-amount.good {
+    color: #000000; /* Black text */
+}
+
+.frost-res-details {
+    font-size: 0.75rem;
+    color: #000000; /* Black text */
+    margin-top: 2px;
+}
+
+/* Frost rows should use the same base character-info box */
+.rankings-section.frost-resistance-section .character-info {
+    position: relative;
+    overflow: hidden;
+    padding: 0 0 0 70px !important; /* room for 50px icon + spacing */
+    min-height: 70px !important;
+}
+
+/* Remove frost-specific overlay to match world buffs panel visuals */
+
+/* Keep text above background gradient, same as other panels */
+.rankings-section.frost-resistance-section .character-name,
+.rankings-section.frost-resistance-section .character-details {
+    position: relative;
+    z-index: 1;
+}
+
+/* Match World Buffs text colors inside player frames */
+.rankings-section.frost-resistance-section .character-details,
+.rankings-section.frost-resistance-section .frost-res-amount {
+    color: #000000 !important;
+}
+
+/* Use same points color accent as World Buffs */
+.rankings-section.frost-resistance-section .amount-value {
+    color: #ff6b35;
+    font-size: 1.4em;
+}
+
+/* Frost Resistance icons match positioning handled above */
+
+.rankings-section.frost-resistance-section .spec-icon {
+    position: absolute !important;
+    left: 12px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    z-index: 2 !important; /* above progress overlay */
+}
+
+/* Integrated archive button styling for World Buffs and Frost Resistance panels */
+.integrated-archive-button {
+    background: linear-gradient(135deg, #5865F2, #4752C4);
+    color: white;
+    padding: 16px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    user-select: none;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+    margin-top: auto;
+}
+
+.integrated-archive-button:hover:not(.disabled) {
+    background: linear-gradient(135deg, #4752C4, #3C4296);
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.integrated-archive-button:active:not(.disabled) {
+    transform: translateY(1px);
+    box-shadow: inset 0 3px 10px rgba(0, 0, 0, 0.2);
+}
+
+.integrated-archive-button.disabled {
+    background: linear-gradient(135deg, #555, #666);
+    cursor: not-allowed;
+    opacity: 0.6;
+    color: #aaa;
+}
+
+.integrated-archive-button i {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
+.integrated-archive-button span {
+    font-weight: 500;
+}
+
+/* Add subtle animation on hover */
+.integrated-archive-button:hover:not(.disabled)::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    transition: left 0.5s ease;
+    left: 100%;
+} 
+
+/* Floating Navigation Menu */
+.floating-nav {
+    position: fixed;
+    bottom: 0px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(30, 30, 30, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    max-width: 90vw;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    margin: 0;
+    width: fit-content;
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+.floating-nav::-webkit-scrollbar {
+    display: none;
+}
+
+/* No special styling needed for scrolled state */
+
+/* Navigation buttons container */
+.nav-buttons {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    gap: 0;
+    white-space: nowrap;
+    position: relative;
+    border: solid 1px #ffffff;
+    border-radius: 12px;
+}
+
+/* Animated highlight slider */
+.nav-buttons::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    height: calc(100% - 16px);
+    background: linear-gradient(135deg, #5865F2, #4752C4);
+    border-radius: 8px;
+    transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1;
+    opacity: 0;
+    width: 0;
+}
+
+/* Individual navigation buttons - piano style */
+.nav-btn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.8);
+    padding: 12px 16px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    position: relative;
+    white-space: nowrap;
+    min-width: fit-content;
+    z-index: 2;
+}
+
+.nav-btn:first-child {
+    border-radius: 8px 0 0 8px;
+}
+
+.nav-btn:last-child {
+    border-radius: 0 8px 8px 0;
+    border-right: none;
+}
+
+.nav-btn:only-child {
+    border-radius: 8px;
+    border-right: none;
+}
+
+.nav-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    transform: translateY(-1px);
+}
+
+.nav-btn.active {
+    background: transparent;
+    color: #ffffff;
+    font-weight: 500;
+}
+
+.nav-btn.active:hover {
+    transform: translateY(-1px);
+}
+
+/* Responsive adjustments for mobile */
+@media (max-width: 768px) {
+    .floating-nav {
+        max-width: 95vw;
+        bottom: 15px;
+        border-radius: 8px;
+    }
+    
+    .nav-buttons {
+        padding: 6px;
+        overflow-x: auto;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+    
+    .nav-buttons::-webkit-scrollbar {
+        display: none;
+    }
+    
+    .nav-btn {
+        padding: 10px 12px;
+        font-size: 0.8rem;
+        min-width: 80px;
+        flex-shrink: 0;
+    }
+    
+    .nav-btn:first-child {
+        border-radius: 6px 0 0 6px;
+    }
+    
+    .nav-btn:last-child {
+        border-radius: 0 6px 6px 0;
+    }
+    
+    .nav-btn:only-child {
+        border-radius: 6px;
+    }
+}
+
+@media (max-width: 480px) {
+    .nav-btn {
+        padding: 8px 10px;
+        font-size: 0.75rem;
+        min-width: 70px;
+    }
+}
+
+/* Smooth scroll behavior */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Add some margin to ensure sections are visible when scrolled to */
+.scroll-target {
+    scroll-margin-top: 40px;
+}
+
+/* Special handling when raid bar is present */
+body.raid-active .scroll-target {
+    scroll-margin-top: 200px;
+}
+
+/* Keep navigation visible on all screen sizes */
+@media (max-width: 380px) {
+    .floating-nav {
+        max-width: 95vw;
+        bottom: 10px;
+    }
+}
+
+/* Desktop positioning */
+@media (min-width: 769px) {
+    .floating-nav {
+        margin: 0 auto 40px auto;
+    }
+}
+
+/* Wall of Shame Dashboard Grid (when integrated in stats) */
+.wall-of-shame-dashboard {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 0;
+}
+
+/* Wall of Shame Stat Cards (when integrated in stats) */
+.wall-of-shame-dashboard .stat-card {
+    background: linear-gradient(135deg, #1f1f1f, #2d1b1b);
+    border: 1px solid #8b1e00;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.wall-of-shame-dashboard .stat-card:hover {
+    transform: translateY(-3px);
+    border-color: #dc2626;
+    box-shadow: 0 12px 30px rgba(220, 38, 38, 0.25);
+}
+
+.wall-of-shame-dashboard .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #dc2626, #991b1b);
+}
+
+/* Specific shame card colors */
+.wall-of-shame-dashboard .stat-card.most-deaths .stat-icon {
+    color: #dc2626;
+    text-shadow: 0 0 10px rgba(220, 38, 38, 0.5);
+}
+
+.wall-of-shame-dashboard .stat-card.most-trash-deaths .stat-icon {
+    color: #f59e0b;
+    text-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+}
+
+.wall-of-shame-dashboard .stat-card.most-avoidable-damage .stat-icon {
+    color: #ef4444;
+    text-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+}
+
+.wall-of-shame-dashboard .stat-card.most-friendly-damage .stat-icon {
+    color: #b91c1c;
+    text-shadow: 0 0 10px rgba(185, 28, 28, 0.5);
+}
+
+.wall-of-shame-dashboard .stat-value {
+    font-size: 1.8em;
+    font-weight: 700;
+    color: #ff6b6b;
+    margin-bottom: 8px;
+    display: block;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+/* Class colors override shame colors for player names */
+.wall-of-shame-dashboard .stat-value.class-warrior { color: #C79C6E !important; }
+.wall-of-shame-dashboard .stat-value.class-paladin { color: #F58CBA !important; }
+.wall-of-shame-dashboard .stat-value.class-hunter { color: #ABD473 !important; }
+.wall-of-shame-dashboard .stat-value.class-rogue { color: #FFF569 !important; }
+.wall-of-shame-dashboard .stat-value.class-priest { color: #FFFFFF !important; }
+.wall-of-shame-dashboard .stat-value.class-shaman { color: #0070DE !important; }
+.wall-of-shame-dashboard .stat-value.class-mage { color: #69CCF0 !important; }
+.wall-of-shame-dashboard .stat-value.class-warlock { color: #9482C9 !important; }
+.wall-of-shame-dashboard .stat-value.class-druid { color: #FF7D0A !important; }
+
+.wall-of-shame-dashboard .stat-label {
+    font-size: 0.9em;
+    color: #ffaaaa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+.wall-of-shame-dashboard .stat-detail {
+    font-size: 0.85em;
+    color: #cc8888;
+    font-style: italic;
+    margin-top: 8px;
+}
+
+/* Responsive adjustments for integrated Wall of Shame */
+@media (max-width: 768px) {
+    .wall-of-shame-dashboard {
+        grid-template-columns: 1fr;
+        grid-template-rows: repeat(4, auto);
+        gap: 15px;
+    }
+    
+    .stats-panel-toggle {
+        position: static;
+        margin-bottom: 15px;
+        justify-content: center;
+    }
+    
+    .stats-toggle-btn {
+        border-radius: 8px;
+        margin-right: 8px;
+        border: 1px solid var(--border-color, #3a3a3a);
+    }
+    
+    .wall-of-shame-dashboard .stat-card {
+        padding: 15px;
+    }
+    
+    .wall-of-shame-dashboard .stat-icon {
+        font-size: 1.8em;
+    }
+    
+    .wall-of-shame-dashboard .stat-value {
+        font-size: 1.5em;
+    }
+}
+
+@media (max-width: 480px) {
+    .wall-of-shame-dashboard .stat-card {
+        padding: 12px;
+    }
+    
+    .wall-of-shame-dashboard .stat-icon {
+        font-size: 1.6em;
+        margin-bottom: 8px;
+    }
+}
+
+/* Manual Rewards and Deductions Panel Styles */
+.manual-rewards-section {
+    --panel-accent: #8b5cf6;
+    background: var(--card-bg, #1e1e1e);
+    border: 4px solid var(--panel-accent);
+    border-radius: 12px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+    margin: 0 auto 30px auto;
+    max-width: 1200px;
+    overflow: hidden;
+}
+
+/* Inline gold toggle inside points input */
+.manual-rewards-form .form-group { position: relative; }
+.manual-rewards-form .input-with-toggle { position: relative; }
+.manual-rewards-form .input-with-toggle input[type="number"] { padding-right: 70px; }
+.manual-rewards-form .inline-gold-toggle {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #cfcfcf;
+    background: rgba(0,0,0,0.2);
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    padding: 2px 6px;
+}
+.manual-rewards-form .inline-gold-toggle input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+}
+.manual-rewards-form .inline-gold-toggle label { cursor: pointer; opacity: .9; }
+
+.manual-rewards-section .section-header {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    color: white;
+    padding: 20px 25px;
+    text-align: center;
+}
+
+.manual-rewards-content {
+    padding: 20px;
+}
+
+/* Templates Styles */
+.manual-rewards-templates {
+    background: #f0f8ff;
+    border: 1px solid #b3d9ff;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.templates-actions {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap; /* allow wrapping on smaller screens */
+}
+
+.btn-templates {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    font-size: 14px;
+    min-width: 170px; /* uniform width */
+    height: 40px; /* uniform height */
+    justify-content: center; /* center label/icon */
+}
+
+/* Mini variant for header Edit/Save buttons */
+.btn-templates.btn-mini {
+    padding: 6px 10px;
+    font-size: 12px;
+    line-height: 1.2;
+}
+
+/* Match assignments panel action buttons */
+.panel-actions { display: flex; align-items: center; gap: 8px; justify-content: center; width: 100%; }
+.btn-edit {
+    background: linear-gradient(135deg, #4b5563, #374151);
+    color: #fff;
+    border: 0;
+    padding: 8px 12px;
+    margin-top: 15px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.btn-save {
+    background: linear-gradient(135deg, #4b5563, #374151);
+    color: #fff;
+    border: 0;
+    margin-top: 15px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.btn-save:hover {
+    background: linear-gradient(135deg, #374151, #1f2937);
+    transform: translateY(-1px);
+}
+
+/* Mode badge styling */
+.mode-badge {
+    display: inline-flex;
+    align-items: center;
+    margin: 10px 0 16px 8px;
+    padding: 6px 10px;
+    border-radius: 10px;
+    font-size: 13px;
+    background: #e6f0ff;
+    color: #0b3d91;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+.mode-badge.manual {
+    background: #ffe6ff;
+    color: #6a006a;
+}
+.mode-badge.computed {
+    background: #e6f0ff;
+    color: #0b3d91;
+}
+
+.btn-templates:hover {
+    background: #218838;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(40, 167, 69, 0.3);
+}
+
+.btn-templates:active {
+    transform: translateY(0);
+}
+
+.btn-templates:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+/* Warrior-colored main Tanks button */
+#add-templates-btn {
+    background: linear-gradient(135deg, #C79C6E, #9e7a50);
+    color: #111827;
+    border: 1px solid rgba(0,0,0,0.15);
+}
+#add-templates-btn:hover {
+    background: linear-gradient(135deg, #b48962, #8a6b47);
+    box-shadow: 0 3px 10px rgba(199, 156, 110, 0.35);
+}
+
+/* Class-colored template buttons */
+/* 4H Tanks → Warrior */
+#add-templates-4h-tanks-btn {
+    background: linear-gradient(135deg, #C79C6E, #9e7a50);
+    color: #111827;
+    border: 1px solid rgba(0,0,0,0.15);
+}
+#add-templates-4h-tanks-btn:hover {
+    background: linear-gradient(135deg, #b48962, #8a6b47);
+    box-shadow: 0 3px 10px rgba(199, 156, 110, 0.35);
+}
+
+/* Raz MC → Priest */
+#add-templates-raz-mc-btn {
+    background: linear-gradient(135deg, #ffffff, #e5e7eb);
+    color: #111827;
+    border: 1px solid #d1d5db;
+}
+#add-templates-raz-mc-btn:hover {
+    background: linear-gradient(135deg, #f5f5f5, #dfe3e8);
+    box-shadow: 0 3px 10px rgba(209, 213, 219, 0.45);
+}
+
+/* Gluth Kite → Druid */
+#add-templates-gluth-kite-btn {
+    background: linear-gradient(135deg, #FF7D0A, #e56600);
+    color: #ffffff;
+}
+#add-templates-gluth-kite-btn:hover {
+    background: linear-gradient(135deg, #e56600, #c85700);
+    box-shadow: 0 3px 10px rgba(255, 125, 10, 0.35);
+}
+
+/* Summoners → Warlock */
+#add-templates-summoners-btn {
+    background: linear-gradient(135deg, #9482C9, #7a67a8);
+    color: #ffffff;
+}
+#add-templates-summoners-btn:hover {
+    background: linear-gradient(135deg, #8573bb, #6c5c97);
+    box-shadow: 0 3px 10px rgba(148, 130, 201, 0.35);
+}
+
+/* Puller → Hunter */
+#add-templates-puller-btn {
+    background: linear-gradient(135deg, #ABD473, #7e9b52);
+    color: #111827;
+    border: 1px solid rgba(0,0,0,0.15);
+}
+#add-templates-puller-btn:hover {
+    background: linear-gradient(135deg, #98bf66, #708a49);
+    box-shadow: 0 3px 10px rgba(171, 212, 115, 0.35);
+}
+
+.templates-info {
+    color: #6c757d;
+    font-size: 13px;
+    font-style: italic;
+}
+
+/* Form Styles */
+.manual-rewards-form {
+    background: var(--secondary-bg, #2a2a2a);
+    border: 1px solid var(--border-color, #3a3a3a);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    transition: all 0.3s ease;
+    position: relative; /* Ensure z-index on active state creates a stacking context */
+}
+
+/* Active form highlighting */
+.manual-rewards-form.form-active {
+    border: 2px solid #007bff;
+    background: rgba(0, 123, 255, 0.05);
+    box-shadow: 0 0 15px rgba(0, 123, 255, 0.3);
+    transform: scale(1.02);
+    z-index: 15000; /* Above ranking items to allow dropdown to display over them */
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr auto;
+    gap: 15px;
+    align-items: end;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.form-group label {
+    color: var(--text-primary, #e0e0e0);
+    font-weight: 600;
+    margin-bottom: 5px;
+    font-size: 0.9em;
+}
+
+.form-group input {
+    background: var(--card-bg, #1e1e1e);
+    border: 1px solid var(--border-color, #3a3a3a);
+    border-radius: 6px;
+    color: var(--text-primary, #e0e0e0);
+    padding: 8px 12px;
+    font-size: 0.9em;
+    transition: border-color 0.2s ease;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: #8b5cf6;
+    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+}
+
+/* Player Search Dropdown */
+.player-search-container {
+    position: relative;
+    z-index: 20000; /* Ensure the container and its dropdown render above ranking items */
+}
+
+.player-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--card-bg, #1e1e1e);
+    border: 1px solid var(--border-color, #3a3a3a);
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 1000;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.player-dropdown-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    font-size: 0.9em;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    margin: 2px;
+}
+
+.player-dropdown-item:hover,
+.player-dropdown-item.selected {
+    background: rgba(255, 255, 255, 1) !important;
+}
+
+.player-dropdown-item:last-child {
+    border-bottom: none;
+}
+
+/* Class-specific background colors for dropdown items */
+.player-dropdown-item.class-warrior {
+    background: rgba(199, 156, 110, 1);
+}
+
+.player-dropdown-item.class-paladin {
+    background: rgba(245, 140, 186, 1);
+}
+
+.player-dropdown-item.class-hunter {
+    background: rgba(171, 212, 115, 1);
+}
+
+.player-dropdown-item.class-rogue {
+    background: rgba(255, 245, 105, 1);
+}
+
+.player-dropdown-item.class-priest {
+    background: rgba(255, 255, 255, 1);
+}
+
+.player-dropdown-item.class-shaman {
+    background: rgba(0, 112, 222, 1);
+}
+
+.player-dropdown-item.class-mage {
+    background: rgba(105, 204, 240, 1);
+}
+
+.player-dropdown-item.class-warlock {
+    background: rgba(148, 130, 201, 1);
+}
+
+.player-dropdown-item.class-druid {
+    background: rgba(255, 125, 10, 1);
+}
+
+.player-dropdown-item.class-unknown {
+    background: rgba(156, 163, 175, 1);
+}
+
+.player-class {
+    font-size: 0.8em;
+    opacity: 0.7;
+    margin-left: 8px;
+}
+
+/* Form Actions */
+.form-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.btn-add, .btn-cancel, .btn-edit, .btn-delete {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.9em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-add {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+}
+
+.btn-add:hover {
+    background: linear-gradient(135deg, #059669, #047857);
+    transform: translateY(-1px);
+}
+
+.btn-cancel {
+    background: linear-gradient(135deg, #6b7280, #4b5563);
+    color: white;
+}
+
+.btn-cancel:hover {
+    background: linear-gradient(135deg, #4b5563, #374151);
+    transform: translateY(-1px);
+}
+
+.btn-edit {
+    background: linear-gradient(135deg, #4b5563, #374151);
+    color: white;
+    padding: 6px 12px;
+    font-size: 0.8em;
+}
+
+.btn-edit:hover {
+    background: linear-gradient(135deg, #374151, #1f2937);
+    transform: translateY(-1px);
+}
+
+.btn-delete {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+    padding: 6px 12px;
+    font-size: 0.8em;
+}
+
+.btn-delete:hover {
+    background: linear-gradient(135deg, #dc2626, #b91c1c);
+    transform: translateY(-1px);
+}
+
+/* Manual Rewards Rankings Items */
+.manual-rewards-section .ranking-item {
+    display: flex;
+    align-items: center;
+    padding: 5px 0px;
+    border-bottom: 1px solid var(--border-color, #3a3a3a);
+    transition: background-color 0.2s ease;
+    position: relative;
+}
+
+.manual-rewards-section .ranking-item:hover {
+    background-color: var(--secondary-bg, #2a2a2a);
+}
+
+.manual-rewards-section .ranking-item:last-child {
+    border-bottom: none;
+}
+
+/* Manual Rewards Position */
+.manual-rewards-section .ranking-position {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px; /* leave room for larger template icon */
+    flex-shrink: 0;
+    font-weight: 700;
+    font-size: 1.2em;
+    color: var(--text-secondary, #a0a0a0);
+}
+
+/* Manual Rewards Character Info */
+.manual-rewards-section .character-info {
+    flex: 1;
+    margin-left: 10px; /* gap between icon and bar */
+    padding: 0 0 0 70px; /* space for class/spec icon */
+    border-radius: 6px;
+    position: relative;
+}
+
+/* Class-specific background colors for manual rewards */
+.manual-rewards-section .character-info.class-warrior {
+    background: linear-gradient(to right, #C79C6E var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-paladin {
+    background: linear-gradient(to right, #F58CBA var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-hunter {
+    background: linear-gradient(to right, #ABD473 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-rogue {
+    background: linear-gradient(to right, #FFF569 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-priest {
+    background: linear-gradient(to right, #FFFFFF var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-shaman {
+    background: linear-gradient(to right, #0070DE var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-mage {
+    background: linear-gradient(to right, #69CCF0 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-warlock {
+    background: linear-gradient(to right, #9482C9 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-druid {
+    background: linear-gradient(to right, #FF7D0A var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-info.class-unknown {
+    background: linear-gradient(to right, var(--secondary-bg, #2a2a2a) var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
+}
+
+.manual-rewards-section .character-name {
+    font-weight: 600;
+    font-size: 1.1em;
+    margin-bottom: 4px;
+    color: #000 !important;
+}
+
+.manual-rewards-section .character-details {
+    font-size: 0.9em;
+    color: #000 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: help;
+}
+
+/* Manual Rewards Performance Amount */
+.manual-rewards-section .performance-amount {
+    text-align: right;
+    flex-shrink: 0;
+    min-width: 120px;
+    cursor: help;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.manual-rewards-section .amount-value {
+    font-size: 1.6em;
+    font-weight: 700;
+    color: var(--text-primary, #e0e0e0);
+}
+.manual-rewards-section .amount-value.gold-amount {
+    color: #f59e0b !important;
+}
+
+.manual-rewards-section .amount-value.positive {
+    color: #28a745;
+}
+
+.manual-rewards-section .amount-value.negative {
+    color: #dc3545;
+}
+
+/* Template Entry Styles */
+.manual-rewards-section .ranking-item.template-entry {
+    border: 2px dashed #28a745;
+    background: rgba(40, 167, 69, 0.05);
+    animation: pulse-template 2s infinite;
+    color: white; /* White text for template entries */
+}
+
+.manual-rewards-section .ranking-item.template-entry:hover {
+    background: rgba(40, 167, 69, 0.1);
+    border-color: #218838;
+}
+
+/* Template entries with assigned players (no longer template-entry class but have icon) */
+.manual-rewards-section .ranking-item.has-template-icon:not(.template-entry) {
+    color: #333; /* Black text when player is assigned */
+}
+
+.manual-rewards-section .character-name.needs-player {
+    color: white !important; /* Force white for needs-player state */
+    font-style: italic;
+    font-weight: 500;
+}
+
+/* Template icon styles */
+.template-icon {
+    width: 40px; /* slightly larger icon */
+    height: 40px;
+    border-radius: 6px;
+    border: 2px solid #ffd700;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    object-fit: cover;
+}
+
+.template-icon:hover {
+    border-color: #ffed4a;
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* Text color overrides for template entries */
+.manual-rewards-section .ranking-item.template-entry .character-name,
+.manual-rewards-section .ranking-item.template-entry .character-details,
+.manual-rewards-section .ranking-item.template-entry .amount-value {
+    color: white !important;
+}
+
+/* Text color for filled template entries (with icons but no template-entry class) */
+.manual-rewards-section .ranking-item.has-template-icon:not(.template-entry) .character-name,
+.manual-rewards-section .ranking-item.has-template-icon:not(.template-entry) .character-details {
+    color: #333 !important;
+}
+
+@keyframes pulse-template {
+    0% { border-color: #28a745; }
+    50% { border-color: #20c997; }
+    100% { border-color: #28a745; }
+}
+
+/* Action buttons for manual rewards */
+.manual-rewards-actions {
+    display: flex;
+    gap: 5px;
+    margin-left: 15px;
+    flex-shrink: 0;
+}
+
+/* Messages */
+.no-entries-message, .access-denied-message, .loading-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-secondary, #a0a0a0);
+}
+
+.no-entries-message i, .access-denied-message i, .loading-state i {
+    font-size: 2em;
+    margin-bottom: 15px;
+    opacity: 0.6;
+}
+
+.access-denied-message {
+    color: #ef4444;
+}
+
+.access-denied-message i {
+    color: #ef4444;
+}
+
+/* Date Display */
+.date-cell {
+    font-size: 0.8em;
+    color: var(--text-secondary, #a0a0a0);
+}
+
+/* Created By Display */
+.created-by-cell {
+    font-size: 0.9em;
+    color: var(--text-secondary, #a0a0a0);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .form-grid {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+    
+    .form-actions {
+        grid-column: 1;
+        justify-content: flex-start;
+    }
+    
+    .manual-rewards-table {
+        font-size: 0.8em;
+    }
+    
+    .manual-rewards-table th,
+    .manual-rewards-table td {
+        padding: 8px 10px;
+    }
+    
+    .actions-cell {
+        flex-direction: column;
+        gap: 3px;
+    }
+    
+    .btn-edit, .btn-delete {
+        padding: 4px 8px;
+        font-size: 0.7em;
+    }
+}
+
+@media (max-width: 480px) {
+    .manual-rewards-content {
+        padding: 15px;
+    }
+    
+    .manual-rewards-form {
+        padding: 15px;
+    }
+    
+    .manual-rewards-table th,
+    .manual-rewards-table td {
+        padding: 6px 8px;
+    }
+} 

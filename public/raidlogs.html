@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raid Logs - Classic WoW Manager</title>
+    <link rel="stylesheet" href="/style.css?v=frsync-2">
+    <link rel="stylesheet" href="/raidlogs.css?v=frsync-2">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="raidlogs">
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Home</a>
+                <div class="top-nav-dropdown">
+                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+                        Upcoming Raids <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="upcoming-raids-menu">
+                        <div class="dropdown-loading">Loading raids...</div>
+                    </div>
+                </div>
+                <a href="/guild-members" class="top-nav-link">Guild Members</a>
+                <a href="/attendance" class="top-nav-link">Regular Attendance</a>
+            </nav>
+        </div>
+        <div id="auth-container">
+            <!-- Auth content is now loaded by top-bar.js -->
+        </div>
+    </div>
+
+    <!-- Active Raid Bar (shown when raid is selected) -->
+    <div class="raid-bar" id="raid-bar" style="display: none;">
+        <div class="raid-bar-left">
+            <span class="raid-title" id="raid-title">Loading...</span>
+            <nav class="raid-nav">
+                <a href="#" class="raid-nav-link" id="raid-roster-link">
+                    <i class="fas fa-users"></i> Roster
+                </a>
+                <a href="#" class="raid-nav-link" id="raid-assignments-link">
+                    <i class="fas fa-tasks"></i> Assignments
+                </a>
+                <a href="/raidlogs" class="raid-nav-link active" id="raid-logs-link">
+                    <i class="fas fa-chart-line"></i> Raid Logs
+                </a>
+                <a href="/gold" class="raid-nav-link" id="raid-goldpot-link">
+                    <i class="fas fa-coins"></i> Gold Pot
+                </a>
+                <a href="/loot" class="raid-nav-link" id="raid-loot-link">
+                    <i class="fas fa-shield-alt"></i> Loot
+                </a>
+            </nav>
+        </div>
+        <div class="raid-bar-right">
+            <button class="raid-close-btn" onclick="localStorage.removeItem('activeEventSession'); location.reload();">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div id="rl-auth-gate" class="auth-gate" style="display:none;">
+            <div class="lock"><i class="fas fa-lock"></i></div>
+            <h2>Log in to view page</h2>
+            <p>You need to log in with your discord, to view the content of this page. You also need to join 1Principles discord server if you are not already there.</p>
+            <div class="actions">
+                <button class="discord-button" id="rlAuthLoginBtn"><i class="fab fa-discord discord-icon"></i> Sign in with Discord</button>
+            </div>
+            <a class="join-link" href="https://discord.gg/U3vUpcFtjR" target="_blank" rel="noopener noreferrer">Join 1Principles discord</a>
+        </div>
+
+
+        <!-- Loading indicator -->
+        <div class="loading-indicator" id="loading-indicator" style="display: none;">
+            <div class="spinner"></div>
+            <p>Loading raid logs data...</p>
+        </div>
+
+        <!-- No data message -->
+        <div class="no-data-message" id="no-data-message" style="display: none;">
+            <div class="no-data-content">
+                <i class="fas fa-chart-line"></i>
+                <h3>No Raid Logs Available</h3>
+                <p>No log data has been recorded for this event yet.</p>
+                <p>Log data is typically available after running WoW log analysis.</p>
+                <p><strong>Tip:</strong> Try switching to a different event that has completed raids with log data.</p>
+            </div>
+        </div>
+
+        <!-- Raid logs content -->
+        <div class="raid-logs-container" id="raid-logs-container" style="display: none;">
+            
+            <!-- Floating Navigation Menu -->
+            <nav class="floating-nav" id="floating-nav">
+                <div class="nav-buttons">
+                    <button class="nav-btn active" data-target="stats-dashboard">Dashboard</button>
+                    <button class="nav-btn" data-target="god-gamer-container">DPS/HPS</button>
+                    <button class="nav-btn" data-target="buffs-container">Buffs/FrostRes</button>
+                    <button class="nav-btn" data-target="streak-guild-container">Attendance/Guild</button>
+                    <button class="nav-btn" data-target="rewards-container">Engi/Pots</button>
+                    <button class="nav-btn" data-target="combat-container">Kick/Disarm</button>
+                    <button class="nav-btn" data-target="sunder-container">Sunders</button>
+                    <button class="nav-btn" data-target="curse-container">Curses/Debuffs</button>
+                    <button class="nav-btn" data-target="polymorph-power-infusion-container">Sheep/PI</button>
+                    <button class="nav-btn" data-target="decurses-container">Decurses</button>
+                </div>
+            </nav>
+
+            <!-- Stats Section -->
+            <div class="stats-section scroll-target" id="stats-dashboard">
+                <!-- Stats Panel Toggle Buttons -->
+                <div class="stats-panel-toggle">
+                    <button class="stats-toggle-btn active" data-panel="dashboard">
+                        <i class="fas fa-chart-pie"></i> Dashboard
+                    </button>
+                    <button class="stats-toggle-btn" data-panel="shame">
+                        <i class="fas fa-skull-crossbones"></i> Wall of Shame
+                    </button>
+                    <button class="stats-toggle-btn" data-panel="gold">
+                        <i class="fas fa-coins"></i> Gold
+                    </button>
+                </div>
+
+                <!-- Dashboard Panel -->
+                <div class="stats-dashboard" id="dashboard-panel">
+                        <!-- Raid Duration -->
+                        <div class="stat-card raid-duration">
+                            <i class="fas fa-clock stat-icon"></i>
+                            <div class="stat-label">Raid Duration</div>
+                            <div class="stat-value" id="raid-duration-value">--</div>
+                            <div class="stat-detail">Minutes</div>
+                        </div>
+
+                        <!-- Bosses Killed -->
+                        <div class="stat-card bosses-killed">
+                            <i class="fas fa-skull stat-icon"></i>
+                            <div class="stat-label">Bosses Killed</div>
+                            <div class="stat-value" id="bosses-killed-value">--</div>
+                            <div class="stat-detail">Boss encounters</div>
+                        </div>
+
+                        <!-- Last Boss Killed -->
+                        <div class="stat-card last-boss">
+                            <i class="fas fa-trophy stat-icon"></i>
+                            <div class="stat-label">Last Boss</div>
+                            <div class="stat-value" id="last-boss-value">--</div>
+                            <div class="stat-detail" id="last-boss-detail">Loading...</div>
+                        </div>
+
+                        <!-- WoW Logs Link -->
+                        <div class="stat-card wow-logs">
+                            <i class="fas fa-chart-line stat-icon"></i>
+                            <div class="stat-label">WoW Logs</div>
+                            <div class="stat-value">
+                                <button class="wow-logs-button" id="wow-logs-button" disabled>
+                                    View Logs
+                                </button>
+                            </div>
+                            <div class="stat-detail" id="wow-logs-detail">Loading...</div>
+                        </div>
+
+                        <!-- RPB Archive Button -->
+                        <div class="stat-card rpb-archive" id="rpb-archive-card">
+                            <i class="fas fa-external-link-alt stat-icon"></i>
+                            <div class="stat-label">RPB Archive</div>
+                            <div class="stat-value">
+                                <button class="rpb-button" id="rpb-archive-button" disabled>
+                                    View RPB
+                                </button>
+                            </div>
+                            <div class="stat-detail" id="rpb-archive-detail">Loading...</div>
+                        </div>
+
+                    </div>
+
+                <!-- Wall of Shame Panel -->
+                <div class="stats-dashboard wall-of-shame-dashboard" id="shame-panel" style="display: none;">
+                    <!-- Most Deaths (Total) -->
+                    <div class="stat-card most-deaths">
+                        <i class="fas fa-skull stat-icon"></i>
+                        <div class="stat-label">Most Deaths</div>
+                        <div class="stat-value" id="most-deaths-value">--</div>
+                        <div class="stat-detail" id="most-deaths-detail">Total deaths</div>
+                    </div>
+
+                    <!-- Most Deaths on Trash -->
+                    <div class="stat-card most-trash-deaths">
+                        <i class="fas fa-dumpster-fire stat-icon"></i>
+                        <div class="stat-label">Most Trash Deaths</div>
+                        <div class="stat-value" id="most-trash-deaths-value">--</div>
+                        <div class="stat-detail" id="most-trash-deaths-detail">Deaths on trash mobs</div>
+                    </div>
+
+                    <!-- Most Avoidable Damage -->
+                    <div class="stat-card most-avoidable-damage">
+                        <i class="fas fa-bomb stat-icon"></i>
+                        <div class="stat-label">Most Avoidable Damage</div>
+                        <div class="stat-value" id="most-avoidable-damage-value">--</div>
+                        <div class="stat-detail" id="most-avoidable-damage-detail">Damage that could be avoided</div>
+                    </div>
+
+                    <!-- Most Damage to Teammates -->
+                    <div class="stat-card most-friendly-damage">
+                        <i class="fas fa-user-injured stat-icon"></i>
+                        <div class="stat-label">Most Team Damage</div>
+                        <div class="stat-value" id="most-friendly-damage-value">--</div>
+                        <div class="stat-detail" id="most-friendly-damage-detail">Damage to teammates</div>
+                    </div>
+                </div>
+
+                <!-- Gold Panel -->
+                <div class="stats-dashboard" id="gold-panel" style="display: none;">
+                    <!-- Total Gold -->
+                    <div class="stat-card gold-total">
+                        <i class="fas fa-coins stat-icon"></i>
+                        <div class="stat-label">Total Gold</div>
+                        <div class="stat-value" id="gold-total-value">--</div>
+                        <div class="stat-detail">Sum of all loot items (event)</div>
+                    </div>
+
+                    <!-- Shared Gold -->
+                    <div class="stat-card gold-shared">
+                        <i class="fas fa-coins stat-icon"></i>
+                        <div class="stat-label">Shared Gold</div>
+                        <div class="stat-value" id="gold-shared-value">--</div>
+                        <div class="stat-detail">85% distributed to players</div>
+                    </div>
+
+                    <!-- Management Gold -->
+                    <div class="stat-card gold-management">
+                        <i class="fas fa-coins stat-icon"></i>
+                        <div class="stat-label">Management Gold</div>
+                        <div class="stat-value" id="gold-management-value">--</div>
+                        <div class="stat-detail" id="gold-management-detail">Mgmt: -- | Org: -- | RL: -- | Founder: --</div>
+                    </div>
+
+                    <!-- Total Points (moved here) -->
+                    <div class="stat-card total-points">
+                        <i class="fas fa-star stat-icon"></i>
+                        <div class="stat-label">Total Points</div>
+                        <div class="stat-value" id="total-points-value">--</div>
+                        <div class="stat-detail">Base + rewards - deductions</div>
+                    </div>
+
+                    <!-- My Points -->
+                    <div class="stat-card my-points">
+                        <i class="fas fa-star stat-icon"></i>
+                        <div class="stat-label">My Points</div>
+                        <div class="stat-value" id="my-points-value">--</div>
+                        <div class="stat-detail" id="my-points-detail">Based on your character in this raid</div>
+                    </div>
+
+                    <!-- My Gold -->
+                    <div class="stat-card my-gold">
+                        <i class="fas fa-coins stat-icon"></i>
+                        <div class="stat-label">My Gold</div>
+                        <div class="stat-value" id="my-gold-value">--</div>
+                        <div class="stat-detail" id="my-gold-detail">Each point = -- gold</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Manual Rewards and Deductions Panel -->
+            <div class="manual-rewards-section scroll-target" id="manual-rewards-section">
+                <div class="section-header">
+                    <h2><i class="fas fa-balance-scale"></i> Manual Rewards and Deductions</h2>
+                    <p>Manually add rewards or deductions for raid participants</p>
+                </div>
+                
+                <!-- Management Role Required Content -->
+                <div class="manual-rewards-content" id="manual-rewards-content">
+                    <!-- Templates Actions (only visible to management role) -->
+                    <div class="manual-rewards-templates" id="manual-rewards-templates" style="display: none;">
+                        <div class="templates-actions">
+                            <button type="button" class="btn-templates" id="add-templates-btn">
+                                <i class="fas fa-shield-alt"></i> Tanks
+                            </button>
+                            <button type="button" class="btn-templates" id="add-templates-4h-tanks-btn">
+                                <i class="fas fa-shield-alt"></i> 4H tanks
+                            </button>
+                            <button type="button" class="btn-templates" id="add-templates-raz-mc-btn">
+                                <i class="fas fa-brain"></i> Raz MC
+                            </button>
+                            <button type="button" class="btn-templates" id="add-templates-puller-btn">
+                                <i class="fas fa-bullseye"></i> Puller
+                            </button>
+                            <button type="button" class="btn-templates" id="add-templates-gluth-kite-btn">
+                                <i class="fas fa-dog"></i> Gluth kite
+                            </button>
+                            <button type="button" class="btn-templates" id="add-templates-summoners-btn">
+                                <i class="fas fa-door-open"></i> Summoners
+                            </button>
+                            <span class="templates-info">Quick-add selected template groups. Edit entries to assign player names.</span>
+                        </div>
+                    </div>
+
+                    <!-- Add New Entry Form (only visible to management role) -->
+                    <div class="manual-rewards-form" id="manual-rewards-form" style="display: none;">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="player-name-input">Player Name</label>
+                                <div class="player-search-container">
+                                    <input type="text" id="player-name-input" placeholder="Type to search players..." autocomplete="off">
+                                    <div class="player-dropdown" id="player-dropdown" style="display: none;"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="description-input">Description</label>
+                                <input type="text" id="description-input" placeholder="Reason for reward/deduction">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="points-input">Points</label>
+                                <div class="input-with-toggle">
+                                    <input type="number" id="points-input" placeholder="Enter points (negative for deductions)" step="0.01">
+                                    <div class="inline-gold-toggle" title="Treat input as gold payout from shared pot (only +)">
+                                        <label for="points-as-gold">gold</label>
+                                        <input type="checkbox" id="points-as-gold" />
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="button" class="btn-add" id="add-entry-btn">Add Entry</button>
+                                <button type="button" class="btn-cancel" id="cancel-edit-btn" style="display: none;">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Entries List -->
+                    <div class="rankings-list" id="manual-rewards-list">
+                        <!-- Manual rewards entries will be populated here -->
+                    </div>
+                    
+                    <div class="no-entries-message" id="no-entries-message" style="display: none;">
+                        <i class="fas fa-inbox"></i>
+                        <p>No manual rewards or deductions have been added yet.</p>
+                    </div>
+                    
+                    <!-- Access Denied Message (for non-management users) -->
+                    <div class="access-denied-message" id="access-denied-message" style="display: none;">
+                        <i class="fas fa-lock"></i>
+                        <p>Management role required to view and manage manual rewards/deductions.</p>
+                    </div>
+                    
+                    <!-- Loading State -->
+                    <div class="loading-state" id="manual-rewards-loading" style="display: none;">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>Loading manual rewards data...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- God Gamer Section -->
+            <div class="rankings-container god-gamer-container scroll-target" id="god-gamer-container">
+                <!-- God Gamer DPS Section -->
+                <div class="rankings-section god-gamer-dps-section" style="display: none;">
+                    <div class="section-header">
+                        <h2><i class="fas fa-crown"></i> God Gamer DPS</h2>
+                        <p>Exceptional damage performance dominance</p>
+                    </div>
+                    <div class="rankings-list" id="god-gamer-dps-list">
+                        <!-- God Gamer DPS will be populated here -->
+                    </div>
+                </div>
+
+                <!-- God Gamer Healer Section -->
+                <div class="rankings-section god-gamer-healer-section" style="display: none;">
+                    <div class="section-header">
+                        <h2><i class="fas fa-crown"></i> God Gamer Healer</h2>
+                        <p>Exceptional healing performance dominance</p>
+                    </div>
+                    <div class="rankings-list" id="god-gamer-healer-list">
+                        <!-- God Gamer Healer will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="rankings-container">
+                <!-- Damage Dealers Section -->
+                <div class="rankings-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/inv_sword_04.jpg" alt="Damage" style="width: 24px; height: 24px; margin-right: 8px;"> Damage Dealers</h2>
+                        <p>Ranked by total damage output</p>
+                    </div>
+                    <div class="rankings-list" id="damage-dealers-list">
+                        <!-- Damage dealers will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Healers Section -->
+                <div class="rankings-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-heart"></i> Healers</h2>
+                        <p>Ranked by total healing output</p>
+                    </div>
+                    <div class="rankings-list" id="healers-list">
+                        <!-- Healers will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Class-Specific Healing Section -->
+            <div class="rankings-container class-healing-container">
+                <!-- Shaman Healers Section -->
+                <div class="rankings-section shaman-healers-section" style="display: none;">
+                    <div class="section-header">
+                        <h2><i class="fas fa-bolt"></i> Top Shaman Healers</h2>
+                        <p>Top 3 shamans by healing (25, 20, 15 pts)</p>
+                    </div>
+                    <div class="rankings-list" id="shaman-healers-list">
+                        <!-- Shaman healers will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Priest Healers Section -->
+                <div class="rankings-section priest-healers-section" style="display: none;">
+                    <div class="section-header">
+                        <h2><i class="fas fa-praying-hands"></i> Top Priest Healers</h2>
+                        <p>Top 2 priests by healing (20, 15 pts)</p>
+                    </div>
+                    <div class="rankings-list" id="priest-healers-list">
+                        <!-- Priest healers will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Druid Healers Section -->
+                <div class="rankings-section druid-healers-section" style="display: none;">
+                    <div class="section-header">
+                        <h2><i class="fas fa-leaf"></i> Top Druid Healer</h2>
+                        <p>Top 1 druid by healing (15 pts)</p>
+                    </div>
+                    <div class="rankings-list" id="druid-healers-list">
+                        <!-- Druid healers will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Low Performance Section -->
+            <div class="rankings-container low-performance-container">
+                <!-- Too Low Damage Section -->
+                <div class="rankings-section too-low-damage-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-arrow-down"></i> Too Low Damage</h2>
+                        <p>DPS players (primary role) with very low DPS (damage per second)</p>
+                    </div>
+                    <div class="rankings-list" id="too-low-damage-list">
+                        <!-- Too low damage rankings will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Too Low Healing Section -->
+                <div class="rankings-section too-low-healing-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-arrow-down"></i> Too Low Healing</h2>
+                        <p>Healer players (primary role) with very low HPS (healing per second)</p>
+                    </div>
+                    <div class="rankings-list" id="too-low-healing-list">
+                        <!-- Too low healing rankings will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- World Buffs and Frost Resistance Section -->
+            <div class="rankings-container buffs-container scroll-target" id="buffs-container">
+                <!-- World Buffs Section -->
+                <div class="rankings-section world-buffs-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_frost_frostarmor.jpg" alt="Frost Resistance" style="width: 24px; height: 24px; margin-right: 8px;"> Frost Resistance</h2>
+                        <p id="world-buffs-header-text">Points for frost resistance gear (DPS players only)</p>
+                    </div>
+                    <div class="rankings-list" id="world-buffs-list">
+                        <!-- World buffs rankings will be populated here -->
+                    </div>
+                    <div class="integrated-archive-button" id="world-buffs-archive-button">
+                        <i class="fas fa-external-link-alt"></i>
+                        <span>View Frost Resistance</span>
+                    </div>
+                </div>
+
+                <!-- World Buffs Section Copy (renamed to World Buffs) -->
+                <div class="rankings-section world-buffs-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_arcane_teleportorgrimmar.jpg" alt="World Buffs" style="width: 24px; height: 24px; margin-right: 8px;"> World Buffs</h2>
+                        <p id="world-buffs-copy-header-text">Points for missing world buffs (-10 per buff below 4/6)</p>
+                    </div>
+                    <div class="rankings-list" id="world-buffs-copy-list">
+                        <!-- World buffs copy rankings will be populated here -->
+                    </div>
+                    <div class="integrated-archive-button" id="world-buffs-copy-archive-button">
+                        <i class="fas fa-external-link-alt"></i>
+                        <span>View World Buffs</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Player Streaks and Guild Members Section -->
+            <div class="rankings-container streak-guild-container scroll-target" id="streak-guild-container">
+                <div class="rankings-section streak-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-fire"></i> Attendance Streak Champions</h2>
+                        <p>Players with 4+ consecutive weeks of attendance</p>
+                    </div>
+                    <div class="rankings-list" id="player-streaks-list">
+                        <!-- Player streaks will be populated here -->
+                    </div>
+                    <div class="integrated-archive-button" id="attendance-page-button">
+                        <i class="fas fa-external-link-alt"></i>
+                        <span>View Regular Attendance</span>
+                    </div>
+                </div>
+                
+                <div class="rankings-section guild-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-shield-alt"></i> Guild Members</h2>
+                        <p>It's definitely not a cult</p>
+                    </div>
+                    <div class="rankings-list" id="guild-members-list">
+                        <!-- Guild members will be populated here -->
+                    </div>
+                    <div class="integrated-archive-button" id="guild-members-page-button">
+                        <i class="fas fa-external-link-alt"></i>
+                        <span>View Guild Members</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rewards Section (Engineering, Mana Potions, and Runes) -->
+            <div class="rankings-container rewards-container scroll-target" id="rewards-container">
+                <div class="rankings-section abilities-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/inv_misc_bomb_06.jpg" alt="Explosives" style="width: 24px; height: 24px; margin-right: 8px;"> Engineering & Holywater</h2>
+                        <p>Ranked by calculated points (abilities used × avg targets ÷ 10, max 20)</p>
+                    </div>
+                    <div class="rankings-list" id="abilities-list">
+                        <!-- Abilities rankings will be populated here -->
+                    </div>
+                </div>
+
+                <div class="rankings-section mana-potions-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/inv_potion_76.jpg" alt="Major Mana Potion" style="width: 24px; height: 24px; margin-right: 8px;"> Major Mana Potions</h2>
+                        <p>Ranked by points (3 pts per potion above 10, max 10)</p>
+                    </div>
+                    <div class="rankings-list" id="mana-potions-list">
+                        <!-- Mana potions rankings will be populated here -->
+                    </div>
+                </div>
+
+                <div class="rankings-section runes-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_sealofkings.jpg" alt="Dark/Demonic Runes" style="width: 24px; height: 24px; margin-right: 8px;"> Dark or Demonic runes</h2>
+                        <p>Ranked by points (1 pt per 2 runes)</p>
+                    </div>
+                    <div class="rankings-list" id="runes-list">
+                        <!-- Runes rankings will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Combat Actions Section (Interrupts and Disarms) -->
+            <div class="rankings-container combat-container scroll-target" id="combat-container">
+                <div class="rankings-section interrupts-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/ability_kick.jpg" alt="Interrupted spells" style="width: 24px; height: 24px; margin-right: 8px;"> Interrupted spells</h2>
+                        <p>Ranked by points (1 pt per 1 interrupt, max 5)</p>
+                    </div>
+                    <div class="rankings-list" id="interrupts-list">
+                        <!-- Interrupts rankings will be populated here -->
+                    </div>
+                </div>
+
+                <div class="rankings-section disarms-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_disarm.jpg" alt="Disarmed enemies" style="width: 24px; height: 24px; margin-right: 8px;"> Disarmed enemies</h2>
+                        <p>Ranked by points (1 pt per 1 disarm, max 5)</p>
+                    </div>
+                    <div class="rankings-list" id="disarms-list">
+                        <!-- Disarms rankings will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sunder Armor Section -->
+            <div class="rankings-container sunder-container scroll-target" id="sunder-container">
+                <div class="rankings-section sunder-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_sunder.jpg" alt="Sunder Armor" style="width: 24px; height: 24px; margin-right: 8px;"> Sunder Armor</h2>
+                        <p>Ranked by points (<50: -10pts, 50-99: 0pts, 100-119: 5pts, 120+: 10pts)</p>
+                    </div>
+                    <div class="rankings-list" id="sunder-list">
+                        <!-- Sunder rankings will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Curses Section (Recklessness, Shadow, Elements) -->
+            <div class="rankings-container curse-container scroll-target" id="curse-container">
+                <div class="rankings-section curse-section curse-recklessness-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_unholystrength.jpg" alt="Curse of Recklessness" style="width: 24px; height: 24px; margin-right: 8px;"> Curse of Recklessness</h2>
+                        <p>Ranked by points (>85% uptime: 10pts)</p>
+                    </div>
+                    <div class="rankings-list" id="curse-recklessness-list">
+                        <!-- Curse of Recklessness rankings will be populated here -->
+                    </div>
+                </div>
+
+                <div class="rankings-section curse-section curse-shadow-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_curseofachimonde.jpg" alt="Curse of Shadow" style="width: 24px; height: 24px; margin-right: 8px;"> Curse of Shadow</h2>
+                        <p>Ranked by points (>85% uptime: 10pts)</p>
+                    </div>
+                    <div class="rankings-list" id="curse-shadow-list">
+                        <!-- Curse of Shadow rankings will be populated here -->
+                    </div>
+                </div>
+
+                <div class="rankings-section curse-section curse-elements-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_chilltouch.jpg" alt="Curse of the Elements" style="width: 24px; height: 24px; margin-right: 8px;"> Curse of the Elements</h2>
+                        <p>Ranked by points (>85% uptime: 10pts)</p>
+                    </div>
+                    <div class="rankings-list" id="curse-elements-list">
+                        <!-- Curse of Elements rankings will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Debuffs & Spells Section (Faerie Fire, Scorch, Demoralizing Shout) -->
+            <div class="rankings-container debuffs-container">
+                <div class="rankings-section curse-section faerie-fire-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_faeriefire.jpg" alt="Faerie Fire" style="width: 24px; height: 24px; margin-right: 8px;"> Faerie Fire</h2>
+                        <p>Ranked by points (>85% uptime: 10pts)</p>
+                    </div>
+                    <div class="rankings-list" id="faerie-fire-list">
+                        <!-- Faerie Fire rankings will be populated here -->
+                    </div>
+                </div>
+
+                <div class="rankings-section scorch-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_fire_soulburn.jpg" alt="Scorch" style="width: 24px; height: 24px; margin-right: 8px;"> Scorch</h2>
+                        <p>Ranked by points (0-99: 0pts, 100-199: 5pts, 200+: 10pts)</p>
+                    </div>
+                    <div class="rankings-list" id="scorch-list">
+                        <!-- Scorch rankings will be populated here -->
+                    </div>
+                </div>
+
+                <div class="rankings-section demo-shout-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_warcry.jpg" alt="Demoralizing Shout" style="width: 24px; height: 24px; margin-right: 8px;"> Demoralizing Shout</h2>
+                        <p>Ranked by points (0-99: 0pts, 100-199: 5pts, 200+: 10pts)</p>
+                    </div>
+                    <div class="rankings-list" id="demo-shout-list">
+                        <!-- Demoralizing Shout rankings will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Polymorph & Power Infusion Section -->
+            <div class="rankings-container polymorph-power-infusion-container scroll-target" id="polymorph-power-infusion-container">
+                <div class="rankings-section polymorph-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_polymorph.jpg" alt="Polymorph" style="width: 24px; height: 24px; margin-right: 8px;"> Polymorph</h2>
+                        <p>Ranked by points (1 pt per 2 polymorphs, max 5)</p>
+                    </div>
+                    <div class="rankings-list" id="polymorph-list">
+                        <!-- Polymorph rankings will be populated here -->
+                    </div>
+                </div>
+
+                <div class="rankings-section power-infusion-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_holy_powerinfusion.jpg" alt="Power Infusion" style="width: 24px; height: 24px; margin-right: 8px;"> Power Infusion</h2>
+                        <p>Ranked by points (1 pt per 2 infusions, max 10, excludes self-casts)</p>
+                    </div>
+                    <div class="rankings-list" id="power-infusion-list">
+                        <!-- Power Infusion rankings will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Decurses Section -->
+            <div class="rankings-container decurses-container scroll-target" id="decurses-container">
+                <div class="rankings-section decurses-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_removecurse.jpg" alt="Remove Lesser Curse" style="width: 24px; height: 24px; margin-right: 8px;"> Decurses</h2>
+                        <p>Ranked by average-based points (1 pt per 3 decurses vs avg, -10 to +10)</p>
+                    </div>
+                    <div class="rankings-list" id="decurses-list">
+                        <!-- Decurses rankings will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Void Damage Section -->
+                <div class="rankings-section void-damage-section">
+                    <div class="section-header">
+                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_shadowwordpain.jpg" alt="Void Damage" style="width: 24px; height: 24px; margin-right: 8px;"> Avoidable Void Damage</h2>
+                        <p>Players who took damage from Void Blast (-10 pts) or Void Zone (-5 pts)</p>
+                    </div>
+                    <div class="rankings-list" id="void-damage-list">
+                        <!-- Void damage rankings will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Big Buyer Bonus Section -->
+            <div class="rankings-container">
+                <div class="rankings-section big-buyer-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-coins"></i> Big Buyer Bonus</h2>
+                        <p>Top 3 spenders (≥25,000 gold) earn up to 20 pts</p>
+                    </div>
+                    <div class="rankings-list" id="big-buyer-list">
+                        <!-- Big Buyer rankings will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Points Breakdown Table Section -->
+            <div class="rankings-container">
+                <div class="rankings-section points-breakdown-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-table"></i> Points Breakdown (All Players)</h2>
+                        <p>Per-panel points for each player; non-players filtered out</p>
+                    </div>
+                    <div class="rankings-list" id="points-breakdown-table-container">
+                        <!-- Points breakdown table will be rendered here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Moved to bottom: Computed/Manual mode badge and Debug toggle/panel -->
+            <div id="computed-manual-badge" class="mode-badge computed" title="Live computed from logs and data sources">Computed mode</div>
+            <div style="margin:8px 0 12px;">
+                <button id="rl-debug-toggle" class="btn-templates btn-mini"><i class="fas fa-bug"></i> Debug: Toggle breakdown</button>
+            </div>
+            <div id="rl-debug-panel" style="display:none; background:#111827; color:#e5e7eb; padding:12px; border-radius:8px; border:1px solid #1f2937; margin-bottom:16px; max-height:380px; overflow:auto;"></div>
+
+        </div>
+
+        <!-- Error display -->
+        <div class="error-display" id="error-display" style="display: none;">
+            <div class="error-content">
+                <h3>Error Loading Raid Logs</h3>
+                <p id="error-message">An error occurred while loading the raid logs data.</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/top-bar.js?v=frsync-2"></script>
+    <script src="/raidlogs.js?v=frsync-2"></script>
+</body>
+</html> 

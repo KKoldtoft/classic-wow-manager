@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Raid Assignments - Classic WoW Manager</title>
+  <link rel="stylesheet" href="/style.css?v=frsync-2">
+  <link rel="stylesheet" href="/raidlogs.css?v=frsync-2">
+  <link rel="stylesheet" href="/assignments.css?v=3">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="assignments">
+  <div class="top-bar">
+    <div class="top-bar-left">
+      <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+      <nav class="top-nav">
+        <a href="/" class="top-nav-link">Home</a>
+        <div class="top-nav-dropdown">
+          <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+            Upcoming Raids <i class="fas fa-chevron-down"></i>
+          </button>
+          <div class="dropdown-menu" id="upcoming-raids-menu">
+            <div class="dropdown-loading">Loading raids...</div>
+          </div>
+        </div>
+        <a href="/guild-members" class="top-nav-link">Guild Members</a>
+        <a href="/attendance" class="top-nav-link">Regular Attendance</a>
+      </nav>
+    </div>
+    <div id="auth-container"></div>
+  </div>
+
+  <!-- Active Raid Bar (shown when raid is selected) -->
+  <div class="raid-bar" id="raid-bar" style="display: none;">
+    <div class="raid-bar-left">
+      <span class="raid-title" id="raid-title">Loading...</span>
+      <nav class="raid-nav">
+        <a href="#" class="raid-nav-link" id="raid-roster-link">
+          <i class="fas fa-users"></i> Roster
+        </a>
+        <a href="#" class="raid-nav-link active" id="raid-assignments-link">
+          <i class="fas fa-tasks"></i> Assignments
+        </a>
+        <a href="/raidlogs" class="raid-nav-link" id="raid-logs-link">
+          <i class="fas fa-chart-line"></i> Raid Logs
+        </a>
+        <a href="/gold" class="raid-nav-link" id="raid-goldpot-link">
+          <i class="fas fa-coins"></i> Gold Pot
+        </a>
+        <a href="/loot" class="raid-nav-link" id="raid-loot-link">
+          <i class="fas fa-shield-alt"></i> Loot
+        </a>
+      </nav>
+    </div>
+    <div class="raid-bar-right">
+      <button class="raid-close-btn" onclick="localStorage.removeItem('activeEventSession'); location.reload();">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Floating sub-navigation (same styling as raidlogs) -->
+  <div class="floating-nav" id="assignments-floating-nav">
+    <div class="nav-buttons" id="assignments-nav-buttons">
+      <a class="nav-btn" data-wing="main" href="#"><i class="fas fa-home"></i> <span>Main</span></a>
+      <a class="nav-btn" data-wing="spider" href="#"><i class="fas fa-spider"></i> <span>Spider Wing</span></a>
+      <a class="nav-btn" data-wing="military" href="#"><i class="fas fa-chess-knight"></i> <span>Military Wing</span></a>
+      <a class="nav-btn" data-wing="plague" href="#"><i class="fas fa-biohazard"></i> <span>Plague Wing</span></a>
+      <a class="nav-btn" data-wing="abomination" href="#"><i class="fas fa-skull-crossbones"></i> <span>Abomination Wing</span></a>
+      <a class="nav-btn" data-wing="frostwyrm_lair" href="#"><i class="fas fa-dragon"></i> <span>Frostwyrm Lair</span></a>
+    </div>
+  </div>
+
+  <!-- Page content container; JS fills content depending on current wing route -->
+  <div class="container" id="assignments-container" style="max-width: 1200px; margin: 0 auto; padding: 20px;">
+    <!-- Panels inserted by JS based on current subpage (main/spider/military/plague/abomination) -->
+  </div>
+
+  <script src="/top-bar.js?v=frsync-2"></script>
+  <script src="/assignments.js?v=3"></script>
+</body>
+</html>
+
+
+

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stats - Classic WoW Manager</title>
+    <link rel="stylesheet" href="/style.css?v=frsync-2">
+    <link rel="stylesheet" href="/raidlogs.css?v=frsync-2">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Charts library: ApexCharts -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+</head>
+<body class="raidlogs stats">
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Home</a>
+                <div class="top-nav-dropdown">
+                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+                        Upcoming Raids <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="upcoming-raids-menu">
+                        <div class="dropdown-loading">Loading raids...</div>
+                    </div>
+                </div>
+                <a href="/guild-members" class="top-nav-link">Guild Members</a>
+                <a href="/attendance" class="top-nav-link">Regular Attendance</a>
+            </nav>
+        </div>
+        <div id="auth-container"></div>
+    </div>
+
+    <div class="container">
+        <div class="page-header">
+            <h1><i class="fas fa-chart-pie"></i> Stats</h1>
+            <p>Insights across raids and loot</p>
+        </div>
+
+        <div class="raid-logs-container">
+            <div class="rankings-container">
+                <!-- Top 15 item prices over time -->
+                <section class="rankings-section healing" id="top-item-prices-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-line-chart"></i> Top 15 item prices over time</h2>
+                        <p>The 15 most expensive items ever sold, with sale history</p>
+                    </div>
+                    <div class="rankings-list" style="gap:0;">
+                        <div class="stats-stack">
+                            <div id="top-item-chart" class="stats-item-chart"></div>
+                            <div id="top-item-list" class="stats-item-list hall-of-fame-list"></div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <script src="/top-bar.js?v=frsync-2"></script>
+    <script src="/stats.js?v=frsync-2"></script>
+</body>
+</html>
+
+

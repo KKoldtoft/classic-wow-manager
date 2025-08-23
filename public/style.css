@@ -1,0 +1,1252 @@
+/* public/style.css */
+body {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    background-color: #f4f4f4;
+    color: #333;
+    padding-top: 54px; /* Account for actual fixed header height */
+}
+
+body.has-raid-bar {
+    padding-top: 104px; /* Account for both header bars when raid is active (54px + 50px) */
+}
+
+/* --- Universal Top Bar --- */
+.top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #000000;
+    padding: 10px 20px;
+    color: white;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.top-bar.hidden {
+    transform: translateY(-100%);
+}
+
+.top-bar.scrolled {
+    opacity: 0.8;
+}
+
+.top-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.app-logo {
+    display: block;
+    max-width: 160px;
+    height: auto;
+    filter: brightness(1);
+    transition: filter 0.2s ease;
+}
+
+.app-logo:hover {
+    filter: brightness(1.1);
+}
+
+.top-nav {
+    display: flex;
+    gap: 15px;
+}
+
+.top-nav-link {
+    color: #b9bbbe;
+    text-decoration: none;
+    padding: 8px 12px;
+    border-radius: 5px;
+    transition: background-color 0.2s;
+}
+
+.top-nav-link:hover {
+    background-color: #40444b;
+}
+
+.top-nav-link.active {
+    background-color: #5865F2;
+    color: white;
+    font-weight: bold;
+}
+
+/* Top Navigation Dropdown */
+.top-nav-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.dropdown-toggle {
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.dropdown-toggle .fa-chevron-down {
+    font-size: 10px;
+    transition: transform 0.2s ease;
+}
+
+.dropdown-toggle.active .fa-chevron-down {
+    transform: rotate(180deg);
+}
+
+.dropdown-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background-color: #2c2f33;
+    border: 1px solid #40444b;
+    border-radius: 5px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    min-width: 450px;
+    max-width: 600px;
+    z-index: 1001;
+    margin-top: 5px;
+}
+
+.dropdown-menu.show {
+    display: block;
+}
+
+.dropdown-loading {
+    padding: 15px;
+    text-align: center;
+    color: #b9bbbe;
+    font-style: italic;
+}
+
+.dropdown-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    color: #b9bbbe;
+    text-decoration: none;
+    border-bottom: 1px solid #40444b;
+    transition: background-color 0.2s;
+    cursor: pointer;
+}
+
+.dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.dropdown-item:hover {
+    background-color: #40444b;
+    color: white;
+}
+
+.dropdown-item-left {
+    flex: 1;
+    margin-right: 15px;
+    word-wrap: break-word;
+    line-height: 1.3;
+    font-size: 14px;
+}
+
+.dropdown-item-right {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 14px;
+    color: #72767d;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.dropdown-item-time {
+    font-weight: 500;
+}
+
+.dropdown-empty {
+    padding: 15px;
+    text-align: center;
+    color: #72767d;
+    font-style: italic;
+}
+
+/* Active Raid Bar */
+.raid-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #00233e;
+    padding: 8px 20px;
+    color: white;
+    position: fixed;
+    top: 54px; /* Position directly below the main top bar */
+    left: 0;
+    right: 0;
+    z-index: 999;
+    transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    border-top: 1px solid #000000; /* Black separator line */
+}
+
+.raid-bar.hidden {
+    transform: translateY(-100%);
+}
+
+.raid-bar.scrolled {
+    opacity: 0.8;
+}
+
+/* When main bar is hidden, dock raid bar to top */
+.raid-bar.docked-top {
+    transform: translateY(-54px);
+}
+
+.raid-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 30px;
+    flex: 1;
+}
+
+.raid-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.raid-title::before {
+    content: "⚔️ ";
+    margin-right: 8px;
+}
+
+.raid-bar-right {
+    display: flex;
+    align-items: center;
+}
+
+.raid-nav {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    flex: 1;
+}
+
+.raid-close-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: #ffffff;
+    padding: 8px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s, color 0.2s;
+    font-size: 14px;
+}
+
+.raid-close-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #ff6b6b;
+}
+
+.raid-nav-link {
+    color: #b9bbbe;
+    text-decoration: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    transition: background-color 0.2s, color 0.2s;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.raid-nav-link:hover {
+    background-color: #40444b;
+    color: white;
+}
+
+.raid-nav-link.active {
+    background-color: #5865F2;
+    color: white;
+    font-weight: 600;
+}
+
+#auth-container {
+    display: flex;
+    align-items: center;
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: relative; /* For dropdown positioning */
+}
+
+.user-name {
+    color: white;
+}
+
+.user-avatar-small {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%; /* Make it round */
+    cursor: pointer; /* Show it's clickable */
+}
+
+/* Refresh Events Section */
+.refresh-section {
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid #ddd;
+    text-align: center;
+}
+
+.refresh-button {
+    background-color: #5865F2;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background-color 0.2s, transform 0.1s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.refresh-button:hover {
+    background-color: #4752C4;
+    transform: translateY(-1px);
+}
+
+.refresh-button:active {
+    transform: translateY(0);
+}
+
+.refresh-button:disabled {
+    background-color: #99aab5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.refresh-button.loading .fa-sync-alt {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.refresh-status {
+    margin-top: 10px;
+    font-size: 12px;
+    min-height: 18px;
+}
+
+.refresh-status.success {
+    color: #28a745;
+}
+
+.refresh-status.error {
+    color: #dc3545;
+}
+
+.last-refresh {
+    margin-top: 5px;
+    font-size: 11px;
+    color: #000;
+    opacity: 0.7;
+}
+
+/* New User Dropdown Styles */
+.user-dropdown {
+    display: none;
+    position: absolute;
+    top: 40px; /* Position below the top bar */
+    right: 0;
+    background-color: #2c2f33;
+    border: 1px solid #40444b;
+    border-radius: 5px;
+    min-width: 150px;
+    z-index: 100;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.user-dropdown.show {
+    display: block;
+}
+
+.user-dropdown .dropdown-item {
+    color: #b9bbbe;
+    padding: 10px 15px;
+    text-decoration: none;
+    display: block;
+}
+
+.user-dropdown .dropdown-item:hover {
+    background-color: #40444b;
+}
+
+.logout-button {
+    display: none; /* Hide the old button */
+    background-color: #747f8d;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-left: 15px;
+    text-decoration: none;
+}
+
+.discord-button {
+    background-color: #5865F2; /* Discord blue */
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background-color 0.2s ease;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.discord-button:hover {
+    background-color: #4752C4; /* Slightly darker blue on hover */
+}
+
+.discord-icon {
+    font-size: 1.2em;
+}
+
+.user-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%; /* Make it round */
+    cursor: pointer;
+    border: 2px solid #5865F2; /* Discord blue border */
+    transition: transform 0.2s ease;
+}
+
+.user-avatar:hover {
+    transform: scale(1.05);
+}
+
+.content {
+    padding: 0px;
+    margin: 0px auto;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* --- Event Panels --- */
+.event-panel {
+    background-color: #fff; /* Fallback color */
+    background-image: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.2)), url('/images/AQ40-background.png');
+    background-size: cover;
+    background-position: center;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 15px;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.3s ease;
+    color: white; /* Make text white for readability */
+    position: relative; /* For pseudo-element positioning */
+    overflow: hidden; /* Contain pseudo-elements */
+    display: block; /* Ensure anchor panels behave like blocks for full clickable area */
+    text-decoration: none; /* Prevent underline when rendered as an anchor */
+}
+
+/* Ensure content stays above background pseudo-elements */
+.event-panel > * {
+    position: relative;
+    z-index: 2;
+}
+
+/* Background pseudo-element styling */
+.event-panel .background-pseudo {
+    position: absolute !important;
+    top: -10px !important;
+    left: -10px !important;
+    right: -10px !important;
+    bottom: -10px !important;
+    background-size: cover !important;
+    background-position: center !important;
+    z-index: 0 !important;
+    pointer-events: none !important; /* Prevent interaction */
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+/* Grayscale effect for completed raids is now handled via pseudo-elements in JavaScript */
+
+/* Ensure upcoming raids (non-historic) handle backgrounds properly */
+.event-panel:not(.historic) {
+    /* Explicitly ensure these properties don't interfere */
+    background-attachment: scroll;
+    background-clip: border-box;
+    background-origin: padding-box;
+    isolation: auto;
+}
+
+/* Force proper stacking for upcoming raid pseudo-elements */
+.event-panel:not(.historic) .background-pseudo {
+    /* Extra specificity to ensure these work */
+    content: "" !important;
+    will-change: transform !important;
+}
+
+.event-panel:hover {
+    transform: translateY(-3px); /* Slight lift on hover */
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Specific styling for today's event panel */
+.event-panel-today { border: 1px solid rgba(255,255,255,0.08); }
+
+.event-panel h3 {
+    color: #ffffff; /* Discord blue for titles */
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 16px;
+    border-bottom: 1px solid #f0f0f0; /* Separator under title */
+    padding-bottom: 8px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8); /* Dark drop shadow for readability */
+}
+
+.event-time-info {
+    display: flex;
+    flex-direction: column; /* Stack time and date vertically */
+    margin-bottom: 10px;
+    font-size: 0.95em;
+    color: #ffffff;
+    text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); /* Dark drop shadow for readability */
+}
+
+.event-time-info p {
+    margin: 4px 0;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+}
+
+.event-icon {
+    margin-right: 8px; /* Space between icon and text */
+    width: 16px;
+    text-align: center;
+}
+
+/* Style for "Today" text */
+.event-today-text {
+    font-weight: bold;
+    color: white; /* Was Discord blue */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8); /* Dark drop shadow for readability */
+}
+
+/* Text shadows for historic event details */
+.raid-duration,
+.gold-pot,
+.biggest-item {
+    font-size: 0.95em; /* Match upcoming raids font size */
+    text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); /* Dark drop shadow for readability */
+}
+
+.raid-duration p,
+.gold-pot p,
+.biggest-item p {
+    margin: 8px 0;
+    font-size: 0.9em; /* Match upcoming raids font size */
+    display: flex;
+    align-items: center;
+    text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); /* Dark drop shadow for readability */
+}
+
+/* Spacer after "Today" events */
+.today-events-spacer {
+    height: 30px; /* Adjust height for desired space */
+    border-bottom: 2px dashed #ccc; /* Optional: A subtle dashed line */
+    margin-top: 15px; /* Space above the dashed line */
+    margin-bottom: 30px; /* Space after the dashed line */
+    width: 50%; /* Make the line shorter than full width */
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* NEW: Image styling for event panels */
+.event-image {
+    max-width: 100%; /* Ensure image fits within panel */
+    height: auto; /* Maintain aspect ratio */
+    display: block; /* Remove extra space below image */
+    margin-top: 15px; /* Space above the image */
+    border-radius: 8px; /* Slightly rounded corners for images */
+    object-fit: contain; /* Ensures entire image is visible, scales down if too large */
+}
+
+/* Updated container for the events list */
+.events-container {
+    width: 360px;
+    margin: 0 auto; /* Center the container */
+}
+
+/* --- 4-Column Layout (masonry-ready) --- */
+.main-content-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr; /* 4 equal columns */
+    gap: 30px; /* Space between columns */
+    align-items: start;
+    padding: 30px;
+    max-width: 1800px; /* Wider to accommodate 4 columns */
+    margin: 0 auto;
+    grid-auto-flow: row dense; /* allow better packing around spanning items */
+    grid-auto-rows: 8px; /* base row height unit for masonry calculation */
+}
+
+.grid-column {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.panel {
+    background-color: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 20px;
+}
+
+/* panels are full width inside the grid now */
+
+.panel-title {
+    margin-top: 0;
+    font-size: 1.5em;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+}
+
+/* Spanning helpers for direct children of .main-content-grid */
+.panel--span-2 { grid-column: span 2; }
+.panel--span-3 { grid-column: span 3; }
+.panel--span-4 { grid-column: 1 / -1; }
+
+/* Split panel layout: image left, text right */
+.panel-split {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 20px;
+    align-items: stretch;
+}
+.panel-image {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.panel-image img {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    object-fit: cover;
+}
+.panel-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px; /* tighter spacing between text blocks */
+}
+.panel-text p { margin: 6px 0; line-height: 1.45; }
+.panel-text h3 { margin-top: 10px; }
+.panel-text ul {
+    margin: -15px 0 10px 18px;
+    list-style: none; /* custom bullet for better vertical alignment */
+    padding-left: 0;
+}
+.panel-text li {
+    margin: 8px 0; /* slightly larger spacing for readability */
+    position: relative;
+    padding-left: 22px; /* room for custom bullet */
+    line-height: 1.5;
+}
+.panel-text li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.75em; /* centers the dot vertically to text line */
+    transform: translateY(-50%);
+    width: 6px;
+    height: 6px;
+    background: #333; /* subtle dark bullet on light panel */
+    border-radius: 50%;
+}
+
+/* My Characters List Styling - Individual Character Panels */
+.character-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px; /* Spacing between character panels */
+}
+
+.character-card { list-style: none; border: 1px solid #333; border-radius: 8px; margin-bottom: 10px; }
+
+.character-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 70px;
+    padding: 5px 5px 5px 85px; /* room for 60x60 icon + spacing */
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.character-item:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.char-name {
+    font-weight: 600;
+    font-size: 16px;
+    color: #000000;
+}
+
+/* Details line below name (class text) */
+.char-details {
+    font-size: 13px;
+    color: #000000;
+    opacity: 0.9;
+}
+
+.char-text {
+    display: flex;
+    flex-direction: column;
+    color: #000;
+}
+
+/* Frontpage: force character card name and class to black only in Home */
+body.home .character-card .char-name,
+body.home .character-card .char-details,
+body.home .character-card .char-text { color: #000 !important; }
+
+/* Left class icon similar to raidlogs spec icon positioning */
+.class-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    object-fit: cover;
+}
+
+/* Bottom extension card */
+.character-item-sub {
+    position: relative;
+    min-height: 36px;
+    margin-top: 0;
+    padding: 6px 12px;
+    border-radius: 0 0 8px 8px; /* top corners will be 0 via override below */
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    background: rgba(0, 0, 0, 0.9); /* dark background for bottom card */
+}
+
+.character-item-sub .label, .character-item-sub .value { color: #ffffff !important; font-weight: 400; }
+.char-extra { display: grid; grid-template-columns: 1fr; row-gap: 4px; font-size: 13px; }
+.char-extra > div { display: flex; align-items: center; column-gap: 8px; }
+.char-extra .label { color: #000; font-weight: 400; }
+.char-extra .value { color: #000; font-weight: 400; }
+.char-extra .last-item { display: inline-flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.85); padding: 3px 6px; border-radius: 5px; }
+.char-extra .last-item, .char-extra .last-item * { color: #a335ee !important; }
+.char-extra .last-item img { width: 18px; height: 18px; border-radius: 3px; }
+
+/* Make the top card stick visually with flat bottom corners */
+.character-item {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+/* WoW Class Background Colors for Character Panels */
+.character-item.class-warrior {
+    background: linear-gradient(135deg, #C79C6E, #A67C52);
+}
+
+.character-item.class-paladin {
+    background: linear-gradient(135deg, #F58CBA, #E06B9A);
+}
+
+.character-item.class-hunter {
+    background: linear-gradient(135deg, #ABD473, #8FB356);
+}
+
+.character-item.class-rogue {
+    background: linear-gradient(135deg, #FFF569, #E6DD4F);
+}
+
+.character-item.class-priest {
+    background: linear-gradient(135deg, #FFFFFF, #E6E6E6);
+}
+
+.character-item.class-shaman {
+    background: linear-gradient(135deg, #0070DE, #005BB8);
+}
+
+.character-item.class-mage {
+    background: linear-gradient(135deg, #69CCF0, #4FB3D9);
+}
+
+.character-item.class-warlock {
+    background: linear-gradient(135deg, #9482C9, #7A6BA8);
+}
+
+.character-item.class-druid {
+    background: linear-gradient(135deg, #FF7D0A, #E66A00);
+}
+
+.character-item.class-unknown {
+    background: linear-gradient(135deg, #666666, #555555);
+}
+
+/* All character names are now black with consistent styling */
+
+/* Items Hall of Fame Styling */
+.hall-of-fame-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.hall-of-fame-item {
+    display: flex;
+    align-items: flex-start;
+    background: #060a1e;
+    border: 2px solid #737373;
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    color: white;
+}
+
+.hall-of-fame-item:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.hall-of-fame-content {
+    display: flex;
+    align-items: flex-start;
+    flex: 1;
+}
+
+.hall-of-fame-details {
+    flex: 1;
+    line-height: 1.3;
+}
+
+.hall-of-fame-item-name {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 4px;
+    /* Item name color is set inline (#a335ee) */
+}
+
+.hall-of-fame-price {
+    font-size: 13px;
+    font-weight: bold;
+    margin: 2px 0;
+    /* Price color is set inline (#FFD700) */
+}
+
+.hall-of-fame-info {
+    font-size: 12px;
+    margin-top: 2px;
+    color: white;
+}
+
+/* Item icon styling */
+.item-icon-small {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.item-icon-large {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    border: 2px solid #393939;
+}
+
+
+
+/* Responsive Design for 4-Column Layout */
+/* --- Home (frontpage) dark theme --- */
+body.home {
+    background-color: #121214;
+    color: #e8e8e8;
+}
+
+/* Panels on frontpage */
+body.home .panel {
+    background-color: #1a191e;
+    border: 1px solid #555555;
+}
+
+/* Panel titles on frontpage */
+body.home .panel-title {
+    color: #e8e8e8;
+    border-bottom: 1px solid #24232a;
+}
+
+/* Direct text inside panels on frontpage */
+body.home .panel > p { color: #e8e8e8; }
+body.home .panel .panel-text,
+body.home .panel .panel-text p,
+body.home .panel .panel-text li,
+body.home .panel .panel-text h3 { color: #e8e8e8; }
+
+/* Ensure any paragraph anywhere inside a frontpage panel is readable */
+body.home .panel p { color: #e8e8e8 !important; }
+
+/* Ensure status text under refresh buttons is readable on dark panels */
+body.home .panel .refresh-status,
+body.home .panel .last-refresh {
+    color: #e8e8e8;
+}
+
+/* Keep sub-items (raids, items, characters) using their own colors */
+/* Keep nested sub-items' own styles; no global color override here */
+
+/* --- Guild Members dark theme --- */
+body.guild { background-color: #121214 !important; color: #e8e8e8 !important; }
+body.guild .stat-card,
+body.guild .search-filter,
+body.guild .members-table { background-color: #1a191e !important; border: 1px solid #555555 !important; }
+body.guild .members-table .table-container { background: transparent !important; }
+body.guild #members-table th { background: #232229 !important; color: #e8e8e8 !important; border-bottom: 1px solid #333 !important; }
+body.guild #members-table td { border-bottom: 1px solid #333 !important; }
+body.guild #members-table tr:hover { background: #1f1e24 !important; }
+body.guild .search-input,
+body.guild .filter-select { background: #232229 !important; color: #e8e8e8 !important; border: 1px solid #555555 !important; }
+body.guild .clear-btn { background: #e74c3c !important; color: white !important; }
+body.guild .loading { color: #c7c7c7 !important; }
+body.guild .error { background: #3a1f21 !important; color: #ffb3b8 !important; border: 1px solid #8a2f35 !important; }
+
+/* --- Attendance dark theme --- */
+body.attendance { background-color: #121214; color: #e8e8e8; }
+body.attendance .attendance-container { background-color: transparent; }
+body.attendance .attendance-controls,
+body.attendance .loading-indicator,
+body.attendance .error-display,
+body.attendance .no-data-message,
+body.attendance .attendance-table-container,
+body.attendance .attendance-stats,
+body.attendance .stat-card { background-color: #1a191e; border: 1px solid #555555; }
+body.attendance .attendance-info { color: #e8e8e8; }
+body.attendance .attendance-legend { background: #232229; border-bottom: 1px solid #333; }
+body.attendance .attendance-legend h4 { color: #e8e8e8; }
+body.attendance .legend-item { color: #c9c9c9; }
+body.attendance .attendance-table-wrapper { border: 1px solid #333; }
+body.attendance .attendance-table { background: #1a191e; }
+body.attendance .attendance-table th { background: #232229; color: #e8e8e8; border-bottom: 2px solid #333; }
+body.attendance .attendance-table td { border-bottom: 1px solid #333; }
+body.attendance .attendance-table tbody tr:hover { background: #1f1e24; }
+body.attendance .attendance-table tbody tr:hover .player-column { background: #232229; }
+body.attendance .attendance-table .player-column { background: #232229; border-right: 2px solid #333; color: #e8e8e8; }
+body.attendance .loading-indicator p { color: #c9c9c9; }
+body.attendance .error-content, body.attendance .no-data-content { color: #ffb3b8; }
+
+/* --- Rules dark theme --- */
+body.rules { background-color: #121214; color: #e8e8e8; }
+body.rules .content.rules-page { background: transparent; box-shadow: none; }
+body.rules .rules-page h1,
+body.rules .rules-page h2 { color: #e8e8e8; }
+body.rules .rule-card { background: #1a191e; border: 1px solid #555555; box-shadow: none; }
+body.rules .rule-icon { background: #232229; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06); }
+body.rules .rule-header { color: #e8e8e8; }
+body.rules .rule-body { color: #d0d0d0; }
+
+/* --- Roster dark theme --- */
+body.roster { background-color: #121214; color: #e8e8e8; }
+body.roster .content { background: transparent; }
+body.roster #roster-event-title { color: #e8e8e8; }
+body.roster .roster-container { background-color: #1a191e; border: 1px solid #555555; }
+body.roster #bench-container.bench-container { background-color: #1a191e !important; border: 1px solid #555555 !important; box-shadow: none; }
+body.roster .player-search-modal { background-color: #1a191e; border: 1px solid #555555; }
+body.roster .player-search-header { color: #e8e8e8; }
+body.roster .player-search-input { background-color: #232229; border: 1px solid #555555; color: #e8e8e8; }
+body.roster .player-search-results { background-color: #232229; border: 1px solid #555555; }
+body.roster .player-search-item { color: #e8e8e8; border-bottom: 1px solid #444; }
+body.roster .button-panel { background-color: #1a191e; border: 1px solid #555555; }
+body.roster .toggle-container { background-color: #232229; border: 1px solid #555; }
+body.roster .toggle-label { color: #e8e8e8; }
+body.roster .dropdown-item { color: #ddd; }
+body.roster .roster-cell { border: 1px solid #555; }
+body.roster .roster-cell.empty-slot-clickable { background-color: #333; }
+
+/* --- Assignments dark theme --- */
+body.assignments { background-color: #121214; color: #e8e8e8; }
+body.assignments .container { background: transparent; }
+body.assignments .manual-rewards-section { --panel-accent: #555555; background: #1a191e; border: 1px solid #555555; box-shadow: none; }
+body.assignments .manual-rewards-section .section-header { background: #232229; color: #e8e8e8; }
+body.assignments .manual-rewards-content { color: #e8e8e8; }
+body.assignments .assignment-entry-row { border-bottom: 1px solid #333; }
+body.assignments .assignment-editable { background: #232229; color: #e8e8e8; border: 1px solid #555555; }
+body.assignments .assignment-editable::placeholder { color: #9a9a9a; }
+body.assignments .assignment-img { border: 1px solid #555555; }
+body.assignments .floating-nav { background: rgba(26, 25, 30, 0.95); border: 1px solid rgba(255,255,255,0.08); }
+body.assignments .nav-buttons { border-color: rgba(255,255,255,0.12); }
+
+/* --- Raidlogs dark theme --- */
+body.raidlogs { background-color: #121214; color: #e8e8e8; }
+body.raidlogs .container { background: transparent; }
+body.raidlogs .auth-gate { background: #1a191e; border: 1px solid #555555; color: #e8e8e8; }
+body.raidlogs .auth-gate .lock { background:#0b1220; border:1px solid #1f2937; color:#93c5fd; }
+body.raidlogs .loading-indicator,
+body.raidlogs .no-data-message,
+body.raidlogs .error-display { background: #1a191e; border: 1px solid #555555; }
+body.raidlogs .no-data-content, body.raidlogs .error-content { color: #e8e8e8; }
+body.raidlogs .floating-nav { background: rgba(26,25,30,0.95); border: 1px solid rgba(255,255,255,0.08); }
+body.raidlogs .nav-buttons { border-color: rgba(255,255,255,0.12); }
+body.raidlogs .section-header { background: #232229; color: #e8e8e8; }
+body.raidlogs .ranking-item { border-bottom: 1px solid #333; }
+body.raidlogs .ranking-item:hover { background: #1f1e24; }
+body.raidlogs .manual-rewards-section { background: #1a191e; border: 1px solid #555555; box-shadow: none; }
+body.raidlogs .manual-rewards-section .section-header { background: #232229; }
+body.raidlogs .manual-rewards-templates { background: #232229; border: 1px solid #333; }
+body.raidlogs .mode-badge { background: #232229; color: #e8e8e8; }
+body.raidlogs .manual-rewards-form { background: #232229; border: 1px solid #333; }
+body.raidlogs .player-dropdown { background: #232229; border: 1px solid #333; }
+body.raidlogs .player-dropdown-item { border-bottom: 1px solid rgba(255,255,255,0.08); }
+
+/* --- Gold dark theme --- */
+body.gold { background-color: #121214; color: #e8e8e8; }
+body.gold .content { background: transparent; }
+body.gold .auth-gate { background: #1a191e; border: 1px solid #555555; color: #e8e8e8; }
+body.gold .gold-container .loading-indicator,
+body.gold .gold-container .error-display,
+body.gold .gold-content { background: #1a191e; border: 1px solid #555555; }
+body.gold .summary .card { background:#1a191e !important; border:1px solid #555555 !important; }
+body.gold .summary .card h3 { color:#c9c9c9 !important; }
+body.gold .summary .card .value { color:#e8e8e8 !important; }
+body.gold .summary .card .tooltip { background:#232229; border:1px solid #333; color:#e8e8e8; }
+body.gold #gargulExport { background:#111827; color:#e5e7eb; border:1px solid #374151; }
+body.gold #copyGargul { background:#1f2937; color:#e5e7eb; border:1px solid #374151; }
+body.gold #gargulCopyStatus { color:#9ca3af; }
+
+/* --- Loot dark theme --- */
+body.loot { background-color: #121214; color: #e8e8e8; }
+body.loot .main-content { background: transparent; }
+body.loot .auth-gate { background:#1a191e; border:1px solid #555555; color:#e8e8e8; }
+body.loot .import-section { background:#1a191e; border:1px solid #555555; }
+body.loot .import-input-container textarea { background:#232229; color:#e8e8e8; border:1px solid #555555; }
+body.loot .loot-section { background:#1a191e; border:1px solid #555555; }
+body.loot .loot-section h3 { color:#e8e8e8; }
+body.loot .stat-card { background: linear-gradient(135deg, #1a1a1a, #232229); border:1px solid #555; }
+body.loot .loot-item { background:#1a1a1a; border:1px solid #555; }
+body.loot .no-items { background:#1a1a1a; border-color:#555; color:#9a9a9a; }
+
+/* --- User Settings dark theme --- */
+body.user-settings { background-color: #121214; color: #e8e8e8; }
+body.user-settings .content { background: transparent; box-shadow: none; }
+body.user-settings .settings-section { background: #1a191e; border: 1px solid #555555; box-shadow: none; }
+body.user-settings .settings-section h2 { color: #e8e8e8; border-bottom-color: #333; }
+body.user-settings .characters-grid .character-card { background: linear-gradient(135deg, #1a1a1a, #232229); border-left-color: #3498db; }
+body.user-settings .character-name, body.user-settings .character-details, body.user-settings .account-info-text, body.user-settings .info-row strong { color: #e8e8e8; }
+body.user-settings .character-race { color: #bbbbbb; }
+body.user-settings .character-meta small { color: #9aa0a6; }
+body.user-settings .btn-primary { background: #2563eb; }
+
+/* --- Logs dark theme --- */
+body.logs { background-color: #121214; color: #e8e8e8; }
+body.logs .container { background: transparent; }
+body.logs .workflow-progress, body.logs .data-section, body.logs .logs-input-section, body.logs .loading-indicator, body.logs .log-data-container, body.logs .workflow-container { background: #1a191e; border: 1px solid #555555; }
+body.logs .data-section h2, body.logs .progress-header h3 { color: #e8e8e8; background: #232229; border-bottom: 1px solid #333; }
+body.logs .workflow-steps-checkboxes { background: #1a1a1a; border: 1px solid #333; }
+body.logs .checkbox-item { background: #232229; border: 1px solid #444; }
+body.logs .checkbox-item:hover { background: #2b2a31; border-color: #5865F2; }
+body.logs .checkbox-label { color: #ddd; }
+body.logs .btn-secondary { background: #232229; border: 1px solid #555; color: #e8e8e8; }
+
+/* --- Admin dark theme --- */
+body.admin { background-color: #121214; color: #e8e8e8; }
+body.admin .container, body.admin .content { background: transparent; }
+body.admin .panel, body.admin .card, body.admin .section, body.admin .admin-section { background: #1a191e; border: 1px solid #555555; box-shadow: none; }
+body.admin h1, body.admin h2, body.admin h3 { color: #e8e8e8; }
+/* Admin specific panels/tables (override inline whites) */
+body.admin .management-panel,
+body.admin .permission-card,
+body.admin .settings-section { background: #1a191e !important; border: 1px solid #555555 !important; box-shadow: none !important; }
+body.admin .data-table { background: #1a191e !important; border: 1px solid #555555 !important; }
+body.admin .data-table th { background: #232229 !important; color: #e8e8e8 !important; border-bottom: 1px solid #333 !important; }
+body.admin .data-table td { color: #e8e8e8 !important; border-bottom: 1px solid #333 !important; }
+body.admin .data-table tr:hover { background: #1f1e24 !important; }
+/* Blanket override of inline white cards within admin */
+body.admin div[style*="background: white"],
+body.admin div[style*="background:white"],
+body.admin div[style*="background:#ffffff"],
+body.admin div[style*="background: #ffffff"] { background: #1a191e !important; border-color: #555555 !important; color: #e8e8e8 !important; }
+body.admin [style*="border: 1px solid #dee2e6"],
+body.admin [style*="border:1px solid #dee2e6"],
+body.admin [style*="border: 1px solid #e0e0e0"],
+body.admin [style*="border:1px solid #e0e0e0"] { border-color: #555555 !important; }
+/* Warning/info boxes to darker theme */
+body.admin div[style*="#fff3cd"], body.admin div[style*="ffeaa7"] {
+    background: rgba(255,193,7,0.08) !important;
+    border-color: rgba(255,193,7,0.35) !important;
+    color: #e8e8e8 !important;
+}
+/* Admin user info card */
+body.admin .admin-user-info { background: #1a191e !important; border: 1px solid #555555 !important; color: #e8e8e8 !important; border-radius: 8px; }
+/* Background Blur/Darken control cards and other light panels */
+body.admin div[style*="#f8f9fa"],
+body.admin div[style*="background: #f8f9fa"],
+body.admin div[style*="background:#f8f9fa"] { background: #1a191e !important; border-color: #555555 !important; color: #e8e8e8 !important; }
+/* Inline light text colors inside admin panels */
+body.admin h4[style*="#2c3e50"],
+body.admin h4[style*="#2C3E50"] { color: #e8e8e8 !important; }
+body.admin p[style*="#6c757d"],
+body.admin p[style*="#6C757D"],
+body.admin span[style*="#6c757d"],
+body.admin label[style*="#495057"],
+body.admin label[style*="#495057"] { color: #c9c9c9 !important; }
+/* Inline light borders/inputs */
+body.admin [style*="border: 1px solid #ddd"],
+body.admin [style*="border:1px solid #ddd"] { border-color: #555555 !important; }
+body.admin input[type="number"],
+body.admin input[type="range"],
+body.admin input[style*="border: 1px solid #ddd"],
+body.admin textarea[style*="border: 1px solid #ddd"] { background: #232229 !important; color: #e8e8e8 !important; }
+/* Universal readable text on dark backgrounds (avoid item/player names) */
+body.home :where(p, li, span, small, label),
+body.guild :where(p, li, span, small, label),
+body.attendance :where(p, li, span, small, label),
+body.rules :where(p, li, span, small, label),
+body.roster :where(p, li, span, small, label),
+body.assignments :where(p, li, span, small, label),
+body.raidlogs :where(p, li, span, small, label),
+body.gold :where(p, li, span, small, label),
+body.loot :where(p, li, span, small, label),
+body.logs :where(p, li, span, small, label),
+body.user-settings :where(p, li, span, small, label),
+body.admin :where(p, li, span, small, label) {
+    color: #f8f9fa;
+}
+
+body.home :where(h1,h2,h3,h4),
+body.guild :where(h1,h2,h3,h4),
+body.attendance :where(h1,h2,h3,h4),
+body.rules :where(h1,h2,h3,h4),
+body.roster :where(h1,h2,h3,h4),
+body.assignments :where(h1,h2,h3,h4),
+body.raidlogs :where(h1,h2,h3,h4),
+body.gold :where(h1,h2,h3,h4),
+body.loot :where(h1,h2,h3,h4),
+body.logs :where(h1,h2,h3,h4),
+body.user-settings :where(h1,h2,h3,h4),
+body.admin :where(h1,h2,h3,h4) {
+    color: #e8e8e8;
+}
+
+@media (max-width: 1400px) {
+    .main-content-grid {
+        grid-template-columns: 1fr 1fr; /* 2 columns on medium screens */
+        gap: 25px;
+        padding: 25px;
+        max-width: 1200px;
+    }
+    .panel--span-2, .panel--span-3, .panel--span-4 { grid-column: 1 / -1; }
+    .panel-split { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 900px) {
+    .main-content-grid {
+        grid-template-columns: 1fr; /* Single column on smaller screens */
+        gap: 20px;
+        padding: 20px;
+        max-width: 600px;
+    }
+    .panel--span-2, .panel--span-3, .panel--span-4 { grid-column: 1 / -1; }
+    .panel-split { grid-template-columns: 1fr; }
+    
+    .grid-column {
+        gap: 20px;
+    }
+}
+
+@media (max-width: 768px) {
+    .main-content-grid {
+        padding: 15px;
+        gap: 20px;
+    }
+    
+    .character-item {
+        height: 35px;
+        padding: 6px 10px;
+    }
+    
+    .char-name {
+        font-size: 13px;
+    }
+    
+    .hall-of-fame-item {
+        padding: 8px;
+    }
+    
+    .item-icon-large {
+        width: 50px !important;
+        height: 50px !important;
+    }
+}
+
+@media (max-width: 600px) {
+    .top-bar {
+        flex-direction: column;
+        padding: 10px;
+    }
+    .app-logo {
+        margin-bottom: 10px;
+        max-width: 140px;
+    }
+    
+    .main-content-grid {
+        padding: 10px;
+        gap: 15px;
+    }
+    
+    .character-item {
+        height: 35px;
+        padding: 6px 10px;
+    }
+    
+    .char-name {
+        font-size: 13px;
+    }
+    
+    .hall-of-fame-item {
+        padding: 8px;
+    }
+    
+    .item-icon-large {
+        width: 50px !important;
+        height: 50px !important;
+    }
+}

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fix Reward Settings - Heroku Migration</title>
+    <!-- Google tag (gtag.js) - guarded for localhost -->
+    <script>
+      (function(){
+        try {
+          var host = (window.location && window.location.hostname) || '';
+          var isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+          if (isLocal) return;
+          if (window.gtag) return;
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){ dataLayer.push(arguments); }
+          window.gtag = gtag;
+          var s = document.createElement('script');
+          s.async = true;
+          s.src = 'https://www.googletagmanager.com/gtag/js?id=G-JJJVQ34B6R';
+          (document.head || document.documentElement).appendChild(s);
+          gtag('js', new Date());
+          gtag('config', 'G-JJJVQ34B6R');
+        } catch (e) {}
+      })();
+    </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .info {
+            background: #e2e3e5;
+            border: 1px solid #d6d8db;
+            color: #383d41;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Fix Heroku Reward Settings</h1>
+        <p>This page will add the missing reward settings to your Heroku database.</p>
+        
+        <p><strong>Problem:</strong> The admin page only shows some reward options instead of all of them (Mana Potions, Runes, Interrupts, Disarms).</p>
+        
+        <p><strong>Solution:</strong> Run a database migration to add the missing reward settings.</p>
+        
+        <button onclick="runMigration()">🚀 Run Migration</button>
+        <button onclick="checkCurrentSettings()">📊 Check Current Settings</button>
+        
+        <div id="result" class="result"></div>
+        
+        <hr style="margin: 30px 0;">
+        <p><small><strong>After migration:</strong> Go to your <a href="/admin">/admin</a> page and you should see all reward configuration options!</small></p>
+    </div>
+
+    <script>
+        async function runMigration() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result info';
+            resultDiv.innerHTML = '⏳ Running migration...';
+            
+            try {
+                const response = await fetch('/api/admin/migrate-reward-settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = `
+                        <h3>✅ Migration Successful!</h3>
+                        <p>${result.message}</p>
+                        <p><strong>Added Settings:</strong></p>
+                        <pre>${JSON.stringify(result.addedSettings, null, 2)}</pre>
+                        <p><strong>Final Counts by Type:</strong></p>
+                        <pre>${JSON.stringify(result.finalCounts, null, 2)}</pre>
+                        <p><strong>Next Step:</strong> <a href="/admin">Go to your admin page</a> and you should now see all reward options!</p>
+                    `;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `
+                        <h3>❌ Migration Failed</h3>
+                        <p>${result.error}</p>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `
+                    <h3>❌ Error</h3>
+                    <p>Failed to run migration: ${error.message}</p>
+                `;
+            }
+        }
+        
+        async function checkCurrentSettings() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result info';
+            resultDiv.innerHTML = '⏳ Checking current settings...';
+            
+            try {
+                const response = await fetch('/api/admin/reward-settings');
+                const result = await response.json();
+                
+                if (result.success) {
+                    const settingTypes = Object.keys(result.settings);
+                    const expectedTypes = ['abilities', 'damage', 'healing', 'mana_potions', 'runes', 'interrupts', 'disarms', 'sunder'];
+                    const missingTypes = expectedTypes.filter(type => !settingTypes.includes(type));
+                    
+                    resultDiv.className = 'result info';
+                    resultDiv.innerHTML = `
+                        <h3>📊 Current Reward Settings</h3>
+                        <p><strong>Setting Types Found:</strong> ${settingTypes.join(', ')}</p>
+                        <p><strong>Expected Types:</strong> ${expectedTypes.join(', ')}</p>
+                        <p><strong>Missing Types:</strong> ${missingTypes.join(', ') || 'None - All good! 🎉'}</p>
+                        ${missingTypes.length > 0 ? '<p style="color: orange;"><strong>You need to run the migration!</strong></p>' : '<p style="color: green;"><strong>All reward types are present!</strong></p>'}
+                        <details>
+                            <summary>Show full settings data</summary>
+                            <pre>${JSON.stringify(result.settings, null, 2)}</pre>
+                        </details>
+                    `;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `
+                        <h3>❌ Failed to Check Settings</h3>
+                        <p>${result.error || 'Unknown error'}</p>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `
+                    <h3>❌ Error</h3>
+                    <p>Failed to check settings: ${error.message}</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html> 
