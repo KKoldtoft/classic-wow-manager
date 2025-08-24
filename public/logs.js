@@ -13,7 +13,7 @@ class WoWLogsAnalyzer {
         
         this.initializeEventListeners();
 
-        // Normalize URL: if we have an active event but current URL is not event-scoped, redirect
+        // Normalize URL without hard reload if possible; also sync URL->localStorage
         try {
             const parts = window.location.pathname.split('/').filter(Boolean);
             const idx = parts.indexOf('event');
@@ -21,12 +21,20 @@ class WoWLogsAnalyzer {
             const isLogsPage = parts.includes('logs');
             const activeEventId = localStorage.getItem('activeEventSession');
             if (!isEventScoped && isLogsPage && activeEventId) {
-                window.location.replace(`/event/${activeEventId}/logs`);
-                return;
+                try {
+                    history.replaceState({}, '', `/event/${activeEventId}/logs`);
+                    if (typeof updateRaidBar === 'function') setTimeout(() => updateRaidBar(), 0);
+                } catch (_) {
+                    window.location.replace(`/event/${activeEventId}/logs`);
+                    return;
+                }
             }
             // If URL has an event ID, set it into localStorage to become active
             if (idx >= 0 && parts[idx + 1]) {
-                localStorage.setItem('activeEventSession', parts[idx + 1]);
+                const urlEventId = parts[idx + 1];
+                if (localStorage.getItem('activeEventSession') !== urlEventId) {
+                    localStorage.setItem('activeEventSession', urlEventId);
+                }
                 if (typeof updateRaidBar === 'function') setTimeout(() => updateRaidBar(), 0);
             }
         } catch {}

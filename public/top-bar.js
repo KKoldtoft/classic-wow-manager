@@ -64,7 +64,15 @@ async function updateAuthUI() {
         
         // Add management-only options for users with Management role
         if (user.hasManagementRole) {
-            dropdownItems += `<a href="/logs" class="dropdown-item">Logs</a>`;
+            // Prefer event-scoped Logs link when an active event is known
+            let logsHref = '/logs';
+            try {
+                const urlEventId = getEventIdFromUrl();
+                const lsEventId = localStorage.getItem('activeEventSession');
+                const eventId = urlEventId || lsEventId;
+                if (eventId) logsHref = `/event/${eventId}/logs`;
+            } catch (_) {}
+            dropdownItems += `<a href="${logsHref}" class="dropdown-item">Logs</a>`;
             dropdownItems += `<a href="/admin" class="dropdown-item">Admin settings</a>`;
         }
         

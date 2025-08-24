@@ -504,13 +504,20 @@ class RaidLogsManager {
             // First, check snapshot/lock status
             await this.fetchSnapshotStatus();
 
-            // Fetch log data, raid statistics, abilities data, mana potions data, runes data, interrupts data, disarms data, sunder data, curse data, player streaks, and reward settings in parallel
+            // To avoid exhausting browser/Heroku resources, fetch in small batches instead of all-at-once
+            // Batch 1: core datasets and light endpoints
             await Promise.all([
-                this.fetchLogData(), // Now includes backend role enhancement via roster_overrides
+                this.fetchLogData(),
                 this.fetchRaidStats(),
+                this.fetchRewardSettings(),
+                this.fetchCurrentUser(),
+                this.fetchPrimaryRoles().then(roles => this.primaryRoles = roles)
+            ]);
+
+            // Batch 2: combat/points datasets
+            await Promise.all([
                 this.fetchAbilitiesData(),
                 this.fetchManaPotionsData(),
-                this.fetchRocketHelmetData(),
                 this.fetchRunesData(),
                 this.fetchInterruptsData(),
                 this.fetchDisarmsData(),
@@ -524,18 +531,20 @@ class RaidLogsManager {
                 this.fetchPolymorphData(),
                 this.fetchPowerInfusionData(),
                 this.fetchDecursesData(),
+                this.fetchVoidDamageData()
+            ]);
+
+            // Batch 3: auxiliary datasets and archives
+            await Promise.all([
                 this.fetchShameData(),
                 this.fetchPlayerStreaksData(),
                 this.fetchGuildMembersData(),
-                this.fetchRewardSettings(),
                 this.fetchWorldBuffsData(),
                 this.fetchFrostResistanceData(),
                 this.fetchWorldBuffsArchiveUrl(),
                 this.fetchFrostResistanceArchiveUrl(),
                 this.fetchManualRewardsData(),
-                this.fetchCurrentUser(),
-                this.fetchPrimaryRoles().then(roles => this.primaryRoles = roles),
-                this.fetchVoidDamageData(),
+                this.fetchRocketHelmetData(),
                 this.fetchGoldPot(),
                 this.fetchBigBuyerData()
             ]);
