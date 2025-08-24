@@ -5,6 +5,8 @@ class GoldPotManager {
         this.allPlayers = [];
         this.filteredPlayers = [];
         this.currentEventId = null;
+        // Map: lowercase character name -> realm (server)
+        this.nameToRealm = new Map();
         // Datasets for point computation
         this.logData = [];
         this.rewardSettings = {};
@@ -105,6 +107,8 @@ class GoldPotManager {
             // Store and display players
             // Fetch raidlogs datasets needed to compute points
             await this.fetchRaidlogsDatasets();
+            // Fetch realms from stored WCL summary JSON for this event
+            await this.fetchNameRealms();
             // Compute manual gold payouts (from manual rewards marked as gold)
             try {
                 const arr = Array.isArray(this.datasets.manualRewardsData) ? this.datasets.manualRewardsData : [];
@@ -570,7 +574,12 @@ class GoldPotManager {
         const totalPointsEl = document.getElementById('totalPoints');
         const totalGoldEl = document.getElementById('totalGold');
         if (playersCountEl) playersCountEl.textContent = (players?.length||0).toLocaleString();
-        if (playersTooltip) playersTooltip.innerHTML = players.map(p=>`<div>${p.character_name}</div>`).join('');
+        if (playersTooltip) playersTooltip.innerHTML = players.map(p=>{
+            const key = String(p.character_name||'').trim().toLowerCase();
+            const realm = this.nameToRealm.get(key);
+            const nm = p.character_name;
+            return `<div title="${realm?`${nm}-${realm}`:nm}">${nm}</div>`;
+        }).join('');
         const card = document.getElementById('cardPlayers');
         if (card && playersTooltip) {
             let timer=null; let shown=false;
@@ -647,12 +656,14 @@ class GoldPotManager {
             const bg = classColor(p.character_class);
             const icon = specIcon(p.character_class);
             const rows = this.buildPlayerBreakdownRows(key);
+            const realm = this.nameToRealm.get(String(p.character_name||'').trim().toLowerCase());
+            const title = realm ? `${p.character_name}-${realm}` : p.character_name;
             cards.push(`
                 <div class="player-stack" style="display:flex; flex-direction:column; gap:0; align-items:center;">
                     <div class="player-card" style="background:${bg}; display:flex; align-items:center; border-bottom-left-radius:0; border-bottom-right-radius:0; margin-bottom:0;">
                         <img src="${icon}" alt="${p.character_class}" width="50" height="50" style="border-radius:6px; flex-shrink:0; margin-top:0; margin-right:12px;">
                         <div style="display:flex; flex-direction:column; color:#111; margin-top:0; justify-content:center;">
-                            <div style="font-weight:900; font-size:20px; line-height:1.1; margin-top:2px;">${p.character_name}</div>
+                            <div style="font-weight:900; font-size:20px; line-height:1.1; margin-top:2px;" title="${title}">${p.character_name}</div>
                         </div>
                     </div>
                     <div class="player-breakdown" style="background:${bg}; border-top-left-radius:0; border-top-right-radius:0; border-bottom-left-radius:12px; border-bottom-right-radius:12px; margin-top:0; padding:10px 12px 62px 12px; position:relative;">
@@ -679,6 +690,49 @@ class GoldPotManager {
         this.populateGargulExport(sorted);
     }
 
+    // Build name -> realm mapping from stored WCL summary JSON for this event
+    async fetchNameRealms(){
+        this.nameToRealm = new Map();
+        try {
+            const resp = await fetch(`/api/event-endpoints-json/${this.currentEventId}`);
+            if (!resp.ok) return;
+            const body = await resp.json();
+            const d = body && body.data;
+            const wcl = d && d.wcl_summary_json;
+            const fights = d && d.fights_json;
+            if (!wcl) return;
+            // Our stored shape is an object keyed by event (e.g., warcraft_logs_role_event_1) → { summary: { composition: [...] } }
+            const collectFromArray = (arr)=>{
+                (arr||[]).forEach(p => {
+                    const name = String(p?.name||'').trim();
+                    const server = String(p?.server||'').trim();
+                    if (name && server) this.nameToRealm.set(name.toLowerCase(), server);
+                });
+            };
+            if (Array.isArray(wcl)) {
+                // Fallback: direct array of players
+                collectFromArray(wcl);
+            } else if (wcl && typeof wcl === 'object') {
+                Object.values(wcl).forEach(ev => {
+                    const comp = ev?.summary?.composition || ev?.composition || ev?.summary?.participants || ev?.participants || [];
+                    collectFromArray(comp);
+                });
+            }
+            // Extra fallback: fights JSON friendlies often contains server
+            if (fights && Array.isArray(fights.friendlies)) {
+                collectFromArray(fights.friendlies);
+            }
+            console.log('[Gold] Built name→realm map entries:', this.nameToRealm.size);
+        } catch {}
+    }
+
+    getDisplayNameWithRealm(name){
+        const raw = String(name||'').trim();
+        if (!raw) return '';
+        const realm = this.nameToRealm.get(raw.toLowerCase());
+        return realm ? `${raw}-${realm}` : raw;
+    }
+
     populateGargulExport(sortedPlayers){
         try {
             const ta = document.getElementById('gargulExport');
@@ -688,7 +742,9 @@ class GoldPotManager {
             sortedPlayers.forEach(p => {
                 const key = String(p.character_name||'').trim().toLowerCase();
                 const totals = this.playerTotals.get(key) || { gold: 0 };
-                lines.push(`${p.character_name},${Number(totals.gold||0)}`);
+                const realm = this.nameToRealm.get(key);
+                const nameOut = realm ? `${p.character_name}-${realm}` : p.character_name;
+                lines.push(`${nameOut},${Number(totals.gold||0)}`);
             });
             ta.value = lines.join('\n');
 

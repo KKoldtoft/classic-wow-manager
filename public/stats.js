@@ -1,4 +1,5 @@
 (function StatsPage() {
+    let fullItems = [];
     async function fetchUser() {
         try { const r = await fetch('/user'); return r.ok ? r.json() : { loggedIn:false }; } catch { return { loggedIn:false }; }
     }
@@ -168,11 +169,125 @@
                 if (el) el.innerHTML = '<div class="no-data-message"><div class="no-data-content"><i class="fas fa-chart-line"></i><h3>No data</h3><p>No loot sales found.</p></div></div>';
                 return;
             }
-            renderList(items);
-            renderChart(items);
+            fullItems = items;
+            wireControls();
+            applyFiltersAndRender();
+            await loadGoldpots();
         } catch (e) {
             const el = document.querySelector('#top-item-chart');
             if (el) el.innerHTML = `<div class="error-display"><div class="error-content"><h3>Error</h3><p>${(e && e.message) || 'Failed to load stats'}</p></div></div>`;
+        }
+    }
+
+    function wireControls() {
+        const hide = document.getElementById('hideOver100k');
+        if (hide) hide.addEventListener('change', applyFiltersAndRender);
+    }
+
+    function applyFiltersAndRender() {
+        const hide = document.getElementById('hideOver100k');
+        const over = hide && hide.checked;
+        let items = fullItems.slice();
+        if (over) {
+            items = items.filter(it => {
+                const avg = it.points.length ? (it.points.reduce((a,b)=>a + (Number(b.y)||0),0) / it.points.length) : 0;
+                return avg <= 100000;
+            });
+        }
+        // Clear chart containers
+        const chartEl = document.getElementById('top-item-chart');
+        if (chartEl) chartEl.innerHTML = '';
+        renderList(items);
+        renderChart(items);
+    }
+
+    function renderGoldpotList(series) {
+        const list = document.getElementById('goldpot-list');
+        if (!list) return;
+        list.innerHTML = '';
+        const colors = ['#f59e0b','#10b981','#60a5fa'];
+        series.forEach((s, idx) => {
+            const avg = s.points.length ? Math.round(s.points.reduce((a,b)=>a + (Number(b.y)||0),0) / s.points.length) : 0;
+            const div = document.createElement('div');
+            div.className = 'hall-of-fame-item';
+            div.dataset.seriesIndex = String(idx);
+            div.innerHTML = `
+                <div class="hall-of-fame-content">
+                    <div class="item-icon-small item-icon-large" style="width:54px;height:54px;margin-right:10px;border-radius:6px;background:${colors[idx%colors.length]};"></div>
+                    <div class="hall-of-fame-details">
+                        <div class="hall-of-fame-item-name" style="color:#a335ee;">${s.name}</div>
+                        <div class="hall-of-fame-price" style="color:#FFD700;">${avg}g (average size)</div>
+                        <div class="hall-of-fame-info">${s.points.length} events</div>
+                    </div>
+                </div>
+            `;
+            div.addEventListener('mouseenter', () => emphasizeGoldSeries(idx));
+            div.addEventListener('mouseleave', () => resetGoldEmphasis());
+            list.appendChild(div);
+        });
+    }
+
+    function renderGoldpotChart(series) {
+        const el = document.getElementById('goldpot-chart');
+        if (!el) return;
+        const colors = ['#f59e0b','#10b981','#60a5fa'];
+        const apexSeries = series.map((s, i) => ({ name: s.name, data: s.points, color: colors[i%colors.length] }));
+        const chart = new ApexCharts(el, {
+            chart: { type: 'line', height: 520, foreColor: '#e0e0e0', background: '#1e1e1e', toolbar: { show: true }, zoom: { enabled: true } },
+            theme: { mode: 'dark' },
+            stroke: { width: 3, curve: 'straight' },
+            grid: { borderColor: '#333' },
+            legend: { show: false },
+            xaxis: { type: 'datetime', labels: { datetimeUTC: false, style: { colors: '#a0a0a0' } } },
+            yaxis: { labels: { formatter: (v)=>`${formatCurrency(Math.round(v))}g`, style: { colors: '#a0a0a0' } } },
+            markers: { size: 4 },
+            tooltip: { theme: 'dark', x: { format: 'dd MMM yyyy HH:mm' }, y: { formatter: (v)=>`${formatCurrency(Math.round(v))} gold` } },
+            series: apexSeries
+        });
+        chart.render();
+        window.__goldChart = chart;
+    }
+
+    function emphasizeGoldSeries(activeIdx) {
+        const chart = window.__goldChart;
+        if (!chart || !chart.w || !chart.w.globals || !chart.w.globals.dom) return;
+        const total = (chart.w.config.series || []).length;
+        for (let i = 0; i < total; i++) {
+            const opacity = i === activeIdx ? 1 : 0.15;
+            try {
+                const paths = chart.w.globals.dom.baseEl.querySelectorAll(`.apexcharts-series[data\\:realIndex="${i}"] path`);
+                paths.forEach(n => n.style.opacity = String(opacity));
+                const markers = chart.w.globals.dom.baseEl.querySelectorAll(`.apexcharts-series[data\\:realIndex="${i}"] .apexcharts-marker, .apexcharts-series[data\\:realIndex="${i}"] circle.apexcharts-marker`);
+                markers.forEach(n => n.style.opacity = String(opacity));
+            } catch {}
+        }
+    }
+
+    function resetGoldEmphasis() {
+        const chart = window.__goldChart;
+        if (!chart || !chart.w || !chart.w.globals || !chart.w.globals.dom) return;
+        const total = (chart.w.config.series || []).length;
+        for (let i = 0; i < total; i++) {
+            try {
+                const paths = chart.w.globals.dom.baseEl.querySelectorAll(`.apexcharts-series[data\\:realIndex="${i}"] path`);
+                paths.forEach(n => n.style.opacity = '1');
+                const markers = chart.w.globals.dom.baseEl.querySelectorAll(`.apexcharts-series[data\\:realIndex="${i}"] .apexcharts-marker, .apexcharts-series[data\\:realIndex="${i}"] circle.apexcharts-marker`);
+                markers.forEach(n => n.style.opacity = '1');
+            } catch {}
+        }
+    }
+
+    async function loadGoldpots() {
+        try {
+            const r = await fetch('/api/stats/goldpot-history');
+            const j = await r.json();
+            if (!r.ok || !j || !j.success) throw new Error(j && j.message || 'Failed to load gold pots');
+            const series = Array.isArray(j.series) ? j.series : [];
+            renderGoldpotList(series);
+            renderGoldpotChart(series);
+        } catch (e) {
+            const el = document.getElementById('goldpot-chart');
+            if (el) el.innerHTML = `<div class="error-display"><div class=\"error-content\"><h3>Error</h3><p>${(e && e.message) || 'Failed to load gold pots'}</p></div></div>`;
         }
     }
 

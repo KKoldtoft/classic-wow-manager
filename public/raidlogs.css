@@ -179,6 +179,14 @@ body.stats #top-item-prices-section .section-header {
     background: linear-gradient(135deg, #a335ee 0%, #7b1fa2 100%);
 }
 
+/* Stats: apply same accent to goldpot section */
+body.stats #goldpot-sizes-section {
+    --panel-accent: #a335ee;
+}
+body.stats #goldpot-sizes-section .section-header {
+    background: linear-gradient(135deg, #a335ee 0%, #7b1fa2 100%);
+}
+
 /* Stats stacked layout: chart then 3-column grid of items */
 body.stats .stats-stack {
     display: flex;
@@ -222,6 +230,18 @@ body.stats .stats-item-chart .apexcharts-tooltip-dark a {
     gap: 30px;
     justify-content: center;
     flex-wrap: wrap;
+}
+
+/* Stats page: stack panels vertically to full width */
+body.stats .rankings-container {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+    justify-content: flex-start;
+    align-items: stretch;
+}
+body.stats .rankings-container .rankings-section {
+    width: 100%;
 }
 
 .section-header {
@@ -496,6 +516,12 @@ body.stats .stats-item-chart .apexcharts-tooltip-dark a {
 .rankings-section.runes .amount-value {
     color: #ff6b35;
     font-size: 1.4em;
+}
+
+/* Rocket Helmet specific styling */
+.rankings-section.rocket-helmet-section { --panel-accent: #ff6b35; }
+.rankings-section.rocket-helmet-section .section-header {
+    background: linear-gradient(135deg, #ff6b35 0%, #e55a2b 100%);
 }
 
 /* Interrupts specific styling */

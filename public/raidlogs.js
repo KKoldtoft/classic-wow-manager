@@ -505,6 +505,7 @@ class RaidLogsManager {
                 this.fetchRaidStats(),
                 this.fetchAbilitiesData(),
                 this.fetchManaPotionsData(),
+                this.fetchRocketHelmetData(),
                 this.fetchRunesData(),
                 this.fetchInterruptsData(),
                 this.fetchDisarmsData(),
@@ -881,6 +882,48 @@ class RaidLogsManager {
             // Don't fail the whole page if mana potions fail - just show empty data
             this.manaPotionsData = [];
             this.manaPotionsSettings = { threshold: 10, points_per_potion: 3, max_points: 10 }; // fallback
+        }
+    }
+
+    async fetchRocketHelmetData() {
+        console.log(`🚀 Fetching Rocket Helmet data for event: ${this.activeEventId}`);
+        try {
+            const resp = await fetch(`/api/event-endpoints-json/${this.activeEventId}`);
+            if (!resp.ok) throw new Error(`Failed to fetch event endpoints json: ${resp.status}`);
+            const body = await resp.json();
+            const d = body && body.data;
+            const w = d && d.wcl_summary_json;
+            const users = new Set();
+            const wanted = 'Goblin Rocket Helmet';
+            function walk(node){
+                if(!node||typeof node!=='object') return;
+                if(node.combatantInfo && Array.isArray(node.combatantInfo.gear) && (node.name||node.playerName||node.characterName)){
+                    const gear = node.combatantInfo.gear;
+                    if(gear.some(it=>it&&it.name===wanted)){
+                        users.add(String(node.name||node.playerName||node.characterName));
+                    }
+                }
+                if(Array.isArray(node)){
+                    node.forEach(walk);
+                } else {
+                    Object.values(node).forEach(walk);
+                }
+            }
+            walk(w);
+            // Normalize into ranking objects with fixed +5 points; attach class from friendlies list if available
+            const fightsJson = d && d.fights_json;
+            const friendlies = (fightsJson && Array.isArray(fightsJson.friendlies)) ? fightsJson.friendlies : [];
+            const nameToClass = new Map();
+            if (Array.isArray(friendlies)) {
+                friendlies.forEach(f => {
+                    if (f && f.name && f.type) nameToClass.set(String(f.name), String(f.type));
+                });
+            }
+            this.rocketHelmetData = Array.from(users).map(name => ({ character_name: name, character_class: nameToClass.get(name) || 'Unknown', points: 5 }));
+            console.log('🚀 Rocket Helmet users:', this.rocketHelmetData);
+        } catch (err) {
+            console.error('Error fetching Rocket Helmet data:', err);
+            this.rocketHelmetData = [];
         }
     }
 
@@ -1604,6 +1647,16 @@ class RaidLogsManager {
                     const nm = String(player.character_name || '').toLowerCase();
                     if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
+                });
+            }
+
+            // Add points from Goblin Rocket Helmet (fixed +5)
+            if (this.rocketHelmetData && Array.isArray(this.rocketHelmetData)) {
+                this.rocketHelmetData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
+                    const pts = 5;
+                    if (pts > 0) positivePoints += pts; else if (pts < 0) negativePoints += Math.abs(pts);
                 });
             }
             
@@ -2342,6 +2395,7 @@ class RaidLogsManager {
         this.displayWorldBuffsCopyRankings(this.worldBuffsData);
         this.displayAbilitiesRankings(this.abilitiesData);
         this.displayManaPotionsRankings(this.manaPotionsData);
+        this.displayRocketHelmetRankings(this.rocketHelmetData);
         this.displayRunesRankings(this.runesData);
         this.displayInterruptsRankings(this.interruptsData);
         this.displayDisarmsRankings(this.disarmsData);
@@ -2409,6 +2463,7 @@ class RaidLogsManager {
             { key: 'polymorph', name: 'Polymorph', containerId: 'polymorph-list' },
             { key: 'power_infusion', name: 'Power Infusion', containerId: 'power-infusion-list' },
             { key: 'decurses', name: 'Decurses', containerId: 'decurses-list' },
+            { key: 'rocket_helmet', name: 'Goblin Rocket Helmet', containerId: 'rocket-helmet-list' },
             { key: 'frost_resistance', name: 'Frost Resistance', containerId: 'world-buffs-list' },
             { key: 'world_buffs_copy', name: 'World Buffs', containerId: 'world-buffs-copy-list' },
             { key: 'void_damage', name: 'Avoidable Void Damage', containerId: 'void-damage-list' },
@@ -3888,6 +3943,51 @@ class RaidLogsManager {
                     </div>
                     <div class="performance-amount" title="${player.potions_used} potions used, ${player.extra_potions} above threshold of ${this.manaPotionsSettings.threshold}">
                         <div class="amount-value">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    displayRocketHelmetRankings(players) {
+        const container = document.getElementById('rocket-helmet-list');
+        if (!container) return;
+        const section = container.closest('.rankings-section');
+        if (section) section.classList.add('rocket-helmet-section');
+
+        const users = (players || []).slice().sort((a, b) => a.character_name.localeCompare(b.character_name));
+        if (users.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-helmet-safety"></i>
+                    <p>No Rocket Helmet users detected</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = users.map((player, idx) => {
+            const position = idx + 1;
+            const name = player.character_name;
+            const cls = this.normalizeClassName(player.character_class || 'unknown');
+            const fillPercentage = 100; // fixed points; full bar
+            const points = 5;
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${cls}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${this.getClassIconHtml(player.character_class)}${name}
+                        </div>
+                        <div class="character-details" title="Used Goblin Rocket Helmet">
+                            Goblin Rocket Helmet
+                        </div>
+                    </div>
+                    <div class="performance-amount" title="Fixed award for Rocket Helmet usage">
+                        <div class="amount-value">${points}</div>
                         <div class="points-label">points</div>
                     </div>
                 </div>

@@ -685,6 +685,22 @@ class WoWLogsAnalyzer {
             const response = await fetch(`/api/player-role-mapping/${eventId}`);
             const result = await response.json();
             
+            // Hydrate stored endpoint JSON blobs so modal shows persisted data even after reload
+            try {
+                const jsonResp = await fetch(`/api/event-endpoints-json/${eventId}`);
+                if (jsonResp.ok) {
+                    const jsonBody = await jsonResp.json();
+                    if (jsonBody && jsonBody.success && jsonBody.data) {
+                        const d = jsonBody.data;
+                        if (d.wcl_summary_json) this.rawEndpointData = d.wcl_summary_json;
+                        if (d.event_roles_json) this.eventRolesData = d.event_roles_json;
+                        if (d.fights_json) this.lastFightsData = d.fights_json;
+                    }
+                }
+            } catch (e) {
+                console.warn('⚠️ [ROLE MAPPING] Failed to load stored endpoint JSON:', e);
+            }
+            
             if (result.success && result.data) {
                 this.showRoleMappingModal(result.data, eventId);
             } else {
@@ -756,6 +772,54 @@ class WoWLogsAnalyzer {
                 overlay.querySelector(`#${tabName}-tab`).classList.add('active');
             });
         });
+
+        // Copy JSON buttons inside endpoint data scroll areas
+        overlay.querySelectorAll('.endpoint-data-scroll .copy-json-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const container = e.currentTarget.closest('.endpoint-data-scroll');
+                const pre = container?.querySelector('pre');
+                if (!pre) return;
+                try {
+                    await navigator.clipboard.writeText(pre.textContent || '');
+                    // Brief feedback
+                    const original = btn.textContent;
+                    btn.textContent = 'Copied!';
+                    setTimeout(() => { btn.textContent = original; }, 1200);
+                } catch (err) {
+                    // Fallback: select and copy
+                    const range = document.createRange();
+                    range.selectNodeContents(pre);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                    try { document.execCommand('copy'); } catch {}
+                    sel.removeAllRanges();
+                }
+            });
+        });
+
+        // Persist raw JSON blobs for this event (if available)
+        try {
+            const eventIdSafe = String(eventId || this.getActiveEventSession() || '').trim();
+            if (eventIdSafe) {
+                const payload = {
+                    wclSummaryJson: this.rawEndpointData || null,
+                    eventRolesJson: this.eventRolesData || null,
+                    fightsJson: this.lastFightsData || null
+                };
+                // Only send if we have at least one blob
+                if (payload.wclSummaryJson || payload.eventRolesJson || payload.fightsJson) {
+                    fetch(`/api/event-endpoints-json/${encodeURIComponent(eventIdSafe)}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    }).catch(err => console.warn('⚠️ Failed to persist event endpoints JSON:', err));
+                }
+            }
+        } catch (err) {
+            console.warn('⚠️ Failed to persist event endpoints JSON:', err);
+        }
 
         document.body.appendChild(overlay);
     }
@@ -910,6 +974,7 @@ class WoWLogsAnalyzer {
                 <div class="endpoint-section">
                     <h4>🔍 Warcraft Logs Summary Endpoint Data</h4>
                     <div class="endpoint-data-scroll">
+                        <button class="copy-json-btn" type="button" aria-label="Copy JSON" title="Copy JSON">Copy</button>
                         <pre>${JSON.stringify(this.rawEndpointData, null, 2)}</pre>
                     </div>
                 </div>
@@ -922,6 +987,7 @@ class WoWLogsAnalyzer {
                 <div class="endpoint-section">
                     <h4>🎯 Processed Event Roles Data</h4>
                     <div class="endpoint-data-scroll">
+                        <button class="copy-json-btn" type="button" aria-label="Copy JSON" title="Copy JSON">Copy</button>
                         <pre>${JSON.stringify(this.eventRolesData, null, 2)}</pre>
                     </div>
                 </div>
@@ -934,6 +1000,7 @@ class WoWLogsAnalyzer {
                 <div class="endpoint-section">
                     <h4>⚔️ Fights Endpoint Data</h4>
                     <div class="endpoint-data-scroll">
+                        <button class="copy-json-btn" type="button" aria-label="Copy JSON" title="Copy JSON">Copy</button>
                         <pre>${JSON.stringify(this.lastFightsData, null, 2)}</pre>
                     </div>
                 </div>
@@ -5004,6 +5071,27 @@ class WoWLogsAnalyzer {
 
             // Run the existing analyzeLog function (which now includes automatch)
             await this.analyzeLog();
+            
+            // Persist raw endpoint JSON blobs immediately after Step 1 completes analysis
+            try {
+                const eventIdSafe = String(this?.workflowState?.eventId || this.getActiveEventSession() || '').trim();
+                if (eventIdSafe) {
+                    const payload = {
+                        wclSummaryJson: this.rawEndpointData || null,
+                        eventRolesJson: this.eventRolesData || null,
+                        fightsJson: this.lastFightsData || null
+                    };
+                    if (payload.wclSummaryJson || payload.eventRolesJson || payload.fightsJson) {
+                        await fetch(`/api/event-endpoints-json/${encodeURIComponent(eventIdSafe)}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                    }
+                }
+            } catch (persistErr) {
+                console.warn('⚠️ [WORKFLOW] Failed to persist event endpoints JSON after Step 1:', persistErr);
+            }
             
             // Check for unmatched players after automatch
             const unmatchedCount = this.countUnmatchedPlayers();

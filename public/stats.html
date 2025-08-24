@@ -47,11 +47,31 @@
                     <div class="section-header">
                         <h2><i class="fas fa-line-chart"></i> Top 15 item prices over time</h2>
                         <p>The 15 most expensive items ever sold, with sale history</p>
+                        <div class="stats-controls" style="margin-top:8px; display:flex; gap:16px; justify-content:center; align-items:center;">
+                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                <input type="checkbox" id="hideOver100k" style="transform: scale(1.1);" checked>
+                                <span>Hide items with average price over 100000</span>
+                            </label>
+                        </div>
                     </div>
                     <div class="rankings-list" style="gap:0;">
                         <div class="stats-stack">
                             <div id="top-item-chart" class="stats-item-chart"></div>
                             <div id="top-item-list" class="stats-item-list hall-of-fame-list"></div>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- Gold pot sizes over time -->
+                <section class="rankings-section healing" id="goldpot-sizes-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-coins"></i> Gold pot sizes over time</h2>
+                        <p>Total pot per raid over time</p>
+                    </div>
+                    <div class="rankings-list" style="gap:0;">
+                        <div class="stats-stack">
+                            <div id="goldpot-chart" class="stats-item-chart"></div>
+                            <div id="goldpot-list" class="stats-item-list hall-of-fame-list"></div>
                         </div>
                     </div>
                 </section>

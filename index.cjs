@@ -254,6 +254,9 @@ initializeRPBTrackingTable();
 // Initialize Raid-Helper events cache table
 initializeRaidHelperEventsCacheTable();
 
+    // Initialize event endpoints JSON storage table
+initializeEventEndpointsJsonTable();
+
     // Initialize raid durations table
 initializeRaidDurationsTable();
 
@@ -283,6 +286,28 @@ async function initializeEventsCacheTable() {
     console.log('✅ Events cache table initialized');
   } catch (error) {
     console.error('❌ Error creating events cache table:', error);
+  }
+}
+
+// Function to create per-event endpoints JSON storage table
+async function initializeEventEndpointsJsonTable() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS event_endpoints_json (
+        event_id VARCHAR(50) PRIMARY KEY,
+        wcl_summary_json JSONB,
+        event_roles_json JSONB,
+        fights_json JSONB,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_event_endpoints_updated ON event_endpoints_json(updated_at)
+    `);
+    console.log('✅ Event endpoints JSON table initialized');
+  } catch (error) {
+    console.error('❌ Error creating event_endpoints_json table:', error);
   }
 }
 
@@ -1250,8 +1275,8 @@ async function requireManagement(req, res, next) {
 
 // --- Express Routes ---
 
-// Add the JSON middleware to parse request bodies
-app.use(express.json());
+// Add the JSON middleware to parse request bodies (raise limit for large JSON blobs)
+app.use(express.json({ limit: '15mb' }));
 
 // 🎯 Discord API endpoints removed - we now get channel names directly from Raid-Helper API!
 
@@ -6691,6 +6716,47 @@ app.post('/api/player-role-mapping/:eventId/store', async (req, res) => {
     }
 });
 
+// Store raw endpoints JSON blobs for an event
+app.post('/api/event-endpoints-json/:eventId', express.json({ limit: '10mb' }), async (req, res) => {
+  const { eventId } = req.params;
+  const { wclSummaryJson, eventRolesJson, fightsJson } = req.body || {};
+  if (!eventId) return res.status(400).json({ success: false, message: 'Missing eventId' });
+  try {
+    await pool.query(`
+      INSERT INTO event_endpoints_json (event_id, wcl_summary_json, event_roles_json, fights_json, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, NOW(), NOW())
+      ON CONFLICT (event_id)
+      DO UPDATE SET 
+        wcl_summary_json = COALESCE(EXCLUDED.wcl_summary_json, event_endpoints_json.wcl_summary_json),
+        event_roles_json = COALESCE(EXCLUDED.event_roles_json, event_endpoints_json.event_roles_json),
+        fights_json = COALESCE(EXCLUDED.fights_json, event_endpoints_json.fights_json),
+        updated_at = NOW()
+    `, [String(eventId), wclSummaryJson ? JSON.stringify(wclSummaryJson) : null, eventRolesJson ? JSON.stringify(eventRolesJson) : null, fightsJson ? JSON.stringify(fightsJson) : null]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('❌ [EVENT JSON STORE] Failed to upsert JSON blobs:', err);
+    res.status(500).json({ success: false, message: 'Failed to store JSON', error: String(err && err.message ? err.message : err) });
+  }
+});
+
+// Retrieve raw endpoints JSON blobs for an event
+app.get('/api/event-endpoints-json/:eventId', async (req, res) => {
+  const { eventId } = req.params;
+  if (!eventId) return res.status(400).json({ success: false, message: 'Missing eventId' });
+  try {
+    const result = await pool.query(`
+      SELECT event_id, wcl_summary_json, event_roles_json, fights_json, created_at, updated_at
+      FROM event_endpoints_json
+      WHERE event_id = $1
+    `, [String(eventId)]);
+    if (result.rows.length === 0) return res.json({ success: true, data: null });
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    console.error('❌ [EVENT JSON GET] Failed to retrieve JSON blobs:', err);
+    res.status(500).json({ success: false, message: 'Failed to retrieve JSON', error: String(err && err.message ? err.message : err) });
+  }
+});
+
 // Retrieve player role mapping data for an event
 app.get('/api/player-role-mapping/:eventId', async (req, res) => {
     const { eventId } = req.params;
@@ -9171,72 +9237,106 @@ app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, express.json(
     try {
         client = await pool.connect();
 
-        // If already locked, short-circuit
-        const existing = await client.query('SELECT 1 FROM rewards_snapshot_events WHERE event_id = $1', [eventId]);
-        if (existing.rows.length > 0) {
-            return res.json({ success: true, message: 'Already locked', locked: true });
-        }
-
         await client.query('BEGIN');
+
+        // Ensure snapshot row exists; if already locked, do nothing
         await client.query(
             `INSERT INTO rewards_snapshot_events (event_id, locked_by_id, locked_by_name)
-             VALUES ($1, $2, $3)`,
+             VALUES ($1, $2, $3)
+             ON CONFLICT (event_id) DO NOTHING`,
             [eventId, lockedById, lockedByName]
         );
 
         if (entries.length > 0) {
-            // Bulk insert entries using UNNEST columns
-            const cols = {
-                panel_key: [], panel_name: [], discord_user_id: [], character_name: [], character_class: [],
-                ranking_number_original: [], point_value_original: [], character_details_original: [],
-                primary_numeric_original: [], aux_json: []
-            };
-            for (const e of entries) {
-                cols.panel_key.push(e.panel_key || null);
-                cols.panel_name.push(e.panel_name || null);
-                cols.discord_user_id.push(e.discord_user_id || null);
-                cols.character_name.push(e.character_name || null);
-                cols.character_class.push(e.character_class || null);
-                cols.ranking_number_original.push(Number.isFinite(e.ranking_number_original) ? e.ranking_number_original : null);
-                cols.point_value_original.push(e.point_value_original ?? 0);
-                cols.character_details_original.push(e.character_details_original || null);
-                cols.primary_numeric_original.push(e.primary_numeric_original ?? null);
-                cols.aux_json.push(e.aux_json ? JSON.stringify(e.aux_json) : null);
+            // If snapshot was just created, we can bulk insert; otherwise, insert missing rows one-by-one
+            const wasExisting = (await client.query('SELECT 1 FROM rewards_snapshot_events WHERE event_id = $1', [eventId])).rows.length > 0;
+            if (wasExisting) {
+                for (const e of entries) {
+                    await client.query(
+                        `INSERT INTO rewards_and_deductions_points (
+                            event_id, panel_key, panel_name, discord_user_id, character_name, character_class,
+                            ranking_number_original, point_value_original, character_details_original,
+                            primary_numeric_original, aux_json
+                        )
+                        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM rewards_and_deductions_points r
+                            WHERE r.event_id = $1 AND r.panel_key = $2
+                              AND (
+                                   (r.discord_user_id IS NOT NULL AND r.discord_user_id = $4)
+                                OR (r.discord_user_id IS NULL AND r.character_name = $5)
+                              )
+                              AND (r.ranking_number_original IS NOT DISTINCT FROM $7)
+                        )`,
+                        [
+                            eventId,
+                            e.panel_key || null,
+                            e.panel_name || null,
+                            e.discord_user_id || null,
+                            e.character_name || null,
+                            e.character_class || null,
+                            Number.isFinite(e.ranking_number_original) ? e.ranking_number_original : null,
+                            e.point_value_original ?? 0,
+                            e.character_details_original || null,
+                            e.primary_numeric_original ?? null,
+                            e.aux_json ? JSON.stringify(e.aux_json) : null
+                        ]
+                    );
+                }
+            } else {
+                // Bulk insert entries using UNNEST columns
+                const cols = {
+                    panel_key: [], panel_name: [], discord_user_id: [], character_name: [], character_class: [],
+                    ranking_number_original: [], point_value_original: [], character_details_original: [],
+                    primary_numeric_original: [], aux_json: []
+                };
+                for (const e of entries) {
+                    cols.panel_key.push(e.panel_key || null);
+                    cols.panel_name.push(e.panel_name || null);
+                    cols.discord_user_id.push(e.discord_user_id || null);
+                    cols.character_name.push(e.character_name || null);
+                    cols.character_class.push(e.character_class || null);
+                    cols.ranking_number_original.push(Number.isFinite(e.ranking_number_original) ? e.ranking_number_original : null);
+                    cols.point_value_original.push(e.point_value_original ?? 0);
+                    cols.character_details_original.push(e.character_details_original || null);
+                    cols.primary_numeric_original.push(e.primary_numeric_original ?? null);
+                    cols.aux_json.push(e.aux_json ? JSON.stringify(e.aux_json) : null);
+                }
+
+                const query = `
+                    INSERT INTO rewards_and_deductions_points (
+                        event_id, panel_key, panel_name, discord_user_id, character_name, character_class,
+                        ranking_number_original, point_value_original, character_details_original,
+                        primary_numeric_original, aux_json
+                    )
+                    SELECT
+                        $1::varchar,
+                        unnest($2::varchar[]),
+                        unnest($3::varchar[]),
+                        unnest($4::varchar[]),
+                        unnest($5::varchar[]),
+                        unnest($6::varchar[]),
+                        unnest($7::int[]),
+                        unnest($8::numeric[]),
+                        unnest($9::text[]),
+                        unnest($10::numeric[]),
+                        unnest($11::jsonb[])
+                `;
+
+                await client.query(query, [
+                    eventId,
+                    cols.panel_key,
+                    cols.panel_name,
+                    cols.discord_user_id,
+                    cols.character_name,
+                    cols.character_class,
+                    cols.ranking_number_original,
+                    cols.point_value_original,
+                    cols.character_details_original,
+                    cols.primary_numeric_original,
+                    cols.aux_json
+                ]);
             }
-
-            const query = `
-                INSERT INTO rewards_and_deductions_points (
-                    event_id, panel_key, panel_name, discord_user_id, character_name, character_class,
-                    ranking_number_original, point_value_original, character_details_original,
-                    primary_numeric_original, aux_json
-                )
-                SELECT
-                    $1::varchar,
-                    unnest($2::varchar[]),
-                    unnest($3::varchar[]),
-                    unnest($4::varchar[]),
-                    unnest($5::varchar[]),
-                    unnest($6::varchar[]),
-                    unnest($7::int[]),
-                    unnest($8::numeric[]),
-                    unnest($9::text[]),
-                    unnest($10::numeric[]),
-                    unnest($11::jsonb[])
-            `;
-
-            await client.query(query, [
-                eventId,
-                cols.panel_key,
-                cols.panel_name,
-                cols.discord_user_id,
-                cols.character_name,
-                cols.character_class,
-                cols.ranking_number_original,
-                cols.point_value_original,
-                cols.character_details_original,
-                cols.primary_numeric_original,
-                cols.aux_json
-            ]);
         }
 
         await client.query('COMMIT');
@@ -13517,6 +13617,74 @@ app.get('/api/stats/top-item-price-history', async (req, res) => {
         return res.json({ success: true, items });
     } catch (e) {
         console.error('❌ [/api/stats/top-item-price-history] Error:', e);
+        return res.status(500).json({ success: false, message: 'Internal server error' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Gold pot sizes over time for specified raid channels
+app.get('/api/stats/goldpot-history', async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
+    }
+
+    let client;
+    try {
+        client = await pool.connect();
+
+        // Ensure loot_items exists
+        const tableExists = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'loot_items'
+            ) AS exists;
+        `);
+        if (!tableExists.rows[0].exists) {
+            return res.json({ success: true, series: [] });
+        }
+
+        const channels = ['📅sunday-aqbwl', '📅thursday-nax', '📅friday-nax'];
+
+        const pots = await client.query(`
+            WITH pots AS (
+                SELECT li.event_id, SUM(COALESCE(li.gold_amount,0))::bigint AS total_gold
+                FROM loot_items li
+                GROUP BY li.event_id
+            )
+            SELECT 
+                p.event_id,
+                p.total_gold,
+                (ec.event_data->>'channelName') AS channel_name,
+                (ec.event_data->>'startTime')::bigint AS start_time
+            FROM pots p
+            LEFT JOIN raid_helper_events_cache ec ON ec.event_id = p.event_id
+            WHERE (ec.event_data->>'channelName') = ANY($1)
+            ORDER BY start_time ASC
+        `, [channels]);
+
+        const byChannel = new Map();
+        for (const row of pots.rows) {
+            const ch = row.channel_name || 'unknown';
+            if (!byChannel.has(ch)) byChannel.set(ch, []);
+            if (row.start_time) {
+                byChannel.get(ch).push({
+                    x: Number(row.start_time) * 1000,
+                    y: Number(row.total_gold) || 0,
+                    eventId: row.event_id
+                });
+            }
+        }
+
+        const series = channels.map(name => ({
+            name,
+            points: (byChannel.get(name) || []).sort((a,b)=>a.x-b.x)
+        }));
+
+        return res.json({ success: true, series });
+    } catch (e) {
+        console.error('❌ [/api/stats/goldpot-history] Error:', e);
         return res.status(500).json({ success: false, message: 'Internal server error' });
     } finally {
         if (client) client.release();

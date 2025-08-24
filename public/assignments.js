@@ -1489,6 +1489,12 @@
                 .sort((a,b)=> ((Number(b.party_id)||0)-(Number(a.party_id)||0)) || ((Number(b.slot_id)||0)-(Number(a.slot_id)||0)));
               if (magesDesc[0]) toAdd.push({ r: magesDesc[0], icon: null, text: 'Kill the webs' });
               if (magesDesc[1]) toAdd.push({ r: magesDesc[1], icon: null, text: 'Kill the webs' });
+              // NEW: 2 Shamans with highest group/slot -> Heal the webs
+              const shamansDesc = roster
+                .filter(r => String(r.class_name||'').toLowerCase() === 'shaman')
+                .sort((a,b)=> ((Number(b.party_id)||0)-(Number(a.party_id)||0)) || ((Number(b.slot_id)||0)-(Number(a.slot_id)||0)));
+              if (shamansDesc[0]) toAdd.push({ r: shamansDesc[0], icon: null, text: 'Heal the webs' });
+              if (shamansDesc[1]) toAdd.push({ r: shamansDesc[1], icon: null, text: 'Heal the webs' });
               // 5) All druids -> cleanse poison on tank
               roster.filter(r=>String(r.class_name||'').toLowerCase()==='druid')
                 .forEach(r=>toAdd.push({ r, icon: null, text: 'Cleanse poison on Tank before webspray' }));
@@ -1989,10 +1995,10 @@
                 const id2 = findByMarker('cross');
                 const id3 = findByMarker('square');
                 const id4 = findByMarker('moon');
-                if (id1) toAdd.push({ r: id1, icon: icons.skull, text: 'Tank Stalagg (Right Side)' });
-                if (id3) toAdd.push({ r: id3, icon: icons.skull, text: 'Tank Stalagg (Right Side)' });
-                if (id2) toAdd.push({ r: id2, icon: icons.cross, text: 'Tank Feugen (Left Side)' });
-                if (id4) toAdd.push({ r: id4, icon: icons.cross, text: 'Tank Feugen (Left Side)' });
+                if (id1) toAdd.push({ r: id1, icon: icons.skull, text: 'Tank Stalagg (Left Side)' });
+                if (id3) toAdd.push({ r: id3, icon: icons.skull, text: 'Tank Stalagg (Left Side)' });
+                if (id2) toAdd.push({ r: id2, icon: icons.cross, text: 'Tank Feugen (Right Side)' });
+                if (id4) toAdd.push({ r: id4, icon: icons.cross, text: 'Tank Feugen (Right Side)' });
                 if (id1) toAdd.push({ r: id1, icon: icons.skull, text: 'Tank Boss' });
 
                 // Group 8 healers → split between sides (up to 5), extra goes right; if >=2 of same class, split across sides

@@ -1012,7 +1012,7 @@ body.assignments .assignment-entry-row { border-bottom: 1px solid #333; }
 body.assignments .assignment-editable { background: #232229; color: #e8e8e8; border: 1px solid #555555; }
 body.assignments .assignment-editable::placeholder { color: #9a9a9a; }
 body.assignments .assignment-img { border: 1px solid #555555; }
-body.assignments .floating-nav { background: rgba(26, 25, 30, 0.95); border: 1px solid rgba(255,255,255,0.08); }
+body.assignments .floating-nav { background: #00233e; border: 1px solid rgba(255,255,255,0.08); }
 body.assignments .nav-buttons { border-color: rgba(255,255,255,0.12); }
 
 /* --- Raidlogs dark theme --- */

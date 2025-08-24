@@ -2305,7 +2305,7 @@
 .tab-pane {
     display: none;
     height: 100%;
-    overflow: hidden;
+    overflow: auto;
 }
 
 .tab-pane.active {
@@ -2317,6 +2317,8 @@
     flex: 1;
     overflow: hidden;
     padding: 20px;
+    display: flex;
+    flex-direction: column;
 }
 
 .role-mapping-summary {
@@ -2496,6 +2498,29 @@
     padding: 15px;
 }
 
+/* Copy button inside endpoint scroll area */
+.endpoint-data-scroll {
+    position: relative;
+}
+
+.copy-json-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    background: #444;
+    color: #fff;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.copy-json-btn:hover {
+    background: #555;
+}
+
 .endpoint-data-scroll pre {
     margin: 0;
     color: #ccc;
@@ -2600,3 +2625,17 @@
     text-align: center;
     margin-top: 20px;
 } 
+/* Ensure scroll in endpoint data sections within the role mapping modal */
+.role-mapping-content,
+.role-mapping-modal .tab-content,
+.role-mapping-table-container,
+.endpoint-data-container,
+.endpoint-sections,
+.endpoint-section {
+    min-height: 0;
+}
+
+.endpoint-data-scroll {
+    overflow-y: auto;
+    overflow-x: auto;
+}
