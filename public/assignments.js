@@ -2901,6 +2901,266 @@
         container.innerHTML = '<div class="no-data-message"><div class="no-data-content"><i class="fas fa-tools"></i><h3>Coming Soon</h3><p>This assignments page is coming soon.</p></div></div>';
         return;
       }
+      // My Assignments personal subpage
+      if (wing === 'myassignments') {
+        container.innerHTML = '';
+        // Build a panel wrapper to match style
+        const myPanel = document.createElement('div');
+        myPanel.className = 'manual-rewards-section main-panel';
+        const header = document.createElement('div');
+        header.className = 'section-header assignment-header';
+        const content = document.createElement('div');
+        content.className = 'manual-rewards-content';
+
+        // Collect all of the user's character names for this event
+        const myId = user?.id ? String(user.id) : '';
+        const myRosterRows = (Array.isArray(roster)?roster:[]).filter(r => String(r.discord_user_id||'') === myId);
+        const myNames = new Set(myRosterRows.map(r => String(r.character_name||'')));
+        // Header: primary character with class icon and class color name
+        (function renderMyHeader(){
+          try {
+            const primary = myRosterRows.slice().sort(sortByGroupSlotAsc)[0];
+            if (primary) {
+              const cls = canonicalizeClass(primary.class_name||'');
+              const color = getRosterClassColorByName(roster, primary.character_name);
+              const CLASS_ICON_URLS = {
+                warrior: 'https://wow.zamimg.com/images/wow/icons/large/classicon_warrior.jpg',
+                paladin: 'https://wow.zamimg.com/images/wow/icons/large/classicon_paladin.jpg',
+                hunter: 'https://wow.zamimg.com/images/wow/icons/large/classicon_hunter.jpg',
+                rogue: 'https://wow.zamimg.com/images/wow/icons/large/classicon_rogue.jpg',
+                priest: 'https://wow.zamimg.com/images/wow/icons/large/classicon_priest.jpg',
+                shaman: 'https://wow.zamimg.com/images/wow/icons/large/classicon_shaman.jpg',
+                mage: 'https://wow.zamimg.com/images/wow/icons/large/classicon_mage.jpg',
+                warlock: 'https://wow.zamimg.com/images/wow/icons/large/classicon_warlock.jpg',
+                druid: 'https://wow.zamimg.com/images/wow/icons/large/classicon_druid.jpg'
+              };
+              const iconUrl = CLASS_ICON_URLS[cls] || '';
+              header.innerHTML = `
+                <h2 style="display:flex;align-items:center;gap:15px;padding-left:0;margin-left:20px;">
+                  ${iconUrl ? `<img src="${iconUrl}" alt="Class" style="width:40px;height:40px;border-radius:50%;border:2px solid #fff;object-fit:cover;">` : ''}
+                  <span class="character-name" style="color:${color} !important;">${primary.character_name}</span>
+                </h2>
+              `;
+            } else {
+              header.innerHTML = '<h2>My Assignments</h2>';
+            }
+          } catch { header.innerHTML = '<h2>My Assignments</h2>'; }
+        })();
+
+        // Build flat list of visible entries assigned to me
+        const myEntries = [];
+        for (const p of panels) {
+          const visible = (Array.isArray(p.entries)?p.entries:[]).filter(en => {
+            const a = String(en.assignment||'');
+            if (a.startsWith('__HGRID__:') || a.startsWith('__SPORE__:') || a.startsWith('__KEL__:')) return false;
+            const name = String(en.character_name||'');
+            return myNames.has(name);
+          });
+          for (const en of visible) {
+            myEntries.push({
+              wing: String(p.wing||'').trim() || 'Main',
+              boss: String(p.boss||''),
+              dungeon: String(p.dungeon||''),
+              character_name: String(en.character_name||''),
+              marker_icon_url: en.marker_icon_url || '',
+              assignment: String(en.assignment||''),
+              accept_status: en.accept_status || '',
+            });
+          }
+        }
+
+        // Sort: wing order then boss order per wing
+        const WING_ORDER = ['Main','Military','Spider','Abomination','Plague','Frostwyrm_Lair'];
+        const WING_ORDER_CANON = ['main','military','spider','abomination','plague','frostwyrm_lair'];
+        const BOSS_ORDER = {
+          main: ['tanking','healing','buffs','decurse and dispel','curses and soul stones','power infusion'],
+          military: ['razu','goth','horse'],
+          spider: ['anub','faerlina','maex'],
+          abomination: ['patch','grobb','gluth','thadd'],
+          plague: ['noth','heig','loatheb'],
+          frostwyrm_lair: ['sapph','kel']
+        };
+        function wingIndex(w) {
+          const lower = String(w||'').trim().toLowerCase() || 'main';
+          const idxLower = WING_ORDER_CANON.indexOf(lower);
+          return idxLower === -1 ? 999 : idxLower;
+        }
+        function bossIndex(wing, boss) {
+          const key = String(wing||'').toLowerCase();
+          const arr = BOSS_ORDER[key] || [];
+          const bk = String(boss||'').toLowerCase();
+          const i = arr.findIndex(k => bk.includes(k));
+          return i === -1 ? 999 : i;
+        }
+        myEntries.sort((a,b) => {
+          const wi = wingIndex(a.wing) - wingIndex(b.wing);
+          if (wi !== 0) return wi;
+          const bi = bossIndex(a.wing, a.boss) - bossIndex(b.wing, b.boss);
+          if (bi !== 0) return bi;
+          return String(a.character_name||'').localeCompare(String(b.character_name||''));
+        });
+
+        // Table
+        const tableWrap = document.createElement('div');
+        tableWrap.style.padding = '0 20px 20px 20px';
+        const table = document.createElement('table');
+        table.style.width = '100%';
+        table.style.borderCollapse = 'collapse';
+        table.style.color = '#e5e7eb';
+        table.innerHTML = '<thead><tr>'+
+          '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Wing</th>'+
+          '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Boss</th>'+
+          '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Character</th>'+
+          '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Raid Icon</th>'+
+          '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Assignment</th>'+
+          '<th style="text-align:center;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Status</th>'+
+        '</tr></thead>';
+        const tbody = document.createElement('tbody');
+
+        function getStatusIconHtml(status, interactive) {
+          if (status === 'accept') return '<i class="fas fa-check-circle" style="color:#10b981; font-size:24px; line-height:24px;"></i>';
+          if (status === 'decline') return '<i class="fas fa-ban" style="color:#ef4444; font-size:24px; line-height:24px;"></i>';
+          const color = interactive ? '#fbbf24' : '#9ca3af';
+          return `<i class="fas fa-check-circle" style="color:${color}; font-size:24px; line-height:24px;"></i>`;
+        }
+
+        const parts = window.location.pathname.split('/').filter(Boolean);
+        const idx = parts.indexOf('event');
+        const eventId = (idx >= 0 && parts[idx+1]) ? parts[idx+1] : localStorage.getItem('activeEventSession');
+
+        for (const row of myEntries) {
+          const tr = document.createElement('tr');
+          tr.style.borderBottom = '1px solid var(--border-color,#3a3a3a)';
+          const tdWing = document.createElement('td'); tdWing.style.padding='10px 8px'; tdWing.textContent = row.wing;
+          const tdBoss = document.createElement('td'); tdBoss.style.padding='10px 8px'; tdBoss.textContent = row.boss;
+          const tdChar = document.createElement('td'); tdChar.style.padding='10px 8px';
+          try {
+            const color = getRosterClassColorByName(roster, row.character_name);
+            tdChar.innerHTML = `<span class="character-name" style="color:${color} !important;">${row.character_name}</span>`;
+          } catch {
+            tdChar.textContent = row.character_name;
+          }
+          const tdIcon = document.createElement('td'); tdIcon.style.padding='10px 8px';
+          if (row.marker_icon_url) {
+            const img = document.createElement('img'); img.src = row.marker_icon_url; img.alt = 'icon'; img.width = 24; img.height = 24; img.loading='lazy';
+            tdIcon.appendChild(img);
+          } else {
+            tdIcon.textContent = '';
+          }
+          const tdAssign = document.createElement('td'); tdAssign.style.padding='10px 8px'; tdAssign.textContent = row.assignment || '';
+          const tdStatus = document.createElement('td'); tdStatus.style.padding='10px 8px'; tdStatus.style.textAlign = 'center';
+          const btn = document.createElement('button'); btn.className = 'status-toggle-btn'; btn.type='button'; btn.innerHTML = getStatusIconHtml(row.accept_status||'', true);
+          btn.addEventListener('click', async (ev) => {
+            ev.preventDefault();
+            const prev = row.accept_status || '';
+            let next = '';
+            if (!prev) next = 'accept';
+            else if (prev === 'accept') next = 'decline';
+            else next = '';
+            row.accept_status = next;
+            try {
+              await fetch(`/api/assignments/${eventId}/entry/accept`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dungeon: row.dungeon, wing: row.wing === 'Main' ? '' : row.wing, boss: row.boss, character_name: row.character_name, accept_status: next || null })
+              });
+            } catch {}
+            btn.innerHTML = getStatusIconHtml(next, true);
+          });
+          tdStatus.appendChild(btn);
+
+          tr.appendChild(tdWing); tr.appendChild(tdBoss); tr.appendChild(tdChar); tr.appendChild(tdIcon); tr.appendChild(tdAssign); tr.appendChild(tdStatus);
+          tbody.appendChild(tr);
+        }
+
+        table.appendChild(tbody);
+        tableWrap.appendChild(table);
+        content.appendChild(tableWrap);
+
+        myPanel.appendChild(header);
+        myPanel.appendChild(content);
+        container.appendChild(myPanel);
+
+        // Below: conditional special panels (Four Horsemen grid, Spore Groups, Kel'Thuzad Groups)
+        // Use copies of user with no management role so edit controls stay hidden
+        const viewUser = { ...(user||{}), hasManagementRole: false };
+
+        // Helpers: does any of my names appear in these grid states?
+        function hasNameInHorse(panel) {
+          try {
+            const tanks = panel?.horsemen_tanks || {};
+            for (const k of Object.keys(tanks)) {
+              const name = (Array.isArray(tanks[k]) ? tanks[k][0] : null) || null;
+              if (name && myNames.has(String(name))) return true;
+            }
+          } catch {}
+          // Fallback: look at hidden entries
+          try {
+            return (Array.isArray(panel.entries)?panel.entries:[]).some(en => String(en.assignment||'').startsWith('__HGRID__:') && myNames.has(String(en.character_name||'')));
+          } catch {}
+          return false;
+        }
+        function hasNameInSpore(panel) {
+          try {
+            const groups = panel?.spore_groups || {};
+            for (const g of Object.values(groups)) { for (const n of (g||[])) { if (n && myNames.has(String(n))) return true; } }
+          } catch {}
+          try {
+            return (Array.isArray(panel.entries)?panel.entries:[]).some(en => String(en.assignment||'').startsWith('__SPORE__:') && myNames.has(String(en.character_name||'')));
+          } catch {}
+          return false;
+        }
+        function hasNameInKel(panel) {
+          try {
+            const groups = panel?.kel_groups || {};
+            for (const g of Object.values(groups)) { for (const n of (g||[])) { if (n && myNames.has(String(n))) return true; } }
+          } catch {}
+          try {
+            return (Array.isArray(panel.entries)?panel.entries:[]).some(en => String(en.assignment||'').startsWith('__KEL__:') && myNames.has(String(en.character_name||'')));
+          } catch {}
+          return false;
+        }
+
+        // Helper: append only a specific grid from a full panel (hide image/list/video)
+        function appendGridOnly(panel, gridClassName) {
+          const div = buildPanel(panel, viewUser, roster);
+          try {
+            const actions = div.querySelector('.assignments-actions'); if (actions) actions.style.display = 'none';
+            const content = div.querySelector('.manual-rewards-content');
+            if (content) {
+              Array.from(content.children).forEach(child => {
+                if (!(child.classList && child.classList.contains(gridClassName))) {
+                  child.remove();
+                }
+              });
+            }
+          } catch {}
+          container.appendChild(div);
+        }
+
+        // Four Horsemen (only Warriors / Marks grid)
+        try {
+          const horsePanel = panels.find(p => String(p.boss||'').toLowerCase().includes('horse'));
+          if (horsePanel && hasNameInHorse(horsePanel)) {
+            appendGridOnly(horsePanel, 'horsemen-grid-wrap');
+          }
+        } catch {}
+        // Loatheb Spore Groups
+        try {
+          const loathebPanel = panels.find(p => String(p.boss||'').toLowerCase().includes('loatheb'));
+          if (loathebPanel && hasNameInSpore(loathebPanel)) {
+            container.appendChild(buildPanel(loathebPanel, viewUser, roster));
+          }
+        } catch {}
+        // Kel'Thuzad Groups (only groups grid)
+        try {
+          const kelPanel = panels.find(p => String(p.boss||'').toLowerCase().includes('kel'));
+          if (kelPanel && hasNameInKel(kelPanel)) {
+            appendGridOnly(kelPanel, 'kel-grid-wrap');
+          }
+        } catch {}
+
+        return;
+      }
       if (wing === 'main') {
         // Build Main Assignments panels (lightweight)
         const existingTanking = panels.find(p => String(p.boss || '').toLowerCase() === 'tanking' && (!p.wing || String(p.wing).trim() === '' || String(p.wing).toLowerCase() === 'main'));
