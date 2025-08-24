@@ -3009,9 +3009,9 @@
         table.style.color = '#e5e7eb';
         table.innerHTML = '<thead><tr>'+
           '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Wing</th>'+
-          '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Boss</th>'+
-          '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Character</th>'+
-          '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Raid Icon</th>'+
+          '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">What/Where</th>'+
+          '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a); display:none;">Character</th>'+
+          '<th style="text-align:center;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Raid Icon</th>'+
           '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Assignment</th>'+
           '<th style="text-align:center;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Status</th>'+
         '</tr></thead>';
@@ -3033,14 +3033,14 @@
           tr.style.borderBottom = '1px solid var(--border-color,#3a3a3a)';
           const tdWing = document.createElement('td'); tdWing.style.padding='10px 8px'; tdWing.textContent = row.wing;
           const tdBoss = document.createElement('td'); tdBoss.style.padding='10px 8px'; tdBoss.textContent = row.boss;
-          const tdChar = document.createElement('td'); tdChar.style.padding='10px 8px';
+          const tdChar = document.createElement('td'); tdChar.style.padding='10px 8px'; tdChar.style.display = 'none';
           try {
             const color = getRosterClassColorByName(roster, row.character_name);
             tdChar.innerHTML = `<span class="character-name" style="color:${color} !important; font-weight: normal;">${row.character_name}</span>`;
           } catch {
             tdChar.textContent = row.character_name;
           }
-          const tdIcon = document.createElement('td'); tdIcon.style.padding='10px 8px';
+          const tdIcon = document.createElement('td'); tdIcon.style.padding='10px 8px'; tdIcon.style.textAlign = 'center';
           if (row.marker_icon_url) {
             const img = document.createElement('img'); img.src = row.marker_icon_url; img.alt = 'icon'; img.width = 24; img.height = 24; img.loading='lazy';
             tdIcon.appendChild(img);
@@ -3144,11 +3144,11 @@
             appendGridOnly(horsePanel, 'horsemen-grid-wrap');
           }
         } catch {}
-        // Loatheb Spore Groups
+        // Loatheb Spore Groups (only groups grid)
         try {
           const loathebPanel = panels.find(p => String(p.boss||'').toLowerCase().includes('loatheb'));
           if (loathebPanel && hasNameInSpore(loathebPanel)) {
-            container.appendChild(buildPanel(loathebPanel, viewUser, roster));
+            appendGridOnly(loathebPanel, 'spore-grid-wrap');
           }
         } catch {}
         // Kel'Thuzad Groups (only groups grid)

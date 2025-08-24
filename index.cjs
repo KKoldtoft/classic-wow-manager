@@ -13693,6 +13693,147 @@ app.get('/api/stats/goldpot-history', async (req, res) => {
     }
 });
 
+// Tier 3 token average prices per class, with per-token sales
+app.get('/api/stats/t3-token-averages', async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
+    }
+
+    let client;
+    try {
+        client = await pool.connect();
+
+        // Ensure loot_items exists
+        const tableExists = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'loot_items'
+            ) AS exists;
+        `);
+        if (!tableExists.rows[0].exists) {
+            return res.json({ success: true, classes: [] });
+        }
+
+        // Canonical Tier 3 token lists per class-group
+        const groupCloth = [
+            'Desecrated Headpiece','Desecrated Spaulders','Desecrated Robe','Desecrated Gloves',
+            'Desecrated Bracers','Desecrated Belt','Desecrated Leggings','Desecrated Sandals'
+        ];
+        const groupLeatherMail = [
+            'Desecrated Circlet','Desecrated Shoulderpads','Desecrated Tunic','Desecrated Handguards',
+            'Desecrated Bindings','Desecrated Girdle','Desecrated Legguards','Desecrated Boots'
+        ];
+        const groupPlate = [
+            'Desecrated Helmet','Desecrated Pauldrons','Desecrated Breastplate','Desecrated Gauntlets',
+            'Desecrated Wristguards','Desecrated Waistguard','Desecrated Legplates','Desecrated Sabatons'
+        ];
+
+        const tokenUniverse = [...groupCloth, ...groupLeatherMail, ...groupPlate].map(s => s.toLowerCase());
+
+        // Aggregate average sale price per token
+        const agg = await client.query(
+            `SELECT 
+                LOWER(li.item_name) AS item_key,
+                MIN(li.item_name) AS item_name,
+                ROUND(AVG(li.gold_amount))::bigint AS avg_price,
+                COUNT(*)::bigint AS sale_count,
+                MAX(li.icon_link) AS icon_link,
+                MAX(li.wowhead_link) AS wowhead_link
+            FROM loot_items li
+            WHERE li.gold_amount > 0
+              AND LOWER(li.item_name) = ANY($1)
+            GROUP BY LOWER(li.item_name)`,
+            [tokenUniverse]
+        );
+
+        const byToken = new Map();
+        for (const row of agg.rows) {
+            byToken.set(row.item_key, {
+                name: row.item_name,
+                avgPrice: Number(row.avg_price) || 0,
+                count: Number(row.sale_count) || 0,
+                iconLink: row.icon_link || null,
+                wowheadLink: row.wowhead_link || null
+            });
+        }
+
+        // Fetch individual sale prices per token (ordered ascending for consistent grouping)
+        const salesRes = await client.query(
+            `SELECT LOWER(li.item_name) AS item_key, li.gold_amount
+             FROM loot_items li
+             WHERE li.gold_amount > 0
+               AND LOWER(li.item_name) = ANY($1)
+             ORDER BY li.gold_amount ASC`,
+            [tokenUniverse]
+        );
+        const byTokenSales = new Map();
+        for (const row of salesRes.rows) {
+            const key = row.item_key;
+            if (!byTokenSales.has(key)) byTokenSales.set(key, []);
+            byTokenSales.get(key).push(Number(row.gold_amount) || 0);
+        }
+
+        const classes = [
+            { key: 'warrior', name: 'Warrior', tokens: groupPlate },
+            { key: 'paladin', name: 'Paladin', tokens: groupPlate },
+            { key: 'shaman', name: 'Shaman', tokens: groupPlate },
+            { key: 'rogue', name: 'Rogue', tokens: groupLeatherMail },
+            { key: 'hunter', name: 'Hunter', tokens: groupLeatherMail },
+            { key: 'druid', name: 'Druid', tokens: groupLeatherMail },
+            { key: 'mage', name: 'Mage', tokens: groupCloth },
+            { key: 'priest', name: 'Priest', tokens: groupCloth },
+            { key: 'warlock', name: 'Warlock', tokens: groupCloth }
+        ];
+
+        // Build result per class; omit classes with zero data entirely to keep UI concise
+        const result = [];
+        for (const cls of classes) {
+            const items = [];
+            for (const token of cls.tokens) {
+                const t = byToken.get(token.toLowerCase());
+                if (t && t.count > 0) {
+                    items.push({
+                        tokenName: token,
+                        avgPrice: t.avgPrice,
+                        count: t.count,
+                        iconLink: t.iconLink,
+                        wowheadLink: t.wowheadLink,
+                        sales: byTokenSales.get(token.toLowerCase()) || []
+                    });
+                }
+            }
+            if (items.length > 0) {
+                result.push({ class: cls.key, displayName: cls.name, items });
+            }
+        }
+
+        // Also provide a flat token list for flexible grouping on frontend
+        const tokens = [];
+        const uniqueTokens = new Set([...groupCloth, ...groupLeatherMail, ...groupPlate].map(n => n.toLowerCase()));
+        for (const key of uniqueTokens) {
+            const t = byToken.get(key);
+            if (t) {
+                tokens.push({
+                    tokenName: t.name,
+                    avgPrice: t.avgPrice,
+                    count: t.count,
+                    iconLink: t.iconLink,
+                    wowheadLink: t.wowheadLink,
+                    sales: byTokenSales.get(key) || []
+                });
+            }
+        }
+
+        return res.json({ success: true, classes: result, tokens });
+    } catch (e) {
+        console.error('❌ [/api/stats/t3-token-averages] Error:', e);
+        return res.status(500).json({ success: false, message: 'Internal server error' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // ===========================
 // ATTENDANCE TRACKING API
 // ===========================

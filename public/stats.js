@@ -173,6 +173,7 @@
             wireControls();
             applyFiltersAndRender();
             await loadGoldpots();
+            await loadT3Averages();
         } catch (e) {
             const el = document.querySelector('#top-item-chart');
             if (el) el.innerHTML = `<div class="error-display"><div class="error-content"><h3>Error</h3><p>${(e && e.message) || 'Failed to load stats'}</p></div></div>`;
@@ -288,6 +289,127 @@
         } catch (e) {
             const el = document.getElementById('goldpot-chart');
             if (el) el.innerHTML = `<div class="error-display"><div class=\"error-content\"><h3>Error</h3><p>${(e && e.message) || 'Failed to load gold pots'}</p></div></div>`;
+        }
+    }
+
+    function classColor(cls) {
+        const map = { warrior:'#C79C6E', paladin:'#F58CBA', hunter:'#ABD473', rogue:'#FFF569', priest:'#FFFFFF', shaman:'#0070DE', mage:'#69CCF0', warlock:'#9482C9', druid:'#FF7D0A' };
+        return map[cls] || '#a0a0a0';
+    }
+
+    function classIconUrl(cls) {
+        const map = {
+            warrior: 'https://wow.zamimg.com/images/wow/icons/large/classicon_warrior.jpg',
+            paladin: 'https://wow.zamimg.com/images/wow/icons/large/classicon_paladin.jpg',
+            hunter: 'https://wow.zamimg.com/images/wow/icons/large/classicon_hunter.jpg',
+            rogue: 'https://wow.zamimg.com/images/wow/icons/large/classicon_rogue.jpg',
+            priest: 'https://wow.zamimg.com/images/wow/icons/large/classicon_priest.jpg',
+            shaman: 'https://wow.zamimg.com/images/wow/icons/large/classicon_shaman.jpg',
+            mage: 'https://wow.zamimg.com/images/wow/icons/large/classicon_mage.jpg',
+            warlock: 'https://wow.zamimg.com/images/wow/icons/large/classicon_warlock.jpg',
+            druid: 'https://wow.zamimg.com/images/wow/icons/large/classicon_druid.jpg'
+        };
+        return map[cls] || '';
+    }
+
+    function renderT3GroupSection(groupTitle, tokens, tokenMap, color) {
+        const container = document.getElementById('t3-averages-container');
+        if (!container) return;
+        const section = document.createElement('div');
+        section.className = 't3-class-section';
+        section.style.padding = '12px';
+        section.style.border = '1px solid #2a2a2a';
+        section.style.borderRadius = '8px';
+        section.style.background = '#151515';
+
+        const title = document.createElement('div');
+        title.className = 't3-class-header';
+        title.style.margin = '0 0 8px 0';
+        title.innerHTML = `
+            <div style="display:flex;align-items:center;gap:10px;color:${color};font-weight:600;font-size:14px;line-height:18px;">
+                <span>${groupTitle}</span>
+            </div>
+        `;
+
+        const chartEl = document.createElement('div');
+        chartEl.className = 'stats-item-chart';
+        chartEl.style.height = String(Math.max(280, tokens.length * 32)) + 'px';
+
+        section.appendChild(title);
+        section.appendChild(chartEl);
+        container.appendChild(section);
+
+        // Categories are tokens with avg price appended
+        const categories = tokens.map(t => {
+            const rec = tokenMap.get(String(t).toLowerCase());
+            const avg = rec ? Math.round(Number(rec.avgPrice) || 0) : 0;
+            return `${t} (${formatCurrency(avg)}g)`;
+        });
+        const maxSalesLen = Math.max(0, ...tokens.map(t => (tokenMap.get(String(t).toLowerCase())?.sales || []).length));
+        const series = [];
+        for (let i = 0; i < maxSalesLen; i++) {
+            series.push({
+                name: `Sale ${i+1}`,
+                data: tokens.map(t => {
+                    const rec = tokenMap.get(String(t).toLowerCase());
+                    const arr = (rec && Array.isArray(rec.sales)) ? rec.sales : [];
+                    return (i < arr.length) ? Number(arr[i]) || 0 : 0;
+                })
+            });
+        }
+
+        const chart = new ApexCharts(chartEl, {
+            chart: { type: 'bar', height: chartEl.style.height, foreColor: '#e0e0e0', background: '#1e1e1e', toolbar: { show: false } },
+            theme: { mode: 'dark' },
+            grid: { borderColor: '#333' },
+            plotOptions: { bar: { horizontal: false, columnWidth: '20%' } },
+            dataLabels: { enabled: false },
+            stroke: { width: 1, colors: ['#1e1e1e'] },
+            xaxis: { categories, labels: { rotate: -30, style: { colors: '#a0a0a0' } } },
+            yaxis: { labels: { formatter: (v)=>`${formatCurrency(Math.round(v))}g`, style: { colors: '#a0a0a0' } } },
+            tooltip: { theme:'dark', y: { formatter: (v)=>`${formatCurrency(Math.round(v))} gold` } },
+            legend: { show: false },
+            series,
+            colors: series.map(() => color)
+        });
+        chart.render();
+
+        // Full set average cost under chart
+        const fullSet = Math.round(tokens.reduce((sum, tk) => {
+            const rec = tokenMap.get(String(tk).toLowerCase());
+            return sum + (rec ? (Number(rec.avgPrice) || 0) : 0);
+        }, 0));
+        const fullSetDiv = document.createElement('div');
+        fullSetDiv.className = 't3-full-set';
+        fullSetDiv.style.marginTop = '8px';
+        fullSetDiv.style.color = '#c8c8c8';
+        fullSetDiv.style.fontSize = '13px';
+        fullSetDiv.innerHTML = `<strong style="color:${color}">Full set average cost</strong>: ${formatCurrency(fullSet)}g`;
+        section.appendChild(fullSetDiv);
+    }
+
+    async function loadT3Averages() {
+        try {
+            const r = await fetch('/api/stats/t3-token-averages');
+            const j = await r.json();
+            if (!r.ok || !j || !j.success) throw new Error(j && j.message || 'Failed to load T3 averages');
+            const container = document.getElementById('t3-averages-container');
+            if (!container) return;
+            container.innerHTML = '';
+            const tokens = Array.isArray(j.tokens) ? j.tokens : [];
+            const tokenMap = new Map(tokens.map(t => [String(t.tokenName||'').toLowerCase(), t]));
+
+            // Corrected groups and token mappings
+            const grp1 = ['Desecrated Helmet','Desecrated Pauldrons','Desecrated Breastplate','Desecrated Gauntlets','Desecrated Bracers','Desecrated Waistguard','Desecrated Legplates','Desecrated Sabatons'];
+            const grp2 = ['Desecrated Circlet','Desecrated Shoulderpads','Desecrated Robe','Desecrated Gloves','Desecrated Bindings','Desecrated Belt','Desecrated Leggings','Desecrated Sandals'];
+            const grp3 = ['Desecrated Sandals','Desecrated Spaulders','Desecrated Tunic','Desecrated Handguards','Desecrated Wristguards','Desecrated Girdle','Desecrated Legguards','Desecrated Boots'];
+
+            renderT3GroupSection('Warrior, Rogue', grp1, tokenMap, '#C79C6E');
+            renderT3GroupSection('Priest, Mage, Warlock', grp2, tokenMap, '#69CCF0');
+            renderT3GroupSection('Paladin, Hunter, Shaman, Druid', grp3, tokenMap, '#ABD473');
+        } catch (e) {
+            const container = document.getElementById('t3-averages-container');
+            if (container) container.innerHTML = `<div class="error-display"><div class="error-content"><h3>Error</h3><p>${(e && e.message) || 'Failed to load T3 averages'}</p></div></div>`;
         }
     }
 
