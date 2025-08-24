@@ -344,7 +344,20 @@ class GoldPotManager {
         addFrom(this.datasets.runesData);
         addFrom(this.datasets.interruptsData);
         addFrom(this.datasets.disarmsData);
-        addFrom(this.datasets.sunderData);
+        // Sunder: exclude tanks when primaryRoles available
+        if (this.primaryRoles) {
+            (this.datasets.sunderData || []).forEach(row => {
+                const nm = String(row.character_name || row.player_name || '').toLowerCase();
+                const v = nameToPlayer.get(nm);
+                if (!v) return;
+                const role = String(this.primaryRoles[nm] || '').toLowerCase();
+                if (role === 'tank') return; // tanks do not get sunder adjustments
+                const pts = Number(row.points) || 0;
+                v.points += pts;
+            });
+        } else {
+            addFrom(this.datasets.sunderData);
+        }
         addFrom(this.datasets.curseData);
         addFrom(this.datasets.curseShadowData);
         addFrom(this.datasets.curseElementsData);
@@ -446,6 +459,7 @@ class GoldPotManager {
             addMap(mapFromPanel('runes'));
             addMap(mapFromPanel('interrupts'));
             addMap(mapFromPanel('disarms'));
+            // Snapshot mode: respect snapshot values as-is (they already reflect any manual edits)
             addMap(mapFromPanel('sunder'));
             addMap(mapFromPanel('curse_recklessness'));
             addMap(mapFromPanel('curse_shadow'));
@@ -492,7 +506,20 @@ class GoldPotManager {
             addFrom(this.datasets.runesData);
             addFrom(this.datasets.interruptsData);
             addFrom(this.datasets.disarmsData);
-            addFrom(this.datasets.sunderData);
+            // Sunder: exclude tanks when primaryRoles available
+            if (this.primaryRoles) {
+                (this.datasets.sunderData || []).forEach(row => {
+                    const nm = String(row.character_name || row.player_name || '').toLowerCase();
+                    const v = nameToPlayer.get(nm);
+                    if (!v) return;
+                    const role = String(this.primaryRoles[nm] || '').toLowerCase();
+                    if (role === 'tank') return;
+                    const pts = Number(row.points) || 0;
+                    v.points += pts;
+                });
+            } else {
+                addFrom(this.datasets.sunderData);
+            }
             addFrom(this.datasets.curseData);
             addFrom(this.datasets.curseShadowData);
             addFrom(this.datasets.curseElementsData);
@@ -811,7 +838,10 @@ class GoldPotManager {
         push('Runes', sumFrom(this.datasets.runesData));
         push('Interrupts', sumFrom(this.datasets.interruptsData));
         push('Disarms', sumFrom(this.datasets.disarmsData));
-        push('Sunder', sumFrom(this.datasets.sunderData));
+        // Sunder breakdown row: hide for tanks
+        if (role !== 'tank') {
+            push('Sunder', sumFrom(this.datasets.sunderData));
+        }
         push('Curse Reck', sumFrom(this.datasets.curseData));
         push('Curse Shad', sumFrom(this.datasets.curseShadowData));
         push('Curse Elem', sumFrom(this.datasets.curseElementsData));
