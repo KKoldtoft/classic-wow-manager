@@ -353,7 +353,7 @@
     imgLink.appendChild(img);
     imgWrapper.appendChild(imgLink);
 
-    // Sapphiron, Kel'Thuzad & Gothik: autoplay a short preview video overlay on first scroll into view
+    // Sapphiron, Kel'Thuzad, Gothik, Anub'Rekhan, Maexxna: autoplay a short preview video overlay on first scroll into view
     try {
       const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       const saveData = navigator.connection && navigator.connection.saveData;
@@ -361,17 +361,20 @@
       const isKelthuzad = panelKeyLower.includes('kel');
       const isGothik = panelKeyLower.includes('goth');
       const isAnub = panelKeyLower.includes('anub');
-      if (isSapphiron || isKelthuzad || isGothik || isAnub) {
+      const isMaex = panelKeyLower.includes('maex');
+      if (isSapphiron || isKelthuzad || isGothik || isAnub || isMaex) {
         const previewUrl = isSapphiron
           ? 'https://res.cloudinary.com/duthjs0c3/video/upload/f_auto,q_auto/v1755864926/Saph-Small-1_cgscco.mp4'
           : (isKelthuzad
             ? 'https://res.cloudinary.com/duthjs0c3/video/upload/f_auto,q_auto/v1755867358/KT-small_p55l1i.mp4'
             : (isGothik
               ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756022062/Gothik-human-side_znqy6h.mp4'
-              : 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756024672/anub_xgkjtx.mp4'));
+              : (isAnub
+                ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756024672/anub_xgkjtx.mp4'
+                : 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756025139/Spider_l0hqmr.mp4')));
         imgWrapper.style.position = 'relative';
-        // Keep the tighter preview width for Sapphiron/Kel; let Gothik/Anub use full image width to match sizes exactly
-        if (!(isGothik || isAnub)) { try { imgWrapper.style.maxWidth = '720px'; } catch {} }
+        // Keep the tighter preview width for Sapphiron/Kel; let Gothik/Anub/Maex use full image width to match sizes exactly
+        if (!(isGothik || isAnub || isMaex)) { try { imgWrapper.style.maxWidth = '720px'; } catch {} }
         try { imgWrapper.style.overflow = 'hidden'; } catch {}
         let played = false;
 
@@ -411,8 +414,8 @@
           video.style.maxWidth = '100%';
           video.style.maxHeight = '100%';
           video.style.width = '100%';
-          // For Gothik, ensure the video perfectly overlays the image by filling the overlay box
-          if (isGothik) {
+          // For Gothik & Maexxna, ensure the video perfectly overlays the image by filling the overlay box
+          if (isGothik || isMaex) {
             video.style.height = '100%';
             video.style.objectFit = 'cover';
           } else {
