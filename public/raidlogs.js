@@ -1701,13 +1701,16 @@ class RaidLogsManager {
                 });
             }
             
-            // Add points from sunder armor
+            // Add points from sunder armor (exclude tanks when primaryRoles available)
             if (this.sunderData && this.sunderSettings && this.sunderSettings.point_ranges) {
                 this.sunderData.forEach(player => {
                     const nm = String(player.character_name || '').toLowerCase();
                     if (!confirmedNameSet.has(nm)) return;
-                    if (player.points > 0) positivePoints += player.points;
-                    else if (player.points < 0) negativePoints += Math.abs(player.points);
+                    if (this.primaryRoles) {
+                        const role = String(this.primaryRoles[nm] || '').toLowerCase();
+                        if (role === 'tank') return; // exclude tanks entirely
+                    }
+                    if (player.points > 0) positivePoints += player.points; else if (player.points < 0) negativePoints += Math.abs(player.points);
                 });
             }
             
@@ -4334,8 +4337,24 @@ class RaidLogsManager {
         const section = container.closest('.rankings-section');
         section.classList.add('sunder');
 
+        // Exclude tanks based on primary roles if available
+        let eligiblePlayers = players;
+        if (this.primaryRoles) {
+            console.log(`⚔️ [SUNDER] Filtering ${players.length} players by primary role`);
+            eligiblePlayers = players.filter(player => {
+                const nm = String(player.character_name || '').toLowerCase();
+                const role = String(this.primaryRoles[nm] || '').toLowerCase();
+                const isTank = role === 'tank';
+                if (isTank) {
+                    console.log(`🚫 [SUNDER] Excluding ${player.character_name} (primary role: ${role})`);
+                }
+                return !isTank;
+            });
+            console.log(`✅ [SUNDER] Players after filtering: ${eligiblePlayers.length}`);
+        }
+
         // Filter out players with 0 or negative points for display, but show all non-zero
-        const playersWithPoints = players.filter(player => player.points !== 0);
+        const playersWithPoints = eligiblePlayers.filter(player => player.points !== 0);
 
         if (playersWithPoints.length === 0) {
             container.innerHTML = `
@@ -5212,7 +5231,20 @@ class RaidLogsManager {
         let runesMap = collectMap(this.runesData);
         let interruptsMap = collectMap(this.interruptsData);
         let disarmsMap = collectMap(this.disarmsData);
-        let sunderMap = collectMap(this.sunderData);
+        // Build sunder map excluding tanks when primaryRoles available
+        let sunderMap = new Map();
+        if (Array.isArray(this.sunderData)) {
+            this.sunderData.forEach(row => {
+                const nm = String(row.character_name || '').toLowerCase();
+                if (this.primaryRoles) {
+                    const role = String(this.primaryRoles[nm] || '').toLowerCase();
+                    if (role === 'tank') return; // exclude tanks
+                }
+                const pts = Number(row.points) || 0;
+                if (!pts) return;
+                sunderMap.set(nm, (sunderMap.get(nm) || 0) + pts);
+            });
+        }
         let curseMap = collectMap(this.curseData);
         let curseShadowMap = collectMap(this.curseShadowData);
         let curseElementsMap = collectMap(this.curseElementsData);
