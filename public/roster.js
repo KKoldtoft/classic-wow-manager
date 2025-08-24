@@ -22,14 +22,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Set active event session in localStorage when visiting roster directly
     localStorage.setItem('activeEventSession', eventId);
     console.log('🎯 Set active event session from roster page:', eventId);
-    // Refresh raid bar links immediately in this tab (URL is source of truth)
+    // Update raid bar once (URL is source of truth). Avoid duplicate immediate calls.
     if (typeof updateRaidBar === 'function') {
         setTimeout(() => updateRaidBar(), 0);
-    }
-    
-    // Update raid bar if function is available
-    if (typeof updateRaidBar === 'function') {
-        updateRaidBar();
     }
 
     if (compToolButton) {
@@ -176,6 +171,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="player-details-dropdown">${dropdownContentHTML}</div>`;
 
             applyPlayerColor(cell, newPlayerData.color);
+            applyNoAssignmentsStyling(cell, newPlayerData);
             
             // Re-attach event listeners for this specific cell
             const updatedCell = this.attachCellEventListeners(cell);
@@ -659,6 +655,35 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
             });
 
+            // Toggle no-assignments actions
+            cell.querySelectorAll('[data-action="toggle-no-assignments"]').forEach(item => {
+                item.addEventListener('click', async (e) => {
+                    const { userid, currentStatus } = e.currentTarget.dataset;
+                    const flag = !(currentStatus === 'true');
+                    // Update localStorage flag
+                    try {
+                        const key = 'noAssignmentsMap';
+                        const map = JSON.parse(localStorage.getItem(key) || '{}') || {};
+                        if (flag) map[String(userid)] = true; else delete map[String(userid)];
+                        localStorage.setItem(key, JSON.stringify(map));
+                    } catch {}
+
+                    // Refresh dropdown + styling for this cell
+                    const cell = this.findPlayerCell(userid);
+                    if (cell) {
+                        const isBenched = cell.closest('#benched-list') !== null;
+                        const playerData = (currentRosterData.raidDrop || []).find(p => p && p.userid === userid) ||
+                                           (currentRosterData.bench || []).find(p => p && p.userid === userid);
+                        if (playerData) {
+                            const dropdownDiv = cell.querySelector('.player-details-dropdown');
+                            if (dropdownDiv) dropdownDiv.innerHTML = await buildDropdownContent(playerData, isBenched);
+                            applyNoAssignmentsStyling(cell, playerData);
+                            this.attachDropdownListeners(cell);
+                        }
+                    }
+                });
+            });
+
             // Move to bench actions
             cell.querySelectorAll('[data-action="move-to-bench"]').forEach(item => {
                 item.addEventListener('click', async (e) => {
@@ -967,6 +992,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="player-details-dropdown">${dropdownContentHTML}</div>`;
 
                     applyPlayerColor(cellDiv, player.color);
+                    applyNoAssignmentsStyling(cellDiv, player);
                     markCellDbMismatch(cellDiv, player);
                     } else {
                         // Empty slot - make it clickable with "Add new character" option
@@ -1059,6 +1085,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="player-details-dropdown">${dropdownContentHTML}</div>`;
 
         applyPlayerColor(cellDiv, player.color);
+        applyNoAssignmentsStyling(cellDiv, player);
         markCellDbMismatch(cellDiv, player);
         return cellDiv;
     }
@@ -1150,6 +1177,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         let content = '<div class="dropdown-header">Actions</div>';
 
+        // Helper: read/write "no assignments" map in localStorage
+        function getNoAssignmentsMap() {
+            try { return JSON.parse(localStorage.getItem('noAssignmentsMap') || '{}') || {}; } catch { return {}; }
+        }
+        function isNoAssignments(userid) {
+            const map = getNoAssignmentsMap();
+            return !!map[String(userid)];
+        }
+        function setNoAssignments(userid, flag) {
+            const map = getNoAssignmentsMap();
+            if (flag) map[String(userid)] = true; else delete map[String(userid)];
+            try { localStorage.setItem('noAssignmentsMap', JSON.stringify(map)); } catch {}
+        }
+
         let moveSubmenuHTML = '<div class="move-submenu">';
         for (let partyIdx = 0; partyIdx < currentRosterData.partyPerRaid; partyIdx++) {
             moveSubmenuHTML += `<div class="dropdown-header">${currentRosterData.partyNames[partyIdx] || `Group ${partyIdx + 1}`}</div>`;
@@ -1190,6 +1231,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Add Fix name action (available for both roster and bench players)
         content += `<div class="dropdown-item" data-action="fix-name" data-userid="${player.userid}"><i class="fas fa-edit menu-icon"></i>Fix name</div>`;
+
+        // Give no assignments toggle (available for both roster and bench players)
+        const noAssign = isNoAssignments(player.userid);
+        const noAssignIcon = noAssign ? 'fas fa-check-circle' : 'fas fa-minus-circle';
+        const noAssignText = noAssign ? 'Allow assignments' : 'Give no assignments';
+        content += `<div class="dropdown-item" data-action="toggle-no-assignments" data-userid="${player.userid}" data-current-status="${noAssign}"><i class="${noAssignIcon} menu-icon"></i>${noAssignText}</div>`;
 
         // Prompt for confirmation (only when not confirmed)
         try {
@@ -1363,6 +1410,42 @@ document.addEventListener('DOMContentLoaded', async () => {
                 cellDiv.style.color = (r * 299 + g * 587 + b * 114) / 1000 < 128 ? 'white' : 'black';
             }
         }
+    }
+
+    // Styling for players flagged as "no assignments"
+    function applyNoAssignmentsStyling(cellDiv, player) {
+        if (!cellDiv || !player || !player.userid) return;
+        let map = {};
+        try { map = JSON.parse(localStorage.getItem('noAssignmentsMap') || '{}') || {}; } catch {}
+        const flagged = !!map[String(player.userid)];
+        try {
+            if (flagged) {
+                cellDiv.style.border = '2px solid #ff00ff';
+            } else {
+                // only remove if we previously set it
+                if (cellDiv.style && cellDiv.style.border && cellDiv.style.border.includes('#ff00ff')) {
+                    cellDiv.style.border = '';
+                }
+            }
+        } catch {}
+        try {
+            const nameDiv = cellDiv.querySelector('.player-name span');
+            if (nameDiv) {
+                // Ensure only one gold icon is appended
+                const existing = nameDiv.parentElement.querySelector('.no-assign-gold');
+                if (flagged) {
+                    if (!existing) {
+                        const icon = document.createElement('i');
+                        icon.className = 'fas fa-coins no-assign-gold';
+                        icon.style.color = '#ffd700';
+                        icon.style.marginLeft = '6px';
+                        nameDiv.parentElement.insertBefore(icon, nameDiv.nextSibling);
+                    }
+                } else if (existing) {
+                    existing.remove();
+                }
+            }
+        } catch {}
     }
 
     function attachEmptySlotListeners(cell) {

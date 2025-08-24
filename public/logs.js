@@ -1154,6 +1154,11 @@ class WoWLogsAnalyzer {
             await this.runWorkflowStep4(getLogUrl());
         });
 
+        safeAdd('runStep5Btn', async () => {
+            ensureWorkflowState();
+            await this.runWorkflowStep5(getLogUrl());
+        });
+
         safeAdd('runStep6Btn', async () => {
             ensureWorkflowState();
             await this.runWorkflowStep6(getLogUrl());
@@ -1166,7 +1171,12 @@ class WoWLogsAnalyzer {
 
         safeAdd('runStep8Btn', async () => {
             ensureWorkflowState();
-            await this.runWorkflowStep8(getLogUrl());
+            const eventId = getEventId();
+            if (!eventId) {
+                alert('No active event selected. Select an event to import into.');
+                return;
+            }
+            await this.runWorkflowStep8(eventId, getLogUrl());
         });
 
         safeAdd('runStep9Btn', async () => {
@@ -1176,7 +1186,7 @@ class WoWLogsAnalyzer {
                 alert('No active event selected. Select an event to import into.');
                 return;
             }
-            await this.runWorkflowStep9(eventId, getLogUrl());
+            await this.runWorkflowStep9(eventId);
         });
 
         safeAdd('runStep10Btn', async () => {
@@ -1187,16 +1197,6 @@ class WoWLogsAnalyzer {
                 return;
             }
             await this.runWorkflowStep10(eventId);
-        });
-
-        safeAdd('runStep11Btn', async () => {
-            ensureWorkflowState();
-            const eventId = getEventId();
-            if (!eventId) {
-                alert('No active event selected. Select an event to import into.');
-                return;
-            }
-            await this.runWorkflowStep11(eventId);
         });
 
         // Role mapping button click
@@ -4988,15 +4988,15 @@ class WoWLogsAnalyzer {
                 this.updateWorkflowStep(4, 'skipped', 'Skipped by user', '⏭️');
             }
             
-            // Step 5: Waiting 2 Minutes
+            // Step 5: Archive RPB sheet
             if (this.isStepEnabled(5)) {
                 this.workflowState.currentStep = 5;
-                await this.runWorkflowStepWait();
+                await this.runWorkflowStep5(input);
             } else {
                 this.updateWorkflowStep(5, 'skipped', 'Skipped by user', '⏭️');
             }
             
-            // Step 6: Archive RPB sheet
+            // Step 6: Archive World Buffs sheet
             if (this.isStepEnabled(6)) {
                 this.workflowState.currentStep = 6;
                 await this.runWorkflowStep6(input);
@@ -5004,7 +5004,7 @@ class WoWLogsAnalyzer {
                 this.updateWorkflowStep(6, 'skipped', 'Skipped by user', '⏭️');
             }
             
-            // Step 7: Archive World Buffs sheet
+            // Step 7: Archive Frost Resistance sheet
             if (this.isStepEnabled(7)) {
                 this.workflowState.currentStep = 7;
                 await this.runWorkflowStep7(input);
@@ -5012,36 +5012,28 @@ class WoWLogsAnalyzer {
                 this.updateWorkflowStep(7, 'skipped', 'Skipped by user', '⏭️');
             }
             
-            // Step 8: Archive Frost Resistance sheet
+            // Step 8: Import RPB data to database
             if (this.isStepEnabled(8)) {
                 this.workflowState.currentStep = 8;
-                await this.runWorkflowStep8(input);
+                await this.runWorkflowStep8(activeEventSession, input);
             } else {
                 this.updateWorkflowStep(8, 'skipped', 'Skipped by user', '⏭️');
             }
             
-            // Step 9: Import RPB data to database
+            // Step 9: Import World Buffs data to database
             if (this.isStepEnabled(9)) {
                 this.workflowState.currentStep = 9;
-                await this.runWorkflowStep9(activeEventSession, input);
+                await this.runWorkflowStep9(activeEventSession);
             } else {
                 this.updateWorkflowStep(9, 'skipped', 'Skipped by user', '⏭️');
             }
             
-            // Step 10: Import World Buffs data to database
+            // Step 10: Import Frost Resistance data to database
             if (this.isStepEnabled(10)) {
                 this.workflowState.currentStep = 10;
                 await this.runWorkflowStep10(activeEventSession);
             } else {
                 this.updateWorkflowStep(10, 'skipped', 'Skipped by user', '⏭️');
-            }
-            
-            // Step 11: Import Frost Resistance data to database
-            if (this.isStepEnabled(11)) {
-                this.workflowState.currentStep = 11;
-                await this.runWorkflowStep11(activeEventSession);
-            } else {
-                this.updateWorkflowStep(11, 'skipped', 'Skipped by user', '⏭️');
             }
             
             // Show completion
@@ -5160,21 +5152,21 @@ class WoWLogsAnalyzer {
         }
     }
 
-    // Step 6: Archive RPB Results
-    async runWorkflowStep6(logUrl) {
-        console.log('📁 [WORKFLOW] Step 6: Archiving RPB results...');
-        this.updateWorkflowStep(6, 'active', 'Creating archive backup...', '🔄');
+    // Step 5: Archive RPB Results
+    async runWorkflowStep5(logUrl) {
+        console.log('📁 [WORKFLOW] Step 5: Archiving RPB results...');
+        this.updateWorkflowStep(5, 'active', 'Creating archive backup...', '🔄');
         
         try {
             // Call the archive function with the correct logUrl
             await this.callArchiveFunction(logUrl);
             
-            this.updateWorkflowStep(6, 'completed', 'Archive created successfully', '✅');
-            console.log('✅ [WORKFLOW] Step 6 completed');
+            this.updateWorkflowStep(5, 'completed', 'Archive created successfully', '✅');
+            console.log('✅ [WORKFLOW] Step 5 completed');
             
         } catch (error) {
-            console.error('❌ [WORKFLOW] Step 6 failed:', error);
-            this.updateWorkflowStep(6, 'error', 'Archive failed - continuing anyway', '⚠️');
+            console.error('❌ [WORKFLOW] Step 5 failed:', error);
+            this.updateWorkflowStep(5, 'error', 'Archive failed - continuing anyway', '⚠️');
             
             // Add a skip option and continue instead of failing the entire workflow
             console.log('⚠️ [WORKFLOW] Archive failed, but continuing to import step...');
@@ -5187,11 +5179,11 @@ class WoWLogsAnalyzer {
         }
     }
 
-    // Step 9: Import RPB Data
-    async runWorkflowStep9(eventId, logUrl = null) {
-        console.log('📥 [WORKFLOW] Step 9: Importing RPB data...');
-        console.log('🔍 [WORKFLOW] Step 9: Looking for archive URL for event:', eventId, 'logUrl:', logUrl);
-        this.updateWorkflowStep(9, 'active', 'Importing data to database...', '🔄');
+    // Step 8: Import RPB Data
+    async runWorkflowStep8(eventId, logUrl = null) {
+        console.log('📥 [WORKFLOW] Step 8: Importing RPB data...');
+        console.log('🔍 [WORKFLOW] Step 8: Looking for archive URL for event:', eventId, 'logUrl:', logUrl);
+        this.updateWorkflowStep(8, 'active', 'Importing data to database...', '🔄');
         
         try {
             // Get the archive URL from RPB tracking with specific logUrl
@@ -5199,37 +5191,37 @@ class WoWLogsAnalyzer {
             console.log('🔍 [WORKFLOW] Step 9: Archive URL found:', archiveUrl);
             
             if (!archiveUrl) {
-                console.error('❌ [WORKFLOW] Step 9: No archive URL found in tracking table');
+                console.error('❌ [WORKFLOW] Step 8: No archive URL found in tracking table');
                 
                 // Try to wait a bit and retry once in case the archive step is still finishing
-                console.log('🔄 [WORKFLOW] Step 9: Waiting 3 seconds and retrying...');
+                console.log('🔄 [WORKFLOW] Step 8: Waiting 3 seconds and retrying...');
                 await new Promise(resolve => setTimeout(resolve, 3000));
                 
                 const retryArchiveUrl = await this.getArchiveUrlFromTracking(eventId, 'rpb', logUrl);
-                console.log('🔍 [WORKFLOW] Step 9: Retry - Archive URL found:', retryArchiveUrl);
+                console.log('🔍 [WORKFLOW] Step 8: Retry - Archive URL found:', retryArchiveUrl);
                 
                 if (!retryArchiveUrl) {
-                    throw new Error('No archive URL found from previous steps. Check that step 6 (archive) completed successfully.');
+                    throw new Error('No archive URL found from previous steps. Check that step 5 (archive) completed successfully.');
                 }
                 
                 // Use the retry URL and complete the step
-                console.log('📥 [WORKFLOW] Step 9: Calling import function with retry URL:', retryArchiveUrl);
+                console.log('📥 [WORKFLOW] Step 8: Calling import function with retry URL:', retryArchiveUrl);
                 await this.callImportFunction(retryArchiveUrl, eventId);
-                this.updateWorkflowStep(9, 'completed', 'Data imported successfully', '✅');
-                console.log('✅ [WORKFLOW] Step 9 completed');
+                this.updateWorkflowStep(8, 'completed', 'Data imported successfully', '✅');
+                console.log('✅ [WORKFLOW] Step 8 completed');
                 return;
             }
 
             // Call the import function
-            console.log('📥 [WORKFLOW] Step 9: Calling import function with URL:', archiveUrl);
+            console.log('📥 [WORKFLOW] Step 8: Calling import function with URL:', archiveUrl);
             await this.callImportFunction(archiveUrl, eventId);
             
-            this.updateWorkflowStep(9, 'completed', 'Data imported successfully', '✅');
-            console.log('✅ [WORKFLOW] Step 9 completed');
+            this.updateWorkflowStep(8, 'completed', 'Data imported successfully', '✅');
+            console.log('✅ [WORKFLOW] Step 8 completed');
             
         } catch (error) {
-            console.error('❌ [WORKFLOW] Step 9 detailed error:', error);
-            this.updateWorkflowStep(9, 'error', `Import failed: ${error.message}`, '❌');
+            console.error('❌ [WORKFLOW] Step 8 detailed error:', error);
+            this.updateWorkflowStep(8, 'error', `Import failed: ${error.message}`, '❌');
             throw error;
         }
     }
@@ -5264,16 +5256,16 @@ class WoWLogsAnalyzer {
         }
     }
 
-    // Step 7: Archive World Buffs
-    async runWorkflowStep7(logUrl) {
-        console.log('📁 [WORKFLOW] Step 7: Archiving World Buffs...');
-        this.updateWorkflowStep(7, 'active', 'Waiting for data save...', '⏳');
+    // Step 6: Archive World Buffs
+    async runWorkflowStep6(logUrl) {
+        console.log('📁 [WORKFLOW] Step 6: Archiving World Buffs...');
+        this.updateWorkflowStep(6, 'active', 'Waiting for data save...', '⏳');
         
         // Add 20-second delay to ensure Google Sheets has saved all data
         console.log('⏰ [STEP 7] Waiting 20 seconds for Google Sheets to save data...');
         await new Promise(resolve => setTimeout(resolve, 20000));
         
-        this.updateWorkflowStep(7, 'active', 'Creating World Buffs archive...', '🔄');
+        this.updateWorkflowStep(6, 'active', 'Creating World Buffs archive...', '🔄');
         
         try {
             // Call World Buffs backup function
@@ -5295,19 +5287,19 @@ class WoWLogsAnalyzer {
             // Store archive URL in database
             await this.storeWorldBuffsArchiveUrl(result, logUrl, this.workflowState.eventId);
             
-            this.updateWorkflowStep(7, 'completed', 'World Buffs archive created', '✅');
-            console.log('✅ [WORKFLOW] Step 7 completed');
+            this.updateWorkflowStep(6, 'completed', 'World Buffs archive created', '✅');
+            console.log('✅ [WORKFLOW] Step 6 completed');
             
         } catch (error) {
-            this.updateWorkflowStep(7, 'error', `World Buffs archive failed: ${error.message}`, '❌');
+            this.updateWorkflowStep(6, 'error', `World Buffs archive failed: ${error.message}`, '❌');
             throw error;
         }
     }
 
-    // Step 10: Import World Buffs Data
-    async runWorkflowStep10(eventId) {
-        console.log('📥 [WORKFLOW] Step 10: Importing World Buffs data...');
-        this.updateWorkflowStep(10, 'active', 'Importing World Buffs to database...', '🔄');
+    // Step 9: Import World Buffs Data
+    async runWorkflowStep9(eventId) {
+        console.log('📥 [WORKFLOW] Step 9: Importing World Buffs data...');
+        this.updateWorkflowStep(9, 'active', 'Importing World Buffs to database...', '🔄');
         
         try {
             // Get World Buffs archive URL from tracking  
@@ -5319,11 +5311,11 @@ class WoWLogsAnalyzer {
             // Import World Buffs data
             await this.importWorldBuffsData(archiveUrl);
             
-            this.updateWorkflowStep(10, 'completed', 'World Buffs data imported', '✅');
-            console.log('✅ [WORKFLOW] Step 10 completed');
+            this.updateWorkflowStep(9, 'completed', 'World Buffs data imported', '✅');
+            console.log('✅ [WORKFLOW] Step 9 completed');
             
         } catch (error) {
-            this.updateWorkflowStep(10, 'error', `World Buffs import failed: ${error.message}`, '❌');
+            this.updateWorkflowStep(9, 'error', `World Buffs import failed: ${error.message}`, '❌');
             throw error;
         }
     }
@@ -5358,16 +5350,16 @@ class WoWLogsAnalyzer {
         }
     }
 
-    // Step 8: Archive Frost Resistance
-    async runWorkflowStep8(logUrl) {
-        console.log('📁 [WORKFLOW] Step 8: Archiving Frost Resistance...');
-        this.updateWorkflowStep(8, 'active', 'Waiting for data save...', '⏳');
+    // Step 7: Archive Frost Resistance
+    async runWorkflowStep7(logUrl) {
+        console.log('📁 [WORKFLOW] Step 7: Archiving Frost Resistance...');
+        this.updateWorkflowStep(7, 'active', 'Waiting for data save...', '⏳');
         
         // Add 20-second delay for Frost Resistance (complex gear analysis takes longer)
         console.log('⏰ [STEP 8] Waiting 20 seconds for Google Sheets to save Frost Resistance data...');
         await new Promise(resolve => setTimeout(resolve, 20000));
         
-        this.updateWorkflowStep(8, 'active', 'Creating Frost Resistance archive...', '🔄');
+        this.updateWorkflowStep(7, 'active', 'Creating Frost Resistance archive...', '🔄');
         
         try {
             // Call Frost Resistance backup function
@@ -5385,8 +5377,8 @@ class WoWLogsAnalyzer {
             if (!result.success) {
                 // Check if this is a "no data" scenario - skip gracefully
                 if (result.error && result.error.includes('No player data found in source sheet')) {
-                    console.log('⏭️ [WORKFLOW] Step 8: No Frost Resistance data found, skipping archive step');
-                    this.updateWorkflowStep(8, 'skipped', 'No Frost Resistance data found, skipped', '⏭️');
+                    console.log('⏭️ [WORKFLOW] Step 7: No Frost Resistance data found, skipping archive step');
+                    this.updateWorkflowStep(7, 'skipped', 'No Frost Resistance data found, skipped', '⏭️');
                     return; // Skip this step gracefully
                 }
                 throw new Error(result.error || 'Unknown backup error');
@@ -5395,26 +5387,26 @@ class WoWLogsAnalyzer {
             // Store archive URL in database
             await this.storeFrostResArchiveUrl(result, logUrl, this.workflowState.eventId);
             
-            this.updateWorkflowStep(8, 'completed', 'Frost Resistance archive created', '✅');
-            console.log('✅ [WORKFLOW] Step 8 completed');
+            this.updateWorkflowStep(7, 'completed', 'Frost Resistance archive created', '✅');
+            console.log('✅ [WORKFLOW] Step 7 completed');
             
         } catch (error) {
-            this.updateWorkflowStep(8, 'error', `Frost Resistance archive failed: ${error.message}`, '❌');
+            this.updateWorkflowStep(7, 'error', `Frost Resistance archive failed: ${error.message}`, '❌');
             throw error;
         }
     }
 
-    // Step 11: Import Frost Resistance Data
-    async runWorkflowStep11(eventId) {
-        console.log('📥 [WORKFLOW] Step 11: Importing Frost Resistance data...');
-        this.updateWorkflowStep(11, 'active', 'Importing Frost Resistance to database...', '🔄');
+    // Step 10: Import Frost Resistance Data
+    async runWorkflowStep10(eventId) {
+        console.log('📥 [WORKFLOW] Step 10: Importing Frost Resistance data...');
+        this.updateWorkflowStep(10, 'active', 'Importing Frost Resistance to database...', '🔄');
         
         try {
             // Check if Step 8 was skipped (no frost resistance data)
-            const step8Element = document.getElementById('step8Progress');
-            if (step8Element && step8Element.classList.contains('skipped')) {
-                console.log('⏭️ [WORKFLOW] Step 11: Step 8 was skipped (no data), skipping import');
-                this.updateWorkflowStep(11, 'skipped', 'No Frost Resistance data to import, skipped', '⏭️');
+            const step7Element = document.getElementById('step7Progress');
+            if (step7Element && step7Element.classList.contains('skipped')) {
+                console.log('⏭️ [WORKFLOW] Step 10: Step 7 was skipped (no data), skipping import');
+                this.updateWorkflowStep(10, 'skipped', 'No Frost Resistance data to import, skipped', '⏭️');
                 return; // Skip this step gracefully
             }
 
@@ -5427,49 +5419,16 @@ class WoWLogsAnalyzer {
             // Import Frost Resistance data
             await this.importFrostResData(archiveUrl);
             
-            this.updateWorkflowStep(11, 'completed', 'Frost Resistance data imported', '✅');
-            console.log('✅ [WORKFLOW] Step 11 completed');
+            this.updateWorkflowStep(10, 'completed', 'Frost Resistance data imported', '✅');
+            console.log('✅ [WORKFLOW] Step 10 completed');
             
         } catch (error) {
-            this.updateWorkflowStep(11, 'error', `Frost Resistance import failed: ${error.message}`, '❌');
+            this.updateWorkflowStep(10, 'error', `Frost Resistance import failed: ${error.message}`, '❌');
             throw error;
         }
     }
 
-    // NEW Step 5: Waiting 2 Minutes
-    async runWorkflowStepWait() {
-        console.log('⏰ [WORKFLOW] Step 5: Waiting 2 minutes for Google Sheets to save data...');
-        this.updateWorkflowStep(5, 'active', 'Waiting for Google Sheets to save data...', '⏳', true);
-        
-        const totalWaitTime = 2 * 60 * 1000; // 2 minutes in milliseconds
-        const updateInterval = 1000; // Update every second
-        let elapsed = 0;
-        
-        return new Promise((resolve) => {
-            const timer = setInterval(() => {
-                elapsed += updateInterval;
-                const percentage = (elapsed / totalWaitTime) * 100;
-                
-                // Update progress
-                this.updateWorkflowStepProgress(5, percentage);
-                
-                // Update status text with remaining time
-                const remainingSeconds = Math.ceil((totalWaitTime - elapsed) / 1000);
-                const minutes = Math.floor(remainingSeconds / 60);
-                const seconds = remainingSeconds % 60;
-                const timeText = minutes > 0 ? `${minutes}:${seconds.toString().padStart(2, '0')}` : `${seconds}s`;
-                
-                this.updateWorkflowStep(5, 'active', `Waiting for data save... ${timeText} remaining`, '⏳', true);
-                
-                if (elapsed >= totalWaitTime) {
-                    clearInterval(timer);
-                    this.updateWorkflowStep(5, 'completed', 'Wait completed - data should be fully saved', '✅');
-                    console.log('✅ [WORKFLOW] Step 5 completed - 2 minute wait finished');
-                    resolve();
-                }
-            }, updateInterval);
-        });
-    }
+    // Removed Step 5 wait (2-minute delay) — no longer needed
 
     // Helper function to wait for RPB completion
     async waitForRPBCompletion() {
@@ -6167,7 +6126,7 @@ class WoWLogsAnalyzer {
     }
 
     selectAllWorkflowSteps() {
-        for (let i = 1; i <= 11; i++) {
+        for (let i = 1; i <= 10; i++) {
             const checkbox = document.getElementById(`step${i}Checkbox`);
             if (checkbox) {
                 checkbox.checked = true;
@@ -6176,7 +6135,7 @@ class WoWLogsAnalyzer {
     }
 
     deselectAllWorkflowSteps() {
-        for (let i = 1; i <= 11; i++) {
+        for (let i = 1; i <= 10; i++) {
             const checkbox = document.getElementById(`step${i}Checkbox`);
             if (checkbox) {
                 checkbox.checked = false;

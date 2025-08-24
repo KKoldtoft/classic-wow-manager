@@ -134,6 +134,83 @@
     } catch { return []; }
   }
 
+  // No-assignments helpers (shared with roster page via localStorage)
+  function getNoAssignmentsMap() {
+    try { return JSON.parse(localStorage.getItem('noAssignmentsMap') || '{}') || {}; } catch { return {}; }
+  }
+  function isNoAssignmentsByUserId(userId) {
+    if (!userId) return false;
+    const map = getNoAssignmentsMap();
+    return !!map[String(userId)];
+  }
+  function isNoAssignmentsRosterRow(row) {
+    let id = row?.discord_user_id || row?.discordId || row?.discord_userid || row?.discord_id || row?.discord;
+    if (!id) {
+      try {
+        const name = String(row?.character_name || '').toLowerCase();
+        if (name && Array.isArray(window.__lastFetchedRosterForAssignments)) {
+          const m = window.__lastFetchedRosterForAssignments.find(r => String(r.character_name||'').toLowerCase() === name);
+          if (m) id = m.discord_user_id || m.discordId || m.discord_userid || m.discord_id || m.discord;
+        }
+      } catch {}
+    }
+    return isNoAssignmentsByUserId(id);
+  }
+  function filterAssignable(list) {
+    return (Array.isArray(list) ? list : []).filter(r => !isNoAssignmentsRosterRow(r));
+  }
+
+  function sortByGroupSlotAsc(a, b) {
+    return ((Number(a.party_id)||99) - (Number(b.party_id)||99)) || ((Number(a.slot_id)||99) - (Number(b.slot_id)||99));
+  }
+
+  // Ensure toAdd entries replace flagged players with next suitable candidate
+  function ensureToAddReplacements(toAdd, roster, opts={}) {
+    const preserveClass = opts.preserveClass !== false; // default true
+    const rosterAsc = (Array.isArray(roster)?roster:[]).slice().sort(sortByGroupSlotAsc);
+    function findReplacement(entry) {
+      const wantClass = preserveClass ? String(entry?.r?.class_name||'').toLowerCase() : '';
+      // If entry.r has character_name, try to start after that player's index to approximate "next in line"
+      const baseName = String(entry?.r?.character_name||'').toLowerCase();
+      let startIdx = 0;
+      if (baseName) {
+        const idx = rosterAsc.findIndex(r => String(r.character_name||'').toLowerCase() === baseName);
+        if (idx >= 0) startIdx = idx + 1;
+      }
+      // First pass: same class
+      if (wantClass) {
+        for (let i = startIdx; i < rosterAsc.length; i++) {
+          const r = rosterAsc[i];
+          if (String(r.class_name||'').toLowerCase() !== wantClass) continue;
+          if (!isNoAssignmentsRosterRow(r)) return r;
+        }
+        for (let i = 0; i < startIdx; i++) {
+          const r = rosterAsc[i];
+          if (String(r.class_name||'').toLowerCase() !== wantClass) continue;
+          if (!isNoAssignmentsRosterRow(r)) return r;
+        }
+      }
+      // Fallback: any class
+      for (let i = startIdx; i < rosterAsc.length; i++) {
+        const r = rosterAsc[i];
+        if (!isNoAssignmentsRosterRow(r)) return r;
+      }
+      for (let i = 0; i < startIdx; i++) {
+        const r = rosterAsc[i];
+        if (!isNoAssignmentsRosterRow(r)) return r;
+      }
+      return null;
+    }
+    return (Array.isArray(toAdd)?toAdd:[]).map(entry => {
+      if (!entry || !entry.r) return entry;
+      if (!isNoAssignmentsRosterRow(entry.r)) return entry;
+      const rep = findReplacement(entry);
+      if (rep) return { ...entry, r: rep };
+      // If no replacement found, drop this entry by returning null; caller will filter
+      return null;
+    }).filter(Boolean);
+  }
+
   function buildPanel(panel, user, roster) {
     const { dungeon, wing, boss, strategy_text, image_url } = panel;
     const canManage = !!(user && user.loggedIn && user.hasManagementRole);
@@ -276,18 +353,25 @@
     imgLink.appendChild(img);
     imgWrapper.appendChild(imgLink);
 
-    // Sapphiron & Kel'Thuzad: autoplay a short preview video overlay on first scroll into view
+    // Sapphiron, Kel'Thuzad & Gothik: autoplay a short preview video overlay on first scroll into view
     try {
       const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       const saveData = navigator.connection && navigator.connection.saveData;
       const isSapphiron = panelKeyLower.includes('sapph');
       const isKelthuzad = panelKeyLower.includes('kel');
-      if (isSapphiron || isKelthuzad) {
+      const isGothik = panelKeyLower.includes('goth');
+      const isAnub = panelKeyLower.includes('anub');
+      if (isSapphiron || isKelthuzad || isGothik || isAnub) {
         const previewUrl = isSapphiron
           ? 'https://res.cloudinary.com/duthjs0c3/video/upload/f_auto,q_auto/v1755864926/Saph-Small-1_cgscco.mp4'
-          : 'https://res.cloudinary.com/duthjs0c3/video/upload/f_auto,q_auto/v1755867358/KT-small_p55l1i.mp4';
+          : (isKelthuzad
+            ? 'https://res.cloudinary.com/duthjs0c3/video/upload/f_auto,q_auto/v1755867358/KT-small_p55l1i.mp4'
+            : (isGothik
+              ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756022062/Gothik-human-side_znqy6h.mp4'
+              : 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756024672/anub_xgkjtx.mp4'));
         imgWrapper.style.position = 'relative';
-        try { imgWrapper.style.maxWidth = '720px'; } catch {}
+        // Keep the tighter preview width for Sapphiron/Kel; let Gothik/Anub use full image width to match sizes exactly
+        if (!(isGothik || isAnub)) { try { imgWrapper.style.maxWidth = '720px'; } catch {} }
         try { imgWrapper.style.overflow = 'hidden'; } catch {}
         let played = false;
 
@@ -305,8 +389,8 @@
           overlay.style.alignItems = 'center';
           overlay.style.justifyContent = 'center';
           overlay.style.borderRadius = '8px';
-          overlay.style.zIndex = '2';
-          overlay.style.background = '#000';
+          overlay.style.zIndex = '1';
+          overlay.style.background = 'transparent';
           function syncOverlaySize() {
             try {
               overlay.style.height = (img?.clientHeight ? (img.clientHeight + 'px') : 'auto');
@@ -327,14 +411,24 @@
           video.style.maxWidth = '100%';
           video.style.maxHeight = '100%';
           video.style.width = '100%';
-          video.style.height = 'auto';
-          video.style.objectFit = 'contain';
+          // For Gothik, ensure the video perfectly overlays the image by filling the overlay box
+          if (isGothik) {
+            video.style.height = '100%';
+            video.style.objectFit = 'cover';
+          } else {
+            video.style.height = 'auto';
+            video.style.objectFit = 'contain';
+          }
           video.style.borderRadius = '8px';
           video.style.opacity = '0';
-          video.style.transition = 'opacity 1000ms ease';
+          video.style.transition = 'opacity 2000ms ease';
           overlay.appendChild(video);
-          // Crossfade: image fades out while video fades in
-          try { img.style.transition = 'opacity 1000ms ease'; } catch {}
+          // Crossfade: image fades out while video fades in (image sits above video)
+          try {
+            img.style.transition = 'opacity 2000ms ease';
+            img.style.position = 'relative';
+            img.style.zIndex = '2';
+          } catch {}
           requestAnimationFrame(() => {
             try { img.style.opacity = '0'; } catch {}
             video.style.opacity = '1';
@@ -359,12 +453,12 @@
               try { window.removeEventListener('resize', syncOverlaySize); } catch {}
             }, 1000);
           }
-          // Begin fade-out 1s before video ends
+          // Begin fade-out 2s before video ends
           try {
             video.addEventListener('loadedmetadata', () => {
               try {
                 const durMs = Number.isFinite(video.duration) ? (video.duration * 1000) : 0;
-                const startMs = Math.max(durMs - 1000, 0);
+                const startMs = Math.max(durMs - 2000, 0);
                 setTimeout(startFadeOut, startMs);
               } catch {}
             }, { once: true });
@@ -372,7 +466,7 @@
           // Fallback: if ended fires before metadata or timers, ensure fade
           video.addEventListener('ended', startFadeOut, { once: true });
           // Safety: if metadata never loads, fade out after 8s
-          setTimeout(() => { if (document.body.contains(video)) startFadeOut(); }, 8000);
+          setTimeout(() => { if (document.body.contains(video)) startFadeOut(); }, 10000);
         }
 
         // Observer trigger: wait until (almost) fully visible
@@ -1414,6 +1508,7 @@
             // fetch roster to know party/slot mapping
             const eventId = getActiveEventId();
             const roster = await fetchRoster(eventId);
+            try { window.__lastFetchedRosterForAssignments = Array.isArray(roster) ? roster.slice() : []; } catch {}
             const findBy = (party, slot) => roster.find(r => Number(r.party_id) === Number(party) && Number(r.slot_id) === Number(slot));
             const icons = {
               skull: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/1_skull_faqei8.png',
@@ -1436,7 +1531,7 @@
               if (ot1) toAdd.push({ r: ot1, icon: icons.cross, text: 'Off Tank 1. Pick up the right add. Stack it on the boss and stand with the main tank. Use a FAP if needed.' });
               if (ot2) toAdd.push({ r: ot2, icon: icons.square, text: 'Off Tank 2. Pick up the left add. Stack it on the boss and stand with the main tank. Use a FAP if needed.' });
             } else if (bossKey.includes("faerlina")) {
-              const pSorted = roster.filter(r => String(r.class_name).toLowerCase() === 'priest')
+              const pSorted = filterAssignable(roster.filter(r => String(r.class_name).toLowerCase() === 'priest'))
                 .sort((a,b) => (Number(a.party_id)||99) - (Number(b.party_id)||99) || (Number(a.slot_id)||99) - (Number(b.slot_id)||99));
               const p1 = pSorted[0];
               const p2 = pSorted[1];
@@ -1479,27 +1574,27 @@
                 }
               } catch {}
               // 2) All hunters -> Kill the webs
-              roster.filter(r=>String(r.class_name||'').toLowerCase()==='hunter')
+              filterAssignable(roster.filter(r=>String(r.class_name||'').toLowerCase()==='hunter'))
                 .forEach(r=>toAdd.push({ r, icon: null, text: 'Kill the webs' }));
               // 3) All warlocks -> Kill the webs
-              roster.filter(r=>String(r.class_name||'').toLowerCase()==='warlock')
+              filterAssignable(roster.filter(r=>String(r.class_name||'').toLowerCase()==='warlock'))
                 .forEach(r=>toAdd.push({ r, icon: null, text: 'Kill the webs' }));
               // 4) Two mages with highest group/slot
-              const magesDesc = roster.filter(r=>String(r.class_name||'').toLowerCase()==='mage')
+              const magesDesc = filterAssignable(roster.filter(r=>String(r.class_name||'').toLowerCase()==='mage'))
                 .sort((a,b)=> ((Number(b.party_id)||0)-(Number(a.party_id)||0)) || ((Number(b.slot_id)||0)-(Number(a.slot_id)||0)));
               if (magesDesc[0]) toAdd.push({ r: magesDesc[0], icon: null, text: 'Kill the webs' });
               if (magesDesc[1]) toAdd.push({ r: magesDesc[1], icon: null, text: 'Kill the webs' });
               // NEW: 2 Shamans with highest group/slot -> Heal the webs
-              const shamansDesc = roster
-                .filter(r => String(r.class_name||'').toLowerCase() === 'shaman')
+              const shamansDesc = filterAssignable(roster
+                .filter(r => String(r.class_name||'').toLowerCase() === 'shaman'))
                 .sort((a,b)=> ((Number(b.party_id)||0)-(Number(a.party_id)||0)) || ((Number(b.slot_id)||0)-(Number(a.slot_id)||0)));
               if (shamansDesc[0]) toAdd.push({ r: shamansDesc[0], icon: null, text: 'Heal the webs' });
               if (shamansDesc[1]) toAdd.push({ r: shamansDesc[1], icon: null, text: 'Heal the webs' });
               // 5) All druids -> cleanse poison on tank
-              roster.filter(r=>String(r.class_name||'').toLowerCase()==='druid')
+              filterAssignable(roster.filter(r=>String(r.class_name||'').toLowerCase()==='druid'))
                 .forEach(r=>toAdd.push({ r, icon: null, text: 'Cleanse poison on Tank before webspray' }));
               // 6) Lowest shaman -> poison cleansing totem
-              const shamansAsc = roster.filter(r=>String(r.class_name||'').toLowerCase()==='shaman')
+              const shamansAsc = filterAssignable(roster.filter(r=>String(r.class_name||'').toLowerCase()==='shaman'))
                 .sort((a,b)=> ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99)));
               if (shamansAsc[0]) toAdd.push({ r: shamansAsc[0], icon: null, text: 'Keep poison cleansing totem up for the tank before webspray.' });
             } else if (bossKey.includes("razu")) {
@@ -1523,7 +1618,7 @@
                 if (t4) toAdd.push({ r: t4, icon: icons.diamond, text: 'Tank the right 2 adds (near but not on top of the priests)' });
               } catch {}
               // Priests: two lowest
-              const priestsAsc = roster.filter(r=>String(r.class_name||'').toLowerCase()==='priest')
+              const priestsAsc = filterAssignable(roster.filter(r=>String(r.class_name||'').toLowerCase()==='priest'))
                 .sort((a,b)=> ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99)));
               if (priestsAsc[0]) toAdd.push({ r: priestsAsc[0], icon: icons.cross, text: 'Mind control duty (You pull)' });
               if (priestsAsc[0]) toAdd.push({ r: priestsAsc[0], icon: icons.square, text: 'Mind control duty' });
@@ -1531,9 +1626,9 @@
               if (priestsAsc[1]) toAdd.push({ r: priestsAsc[1], icon: icons.diamond, text: 'Mind control duty' });
               // Warriors target dummies
               const crate = 'https://wow.zamimg.com/images/wow/icons/large/inv_crate_06.jpg';
-              const warriorsG2 = roster.filter(r=>String(r.class_name||'').toLowerCase()==='warrior' && Number(r.party_id)===2)
+              const warriorsG2 = filterAssignable(roster.filter(r=>String(r.class_name||'').toLowerCase()==='warrior' && Number(r.party_id)===2))
                 .sort((a,b)=> (Number(a.slot_id)||99)-(Number(b.slot_id)||99));
-              const warriorsG3 = roster.filter(r=>String(r.class_name||'').toLowerCase()==='warrior' && Number(r.party_id)===3)
+              const warriorsG3 = filterAssignable(roster.filter(r=>String(r.class_name||'').toLowerCase()==='warrior' && Number(r.party_id)===3))
                 .sort((a,b)=> (Number(a.slot_id)||99)-(Number(b.slot_id)||99));
               if (warriorsG2[0]) toAdd.push({ r: warriorsG2[0], icon: crate, text: 'Target Dummy #1' });
               if (warriorsG2[1]) toAdd.push({ r: warriorsG2[1], icon: crate, text: 'Target Dummy #2' });
@@ -1568,19 +1663,19 @@
                 if (diamond)  toAdd.push({ r: diamond,  icon: icons.diamond,  text: 'Tank the back right pile' });
               } catch {}
               // Warlocks and Hunters pet/VW assignment
-              roster.filter(r=>['warlock','hunter'].includes(String(r.class_name||'').toLowerCase()))
+              filterAssignable(roster.filter(r=>['warlock','hunter'].includes(String(r.class_name||'').toLowerCase())))
                 .forEach(r=> toAdd.push({ r, icon: null, text: 'Place your Pet / Void Walker between the platforms to absorbe charge.' }));
               // Healers by side
               const isHealer = (r) => ['shaman','priest','druid'].includes(String(r.class_name||'').toLowerCase());
               const inGroups = (r, groups) => groups.includes(Number(r.party_id));
-              const undeadHealers = roster.filter(r=>isHealer(r) && inGroups(r, [2,3,4,5]));
-              const humanHealers  = roster.filter(r=>isHealer(r) && inGroups(r, [1,6,7]));
+              const undeadHealers = filterAssignable(roster.filter(r=>isHealer(r) && inGroups(r, [2,3,4,5])));
+              const humanHealers  = filterAssignable(roster.filter(r=>isHealer(r) && inGroups(r, [1,6,7])));
               undeadHealers.forEach(r=> toAdd.push({ r, icon: icons.star, text: 'Go heal Undead side.' }));
               humanHealers.forEach(r=> toAdd.push({ r, icon: icons.circle, text: 'Go heal Human side.' }));
               // Group 8 balancing
               let undeadCount = undeadHealers.length;
               let humanCount = humanHealers.length;
-              const group8Healers = roster.filter(r=>isHealer(r) && Number(r.party_id)===8);
+              const group8Healers = filterAssignable(roster.filter(r=>isHealer(r) && Number(r.party_id)===8));
               group8Healers.forEach(r => {
                 if (undeadCount <= humanCount) {
                   toAdd.push({ r, icon: icons.star, text: 'Go heal Undead side.' });
@@ -1625,7 +1720,7 @@
                 };
                 const t1 = getTankByIndex(1);
                 if (t1) toAdd.push({ r: t1, icon: icons.skull, text: 'Tank the boss' });
-                const priests = roster.filter(r => String(r.class_name||'').toLowerCase()==='priest')
+                const priests = filterAssignable(roster.filter(r => String(r.class_name||'').toLowerCase()==='priest'))
                   .sort((a,b)=> ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99)));
                 if (priests[0]) toAdd.push({ r: priests[0], icon: null, text: 'Instantly remove disease from the tank.' });
               } catch {}
@@ -1647,7 +1742,7 @@
                 if (t1) toAdd.push({ r: t1, icon: icons.skull, text: 'Tank the boss. (turn it 90 degree to it\'s left and move it a few steps back)' });
                 if (t2) toAdd.push({ r: t2, icon: icons.skull, text: 'Backup tank. Get to 2nd on threat and put on a shield.' });
                 // Healers by name (alphabetically), only shaman/druid/priest
-                const healers = roster.filter(r=>['shaman','druid','priest'].includes(String(r.class_name||'').toLowerCase()))
+                const healers = filterAssignable(roster.filter(r=>['shaman','druid','priest'].includes(String(r.class_name||'').toLowerCase())))
                   .sort((a,b)=> String(a.character_name||'').localeCompare(String(b.character_name||'')));
                 healers.forEach(r => toAdd.push({ r, icon: null, text: 'Heal the tank when it\'s your turn to heal.' }));
 
@@ -1660,13 +1755,13 @@
                     return en?.character_name ? String(en.character_name) : null;
                   };
                   const tankIds = [pick(1), pick(2), pick(3), pick(4)].filter(Boolean);
-                  const mages = roster.filter(r=>String(r.class_name||'').toLowerCase()==='mage');
-                  const warriorsAll = roster.filter(r=>String(r.class_name||'').toLowerCase()==='warrior');
+                  const mages = filterAssignable(roster.filter(r=>String(r.class_name||'').toLowerCase()==='mage'));
+                  const warriorsAll = filterAssignable(roster.filter(r=>String(r.class_name||'').toLowerCase()==='warrior'));
                   const warriorNotTanks = warriorsAll.filter(r=>!tankIds.some(n=>String(n).toLowerCase()===String(r.character_name||'').toLowerCase()))
                     .sort((a,b)=> ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99)));
-                  const rogues = roster.filter(r=>String(r.class_name||'').toLowerCase()==='rogue');
-                  const warlocks = roster.filter(r=>String(r.class_name||'').toLowerCase()==='warlock');
-                  const hunters = roster.filter(r=>String(r.class_name||'').toLowerCase()==='hunter');
+                  const rogues = filterAssignable(roster.filter(r=>String(r.class_name||'').toLowerCase()==='rogue'));
+                  const warlocks = filterAssignable(roster.filter(r=>String(r.class_name||'').toLowerCase()==='warlock'));
+                  const hunters = filterAssignable(roster.filter(r=>String(r.class_name||'').toLowerCase()==='hunter'));
                   const tanksFinal = tankIds.map(name => roster.find(r=>String(r.character_name).toLowerCase()===String(name).toLowerCase()) || { character_name: name });
                   const ordered = [...mages, ...warriorNotTanks, ...rogues, ...warlocks, ...hunters, ...tanksFinal];
                   let ptr = 0;
@@ -1684,9 +1779,9 @@
               const isHealer = (r) => ['shaman','priest','druid'].includes(String(r.class_name||'').toLowerCase());
               // Order: shamans, priests, druids; then take up to 12 by group/slot
               const sortByGS = (a,b) => ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99));
-              const shamans = roster.filter(r=>isHealer(r) && String(r.class_name||'').toLowerCase()==='shaman').sort(sortByGS);
-              const priests = roster.filter(r=>isHealer(r) && String(r.class_name||'').toLowerCase()==='priest').sort(sortByGS);
-              const druids  = roster.filter(r=>isHealer(r) && String(r.class_name||'').toLowerCase()==='druid').sort(sortByGS);
+              const shamans = filterAssignable(roster.filter(r=>isHealer(r) && String(r.class_name||'').toLowerCase()==='shaman')).sort(sortByGS);
+              const priests = filterAssignable(roster.filter(r=>isHealer(r) && String(r.class_name||'').toLowerCase()==='priest')).sort(sortByGS);
+              const druids  = filterAssignable(roster.filter(r=>isHealer(r) && String(r.class_name||'').toLowerCase()==='druid')).sort(sortByGS);
               const ordered = [...shamans, ...priests, ...druids].slice(0,12);
               const raidOrder = [
                 { name: 'skull', icon: icons.skull },
@@ -1887,7 +1982,7 @@
                 if (t2) toAdd.push({ r: t2, icon: icons.skull, text: 'Backup Tank Boss (Stay 2nd on threat)' });
 
                 // Mages left/right split: use only mages for count and split (ignore druids)
-                const mages = (Array.isArray(roster)?roster:[]).filter(r => String(r.class_name||'').toLowerCase()==='mage');
+                const mages = filterAssignable((Array.isArray(roster)?roster:[]).filter(r => String(r.class_name||'').toLowerCase()==='mage'));
                 const leftCap = Math.floor(mages.length / 2);
                 const rightCap = mages.length - leftCap;
                 const mageLeft = mages.slice(0, leftCap);
@@ -1896,9 +1991,9 @@
                 mageRight.forEach(m => toAdd.push({ r: m, icon: null, text: 'Decurse Tank + right' }));
 
                 // Healers: Shamans, Priests, Druids (in that order)
-                const shamans = (Array.isArray(roster)?roster:[]).filter(r => String(r.class_name||'').toLowerCase()==='shaman');
-                const priests = (Array.isArray(roster)?roster:[]).filter(r => String(r.class_name||'').toLowerCase()==='priest');
-                const druidsH = (Array.isArray(roster)?roster:[]).filter(r => String(r.class_name||'').toLowerCase()==='druid');
+                const shamans = filterAssignable((Array.isArray(roster)?roster:[]).filter(r => String(r.class_name||'').toLowerCase()==='shaman'));
+                const priests = filterAssignable((Array.isArray(roster)?roster:[]).filter(r => String(r.class_name||'').toLowerCase()==='priest'));
+                const druidsH = filterAssignable((Array.isArray(roster)?roster:[]).filter(r => String(r.class_name||'').toLowerCase()==='druid'));
                 const healers = [...shamans, ...priests, ...druidsH];
                 healers.forEach((r, i) => {
                   let text = '';
@@ -2041,8 +2136,14 @@
             // Insert at top in order; ensure edit mode for visibility
             Array.from(list.children).forEach(r => { if (typeof r._setEdit === 'function') r._setEdit(); });
             controls.style.display = 'flex';
-            for (let i = toAdd.length - 1; i >= 0; i--) {
-              const { r, icon, text } = toAdd[i];
+            // Replace flagged players with next suitable candidates where applicable
+            const replaced = ensureToAddReplacements(
+              toAdd,
+              roster,
+              { preserveClass: true }
+            );
+            for (let i = replaced.length - 1; i >= 0; i--) {
+              const { r, icon, text } = replaced[i];
               const entry = {
                 character_name: r.character_name,
                 class_name: r.class_name,
@@ -2550,7 +2651,7 @@
           const toAdd = [];
           const bossLower = String(boss).toLowerCase();
           if (bossLower === 'tanking') {
-            const warriors = rosterData.filter(r => String(r.class_name||'').toLowerCase()==='warrior').sort(sortByGS);
+            const warriors = filterAssignable(rosterData.filter(r => String(r.class_name||'').toLowerCase()==='warrior')).sort(sortByGS);
             const icons = [
               'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/1_skull_faqei8.png',
               'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/2_cross_kj9wuf.png',
@@ -2577,17 +2678,17 @@
                 if (val) tankTargets.push(val);
               }
             }
-            const shamans = rosterData.filter(r => String(r.class_name||'').toLowerCase()==='shaman').sort(sortByGS);
-            const priests = rosterData.filter(r => String(r.class_name||'').toLowerCase()==='priest').sort(sortByGS);
-            const druids  = rosterData.filter(r => String(r.class_name||'').toLowerCase()==='druid').sort(sortByGS);
+            const shamans = filterAssignable(rosterData.filter(r => String(r.class_name||'').toLowerCase()==='shaman')).sort(sortByGS);
+            const priests = filterAssignable(rosterData.filter(r => String(r.class_name||'').toLowerCase()==='priest')).sort(sortByGS);
+            const druids  = filterAssignable(rosterData.filter(r => String(r.class_name||'').toLowerCase()==='druid')).sort(sortByGS);
             const pushPair = (r, idx) => { if (r && tankTargets[idx]) toAdd.push({ r, icon: (panel.fixed_icon_url||''), text: tankTargets[idx] }); };
             for (let i=0;i<8;i++) pushPair(shamans[i], i);
             for (let i=0;i<4;i++) pushPair(priests[i], i);
             for (let i=0;i<2;i++) pushPair(druids[i],  i);
           } else if (bossLower === 'buffs') {
-            const mages = rosterData.filter(r => String(r.class_name||'').toLowerCase()==='mage').sort(sortByGS);
-            const priests = rosterData.filter(r => String(r.class_name||'').toLowerCase()==='priest').sort(sortByGS);
-            const druids = rosterData.filter(r => String(r.class_name||'').toLowerCase()==='druid').sort(sortByGS);
+            const mages = filterAssignable(rosterData.filter(r => String(r.class_name||'').toLowerCase()==='mage')).sort(sortByGS);
+            const priests = filterAssignable(rosterData.filter(r => String(r.class_name||'').toLowerCase()==='priest')).sort(sortByGS);
+            const druids = filterAssignable(rosterData.filter(r => String(r.class_name||'').toLowerCase()==='druid')).sort(sortByGS);
             const groups = [1,2,3,4,5,6,7,8];
             const contiguousChunks = (count) => {
               if (count <= 0) return [];
@@ -2626,8 +2727,8 @@
             assign(priests, 'https://wow.zamimg.com/images/wow/icons/large/spell_holy_wordfortitude.jpg');
             assign(druids, 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_regeneration.jpg');
           } else if (bossLower === 'decurse and dispel') {
-            const mages = rosterData.filter(r => String(r.class_name||'').toLowerCase()==='mage').sort(sortByGS);
-            const priests = rosterData.filter(r => String(r.class_name||'').toLowerCase()==='priest').sort(sortByGS);
+            const mages = filterAssignable(rosterData.filter(r => String(r.class_name||'').toLowerCase()==='mage')).sort(sortByGS);
+            const priests = filterAssignable(rosterData.filter(r => String(r.class_name||'').toLowerCase()==='priest')).sort(sortByGS);
             const groups = [1,2,3,4,5,6,7,8];
             const contiguousChunks = (count) => {
               if (count <= 0) return [];
@@ -2662,8 +2763,8 @@
             assign(priests, 'https://wow.zamimg.com/images/wow/icons/large/spell_holy_dispelmagic.jpg');
           } else if (bossLower === 'curses and soul stones') {
             // Curses and Soul Stones
-            const warlocks = rosterData.filter(r => String(r.class_name||'').toLowerCase()==='warlock').sort(sortByGS);
-            const priests = rosterData.filter(r => String(r.class_name||'').toLowerCase()==='priest').sort(sortByGS);
+            const warlocks = filterAssignable(rosterData.filter(r => String(r.class_name||'').toLowerCase()==='warlock')).sort(sortByGS);
+            const priests = filterAssignable(rosterData.filter(r => String(r.class_name||'').toLowerCase()==='priest')).sort(sortByGS);
             // Curses
             if (warlocks[0]) toAdd.push({ r: warlocks[0], icon: 'https://wow.zamimg.com/images/wow/icons/large/spell_shadow_unholystrength.jpg', text: 'Curse of Recklessness' });
             if (warlocks[1]) toAdd.push({ r: warlocks[1], icon: 'https://wow.zamimg.com/images/wow/icons/large/spell_shadow_chilltouch.jpg', text: 'Curse of the Elements' });
@@ -2678,8 +2779,8 @@
             }
           } else if (bossLower === 'power infusion') {
             // Pair priests to mages in order (min length)
-            const priests = rosterData.filter(r => String(r.class_name||'').toLowerCase()==='priest').sort(sortByGS);
-            const mages = rosterData.filter(r => String(r.class_name||'').toLowerCase()==='mage').sort(sortByGS);
+            const priests = filterAssignable(rosterData.filter(r => String(r.class_name||'').toLowerCase()==='priest')).sort(sortByGS);
+            const mages = filterAssignable(rosterData.filter(r => String(r.class_name||'').toLowerCase()==='mage')).sort(sortByGS);
             const pairs = Math.min(priests.length, mages.length);
             const piIcon = 'https://wow.zamimg.com/images/wow/icons/large/spell_holy_powerinfusion.jpg';
             for (let i=0;i<pairs;i++) {
@@ -2690,8 +2791,10 @@
           }
           Array.from(list.children).forEach(r => { if (typeof r._setEdit === 'function') r._setEdit(); });
           controls.style.display = 'flex';
-          for (let i = 0; i < toAdd.length; i++) {
-            const { r, icon, text, targetName } = toAdd[i];
+          // Replace flagged players with next suitable candidates while preserving counts
+          const replaced = ensureToAddReplacements(toAdd, rosterData, { preserveClass: true });
+          for (let i = 0; i < replaced.length; i++) {
+            const { r, icon, text, targetName } = replaced[i];
             const entry = {
               character_name: r.character_name,
               class_name: r.class_name,

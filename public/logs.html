@@ -136,28 +136,28 @@
                         </label>
                         
                         <label class="checkbox-item">
+                            <input type="checkbox" id="step5Checkbox" checked>
+                            <span class="checkbox-label">5. Archive RPB Results</span>
+                        </label>
+                        <label class="checkbox-item">
                             <input type="checkbox" id="step6Checkbox" checked>
-                            <span class="checkbox-label">6. Archive RPB Results</span>
+                            <span class="checkbox-label">6. Archive World Buffs</span>
                         </label>
                         <label class="checkbox-item">
                             <input type="checkbox" id="step7Checkbox" checked>
-                            <span class="checkbox-label">7. Archive World Buffs</span>
+                            <span class="checkbox-label">7. Archive Frost Resistance</span>
                         </label>
                         <label class="checkbox-item">
                             <input type="checkbox" id="step8Checkbox" checked>
-                            <span class="checkbox-label">8. Archive Frost Resistance</span>
+                            <span class="checkbox-label">8. Import RPB Data</span>
                         </label>
                         <label class="checkbox-item">
                             <input type="checkbox" id="step9Checkbox" checked>
-                            <span class="checkbox-label">9. Import RPB Data</span>
+                            <span class="checkbox-label">9. Import World Buffs Data</span>
                         </label>
                         <label class="checkbox-item">
                             <input type="checkbox" id="step10Checkbox" checked>
-                            <span class="checkbox-label">10. Import World Buffs Data</span>
-                        </label>
-                        <label class="checkbox-item">
-                            <input type="checkbox" id="step11Checkbox" checked>
-                            <span class="checkbox-label">11. Import Frost Resistance Data</span>
+                            <span class="checkbox-label">10. Import Frost Resistance Data</span>
                         </label>
                     </div>
                     <div class="checkbox-actions">
@@ -210,10 +210,19 @@
                     <div class="step-indicator" id="step4Indicator">⏳</div>
                 </div>
                 
+                <div class="progress-step" id="step5Progress">
+                    <div class="step-number">5</div>
+                    <div class="step-content">
+                        <div class="step-title">Archive RPB Results</div>
+                        <div class="step-status" id="step5Status">Waiting...</div>
+                        <button id="runStep5Btn" class="btn btn-primary btn-small">Run</button>
+                    </div>
+                    <div class="step-indicator" id="step5Indicator">⏳</div>
+                </div>
                 <div class="progress-step" id="step6Progress">
                     <div class="step-number">6</div>
                     <div class="step-content">
-                        <div class="step-title">Archive RPB Results</div>
+                        <div class="step-title">Archive World Buffs</div>
                         <div class="step-status" id="step6Status">Waiting...</div>
                         <button id="runStep6Btn" class="btn btn-primary btn-small">Run</button>
                     </div>
@@ -222,7 +231,7 @@
                 <div class="progress-step" id="step7Progress">
                     <div class="step-number">7</div>
                     <div class="step-content">
-                        <div class="step-title">Archive World Buffs</div>
+                        <div class="step-title">Archive Frost Resistance</div>
                         <div class="step-status" id="step7Status">Waiting...</div>
                         <button id="runStep7Btn" class="btn btn-primary btn-small">Run</button>
                     </div>
@@ -231,7 +240,7 @@
                 <div class="progress-step" id="step8Progress">
                     <div class="step-number">8</div>
                     <div class="step-content">
-                        <div class="step-title">Archive Frost Resistance</div>
+                        <div class="step-title">Import RPB Data</div>
                         <div class="step-status" id="step8Status">Waiting...</div>
                         <button id="runStep8Btn" class="btn btn-primary btn-small">Run</button>
                     </div>
@@ -240,7 +249,7 @@
                 <div class="progress-step" id="step9Progress">
                     <div class="step-number">9</div>
                     <div class="step-content">
-                        <div class="step-title">Import RPB Data</div>
+                        <div class="step-title">Import World Buffs Data</div>
                         <div class="step-status" id="step9Status">Waiting...</div>
                         <button id="runStep9Btn" class="btn btn-primary btn-small">Run</button>
                     </div>
@@ -249,20 +258,11 @@
                 <div class="progress-step" id="step10Progress">
                     <div class="step-number">10</div>
                     <div class="step-content">
-                        <div class="step-title">Import World Buffs Data</div>
+                        <div class="step-title">Import Frost Resistance Data</div>
                         <div class="step-status" id="step10Status">Waiting...</div>
                         <button id="runStep10Btn" class="btn btn-primary btn-small">Run</button>
                     </div>
                     <div class="step-indicator" id="step10Indicator">⏳</div>
-                </div>
-                <div class="progress-step" id="step11Progress">
-                    <div class="step-number">11</div>
-                    <div class="step-content">
-                        <div class="step-title">Import Frost Resistance Data</div>
-                        <div class="step-status" id="step11Status">Waiting...</div>
-                        <button id="runStep11Btn" class="btn btn-primary btn-small">Run</button>
-                    </div>
-                    <div class="step-indicator" id="step11Indicator">⏳</div>
                 </div>
                 <div class="progress-actions" id="workflowActions" style="display: none;">
                     <button id="retryWorkflowBtn" class="btn btn-secondary">Retry Failed Step</button>

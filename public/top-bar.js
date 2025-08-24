@@ -355,12 +355,18 @@ function setupUpcomingRaidsDropdown() {
     });
 }
 
+// Internal guards to prevent thrash/fetch storms
+let __updateRaidBarBusy = false;
+let __handlingStorageEvent = false;
+
 // Raid Bar functionality
 async function updateRaidBar() {
+    if (__updateRaidBarBusy) return; // Drop re-entrant calls
+    __updateRaidBarBusy = true;
     const urlEventId = getEventIdFromUrl();
     let activeEventId = urlEventId || localStorage.getItem('activeEventSession');
-    // Keep localStorage in sync with URL when present
-    if (urlEventId && localStorage.getItem('activeEventSession') !== urlEventId) {
+    // Keep localStorage in sync with URL when present, but do NOT bounce writes during storage handling
+    if (!__handlingStorageEvent && urlEventId && localStorage.getItem('activeEventSession') !== urlEventId) {
         localStorage.setItem('activeEventSession', urlEventId);
     }
     const raidBar = document.getElementById('raid-bar');
@@ -400,6 +406,8 @@ async function updateRaidBar() {
         if (raidTitle && !raidTitle.textContent) {
             raidTitle.textContent = 'Selected Raid';
         }
+    } finally {
+        __updateRaidBarBusy = false;
     }
 }
 
@@ -460,10 +468,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add scroll listener for sticky header behavior
     window.addEventListener('scroll', handleScroll, { passive: true });
 
-    // Listen for localStorage changes to update raid bar
+    // Listen for localStorage changes to update raid bar.
+    // IMPORTANT: Ignore storage events on event-scoped pages to avoid cross-tab ping-pong.
     window.addEventListener('storage', (e) => {
         if (e.key === 'activeEventSession') {
-            updateRaidBar();
+            const urlEventId = getEventIdFromUrl();
+            if (urlEventId) return; // URL is source of truth on event pages; ignore external changes
+            __handlingStorageEvent = true;
+            Promise.resolve(updateRaidBar()).finally(() => { __handlingStorageEvent = false; });
         }
     });
 
