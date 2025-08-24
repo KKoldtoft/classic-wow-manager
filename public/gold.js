@@ -482,8 +482,14 @@ class GoldPotManager {
             addMap(mapFromPanel('guild_members'));
             addMap(mapFromPanel('big_buyer'));
 
-            // Manual rewards (only for confirmed players)
-            (this.datasets.manualRewardsData||[]).forEach(e=>{ const k=String(e.player_name||'').toLowerCase(); if(!confirmedNames.has(k)) return; const p=nameToPlayer.get(k); if(p) p.points+=(Number(e.points)||0); });
+            // Manual rewards (only for confirmed players) — exclude gold payouts from points
+            (this.datasets.manualRewardsData||[]).forEach(e=>{
+                const k=String(e.player_name||'').toLowerCase();
+                if(!confirmedNames.has(k)) return;
+                const isGold = !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||''))));
+                if (isGold) return; // do not add to points
+                const p=nameToPlayer.get(k); if(p) p.points+=(Number(e.points)||0);
+            });
         } else {
             // Computed mode: use datasets + derived awards
             const damagePoints = this.rewardSettings.damage?.points_array || [];
@@ -548,8 +554,8 @@ class GoldPotManager {
             (this.datasets.playerStreaks||[]).forEach(r=>{ const key=String(r.character_name||'').toLowerCase(); const v=nameToPlayer.get(key); if(!v) return; const s=Number(r.player_streak)||0; let pts=0; if(s>=8)pts=15; else if(s===7)pts=12; else if(s===6)pts=9; else if(s===5)pts=6; else if(s===4)pts=3; v.points+=pts; });
             (this.datasets.guildMembers||[]).forEach(r=>{ const key=String(r.character_name||'').toLowerCase(); const v=nameToPlayer.get(key); if(v) v.points+=10; });
 
-            // Manual rewards (only confirmed)
-            (this.datasets.manualRewardsData||[]).forEach(e=>{ const key=String(e.player_name||'').toLowerCase(); if(!confirmedNames.has(key)) return; const v=nameToPlayer.get(key); if(v) v.points+=(Number(e.points)||0); });
+            // Manual rewards (only confirmed) — exclude gold payouts from points
+            (this.datasets.manualRewardsData||[]).forEach(e=>{ const key=String(e.player_name||'').toLowerCase(); if(!confirmedNames.has(key)) return; const isGold=!!(e&&(e.is_gold||/\[GOLD\]/i.test(String(e.description||'')))); if(isGold) return; const v=nameToPlayer.get(key); if(v) v.points+=(Number(e.points)||0); });
 
             // God Gamer awards
             if (damageSorted.length>=2){ const diff=(parseInt(damageSorted[0].damage_amount)||0)-(parseInt(damageSorted[1].damage_amount)||0); let pts=0; if(diff>=250000)pts=30; else if(diff>=150000)pts=20; const key=String(damageSorted[0].character_name||'').toLowerCase(); const v=nameToPlayer.get(key); if(v) v.points+=pts; }
@@ -590,6 +596,18 @@ class GoldPotManager {
         const adjustedShared2 = Math.max(0, baseShared2 - payout2);
         this.sharedGoldPotAdjusted = adjustedShared2;
         const gpp=(adjustedShared2>0&&totalPointsAll>0)? adjustedShared2/totalPointsAll : 0; this.goldPerPoint=gpp; nameToPlayer.forEach(v=>{ const effPts=Math.max(0, v.points); v.gold=Math.floor(effPts*gpp); });
+
+        // Add manual gold payouts directly to player gold (no points impact)
+        try {
+            (this.datasets.manualRewardsData||[]).forEach(e=>{
+                const key=String(e.player_name||'').toLowerCase();
+                if(!confirmedNames.has(key)) return;
+                const isGold=!!(e&&(e.is_gold||/\[GOLD\]/i.test(String(e.description||''))));
+                if(!isGold) return;
+                const amt=Number(e.points)||0; if(!(amt>0)) return;
+                const v=nameToPlayer.get(key); if(v) v.gold = Math.max(0, (Number(v.gold)||0) + amt);
+            });
+        } catch {}
         this.playerTotals=nameToPlayer;
     }
 
@@ -971,9 +989,21 @@ class GoldPotManager {
         // Big Buyer
         push('Big Buyer', sumFrom(this.datasets.bigBuyerData));
 
-        // Manual rewards (name-only)
-        const manualPts = (this.datasets.manualRewardsData||[]).reduce((acc,e)=> acc + (lower(e.player_name||'')===nameKey ? (Number(e.points)||0) : 0), 0);
-        push('Manual', manualPts);
+        // Manual rewards: split gold vs points
+        const manualGold = (this.datasets.manualRewardsData||[]).reduce((acc,e)=>{
+            if (lower(e.player_name||'')!==nameKey) return acc;
+            const isGold = !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||''))));
+            return isGold ? acc + (Number(e.points)||0) : acc;
+        }, 0);
+        const manualPts = (this.datasets.manualRewardsData||[]).reduce((acc,e)=>{
+            if (lower(e.player_name||'')!==nameKey) return acc;
+            const isGold = !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||''))));
+            return isGold ? acc : acc + (Number(e.points)||0);
+        }, 0);
+        if (manualPts) push('Manual', manualPts);
+        if (manualGold) {
+            items.push({ title: 'Manual', pts: 0, gold: manualGold, isGoldRow: true });
+        }
 
         // Ensure per-row gold sums to total (distribute rounding remainder to Base)
         const computedTotalGold = Number(this.playerTotals?.get(nameKey)?.gold || 0);
@@ -1002,7 +1032,7 @@ class GoldPotManager {
                 <div style="display:grid; grid-template-columns: 1.6fr 60px 85px; gap:8px; font-size:16px; line-height:1.45; color:#111;">
                     <div>${fmtTitle(it.title)}</div>
                     <div style="text-align:right;">${it.pts>0?`+${it.pts}`:it.pts}</div>
-                    <div style="text-align:right;">${it.gold>0?`+${it.gold}`:it.gold}</div>
+                    <div style="text-align:right;">${it.isGoldRow?`<i class=\"fas fa-coins\" style=\"margin-right:6px; color:#f59e0b;\"></i>`:''}${it.gold>0?`+${it.gold}`:it.gold}</div>
                 </div>`).join('') : '<div style="font-size:16px; opacity:.8; color:#111;">No breakdown</div>';
         return header + body + footer;
     }
