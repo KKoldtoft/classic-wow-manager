@@ -3036,7 +3036,7 @@
           const tdChar = document.createElement('td'); tdChar.style.padding='10px 8px';
           try {
             const color = getRosterClassColorByName(roster, row.character_name);
-            tdChar.innerHTML = `<span class="character-name" style="color:${color} !important;">${row.character_name}</span>`;
+            tdChar.innerHTML = `<span class="character-name" style="color:${color} !important; font-weight: normal;">${row.character_name}</span>`;
           } catch {
             tdChar.textContent = row.character_name;
           }
