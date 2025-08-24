@@ -468,14 +468,19 @@ class RaidLogsManager {
 
         this.activeEventId = eventIdFromUrl || localStorage.getItem('activeEventSession');
 
-        // Normalize URL: if we have an active event but current URL is not event-scoped, redirect
+        // Normalize URL without hard reload if possible
         try {
             const parts = window.location.pathname.split('/').filter(Boolean);
             const isEventScoped = parts.includes('event') && parts[parts.indexOf('event') + 1];
             const isRaidLogsPage = parts.includes('raidlogs');
             if (!isEventScoped && isRaidLogsPage && this.activeEventId) {
-                window.location.replace(`/event/${this.activeEventId}/raidlogs`);
-                return;
+                try {
+                    history.replaceState({}, '', `/event/${this.activeEventId}/raidlogs`);
+                    if (typeof updateRaidBar === 'function') setTimeout(() => updateRaidBar(), 0);
+                } catch (_) {
+                    window.location.replace(`/event/${this.activeEventId}/raidlogs`);
+                    return;
+                }
             }
         } catch {}
 

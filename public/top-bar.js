@@ -425,6 +425,7 @@ function updateRaidNavigation(eventId) {
     const logsLink = document.getElementById('raid-logs-link');
     const goldpotLink = document.getElementById('raid-goldpot-link');
     const lootLink = document.getElementById('raid-loot-link');
+    const liveViewLink = document.getElementById('live-view-link');
     
     // Update roster link
     if (rosterLink) {
@@ -451,6 +452,18 @@ function updateRaidNavigation(eventId) {
     if (lootLink) {
         lootLink.href = `/event/${eventId}/loot`;
         lootLink.replaceWith(lootLink.cloneNode(true));
+    }
+
+    // Update Live View link to carry the active event id via query param
+    if (liveViewLink) {
+        try {
+            const currentHref = liveViewLink.getAttribute('href') || '/live';
+            const url = new URL(currentHref, window.location.origin);
+            url.searchParams.set('event', eventId);
+            liveViewLink.href = url.pathname + url.search;
+        } catch (_) {
+            liveViewLink.href = `/live?event=${eventId}`;
+        }
     }
 }
 

@@ -240,8 +240,13 @@
         window.addEventListener('DOMContentLoaded', () => {
             const params = new URLSearchParams(window.location.search);
             const report = params.get('report') || '';
+            const eventId = params.get('event') || '';
             const input = document.getElementById('reportInput');
             if (report) input.value = report;
+            // If an event is provided in the URL, sync it into localStorage so the live page uses the selected event
+            if (eventId) {
+                try { localStorage.setItem('activeEventSession', eventId); } catch (_) {}
+            }
         });
     </script>
     <link rel="icon" href="/images/1p_logo.png" />
