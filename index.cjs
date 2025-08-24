@@ -9239,18 +9239,19 @@ app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, express.json(
 
         await client.query('BEGIN');
 
-        // Ensure snapshot row exists; if already locked, do nothing
+        // Ensure snapshot row exists; if already locked, update who is applying changes
         await client.query(
             `INSERT INTO rewards_snapshot_events (event_id, locked_by_id, locked_by_name)
              VALUES ($1, $2, $3)
-             ON CONFLICT (event_id) DO NOTHING`,
+             ON CONFLICT (event_id) DO UPDATE SET locked_by_id = EXCLUDED.locked_by_id, locked_by_name = EXCLUDED.locked_by_name`,
             [eventId, lockedById, lockedByName]
         );
 
         if (entries.length > 0) {
             // If snapshot was just created, we can bulk insert; otherwise, insert missing rows one-by-one
-            const wasExisting = (await client.query('SELECT 1 FROM rewards_snapshot_events WHERE event_id = $1', [eventId])).rows.length > 0;
-            if (wasExisting) {
+            // Insert missing rows one-by-one when already locked
+            const hasAny = (await client.query('SELECT 1 FROM rewards_and_deductions_points WHERE event_id = $1 LIMIT 1', [eventId])).rows.length > 0;
+            if (hasAny) {
                 for (const e of entries) {
                     await client.query(
                         `INSERT INTO rewards_and_deductions_points (
@@ -9404,7 +9405,8 @@ app.put('/api/rewards-snapshot/:eventId/entry', requireManagement, express.json(
                     (discord_user_id IS NOT NULL AND discord_user_id = $9)
                  OR (discord_user_id IS NULL AND character_name = $8)
                )
-               AND (ranking_number_original IS NOT DISTINCT FROM $10)
+               -- Relax ranking match to allow updates when panel rows are backfilled later
+               -- AND (ranking_number_original IS NOT DISTINCT FROM $10)
              RETURNING *`,
             [
                 point_value_edited,

@@ -230,8 +230,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 fetchAndDisplayMyCharacters();
                 fetchAndDisplayItemsHallOfFame();
                 
-                // Show refresh buttons for logged-in users
-                showRefreshButtons(true);
+                // Only show refresh sections for users with Management role
+                showRefreshButtons(!!user.hasManagementRole);
             } else {
                 document.getElementById('events-list').innerHTML = '<p>Please sign in with Discord to view upcoming events.</p>';
                 if (historicEventsList) {
@@ -256,15 +256,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
     
-    // Function to show/hide refresh buttons based on login status
+    // Function to show/hide entire refresh sections (Management-only)
     function showRefreshButtons(show) {
         const upcomingRefreshBtn = document.getElementById('refresh-events-btn');
         const historicRefreshBtn = document.getElementById('refresh-historic-events-btn');
         
-        if (upcomingRefreshBtn) {
+        const upcomingSection = upcomingRefreshBtn ? upcomingRefreshBtn.closest('.refresh-section') : null;
+        const historicSection = historicRefreshBtn ? historicRefreshBtn.closest('.refresh-section') : null;
+        
+        if (upcomingSection) {
+            upcomingSection.style.display = show ? 'block' : 'none';
+        } else if (upcomingRefreshBtn) {
+            // Fallback: toggle just the button
             upcomingRefreshBtn.style.display = show ? 'inline-flex' : 'none';
         }
-        if (historicRefreshBtn) {
+        
+        if (historicSection) {
+            historicSection.style.display = show ? 'block' : 'none';
+        } else if (historicRefreshBtn) {
+            // Fallback: toggle just the button
             historicRefreshBtn.style.display = show ? 'inline-flex' : 'none';
         }
     }

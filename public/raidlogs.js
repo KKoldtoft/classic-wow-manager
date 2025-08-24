@@ -2685,6 +2685,73 @@ class RaidLogsManager {
                     const data = await res.json();
                     const ix = this.snapshotEntries.findIndex(r => r.panel_key === u.panel_key && r.character_name === u.character_name);
                     if (ix >= 0) this.snapshotEntries[ix] = data.entry; else this.snapshotEntries.push(data.entry);
+                    continue;
+                }
+
+                // If entry not found, backfill a row and retry once
+                if (res.status === 404) {
+                    const cfg = (this.panelConfigs || []).find(c => c.key === u.panel_key);
+                    const list = cfg ? document.getElementById(cfg.containerId) : null;
+                    if (list) {
+                        const items = Array.from(list.querySelectorAll('.ranking-item'));
+                        const match = items.find(item => {
+                            const nameEl = item.querySelector('.character-name');
+                            return nameEl && nameEl.textContent.trim() === u.character_name;
+                        });
+                        if (match) {
+                            // Extract current values from DOM
+                            const pointsEl = match.querySelector('.performance-amount .amount-value');
+                            const detailsEl = match.querySelector('.character-details');
+                            const rankEl = match.querySelector('.ranking-number');
+                            const info = match.querySelector('.character-info');
+                            const pointsInput = pointsEl ? pointsEl.querySelector('input') : null;
+                            const detailsInput = detailsEl ? detailsEl.querySelector('input') : null;
+                            const points = pointsInput
+                                ? Math.round(Number(pointsInput.value || '0'))
+                                : (pointsEl ? Math.round(Number((pointsEl.textContent || '0').replace('+','').trim())) : 0);
+                            const details = detailsInput
+                                ? (detailsInput.value || '').trim()
+                                : (detailsEl ? (detailsEl.textContent || '').trim() : '');
+                            let charClass = null;
+                            if (info && info.className) {
+                                const m = info.className.match(/class-([a-z\-]+)/);
+                                if (m) {
+                                    const map = { 'warrior':'Warrior','paladin':'Paladin','hunter':'Hunter','rogue':'Rogue','priest':'Priest','shaman':'Shaman','mage':'Mage','warlock':'Warlock','druid':'Druid' };
+                                    charClass = map[m[1]] || null;
+                                }
+                            }
+                            const rankingOrig = Number.isFinite(u.ranking_number_original) ? u.ranking_number_original : (rankEl ? Number((rankEl.textContent||'').replace('#',''))||null : null);
+                            const backfill = {
+                                panel_key: u.panel_key,
+                                panel_name: cfg.name,
+                                discord_user_id: null,
+                                character_name: u.character_name,
+                                character_class: charClass,
+                                ranking_number_original: rankingOrig,
+                                point_value_original: points,
+                                character_details_original: details,
+                                primary_numeric_original: null,
+                                aux_json: null
+                            };
+                            await fetch(`/api/rewards-snapshot/${this.activeEventId}/lock`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ entries: [backfill] })
+                            });
+                            // Retry put once
+                            const res2 = await fetch(`/api/rewards-snapshot/${this.activeEventId}/entry`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(u)
+                            });
+                            if (res2.ok) {
+                                const data2 = await res2.json();
+                                const ix2 = this.snapshotEntries.findIndex(r => r.panel_key === u.panel_key && r.character_name === u.character_name);
+                                if (ix2 >= 0) this.snapshotEntries[ix2] = data2.entry; else this.snapshotEntries.push(data2.entry);
+                                continue;
+                            }
+                        }
+                    }
                 }
             } catch (e) {
                 console.warn('⚠️ [SNAPSHOT] Update failed', e);

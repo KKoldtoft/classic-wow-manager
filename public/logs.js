@@ -623,9 +623,9 @@ class WoWLogsAnalyzer {
             return 'tank';
         }
         
-        // Rule 2: If they have tank for 2 or more events, give tank as primary
+        // Rule 2: If they have tank for 3 or more events, give tank as primary
         const tankEventCount = eventRoles.filter(role => role && role.toLowerCase() === 'tank').length;
-        if (tankEventCount >= 2) {
+        if (tankEventCount >= 3) {
             console.log(`✅ [PRIMARY ROLE] ${playerMapping.player_name}: tank (${tankEventCount} events)`);
             return 'tank';
         }
@@ -657,8 +657,10 @@ class WoWLogsAnalyzer {
             return primaryRole;
         }
         
-        // Rule 5: Priority order - tank > healer > dps
-        if (uniqueRoles.includes('tank')) {
+        // Rule 5: Priority order - tank > healer > dps (require strong tank signal)
+        const hasNonEventTank = [rosterRole, raidHelperRole, warcraftLogsRole]
+            .some(role => role && role.toLowerCase() === 'tank');
+        if (uniqueRoles.includes('tank') && (tankEventCount >= 3 || hasNonEventTank)) {
             console.log(`✅ [PRIMARY ROLE] ${playerMapping.player_name}: tank (priority)`);
             return 'tank';
         }
