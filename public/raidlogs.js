@@ -2705,8 +2705,9 @@ class RaidLogsManager {
                     continue;
                 }
 
-                // If entry not found, backfill a row and retry once
-                if (res.status === 404) {
+                // Fallback for any non-OK result (e.g., 404 not found or 500 server error):
+                // backfill a snapshot row based on the current DOM state for this item, then retry once.
+                {
                     const cfg = (this.panelConfigs || []).find(c => c.key === u.panel_key);
                     const list = cfg ? document.getElementById(cfg.containerId) : null;
                     if (list) {
@@ -2769,6 +2770,19 @@ class RaidLogsManager {
                             }
                         }
                     }
+                }
+
+                // As a last resort, rebuild the entire snapshot from the current view.
+                // This path helps when the backend returns 500 for per-entry updates due to row drift.
+                try {
+                    await fetch(`/api/rewards-snapshot/${this.activeEventId}/unlock`, { method: 'POST' });
+                    await this.lockSnapshotFromCurrentView();
+                    // Refresh local cache and overlay so UI reflects saved values immediately
+                    await this.fetchSnapshotStatus();
+                    await this.fetchSnapshotData();
+                    this.applySnapshotOverlay();
+                } catch (e2) {
+                    console.warn('⚠️ [SNAPSHOT] Fallback unlock+relock failed', e2);
                 }
             } catch (e) {
                 console.warn('⚠️ [SNAPSHOT] Update failed', e);
