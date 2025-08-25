@@ -43,6 +43,7 @@
     if (!isNax && buttonsContainer) {
       buttonsContainer.innerHTML = `
         <a class="nav-btn" data-wing="main" href="#"><i class="fas fa-home"></i> <span>Main</span></a>
+        <a class="nav-btn" data-wing="myassignments" href="#"><i class="fas fa-user-check"></i> <span>My Assignments</span></a>
         <a class="nav-btn" data-wing="aq40" href="#"><i class="fas fa-mountain"></i> <span>AQ40</span></a>
         <a class="nav-btn" data-wing="bwl" href="#"><i class="fas fa-fire"></i> <span>BWL</span></a>
         <a class="nav-btn" data-wing="mc" href="#"><i class="fas fa-fire-alt"></i> <span>MC</span></a>
@@ -99,11 +100,11 @@
   function getRosterClassColorByName(roster, name) {
     const lower = String(name || '').toLowerCase();
     const r = Array.isArray(roster) ? roster.find(x => String(x.character_name || '').toLowerCase() === lower) : null;
-    const className = String(r?.class_name || '').toLowerCase();
     const color = r?.class_color || '';
     if (color) return color;
+    const canonical = canonicalizeClass(r?.class_name || '', '');
     const CLASS_COLORS = { warrior:'#C79C6E', paladin:'#F58CBA', hunter:'#ABD473', rogue:'#FFF569', priest:'#FFFFFF', shaman:'#0070DE', mage:'#69CCF0', warlock:'#9482C9', druid:'#FF7D0A', unknown:'#e0e0e0' };
-    return CLASS_COLORS[className] || CLASS_COLORS.unknown;
+    return CLASS_COLORS[String(canonical).toLowerCase()] || CLASS_COLORS.unknown;
   }
 
   function canonicalizeClass(rawClass, rosterFallback) {
@@ -219,7 +220,7 @@
     // Hide special-grid placeholder entries from the normal list
     const visibleEntries = entries.filter(en => {
       const a = String(en.assignment || '');
-      return !(a.startsWith('__HGRID__:') || a.startsWith('__SPORE__:') || a.startsWith('__KEL__:'));
+      return !(a.startsWith('__HGRID__:') || a.startsWith('__SPORE__:') || a.startsWith('__KEL__:') || a.startsWith('__CTHUN__:'));
     });
     const nameToDiscordId = new Map((Array.isArray(roster)?roster:[]).map(r => [String(r.character_name||'').toLowerCase(), r.discord_user_id]));
 
@@ -247,25 +248,25 @@
       } else if (bossKeyForIcon.includes('noth')) {
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755074097/16590_ezmekl.png';
       } else if (bossKeyForIcon.includes('skeram')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756127451/15345_gqfi2d.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142955/ui-ej-boss-the-prophet-skeram_p0d4x8.png';
       } else if (bossKeyForIcon.includes('sartura')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756128839/121553_h0v8vf.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142954/ui-ej-boss-battleguard-sartura_zdcfbh.png';
       } else if (bossKeyForIcon.includes('fank')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756129338/Sand_Reaver_jxmv5b.webp';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142954/ui-ej-boss-fankriss-the-unyielding_axiavb.png';
       } else if (bossKeyForIcon.includes('visc')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756129812/15686_o9r8wn.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142955/ui-ej-boss-viscidus_xbvkio.png';
       } else if (bossKeyForIcon.includes('huhu') || bossKeyForIcon.includes('huhuran')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756130180/121559_smtx9g.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142955/ui-ej-boss-princess-huhuran_uwiulg.png';
       } else if (bossKeyForIcon.includes('twins trash')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756131244/2025-08-25_16h13_58_a5f10k.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142954/ui-ej-boss-moam_bclnhs.png';
       } else if (bossKeyForIcon.includes('twin emperors')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756130839/Twin_Emperors_ojdumc.webp';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142954/ui-ej-boss-twin-emperors_esvjgr.png';
       } else if (bossKeyForIcon.includes('ouro')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756132646/ui-ej-boss-ouro_xpigga.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142955/ui-ej-boss-ouro_phtjnz.png';
       } else if (bossKeyForIcon.includes("c'thun") || bossKeyForIcon.includes('cthun')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756132826/C_27thun_e5jjfj.webp';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142954/ui-ej-boss-cthun_sfw3oz.png';
       } else if (bossKeyForIcon.includes('bug')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756127717/-15511_ebf20d.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142955/ui-ej-boss-silithid-royalty_f1becj.png';
       } else if (bossKeyForIcon.includes('loatheb')) {
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755080534/Fungal_monster_s0zutr.webp';
       } else if (bossKeyForIcon.includes('patch')) {
@@ -376,7 +377,7 @@
     imgLink.appendChild(img);
     imgWrapper.appendChild(imgLink);
 
-    // Sapphiron, Kel'Thuzad, Gothik, Anub'Rekhan, Maexxna: autoplay a short preview video overlay on first scroll into view
+    // Sapphiron, Kel'Thuzad, Gothik, Anub'Rekhan, Maexxna, Four Horsemen, Noth, AQ40 (Skeram, Fankriss, Viscidus, Twins, Ouro): autoplay a short preview video overlay on first scroll into view
     try {
       const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       const saveData = navigator.connection && navigator.connection.saveData;
@@ -385,19 +386,30 @@
       const isGothik = panelKeyLower.includes('goth');
       const isAnub = panelKeyLower.includes('anub');
       const isMaex = panelKeyLower.includes('maex');
-      if (isSapphiron || isKelthuzad || isGothik || isAnub || isMaex) {
-        const previewUrl = isSapphiron
-          ? 'https://res.cloudinary.com/duthjs0c3/video/upload/f_auto,q_auto/v1755864926/Saph-Small-1_cgscco.mp4'
-          : (isKelthuzad
-            ? 'https://res.cloudinary.com/duthjs0c3/video/upload/f_auto,q_auto/v1755867358/KT-small_p55l1i.mp4'
-            : (isGothik
-              ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756022062/Gothik-human-side_znqy6h.mp4'
-              : (isAnub
-                ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756024672/anub_xgkjtx.mp4'
-                : 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756025139/Spider_l0hqmr.mp4')));
+      const isHorse = panelKeyLower.includes('horse');
+      const isNoth = panelKeyLower.includes('noth');
+      const isSkeram = panelKeyLower.includes('skeram') || panelKeyLower.includes('prophet');
+      const isFankriss = panelKeyLower.includes('fankriss');
+      const isViscidus = panelKeyLower.includes('viscidus');
+      const isTwins = (panelKeyLower.includes('twin') && (panelKeyLower.includes('emperor') || panelKeyLower.includes('emperors'))) && !panelKeyLower.includes('trash');
+      const isOuro = panelKeyLower.includes('ouro');
+      if (isSapphiron || isKelthuzad || isGothik || isAnub || isMaex || isHorse || isNoth || isSkeram || isFankriss || isViscidus || isTwins || isOuro) {
+        const previewUrl =
+          isSapphiron ? 'https://res.cloudinary.com/duthjs0c3/video/upload/f_auto,q_auto/v1755864926/Saph-Small-1_cgscco.mp4' :
+          isKelthuzad ? 'https://res.cloudinary.com/duthjs0c3/video/upload/f_auto,q_auto/v1755867358/KT-small_p55l1i.mp4' :
+          isGothik ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756022062/Gothik-human-side_znqy6h.mp4' :
+          isAnub ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756024672/anub_xgkjtx.mp4' :
+          isHorse ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756148431/ForuHorseman_dipmqk.mp4' :
+          isNoth ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756149354/NothThePlaguebringer_qree64.mp4' :
+          isSkeram ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756152423/prophet_skarem_nuv5hs.mp4' :
+          isFankriss ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756152422/Fankriss_t6rtpo.mp4' :
+          isViscidus ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756152421/Viscidus_qpezj6.mp4' :
+          isTwins ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756152422/Twins_fwwulp.mp4' :
+          isOuro ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756152422/Ouro_bo7bxp.mp4' :
+          'https://res.cloudinary.com/duthjs0c3/video/upload/v1756025139/Spider_l0hqmr.mp4';
         imgWrapper.style.position = 'relative';
-        // Keep the tighter preview width for Sapphiron/Kel; let Gothik/Anub/Maex use full image width to match sizes exactly
-        if (!(isGothik || isAnub || isMaex)) { try { imgWrapper.style.maxWidth = '720px'; } catch {} }
+        // Keep the tighter preview width for Sapphiron/Kel; let Gothik/Anub/Maex/Horsemen/Noth/AQ40 use full image width to match sizes exactly
+        if (!(isGothik || isAnub || isMaex || isHorse || isNoth || isSkeram || isFankriss || isViscidus || isTwins || isOuro)) { try { imgWrapper.style.maxWidth = '720px'; } catch {} }
         try { imgWrapper.style.overflow = 'hidden'; } catch {}
         let played = false;
 
@@ -437,8 +449,8 @@
           video.style.maxWidth = '100%';
           video.style.maxHeight = '100%';
           video.style.width = '100%';
-          // For Gothik & Maexxna, ensure the video perfectly overlays the image by filling the overlay box
-          if (isGothik || isMaex) {
+          // For Gothik, Maexxna, Four Horsemen, Noth & AQ40 panels, ensure the video perfectly overlays the image by filling the overlay box
+          if (isGothik || isMaex || isHorse || isNoth || isSkeram || isFankriss || isViscidus || isTwins || isOuro) {
             video.style.height = '100%';
             video.style.objectFit = 'cover';
           } else {
@@ -1311,7 +1323,7 @@
               wrap.style.borderRadius = '8px';
               wrap.style.padding = '6px 10px';
               wrap.style.width = '100px';
-              const color = getRosterClassColorByName(roster, currentName);
+              const color = getRosterClassColorByName(roster, (currentName||'').trim());
               wrap.style.background = color ? color : 'rgba(255,255,255,0.08)';
               const span = document.createElement('span'); span.textContent = currentName || '—'; span.style.color = '#000'; span.style.fontWeight='700';
               wrap.appendChild(span);
@@ -1500,6 +1512,197 @@
       content.appendChild(kelGridWrap);
       panelDiv._renderKelGrid = (readOnly) => renderKelGrid(readOnly);
       panelDiv._getKelGridState = () => kelGridState;
+    }
+
+    // Special section for C'Thun: Positions grid (8 groups x 5 slots)
+    const isCthunPanel = String((boss || '')).toLowerCase().includes("c'thun") || String((boss || '')).toLowerCase().includes('cthun');
+    let cthunGridWrap = null;
+    let cthunGridState = null; // { groups: {1:[n1..n5],...,8:[..]} }
+    if (isCthunPanel) {
+      cthunGridWrap = document.createElement('div');
+      cthunGridWrap.className = 'cthun-grid-wrap';
+      cthunGridWrap.style.marginTop = '16px';
+      cthunGridWrap.style.padding = '12px 16px';
+      cthunGridWrap.style.borderTop = '1px solid var(--border-color, #3a3a3a)';
+      cthunGridWrap.style.width = '100%';
+      try { cthunGridWrap.style.maxWidth = '1160px'; cthunGridWrap.style.margin = '0 auto'; cthunGridWrap.style.boxSizing = 'border-box'; } catch {}
+
+      const cthunTitle = document.createElement('div');
+      cthunTitle.textContent = "C'Thun positions";
+      cthunTitle.style.fontWeight = '700';
+      cthunTitle.style.color = '#e5e7eb';
+      cthunTitle.style.margin = '8px 0 6px 0';
+
+      function deriveCthunFromEntries(allEntries) {
+        const map = {};
+        (Array.isArray(allEntries)?allEntries:[]).forEach(en => {
+          const m = String(en.assignment||'').match(/^__CTHUN__:(\d+):(\d+)$/);
+          if (m) {
+            const g = Number(m[1]);
+            const s = Number(m[2]);
+            if (!map[g]) map[g] = [];
+            map[g][s-1] = (typeof en.character_name === 'string' ? en.character_name.trim() : en.character_name) || null;
+          }
+        });
+        return map;
+      }
+      const initialCthun = panel.cthun_positions || deriveCthunFromEntries(panel.entries);
+      cthunGridState = { groups: {} };
+      for (let g=1; g<=8; g++) {
+        const arr = Array.isArray(initialCthun[g]) ? initialCthun[g] : [];
+        cthunGridState.groups[g] = [arr[0]||null, arr[1]||null, arr[2]||null, arr[3]||null, arr[4]||null];
+      }
+
+      function getAllPlayerOptionsHtml(selectedName) {
+        const opts = ['<option value="">Select player...</option>'].concat(
+          (Array.isArray(roster)?roster:[]).map(r => `<option value="${r.character_name}" ${String(r.character_name)===String(selectedName)?'selected':''}>${r.character_name}</option>`)
+        );
+        return opts.join('');
+      }
+
+      function renderCthunGrid(readOnly) {
+        cthunGridWrap.innerHTML = '';
+        // header
+        const head = document.createElement('div');
+        head.style.display = 'grid';
+        head.style.gridTemplateColumns = 'repeat(8, 1fr)';
+        head.style.gap = '10px';
+        head.style.background = 'rgba(0,0,0,0.25)';
+        head.style.padding = '6px 8px';
+        const headIcons = [
+          'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/1_skull_faqei8.png',
+          'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/2_cross_kj9wuf.png',
+          'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/3_square_yqucv9.png',
+          'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/4_moon_vwhoen.png',
+          'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/5_triangle_rbpjyi.png',
+          'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/6_diamond_hre1uj.png',
+          'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/7_circle_zayctt.png',
+          'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/8_star_kbuiaq.png'
+        ];
+        for (let g=1; g<=8; g++) {
+          const d = document.createElement('div');
+          d.style.fontWeight = '700'; d.style.color = '#e5e7eb'; d.style.textAlign = 'center';
+          d.style.display = 'flex'; d.style.alignItems = 'center'; d.style.justifyContent = 'center'; d.style.gap = '6px';
+          const img = document.createElement('img');
+          img.src = headIcons[g-1] || '';
+          img.alt = 'mark';
+          img.width = 18; img.height = 18; img.loading = 'lazy';
+          const span = document.createElement('span');
+          span.textContent = `Group ${g}`;
+          d.appendChild(img);
+          d.appendChild(span);
+          head.appendChild(d);
+        }
+        cthunGridWrap.appendChild(head);
+
+        function makeRowForSlot(slotIdx) {
+          const row = document.createElement('div');
+          row.style.display = 'grid';
+          row.style.gridTemplateColumns = 'repeat(8, 1fr)';
+          row.style.gap = '10px';
+          row.style.background = (slotIdx % 2 === 1) ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)';
+          row.style.padding = '6px 8px';
+          for (let g=1; g<=8; g++) {
+            const cell = document.createElement('div');
+            cell.style.display = 'flex';
+            cell.style.alignItems = 'center';
+            cell.style.justifyContent = 'center';
+            const currentName = cthunGridState.groups[g][slotIdx-1] || '';
+            if (readOnly) {
+              const wrap = document.createElement('div');
+              wrap.style.minHeight = '28px';
+              wrap.style.display = 'inline-flex';
+              wrap.style.alignItems = 'center';
+              wrap.style.justifyContent = 'center';
+              wrap.style.gap = '8px';
+              wrap.style.borderRadius = '8px';
+              wrap.style.padding = '6px 10px';
+              wrap.style.width = '100px';
+              const color = getRosterClassColorByName(roster, currentName);
+              wrap.style.background = color ? color : 'rgba(255,255,255,0.08)';
+              const span = document.createElement('span');
+              span.textContent = (currentName||'').trim() || '—';
+              // Bright red font for warriors/tanks/rogues placed in slot 3
+              try {
+                const nameTrim = (currentName||'').trim();
+                const rawCls = getRosterClassByName(roster, nameTrim);
+                const rawLower = String(rawCls||'').toLowerCase();
+                const canonLower = String(canonicalizeClass(rawCls || '', '')||'').toLowerCase();
+                const isRed = (slotIdx === 3) && (canonLower === 'warrior' || canonLower === 'rogue' || rawLower === 'tank' || rawLower === 'tanking');
+                if (isRed) {
+                  span.style.color = '#ff4545';
+                  span.style.fontWeight = '900';
+                } else {
+                  span.style.color = '#000';
+                  span.style.fontWeight = '700';
+                }
+              } catch {
+                span.style.color = '#000';
+                span.style.fontWeight = '700';
+              }
+              wrap.appendChild(span);
+              cell.appendChild(wrap);
+            } else {
+              const wrap = document.createElement('div');
+              wrap.style.display = 'flex';
+              wrap.style.alignItems = 'center';
+              wrap.style.gap = '8px';
+              const sel = document.createElement('select');
+              sel.className = 'assignment-editable';
+              sel.style.maxWidth = '100px';
+              sel.innerHTML = getAllPlayerOptionsHtml(currentName);
+              sel.addEventListener('change', () => {
+                const val = sel.value || null;
+                cthunGridState.groups[g][slotIdx-1] = val;
+              });
+              wrap.appendChild(sel);
+              const del = document.createElement('button');
+              del.className = 'delete-x';
+              del.innerHTML = '&times;';
+              del.title = 'Remove player';
+              del.addEventListener('click', () => { cthunGridState.groups[g][slotIdx-1] = null; renderCthunGrid(false); });
+              wrap.appendChild(del);
+              cell.appendChild(wrap);
+            }
+            row.appendChild(cell);
+          }
+          return row;
+        }
+
+        for (let s=1; s<=5; s++) {
+          cthunGridWrap.appendChild(makeRowForSlot(s));
+        }
+      }
+
+      // initial render view mode
+      renderCthunGrid(true);
+      content.appendChild(cthunTitle);
+      content.appendChild(cthunGridWrap);
+      // Add Clear All button (edit mode only)
+      const clearWrap = document.createElement('div');
+      clearWrap.style.display = 'none';
+      clearWrap.style.margin = '8px 0 0 0';
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.textContent = 'Clear all assignments';
+      clearBtn.className = 'btn-clear-all';
+      clearBtn.style.fontSize = '12px';
+      clearBtn.style.padding = '6px 10px';
+      clearBtn.style.borderRadius = '6px';
+      clearBtn.style.border = '1px solid #ef4444';
+      clearBtn.style.background = 'transparent';
+      clearBtn.style.color = '#ef4444';
+      clearBtn.addEventListener('click', () => {
+        try {
+          for (let g=1; g<=8; g++) { for (let s=1; s<=5; s++) { cthunGridState.groups[g][s-1] = null; } }
+          if (typeof panelDiv._renderCthunGrid === 'function') panelDiv._renderCthunGrid(false);
+        } catch {}
+      });
+      clearWrap.appendChild(clearBtn);
+      content.appendChild(clearWrap);
+      panelDiv._toggleCthunClear = (show) => { try { clearWrap.style.display = show ? 'block' : 'none'; } catch {} };
+      panelDiv._renderCthunGrid = (readOnly) => renderCthunGrid(readOnly);
+      panelDiv._getCthunGridState = () => cthunGridState;
     }
 
     panelDiv.appendChild(header);
@@ -1993,7 +2196,7 @@
                 if (t4) toAdd.push({ r: t4, icon: icons.skull, text: 'Tank boss' });
               } catch {}
             } else if (bossKey.includes("c'thun") || bossKey.includes('cthun')) {
-              // AQ40: C'Thun defaults
+              // AQ40: C'Thun defaults + positions grid
               try {
                 const resAll = await fetch(`/api/assignments/${eventId}`);
                 const dataAll = await resAll.json();
@@ -2006,8 +2209,101 @@
                   if (!entry || !entry.character_name) return null;
                   return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
                 };
-                const t1 = findByMarker('skull');
-                if (t1) toAdd.push({ r: t1, icon: icons.skull, text: 'Pull boss' });
+                const tank1 = findByMarker('skull');
+                const tank2 = findByMarker('cross');
+                const tank3 = findByMarker('square');
+                const tank4 = findByMarker('moon');
+                if (tank1) toAdd.push({ r: tank1, icon: icons.skull, text: 'Pull boss' });
+
+                // Auto-fill C'Thun positions grid
+                if (isCthunPanel && typeof panelDiv._getCthunGridState === 'function') {
+                  const state = panelDiv._getCthunGridState();
+                  for (let g=1; g<=8; g++) { if (!state.groups[g]) state.groups[g] = [null,null,null,null,null]; }
+                  const nameKey = v => String(v||'').toLowerCase();
+                  // Start with any pre-filled names as already assigned
+                  const assigned = new Set();
+                  for (let g=1; g<=8; g++) {
+                    for (let s=1; s<=5; s++) {
+                      const n = state.groups[g][s-1]; if (n) assigned.add(nameKey(n));
+                    }
+                  }
+                  // Tank1 at Group1 Slot1 (only if empty and not already used)
+                  const t1Name = tank1?.character_name || null;
+                  if (t1Name && !state.groups[1][0] && !assigned.has(nameKey(t1Name))) { state.groups[1][0] = t1Name; assigned.add(nameKey(t1Name)); }
+                  // Melee candidates excluding already assigned
+                  const meleeAll = filterAssignable((Array.isArray(roster)?roster:[])
+                    .filter(r => ['warrior','rogue'].includes(String(r.class_name||'').toLowerCase())))
+                    .sort(sortByGroupSlotAsc)
+                    .filter(r => !assigned.has(nameKey(r.character_name)));
+                  const t2n = tank2?.character_name || null;
+                  const t3n = tank3?.character_name || null;
+                  const t4n = tank4?.character_name || null;
+                  const tNames = new Set([nameKey(t1Name), nameKey(t2n), nameKey(t3n), nameKey(t4n)].filter(Boolean));
+                  const meleeNoTanks = meleeAll.filter(r => !tNames.has(nameKey(r.character_name)));
+                  // Primary slots that are currently empty
+                  const primarySlots = [];
+                  if (!state.groups[1][1]) primarySlots.push({g:1,s:2});
+                  for (let g=2; g<=8; g++) {
+                    if (!state.groups[g][0]) primarySlots.push({g,s:1});
+                    if (!state.groups[g][1]) primarySlots.push({g,s:2});
+                  }
+                  const needed = primarySlots.length; // up to 15
+                  const takeOthers = meleeNoTanks.slice(0, needed);
+                  const stillNeeded = Math.max(needed - takeOthers.length, 0);
+                  const maybeTanks = [t2n, t3n, t4n]
+                    .filter(Boolean)
+                    .filter(n => !assigned.has(nameKey(n)))
+                    .map(n => ({ character_name: n }));
+                  const fillFromTanks = stillNeeded > 0 ? maybeTanks.slice(0, stillNeeded) : [];
+                  const primaryFill = takeOthers.concat(fillFromTanks);
+                  for (let i=0; i<primaryFill.length; i++) {
+                    const pos = primarySlots[i]; const r = primaryFill[i];
+                    if (!pos || !r || !r.character_name) continue;
+                    if (!state.groups[pos.g][pos.s-1] && !assigned.has(nameKey(r.character_name))) {
+                      state.groups[pos.g][pos.s-1] = r.character_name;
+                      assigned.add(nameKey(r.character_name));
+                    }
+                  }
+                  // Slot 3 fillers: Tanks 2-4 first (if unassigned), then any warrior/rogue flagged "No assignments", then any other leftover melee
+                  const leftoverTankNames = [t2n, t3n, t4n]
+                    .filter(n => n && !assigned.has(nameKey(n)))
+                    .map(n => ({ character_name: n }));
+                  const leftoverMelee = filterAssignable((Array.isArray(roster)?roster:[])
+                    .filter(r => ['warrior','rogue'].includes(String(r.class_name||'').toLowerCase())))
+                    .sort(sortByGroupSlotAsc)
+                    .filter(r => !assigned.has(nameKey(r.character_name)) && nameKey(r.character_name) !== nameKey(t1Name));
+                  const noAssignMelee = (Array.isArray(roster)?roster:[])
+                    .filter(r => ['warrior','rogue'].includes(String(r.class_name||'').toLowerCase()) && isNoAssignmentsRosterRow(r))
+                    .sort(sortByGroupSlotAsc)
+                    .filter(r => !assigned.has(nameKey(r.character_name)) && nameKey(r.character_name) !== nameKey(t1Name));
+                  const slot3Fill = leftoverTankNames.concat(noAssignMelee, leftoverMelee);
+                  const slot3Order = [8,7,6,5,4,3,2,1];
+                  let lmIdx = 0;
+                  for (const g of slot3Order) {
+                    if (lmIdx >= slot3Fill.length) break;
+                    if (state.groups[g][2]) continue; // already filled, respect existing
+                    const r = slot3Fill[lmIdx];
+                    if (!r || !r.character_name) break;
+                    if (!assigned.has(nameKey(r.character_name))) {
+                      state.groups[g][2] = r.character_name;
+                      assigned.add(nameKey(r.character_name));
+                      lmIdx += 1;
+                    }
+                  }
+                  // Shamans in slot5 (only if empty)
+                  const shamans = filterAssignable((Array.isArray(roster)?roster:[])
+                    .filter(r => String(r.class_name||'').toLowerCase()==='shaman'))
+                    .sort(sortByGroupSlotAsc)
+                    .filter(r => !assigned.has(nameKey(r.character_name)));
+                  let shIdx = 0; for (let g=1; g<=8; g++) { if (!state.groups[g][4] && shamans[shIdx]) { state.groups[g][4] = shamans[shIdx].character_name; assigned.add(nameKey(shamans[shIdx].character_name)); shIdx += 1; } }
+                  // Fill remaining (only empties, skipping already assigned)
+                  const everyone = (Array.isArray(roster)?roster:[]).slice().sort(sortByGroupSlotAsc);
+                  for (const r of everyone) {
+                    const nk = nameKey(r.character_name); if (!nk || assigned.has(nk)) continue;
+                    let placed = false; for (let g=1; g<=8 && !placed; g++) { for (let s=1; s<=5 && !placed; s++) { if (!state.groups[g][s-1]) { state.groups[g][s-1] = r.character_name; assigned.add(nk); placed = true; } } }
+                  }
+                  if (typeof panelDiv._renderCthunGrid === 'function') panelDiv._renderCthunGrid(false);
+                }
               } catch {}
             } else if (bossKey.includes("noth")) {
               // Noth the Plaguebringer defaults
@@ -2497,6 +2793,10 @@
           if (isHorsemenPanel && typeof panelDiv._renderHorseGrid === 'function') panelDiv._renderHorseGrid(false);
           if (isLoathebPanel && typeof panelDiv._renderSporeGrid === 'function') panelDiv._renderSporeGrid(false);
           if (isKelPanel && typeof panelDiv._renderKelGrid === 'function') panelDiv._renderKelGrid(false);
+          if (isCthunPanel) {
+            if (typeof panelDiv._toggleCthunClear === 'function') panelDiv._toggleCthunClear(true);
+            if (typeof panelDiv._renderCthunGrid === 'function') panelDiv._renderCthunGrid(false);
+          }
         });
 
         saveBtn?.addEventListener('click', async () => {
@@ -2554,6 +2854,21 @@
               });
             });
           }
+          // Persist C'Thun positions if present
+          if (isCthunPanel && cthunGridState) {
+            payloadPanel.cthun_positions = cthunGridState.groups;
+            Object.entries(cthunGridState.groups).forEach(([group, arr]) => {
+              (arr||[]).forEach((name, idx) => {
+                if (!name) return;
+                payloadPanel.entries.push({
+                  character_name: name,
+                  marker_icon_url: null,
+                  assignment: `__CTHUN__:${group}:${idx+1}`,
+                  accept_status: null
+                });
+              });
+            });
+          }
           for (const row of Array.from(list.children)) {
             if (!row.querySelector) continue;
             const getVal = sel => row.querySelector(sel)?.value || '';
@@ -2587,6 +2902,10 @@
           if (isHorsemenPanel && typeof panelDiv._renderHorseGrid === 'function') panelDiv._renderHorseGrid(true);
           if (isLoathebPanel && typeof panelDiv._renderSporeGrid === 'function') panelDiv._renderSporeGrid(true);
           if (isKelPanel && typeof panelDiv._renderKelGrid === 'function') panelDiv._renderKelGrid(true);
+          if (isCthunPanel) {
+            if (typeof panelDiv._toggleCthunClear === 'function') panelDiv._toggleCthunClear(false);
+            if (typeof panelDiv._renderCthunGrid === 'function') panelDiv._renderCthunGrid(true);
+          }
         });
     }
 
@@ -3295,12 +3614,22 @@
           } catch { header.innerHTML = '<h2>My Assignments</h2>'; }
         })();
 
+        // Decide event type: NAX vs Non-NAX (AQ40/BWL/MC)
+        const isNonNaxEvent = (() => {
+          try { return (Array.isArray(panels)?panels:[]).some(p => ['aq40','bwl','mc'].includes(String(p.wing||'').toLowerCase())); } catch { return false; }
+        })();
+
         // Build flat list of visible entries assigned to me
         const myEntries = [];
         for (const p of panels) {
+          const wingLowerRaw = String(p.wing||'').toLowerCase().trim();
+          const wingLower = wingLowerRaw || 'main';
+          // For Non-NAX events, only include Main + AQ40/BWL/MC panels (treat empty wing as main)
+          const allowedNonNax = ['main','aq40','bwl','mc'];
+          if (isNonNaxEvent && !allowedNonNax.includes(wingLower)) continue;
           const visible = (Array.isArray(p.entries)?p.entries:[]).filter(en => {
             const a = String(en.assignment||'');
-            if (a.startsWith('__HGRID__:') || a.startsWith('__SPORE__:') || a.startsWith('__KEL__:')) return false;
+            if (a.startsWith('__HGRID__:') || a.startsWith('__SPORE__:') || a.startsWith('__KEL__:') || a.startsWith('__CTHUN__:')) return false;
             const name = String(en.character_name||'');
             return myNames.has(name);
           });
@@ -3318,9 +3647,18 @@
         }
 
         // Sort: wing order then boss order per wing
-        const WING_ORDER = ['Main','Military','Spider','Abomination','Plague','Frostwyrm_Lair'];
-        const WING_ORDER_CANON = ['main','military','spider','abomination','plague','frostwyrm_lair'];
-        const BOSS_ORDER = {
+        const WING_ORDER = isNonNaxEvent
+          ? ['Main','AQ40','BWL','MC']
+          : ['Main','Military','Spider','Abomination','Plague','Frostwyrm_Lair'];
+        const WING_ORDER_CANON = isNonNaxEvent
+          ? ['main','aq40','bwl','mc']
+          : ['main','military','spider','abomination','plague','frostwyrm_lair'];
+        const BOSS_ORDER = isNonNaxEvent ? {
+          main: ['tanking','healing','buffs','decurse and dispel','curses and soul stones','power infusion'],
+          aq40: ['skeram','bug','sartura','fank','visc','huhu','twin','twins trash','ouro',"c'thun",'cthun'],
+          bwl: [],
+          mc: []
+        } : {
           main: ['tanking','healing','buffs','decurse and dispel','curses and soul stones','power infusion'],
           military: ['razu','goth','horse'],
           spider: ['anub','faerlina','maex'],
@@ -3377,7 +3715,12 @@
         const eventId = (idx >= 0 && parts[idx+1]) ? parts[idx+1] : localStorage.getItem('activeEventSession');
 
         // Wing display helpers (icon + label matching floating-nav)
-        const WING_META = {
+        const WING_META = isNonNaxEvent ? {
+          main: { icon: 'fas fa-home', label: 'Main' },
+          aq40: { icon: 'fas fa-mountain', label: 'AQ40' },
+          bwl: { icon: 'fas fa-fire', label: 'BWL' },
+          mc: { icon: 'fas fa-fire-alt', label: 'MC' }
+        } : {
           main: { icon: 'fas fa-home', label: 'Main' },
           military: { icon: 'fas fa-chess-knight', label: 'Military Wing' },
           spider: { icon: 'fas fa-spider', label: 'Spider Wing' },
@@ -3387,7 +3730,7 @@
         };
         function getWingDisplay(rawWing) {
           const s = String(rawWing || '').trim();
-          const key = s ? s.toLowerCase().replace(/\s+/g, '_') : 'main';
+          const key = (s ? s.toLowerCase().replace(/\s+/g, '_') : 'main');
           const meta = WING_META[key];
           return {
             label: meta ? meta.label : (s ? s.replace(/_/g, ' ') : 'Main'),
@@ -3506,27 +3849,45 @@
           container.appendChild(div);
         }
 
-        // Four Horsemen (only Warriors / Marks grid)
-        try {
-          const horsePanel = panels.find(p => String(p.boss||'').toLowerCase().includes('horse'));
-          if (horsePanel && hasNameInHorse(horsePanel)) {
-            appendGridOnly(horsePanel, 'horsemen-grid-wrap');
-          }
-        } catch {}
-        // Loatheb Spore Groups (only groups grid)
-        try {
-          const loathebPanel = panels.find(p => String(p.boss||'').toLowerCase().includes('loatheb'));
-          if (loathebPanel && hasNameInSpore(loathebPanel)) {
-            appendGridOnly(loathebPanel, 'spore-grid-wrap');
-          }
-        } catch {}
-        // Kel'Thuzad Groups (only groups grid)
-        try {
-          const kelPanel = panels.find(p => String(p.boss||'').toLowerCase().includes('kel'));
-          if (kelPanel && hasNameInKel(kelPanel)) {
-            appendGridOnly(kelPanel, 'kel-grid-wrap');
-          }
-        } catch {}
+        if (!isNonNaxEvent) {
+          // NAX special grids only on NAX events
+          try {
+            const horsePanel = panels.find(p => String(p.boss||'').toLowerCase().includes('horse'));
+            if (horsePanel && hasNameInHorse(horsePanel)) {
+              appendGridOnly(horsePanel, 'horsemen-grid-wrap');
+            }
+          } catch {}
+          try {
+            const loathebPanel = panels.find(p => String(p.boss||'').toLowerCase().includes('loatheb'));
+            if (loathebPanel && hasNameInSpore(loathebPanel)) {
+              appendGridOnly(loathebPanel, 'spore-grid-wrap');
+            }
+          } catch {}
+          try {
+            const kelPanel = panels.find(p => String(p.boss||'').toLowerCase().includes('kel'));
+            if (kelPanel && hasNameInKel(kelPanel)) {
+              appendGridOnly(kelPanel, 'kel-grid-wrap');
+            }
+          } catch {}
+        } else {
+          // Non-NAX: show only C'Thun grid
+          try {
+            const cthPanel = panels.find(p => String(p.boss||'').toLowerCase().includes("c'thun") || String(p.boss||'').toLowerCase().includes('cthun'));
+            if (cthPanel) {
+              const hasMe = (function() {
+                try {
+                  const groups = cthPanel?.cthun_positions || {};
+                  for (const g of Object.values(groups)) { for (const n of (g||[])) { if (n && myNames.has(String(n))) return true; } }
+                } catch {}
+                try {
+                  return (Array.isArray(cthPanel.entries)?cthPanel.entries:[]).some(en => String(en.assignment||'').startsWith('__CTHUN__:') && myNames.has(String(en.character_name||'')));
+                } catch {}
+                return false;
+              })();
+              if (hasMe) appendGridOnly(cthPanel, 'cthun-grid-wrap');
+            }
+          } catch {}
+        }
 
         return;
       }
@@ -3927,9 +4288,20 @@
         container.innerHTML = '<div class="no-data-message"><div class="no-data-content"><i class="fas fa-info-circle"></i><h3>No Assignments</h3><p>No assignments found for this wing.</p></div></div>';
         return;
       }
-      // Ordering for AQ40: Skeram, Bug Trio
-      if (wing === 'aq40') {
-        const order = ['skeram', 'bug', 'sartura', 'fank', 'visc', 'huhu', 'twin', 'twins trash', 'ouro', "c'thun", 'cthun'];
+      // Ordering for AQ40 per requested sequence (supports routes like "aq40" or "aq40bwl")
+      if (String(wing||'').toLowerCase().includes('aq40')) {
+        const order = [
+          'the prophet skeram','skeram',
+          'bug trio','bug',
+          'battleguard sartura','sartura',
+          'fankriss the unyielding','fank',
+          'viscidus','visc',
+          'princess huhuran','huhu','huhuran',
+          'twin emperors','twin',
+          'twins trash',
+          'ouro',
+          "c'thun", 'cthun'
+        ];
         toRender = toRender.slice().sort((a, b) => {
           const ak = String(a.boss || '').toLowerCase();
           const bk = String(b.boss || '').toLowerCase();
