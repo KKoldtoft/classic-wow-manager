@@ -27,13 +27,13 @@
     if (!nav) return;
     const buttonsContainer = document.getElementById('assignments-nav-buttons') || nav.querySelector('.nav-buttons');
     const eventId = getActiveEventId();
-    let isNax = true; // default assume NAX to preserve current look
+    let isNax = false; // default to non-NAX unless explicitly told otherwise
     try {
       if (eventId) {
         const res = await fetch(`/api/events/${eventId}/channel-flags`);
         const data = await res.json();
-        // Only override when the API explicitly knows the channel flags
-        if (data && data.success && typeof data.isNax === 'boolean' && data.channelId) {
+        // Use backend-provided flag whenever available
+        if (data && data.success && typeof data.isNax === 'boolean') {
           isNax = data.isNax;
         }
       }
@@ -246,6 +246,26 @@
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755075234/16309_kpg0jp.png';
       } else if (bossKeyForIcon.includes('noth')) {
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755074097/16590_ezmekl.png';
+      } else if (bossKeyForIcon.includes('skeram')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756127451/15345_gqfi2d.png';
+      } else if (bossKeyForIcon.includes('sartura')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756128839/121553_h0v8vf.png';
+      } else if (bossKeyForIcon.includes('fank')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756129338/Sand_Reaver_jxmv5b.webp';
+      } else if (bossKeyForIcon.includes('visc')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756129812/15686_o9r8wn.png';
+      } else if (bossKeyForIcon.includes('huhu') || bossKeyForIcon.includes('huhuran')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756130180/121559_smtx9g.png';
+      } else if (bossKeyForIcon.includes('twins trash')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756131244/2025-08-25_16h13_58_a5f10k.png';
+      } else if (bossKeyForIcon.includes('twin emperors')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756130839/Twin_Emperors_ojdumc.webp';
+      } else if (bossKeyForIcon.includes('ouro')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756132646/ui-ej-boss-ouro_xpigga.png';
+      } else if (bossKeyForIcon.includes("c'thun") || bossKeyForIcon.includes('cthun')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756132826/C_27thun_e5jjfj.webp';
+      } else if (bossKeyForIcon.includes('bug')) {
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756127717/-15511_ebf20d.png';
       } else if (bossKeyForIcon.includes('loatheb')) {
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755080534/Fungal_monster_s0zutr.webp';
       } else if (bossKeyForIcon.includes('patch')) {
@@ -334,9 +354,12 @@
     } else if (panelKeyLower.includes('kel')) {
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755847769/KT_mid_yuhor1.jpg';
       defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755847769/KT_full_pmo4fd.png';
+    } else if (panelKeyLower.includes("c'thun") || panelKeyLower.includes('cthun')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756133303/aq40positions_hbtfb6.png';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756133303/aq40positions_hbtfb6.png';
     }
     let displayImageUrl = (image_url && !String(image_url).includes('placehold.co')) ? image_url : defaultMid;
-    if (panelKeyLower.includes('faerlina') || panelKeyLower.includes('maex') || panelKeyLower.includes('razu') || panelKeyLower.includes('goth') || panelKeyLower.includes('patch') || panelKeyLower.includes('grobb') || panelKeyLower.includes('gluth') || panelKeyLower.includes('noth') || panelKeyLower.includes('heig') || panelKeyLower.includes('loatheb') || panelKeyLower.includes('thadd') || panelKeyLower.includes('horse') || panelKeyLower.includes('sapph') || panelKeyLower.includes('kel')) {
+    if (panelKeyLower.includes('faerlina') || panelKeyLower.includes('maex') || panelKeyLower.includes('razu') || panelKeyLower.includes('goth') || panelKeyLower.includes('patch') || panelKeyLower.includes('grobb') || panelKeyLower.includes('gluth') || panelKeyLower.includes('noth') || panelKeyLower.includes('heig') || panelKeyLower.includes('loatheb') || panelKeyLower.includes('thadd') || panelKeyLower.includes('horse') || panelKeyLower.includes('sapph') || panelKeyLower.includes('kel') || panelKeyLower.includes("c'thun") || panelKeyLower.includes('cthun')) {
       displayImageUrl = defaultMid;
     }
 
@@ -614,6 +637,11 @@
       const isNoth = key.includes('noth');
       const isHeigan = key.includes('heig');
       const isLoatheb = key.includes('loatheb');
+      // Hide video for Twins trash
+      if (key.includes('twins trash')) {
+        ytWrap.innerHTML = '';
+        return;
+      }
       const fallback = isFourHorsemen ? fourHorsemenDefault : (isNoth ? nothDefault : (isHeigan ? heiganDefault : (isLoatheb ? loathebDefault : genericDefault)));
       const url = currentVideoUrl && currentVideoUrl.trim().length > 0 ? currentVideoUrl : fallback;
       let embedUrl = url;
@@ -1688,6 +1716,299 @@
                   humanCount += 1;
                 }
               });
+            } else if (bossKey.includes("skeram")) {
+              // AQ40: The Prophet Skeram defaults
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const t1 = findByMarker('skull');
+                const t2 = findByMarker('cross');
+                const t3 = findByMarker('square');
+                const t4 = findByMarker('moon');
+                const t5 = findByMarker('triangle');
+                const t6 = findByMarker('diamond');
+                const t7 = findByMarker('circle');
+                const t8 = findByMarker('star');
+
+                // Tanks: positions
+                if (t1) toAdd.push({ r: t1, icon: icons.skull,  text: 'Tank middle.' });
+                if (t2) toAdd.push({ r: t2, icon: icons.cross,  text: 'Tank left' });
+                if (t3) toAdd.push({ r: t3, icon: icons.square, text: 'Tank right' });
+
+                // Kicks: 6 slots -> Rogues first (lowest group/slot), then Tanks starting from Tank4
+                const KICK_ICON = 'https://wow.zamimg.com/images/wow/icons/large/ability_kick.jpg';
+                const FIST_ICON = 'https://wow.zamimg.com/images/wow/icons/large/inv_gauntlets_04.jpg';
+                const sides = ['middle','left','right','middle','left','right'];
+                const rogues = filterAssignable((Array.isArray(roster)?roster:[])
+                  .filter(r => String(r.class_name||'').toLowerCase()==='rogue'))
+                  .sort(sortByGroupSlotAsc);
+                const fallbackTanks = [t4,t5,t6,t7,t8].filter(Boolean);
+                let fb = 0;
+                for (let i=0;i<6;i++) {
+                  const side = sides[i];
+                  if (rogues[i]) {
+                    toAdd.push({ r: rogues[i], icon: KICK_ICON, text: `Kick ${side}` });
+                  } else if (fallbackTanks[fb]) {
+                    toAdd.push({ r: fallbackTanks[fb], icon: FIST_ICON, text: `Kick ${side}` });
+                    fb += 1;
+                  }
+                }
+
+                // Warlocks: Curse of Tongues Middle/Left/Right with repetition rules
+                const TONGUES_ICON = 'https://wow.zamimg.com/images/wow/icons/large/spell_shadow_curseoftounges.jpg';
+                const wls = filterAssignable((Array.isArray(roster)?roster:[])
+                  .filter(r => String(r.class_name||'').toLowerCase()==='warlock'))
+                  .sort(sortByGroupSlotAsc);
+                const pickWl = (idx) => {
+                  if (wls.length >= 3) return wls[idx];
+                  if (wls.length === 2) return wls[idx === 2 ? 1 : idx];
+                  if (wls.length === 1) return wls[0];
+                  return null;
+                };
+                const wlSides = ['Middle','Left','Right'];
+                for (let i=0;i<3;i++) {
+                  const r = pickWl(i);
+                  if (r) toAdd.push({ r, icon: TONGUES_ICON, text: `Curse of Tongues ${wlSides[i]}`});
+                }
+              } catch {}
+            } else if (bossKey.includes("bug")) {
+              // AQ40: Bug Trio defaults
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const t1 = findByMarker('skull');
+                const t2 = findByMarker('cross');
+                const t3 = findByMarker('square');
+                if (t1) toAdd.push({ r: t1, icon: icons.skull,  text: 'Tank Yauj' });
+                if (t2) toAdd.push({ r: t2, icon: icons.cross,  text: 'Tank Kri' });
+                if (t3) toAdd.push({ r: t3, icon: icons.square, text: 'Tank Vem' });
+              } catch {}
+            } else if (bossKey.includes("sartura")) {
+              // AQ40: Battleguard Sartura defaults
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const t1 = findByMarker('skull');
+                const t2 = findByMarker('cross');
+                const t3 = findByMarker('square');
+                const t4 = findByMarker('moon');
+                const t5 = findByMarker('triangle');
+                if (t1) toAdd.push({ r: t1, icon: icons.skull,  text: 'Tank boss' });
+                if (t2) toAdd.push({ r: t2, icon: icons.skull,  text: 'Tank boss' });
+                if (t3) toAdd.push({ r: t3, icon: icons.square, text: 'Tank add' });
+                if (t4) toAdd.push({ r: t4, icon: icons.moon,   text: 'Tank add' });
+                if (t5) toAdd.push({ r: t5, icon: icons.triangle, text: 'Tank add' });
+                // Rogues for kidney shot rotation
+                const KS_ICON = 'https://wow.zamimg.com/images/wow/icons/large/ability_rogue_kidneyshot.jpg';
+                const rogues = filterAssignable((Array.isArray(roster)?roster:[])
+                  .filter(r => String(r.class_name||'').toLowerCase()==='rogue'))
+                  .sort(sortByGroupSlotAsc);
+                if (rogues[0]) toAdd.push({ r: rogues[0], icon: KS_ICON, text: '1st stun on boss' });
+                if (rogues[1]) toAdd.push({ r: rogues[1], icon: KS_ICON, text: '2nd stun on boss' });
+                if (rogues[2]) toAdd.push({ r: rogues[2], icon: KS_ICON, text: '3rd stun on boss' });
+              } catch {}
+            } else if (bossKey.includes("fank")) {
+              // AQ40: Fankriss the Unyielding defaults
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const t1 = findByMarker('skull');
+                const t2 = findByMarker('cross');
+                const t3 = findByMarker('square');
+                const t4 = findByMarker('moon');
+                if (t1) toAdd.push({ r: t1, icon: icons.skull,  text: 'Tank boss' });
+                if (t2) toAdd.push({ r: t2, icon: null,        text: 'Tank snakes' });
+                if (t3) toAdd.push({ r: t3, icon: null,        text: 'Tank bugs' });
+                if (t4) toAdd.push({ r: t4, icon: null,        text: 'Tank bugs' });
+              } catch {}
+            } else if (bossKey.includes("visc")) {
+              // AQ40: Viscidus defaults
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const t1 = findByMarker('skull');
+                if (t1) toAdd.push({ r: t1, icon: icons.skull,  text: 'Tank boss' });
+              } catch {}
+            } else if (bossKey.includes("huhu") || bossKey.includes("huhuran")) {
+              // AQ40: Princess Huhuran defaults
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const t1 = findByMarker('skull');
+                if (t1) toAdd.push({ r: t1, icon: icons.skull,  text: 'Tank boss' });
+              } catch {}
+            } else if (bossKey.includes("twin emperors")) {
+              // AQ40: The Twin Emperors defaults
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const t1 = findByMarker('skull');
+                const t2 = findByMarker('cross');
+                const t3 = findByMarker('square');
+                const t4 = findByMarker('moon');
+                // Warlocks by lowest group/slot
+                const warlocksAsc = filterAssignable((Array.isArray(roster)?roster:[])
+                  .filter(r => String(r.class_name||'').toLowerCase()==='warlock'))
+                  .sort(sortByGroupSlotAsc);
+                const wl1 = warlocksAsc[0] || null;
+                const wl2 = warlocksAsc[1] || null;
+                if (t1) toAdd.push({ r: t1, icon: icons.skull,  text: 'Tank right side' });
+                if (wl1) toAdd.push({ r: wl1, icon: icons.skull, text: 'Tank right side' });
+                if (t2) toAdd.push({ r: t2, icon: icons.cross,  text: 'Tank left side'  });
+                if (wl2) toAdd.push({ r: wl2, icon: icons.cross, text: 'Tank left side'  });
+                if (t3) toAdd.push({ r: t3, icon: null,         text: 'Tank adds left side'  });
+                if (t4) toAdd.push({ r: t4, icon: null,         text: 'Tank adds right side' });
+              } catch {}
+            } else if (bossKey.includes("twins") && bossKey.includes("trash")) {
+              // AQ40: Twins trash defaults
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const t1 = findByMarker('skull');
+                const t2 = findByMarker('cross');
+                const t3 = findByMarker('square');
+                const t4 = findByMarker('moon');
+                const t5 = findByMarker('triangle');
+                const t6 = findByMarker('diamond');
+                const t7 = findByMarker('circle');
+                const t8 = findByMarker('star');
+
+                // Slayers left/right
+                if (t1) toAdd.push({ r: t1, icon: icons.skull,  text: 'Tank Slayer Left'  });
+                if (t2) toAdd.push({ r: t2, icon: icons.cross,  text: 'Tank Slayer Left'  });
+                if (t3) toAdd.push({ r: t3, icon: icons.square, text: 'Tank Slayer Right' });
+                if (t4) toAdd.push({ r: t4, icon: icons.moon,   text: 'Tank Slayer Right' });
+                // Big boys away from raid (no specific icon)
+                if (t5) toAdd.push({ r: t5, icon: null,         text: 'Tank Big Boy away from raid' });
+                if (t6) toAdd.push({ r: t6, icon: null,         text: 'Tank Big Boy away from raid' });
+                // Mindslayers stack
+                if (t7) toAdd.push({ r: t7, icon: icons.triangle, text: 'Tank Mindslayer (stack them in corner)' });
+                if (t4) toAdd.push({ r: t4, icon: icons.triangle, text: 'Tank Mindslayer (stack them in corner)' });
+                if (t8) toAdd.push({ r: t8, icon: icons.diamond,  text: 'Tank Mindslayer (stack them in corner)' });
+                if (t3) toAdd.push({ r: t3, icon: icons.diamond,  text: 'Tank Mindslayer (stack them in corner)' });
+                if (t2) toAdd.push({ r: t2, icon: icons.circle,   text: 'Tank Mindslayer (stack them in corner)' });
+                // Any warrior not yet assigned
+                const assignedNames = new Set(toAdd.map(e => (e.r && e.r.character_name) ? String(e.r.character_name).toLowerCase() : ''));
+                const warriorsExtra = filterAssignable((Array.isArray(roster)?roster:[])
+                  .filter(r => String(r.class_name||'').toLowerCase()==='warrior'))
+                  .sort(sortByGroupSlotAsc)
+                  .filter(r => !assignedNames.has(String(r.character_name||'').toLowerCase()));
+                if (warriorsExtra[0]) toAdd.push({ r: warriorsExtra[0], icon: icons.circle, text: 'Tank Mindslayer (stack them in corner)' });
+                if (t1) toAdd.push({ r: t1, icon: icons.star, text: 'Tank Mindslayer (stack them in corner)' });
+                if (warriorsExtra[1]) toAdd.push({ r: warriorsExtra[1], icon: icons.star, text: 'Tank Mindslayer (stack them in corner)' });
+              } catch {}
+            } else if (bossKey.includes("ouro")) {
+              // AQ40: Ouro defaults
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const t1 = findByMarker('skull');
+                const t2 = findByMarker('cross');
+                const t3 = findByMarker('square');
+                const t4 = findByMarker('moon');
+                if (t1) toAdd.push({ r: t1, icon: icons.skull, text: 'Tank boss' });
+                if (t2) toAdd.push({ r: t2, icon: icons.skull, text: 'Tank boss' });
+                if (t3) toAdd.push({ r: t3, icon: icons.skull, text: 'Tank boss' });
+                if (t4) toAdd.push({ r: t4, icon: icons.skull, text: 'Tank boss' });
+              } catch {}
+            } else if (bossKey.includes("c'thun") || bossKey.includes('cthun')) {
+              // AQ40: C'Thun defaults
+              try {
+                const resAll = await fetch(`/api/assignments/${eventId}`);
+                const dataAll = await resAll.json();
+                const panelsAll = Array.isArray(dataAll.panels) ? dataAll.panels : [];
+                const tankPanel = panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
+                                   || panelsAll.find(p => String(p.boss||'').toLowerCase()==='tanking');
+                const findByMarker = (markerSubstr) => {
+                  if (!tankPanel || !Array.isArray(tankPanel.entries)) return null;
+                  const entry = tankPanel.entries.find(en => String(en.marker_icon_url||'').toLowerCase().includes(markerSubstr));
+                  if (!entry || !entry.character_name) return null;
+                  return roster.find(r => String(r.character_name).toLowerCase() === String(entry.character_name).toLowerCase()) || { character_name: entry.character_name, class_name: entry.class_name };
+                };
+                const t1 = findByMarker('skull');
+                if (t1) toAdd.push({ r: t1, icon: icons.skull, text: 'Pull boss' });
+              } catch {}
             } else if (bossKey.includes("noth")) {
               // Noth the Plaguebringer defaults
               try {
@@ -2896,8 +3217,35 @@
       }
 
       const wing = getCurrentWing();
-      // Non-NAX placeholder pages
-      if (['aq40','bwl','mc'].includes(wing)) {
+      // Update Skeram text in-memory if it's the old default or missing
+      try {
+        const OLD_SKERAM = "Odd groups left. Even groups right. Interupt Arcane Explotions. Don't kill your friends. If the real one spawns on your side, run to the middle and kill the clone first.";
+        const NEW_SKERAM = "Odd groups left. Even groups right. Interupt Arcane Explotions.\n\nIf the real one spawns on your side, run to the middle and kill the clone first.\n\nHelp CC mind controlled players (Sheep, Coil, Blind, Stomp etc.)";
+        panels.forEach(p => {
+          const bk = String(p.boss||'').toLowerCase();
+          if (bk.includes('skeram')) {
+            const cur = String(p.strategy_text||'').trim();
+            if (!cur || cur === OLD_SKERAM) {
+              p.strategy_text = NEW_SKERAM;
+            }
+          }
+        });
+      } catch {}
+
+      // Normalize Twins trash wording (Slays -> Slayers)
+      try {
+        panels.forEach(p => {
+          const bk = String(p.boss||'').toLowerCase();
+          if (bk.includes('twins') && bk.includes('trash')) {
+            const cur = String(p.strategy_text||'');
+            if (cur.includes(' 4 Slays')) {
+              p.strategy_text = cur.replace(' 4 Slays', ' 4 Slayers');
+            }
+          }
+        });
+      } catch {}
+      // Non-NAX placeholder pages (AQ40 now supported)
+      if (['bwl','mc'].includes(wing)) {
         container.innerHTML = '<div class="no-data-message"><div class="no-data-content"><i class="fas fa-tools"></i><h3>Coming Soon</h3><p>This assignments page is coming soon.</p></div></div>';
         return;
       }
@@ -3008,8 +3356,8 @@
         table.style.borderCollapse = 'collapse';
         table.style.color = '#e5e7eb';
         table.innerHTML = '<thead><tr>'+
-          '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Wing</th>'+
-          '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">What/Where</th>'+
+          '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);min-width:200px;width:200px;max-width:200px;">Wing</th>'+
+          '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);white-space:nowrap;">What/Where</th>'+
           '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a); display:none;">Character</th>'+
           '<th style="text-align:center;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Raid Icon</th>'+
           '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-color,#3a3a3a);">Assignment</th>'+
@@ -3028,11 +3376,32 @@
         const idx = parts.indexOf('event');
         const eventId = (idx >= 0 && parts[idx+1]) ? parts[idx+1] : localStorage.getItem('activeEventSession');
 
+        // Wing display helpers (icon + label matching floating-nav)
+        const WING_META = {
+          main: { icon: 'fas fa-home', label: 'Main' },
+          military: { icon: 'fas fa-chess-knight', label: 'Military Wing' },
+          spider: { icon: 'fas fa-spider', label: 'Spider Wing' },
+          abomination: { icon: 'fas fa-skull-crossbones', label: 'Abomination Wing' },
+          plague: { icon: 'fas fa-biohazard', label: 'Plague Wing' },
+          frostwyrm_lair: { icon: 'fas fa-dragon', label: 'Frostwyrm Lair' }
+        };
+        function getWingDisplay(rawWing) {
+          const s = String(rawWing || '').trim();
+          const key = s ? s.toLowerCase().replace(/\s+/g, '_') : 'main';
+          const meta = WING_META[key];
+          return {
+            label: meta ? meta.label : (s ? s.replace(/_/g, ' ') : 'Main'),
+            icon: meta ? meta.icon : 'fas fa-home'
+          };
+        }
+
         for (const row of myEntries) {
           const tr = document.createElement('tr');
           tr.style.borderBottom = '1px solid var(--border-color,#3a3a3a)';
-          const tdWing = document.createElement('td'); tdWing.style.padding='10px 8px'; tdWing.textContent = row.wing;
-          const tdBoss = document.createElement('td'); tdBoss.style.padding='10px 8px'; tdBoss.textContent = row.boss;
+          const tdWing = document.createElement('td'); tdWing.style.padding='10px 8px'; tdWing.style.minWidth='200px'; tdWing.style.width='200px'; tdWing.style.maxWidth='200px';
+          const wingDisp = getWingDisplay(row.wing);
+          tdWing.innerHTML = `<i class="${wingDisp.icon}" style="margin-right:6px;"></i><span>${wingDisp.label}</span>`;
+          const tdBoss = document.createElement('td'); tdBoss.style.padding='10px 8px'; tdBoss.style.whiteSpace='nowrap'; tdBoss.textContent = row.boss;
           const tdChar = document.createElement('td'); tdChar.style.padding='10px 8px'; tdChar.style.display = 'none';
           try {
             const color = getRosterClassColorByName(roster, row.character_name);
@@ -3047,7 +3416,7 @@
           } else {
             tdIcon.textContent = '';
           }
-          const tdAssign = document.createElement('td'); tdAssign.style.padding='10px 8px'; tdAssign.textContent = row.assignment || '';
+          const tdAssign = document.createElement('td'); tdAssign.style.padding='10px 8px'; tdAssign.style.wordBreak='break-word'; tdAssign.textContent = row.assignment || '';
           const tdStatus = document.createElement('td'); tdStatus.style.padding='10px 8px'; tdStatus.style.textAlign = 'center';
           const btn = document.createElement('button'); btn.className = 'status-toggle-btn'; btn.type='button'; btn.innerHTML = getStatusIconHtml(row.accept_status||'', true);
           btn.addEventListener('click', async (ev) => {
@@ -3273,6 +3642,120 @@
       let toRender = match.length > 0 ? match : [];
         if (toRender.length === 0) {
         // Provide sensible defaults for certain wings when nothing is saved yet
+        if (wing === 'aq40') {
+          const skeramPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'The Prophet Skeram',
+            strategy_text: "Odd groups left. Even groups right. Interupt Arcane Explotions. \n\nIf the real one spawns on your side, run to the middle and kill the clone first.\n\nHelp CC mind controlled players (Sheep, Coil, Blind, Stomp etc.)",
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/ZVb2geSq-Fc',
+            boss_icon_url: '',
+            entries: []
+          };
+          const bugTrioPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'Bug Trio',
+            strategy_text: 'First kill Yauj and aoe the adds when she dies.\nThen kill Kri and move away from poision.\nTaunt rotate on Vem and move on with your life.\nTremor + Poison cleansing totems',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/YQp60n1VnPk',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756127717/-15511_ebf20d.png',
+            entries: []
+          };
+          const sarturaPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'Battleguard Sartura',
+            strategy_text: 'Stack & AOE adds. Pull boss out. Keep boss far away with taunt rotation when pinning. Be ready to LIP and commit.',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: '',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756128839/121553_h0v8vf.png',
+            entries: []
+          };
+          const fankrissPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'Fankriss the Unyielding',
+            strategy_text: "Tank & Spank. Stand behind boss. \nOhhhh it's a snaaaaake!.",
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/Qc1kmG2s0Y8',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756129338/Sand_Reaver_jxmv5b.webp',
+            entries: []
+          };
+          const viscidusPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'Viscidus',
+            strategy_text: 'Melee = Frost weapons with Frost oil\nMages = Rank 1 frost bolts\nWarlocks = Frost wands\nShamans = Rank 1 frost shocks + Poison Cleansing Totems\nEveryone = Sapper the adds',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/2molET26BxM',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756129812/15686_o9r8wn.png',
+            entries: []
+          };
+          const huhuranPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'Princess Huhuran',
+            strategy_text: 'Casters on max range and spread out. Save cooldowns to 50%. Dispell sleeping people with full helath. Lots of tank and melee chain healing! Keep healing tank when boss dies.',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/MGtX66nxFhg?t=2s',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756130180/121559_smtx9g.png',
+            entries: []
+          };
+          const twinPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'The Twin Emperors',
+            strategy_text: 'Casters kill Caster, Melee kill melee. Melee run 1-2 seconds before teleport. Tank must be the only one in melee range  when he teleports in. Don\'t drag bugs.',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/0oIVus5SYbA',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756130839/Twin_Emperors_ojdumc.webp',
+            entries: []
+          };
+          const twinsTrashPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'Twins trash',
+            strategy_text: 'Your main goal is to not die. If 4 Slayers, split them before you go in. Alawys kill Mindslayers last. CoR on mind controlled players.',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: '',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756131244/2025-08-25_16h13_58_a5f10k.png',
+            entries: []
+          };
+          const ouroPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'Ouro',
+            strategy_text: 'Warriors who are high on threat, be ready to shield and stoneshield potion and go behind the boss when u agro. Casters spread on caster position. (don\'t over agro when tank gets knocked back, right before the sand blast)',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/YtqsFMmnRW8',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756132646/ui-ej-boss-ouro_xpigga.png',
+            entries: []
+          };
+          const cthunPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: "C'Thun",
+            strategy_text: "Phase 1: Tank run in first. Rest runs in when tank says go. Mellee stack in 2 on raid markers (see drawing).\nDo not chain. Casters/Healers spread out.\nKill small eyes when they spawn.\n\nPhase 2: Casters, Rogues and hunters kill/stun big eyes. Warriors kill small eyes. Kill tentacles when big eye is dead.",
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/2WMzsnJdTjQ',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756132826/C_27thun_e5jjfj.webp',
+            entries: []
+          };
+          container.innerHTML = '';
+          container.appendChild(buildPanel(skeramPanel, user, roster));
+          container.appendChild(buildPanel(bugTrioPanel, user, roster));
+          container.appendChild(buildPanel(sarturaPanel, user, roster));
+          container.appendChild(buildPanel(fankrissPanel, user, roster));
+          container.appendChild(buildPanel(viscidusPanel, user, roster));
+          container.appendChild(buildPanel(huhuranPanel, user, roster));
+          container.appendChild(buildPanel(twinPanel, user, roster));
+          container.appendChild(buildPanel(twinsTrashPanel, user, roster));
+          container.appendChild(buildPanel(ouroPanel, user, roster));
+          container.appendChild(buildPanel(cthunPanel, user, roster));
+          return;
+        }
         if (wing === 'military') {
           const razPanel = {
             dungeon: 'Naxxramas',
@@ -3444,8 +3927,19 @@
         container.innerHTML = '<div class="no-data-message"><div class="no-data-content"><i class="fas fa-info-circle"></i><h3>No Assignments</h3><p>No assignments found for this wing.</p></div></div>';
         return;
       }
-      // Ordering for Spider Wing: Anub'Rekhan, Grand Widow Faerlina, Maexxna
-      if (wing === 'spider') {
+      // Ordering for AQ40: Skeram, Bug Trio
+      if (wing === 'aq40') {
+        const order = ['skeram', 'bug', 'sartura', 'fank', 'visc', 'huhu', 'twin', 'twins trash', 'ouro', "c'thun", 'cthun'];
+        toRender = toRender.slice().sort((a, b) => {
+          const ak = String(a.boss || '').toLowerCase();
+          const bk = String(b.boss || '').toLowerCase();
+          const ai = order.findIndex(k => ak.includes(k));
+          const bi = order.findIndex(k => bk.includes(k));
+          const av = ai === -1 ? 999 : ai;
+          const bv = bi === -1 ? 999 : bi;
+          return av - bv;
+        });
+      } else if (wing === 'spider') {
         const order = ['anub', 'faerlina', 'maex'];
         toRender = toRender.slice().sort((a, b) => {
           const ak = String(a.boss || '').toLowerCase();
@@ -3546,8 +4040,149 @@
       }
       toRender.forEach(p => container.appendChild(buildPanel(p, user, roster)));
 
-      // Spider Wing: ensure Maexxna panel is present even if not saved yet
-      if (wing === 'spider') {
+      // AQ40: ensure Skeram and Bug Trio panels are present even if not saved yet
+      if (wing === 'aq40') {
+        const hasSkeram = toRender.some(p => String(p.boss || '').toLowerCase().includes('skeram'));
+        const hasBug = toRender.some(p => String(p.boss || '').toLowerCase().includes('bug'));
+        const hasSart = toRender.some(p => String(p.boss || '').toLowerCase().includes('sartura'));
+        const hasFank = toRender.some(p => String(p.boss || '').toLowerCase().includes('fank'));
+        const hasVisc = toRender.some(p => String(p.boss || '').toLowerCase().includes('visc'));
+        const hasHuhu = toRender.some(p => String(p.boss || '').toLowerCase().includes('huhu') || String(p.boss || '').toLowerCase().includes('huhuran'));
+        const hasTwin = toRender.some(p => String(p.boss || '').toLowerCase().includes('twin'));
+        const hasTwinsTrash = toRender.some(p => String(p.boss || '').toLowerCase().includes('twins trash'));
+        const hasOuro = toRender.some(p => String(p.boss || '').toLowerCase().includes('ouro'));
+        const hasCthun = toRender.some(p => String(p.boss || '').toLowerCase().includes("c'thun") || String(p.boss || '').toLowerCase().includes('cthun'));
+        if (!hasSkeram) {
+          const skeramPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'The Prophet Skeram',
+            strategy_text: "Odd groups left. Even groups right. Interupt Arcane Explotions. \n\nIf the real one spawns on your side, run to the middle and kill the clone first.\n\nHelp CC mind controlled players (Sheep, Coil, Blind, Stomp etc.)",
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/ZVb2geSq-Fc',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756127451/15345_gqfi2d.png',
+            entries: []
+          };
+          container.appendChild(buildPanel(skeramPanel, user, roster));
+        }
+        if (!hasVisc) {
+          const viscidusPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'Viscidus',
+            strategy_text: 'Melee = Frost weapons with Frost oil\nMages = Rank 1 frost bolts\nWarlocks = Frost wands\nShamans = Rank 1 frost shocks + Poison Cleansing Totems\nEveryone = Sapper the adds',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/2molET26BxM',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756129812/15686_o9r8wn.png',
+            entries: []
+          };
+          container.appendChild(buildPanel(viscidusPanel, user, roster));
+        }
+        if (!hasHuhu) {
+          const huhuranPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'Princess Huhuran',
+            strategy_text: 'Casters on max range and spread out. Save cooldowns to 50%. Dispell sleeping people with full helath. Lots of tank and melee chain healing! Keep healing tank when boss dies.',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/MGtX66nxFhg?t=2s',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756130180/121559_smtx9g.png',
+            entries: []
+          };
+          container.appendChild(buildPanel(huhuranPanel, user, roster));
+        }
+        if (!hasTwin) {
+          const twinPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'The Twin Emperors',
+            strategy_text: 'Casters kill Caster, Melee kill melee. Melee run 1-2 seconds before teleport. Tank must be the only one in melee range  when he teleports in. Don\'t drag bugs.',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/0oIVus5SYbA',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756130839/Twin_Emperors_ojdumc.webp',
+            entries: []
+          };
+          container.appendChild(buildPanel(twinPanel, user, roster));
+        }
+        if (!hasTwinsTrash) {
+          const twinsTrashPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'Twins trash',
+            strategy_text: 'Your main goal is to not die. If 4 Slayers, split them before you go in. Alawys kill Mindslayers last. CoR on mind controlled players.',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: '',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756131244/2025-08-25_16h13_58_a5f10k.png',
+            entries: []
+          };
+          container.appendChild(buildPanel(twinsTrashPanel, user, roster));
+        }
+        if (!hasOuro) {
+          const ouroPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'Ouro',
+            strategy_text: 'Warriors who are high on threat, be ready to shield and stoneshield potion and go behind the boss when u agro. Casters spread on caster position. (don\'t over agro when tank gets knocked back, right before the sand blast)',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/YtqsFMmnRW8',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756132646/ui-ej-boss-ouro_xpigga.png',
+            entries: []
+          };
+          container.appendChild(buildPanel(ouroPanel, user, roster));
+        }
+        if (!hasCthun) {
+          const cthunPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: "C'Thun",
+            strategy_text: "Phase 1: Tank run in first. Rest runs in when tank says go. Mellee stack in 2 on raid markers (see drawing).\nDo not chain. Casters/Healers spread out.\nKill small eyes when they spawn.\n\nPhase 2: Casters, Rogues and hunters kill/stun big eyes. Warriors kill small eyes. Kill tentacles when big eye is dead.",
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/2WMzsnJdTjQ',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756132826/C_27thun_e5jjfj.webp',
+            entries: []
+          };
+          container.appendChild(buildPanel(cthunPanel, user, roster));
+        }
+        if (!hasFank) {
+          const fankrissPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'Fankriss the Unyielding',
+            strategy_text: "Tank & Spank. Stand behind boss. \nOhhhh it's a snaaaaake!.",
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/Qc1kmG2s0Y8',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756129338/Sand_Reaver_jxmv5b.webp',
+            entries: []
+          };
+          container.appendChild(buildPanel(fankrissPanel, user, roster));
+        }
+        if (!hasBug) {
+          const bugTrioPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'Bug Trio',
+            strategy_text: 'First kill Yauj and aoe the adds when she dies.\nThen kill Kri and move away from poision.\nTaunt rotate on Vem and move on with your life.\nTremor + Poison cleansing totems',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: 'https://www.youtube.com/embed/YQp60n1VnPk',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756127717/-15511_ebf20d.png',
+            entries: []
+          };
+          container.appendChild(buildPanel(bugTrioPanel, user, roster));
+        }
+        if (!hasSart) {
+          const sarturaPanel = {
+            dungeon: 'AQ40',
+            wing: 'AQ40',
+            boss: 'Battleguard Sartura',
+            strategy_text: 'Stack & AOE adds. Pull boss out. Keep boss far away with taunt rotation when pinning. Be ready to LIP and commit.',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            video_url: '',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756128839/121553_h0v8vf.png',
+            entries: []
+          };
+          container.appendChild(buildPanel(sarturaPanel, user, roster));
+        }
+      } else if (wing === 'spider') {
         const hasMaex = toRender.some(p => String(p.boss || '').toLowerCase().includes('maex'));
         if (!hasMaex) {
           const maexPanel = {

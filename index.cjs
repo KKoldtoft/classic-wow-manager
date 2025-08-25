@@ -2627,6 +2627,35 @@ app.get('/api/events/:eventId/channel-flags', async (req, res) => {
         if (cf.rows.length > 0) isNax = !!cf.rows[0].is_nax;
       } catch {}
     }
+    // Fallback: try upcoming events cache to resolve channel if missing
+    if (!channelId) {
+      try {
+        const cached = await client.query(
+          `SELECT events_data FROM events_cache WHERE cache_key = $1 AND expires_at > NOW()`,
+          ['raid_helper_events']
+        );
+        if (cached.rows.length > 0) {
+          const eventsBlob = cached.rows[0].events_data || {};
+          const list = Array.isArray(eventsBlob.postedEvents) ? eventsBlob.postedEvents : (Array.isArray(eventsBlob) ? eventsBlob : []);
+          const match = list.find(e => String(e.id) === String(eventId));
+          if (match) {
+            channelId = match.channelId || match.channelID || match.channel_id || null;
+            channelName = match.channelName || match.channel_name || channelName;
+          }
+        }
+      } catch {}
+      if (channelId && !isNax) {
+        try {
+          const cf2 = await client.query(`SELECT is_nax FROM channel_filters WHERE channel_id = $1`, [channelId]);
+          if (cf2.rows.length > 0) isNax = !!cf2.rows[0].is_nax;
+        } catch {}
+      }
+    }
+    // Heuristic fallback when DB flag is unavailable
+    if (!isNax && channelName) {
+      const lower = String(channelName).toLowerCase();
+      if (lower.includes('nax')) isNax = true;
+    }
     return res.json({ success: true, eventId, channelId, channelName, isNax });
   } catch (e) {
     console.error('❌ [/api/events/:eventId/channel-flags] Error:', e.message);
@@ -12276,6 +12305,7 @@ function parseWorldBuffsCSV(csvData, eventId, analysisType) {
       console.log(`🌍 [WORLD BUFFS PARSER] Processing player: ${playerName}, Amount: ${amountSummary}, Score: ${scoreSummary}`);
       
       // Process each buff for this player
+      let addedAnyBuff = false;
       buffNames.forEach(buff => {
         if (buff.columnIndex < row.length) {
           const buffValue = row[buff.columnIndex] ? row[buff.columnIndex].trim() : '';
@@ -12296,9 +12326,27 @@ function parseWorldBuffsCSV(csvData, eventId, analysisType) {
               column_number: buff.columnIndex + 1,
               analysis_type: analysisType
             });
+            addedAnyBuff = true;
           }
         }
       });
+
+      // If player has 0/required buffs (no individual buff cells), still persist a summary row
+      // so downstream endpoints can compute deductions based on amount_summary.
+      if (!addedAnyBuff && amountSummary) {
+        buffData.push({
+          character_name: playerName,
+          buff_name: '__SUMMARY__',
+          buff_value: '',
+          color_status: null,
+          background_color: null,
+          amount_summary: amountSummary,
+          score_summary: scoreSummary,
+          row_number: rowIndex + 1,
+          column_number: 0,
+          analysis_type: analysisType
+        });
+      }
     }
 
     console.log(`🌍 [WORLD BUFFS PARSER] Parsed ${buffData.length} buff entries`);
