@@ -128,6 +128,24 @@
                     <div class="toggle-slider"></div>
                 </div>
             </div>
+
+            <!-- Raidleader name (autocomplete) -->
+            <div class="toggle-container wide" id="raidleader-container">
+                <span class="toggle-label">Raidleader</span>
+                <div class="input-wrap">
+                    <input id="raidleader-input" type="text" class="player-search-input" placeholder="Type to search roster..." autocomplete="off">
+                    <div id="raidleader-suggestions" class="player-dropdown" style="display:none;"></div>
+                </div>
+            </div>
+
+            <!-- Raidleader cut (numeric, percent) -->
+            <div class="toggle-container wide" id="raidleader-cut-container">
+                <span class="toggle-label">Raidleader cut (%)</span>
+                <div class="input-wrap">
+                    <input id="raidleader-cut-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="e.g. 4">
+                    <span class="suffix">%</span>
+                </div>
+            </div>
         </div>
     </div>
 

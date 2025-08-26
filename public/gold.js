@@ -778,18 +778,90 @@ class GoldPotManager {
         return realm ? `${raw}-${realm}` : raw;
     }
 
-    populateGargulExport(sortedPlayers){
+    async populateGargulExport(sortedPlayers){
         try {
             const ta = document.getElementById('gargulExport');
             if (!ta) return;
-            // Build CSV-like string: header + rows sorted by current display order
             const lines = ['Player,Gold'];
+            const goldMap = new Map();
+            const pushGold = (nameWithRealm, amount) => {
+                if (!nameWithRealm) return;
+                const prev = goldMap.get(nameWithRealm) || 0;
+                goldMap.set(nameWithRealm, Math.max(0, prev + Math.max(0, Number(amount)||0)));
+            };
+
+            // Player rows
             sortedPlayers.forEach(p => {
                 const key = String(p.character_name||'').trim().toLowerCase();
                 const totals = this.playerTotals.get(key) || { gold: 0 };
                 const realm = this.nameToRealm.get(key);
                 const nameOut = realm ? `${p.character_name}-${realm}` : p.character_name;
-                lines.push(`${nameOut},${Number(totals.gold||0)}`);
+                pushGold(nameOut, Number(totals.gold||0));
+            });
+
+            // Management cuts
+            const total = Number(this.totalGoldPot)||0;
+            const mgmtTotal = Math.floor(total * 0.15);
+            let rlPct = 4;
+            try {
+                const meta = await fetch(`/api/events/${this.currentEventId}/raidleader`).then(r => r.ok ? r.json() : null);
+                if (meta && meta.success && meta.raidleaderCut != null) rlPct = Number(meta.raidleaderCut);
+            } catch {}
+            rlPct = Math.max(0, Math.min(10, isNaN(rlPct) ? 4 : rlPct));
+            const helperPct = 3;
+            const foundersPct = 2;
+            const organizerBasePct = 6;
+            let guildbankPct = 0;
+            let organizerPct = organizerBasePct;
+            if (rlPct < 4) guildbankPct = 4 - rlPct; else if (rlPct > 4) organizerPct = Math.max(0, organizerBasePct - (rlPct - 4));
+            const amt = pct => Math.floor(total * (pct / 100));
+            let rlAmt = amt(rlPct);
+            let helperAmt = amt(helperPct);
+            let foundersAmt = amt(foundersPct);
+            let organizerAmt = amt(organizerPct);
+            let guildbankAmt = amt(guildbankPct);
+            let sumParts = rlAmt + helperAmt + foundersAmt + organizerAmt + guildbankAmt;
+            let diff = mgmtTotal - sumParts;
+            if (diff !== 0) {
+                if (organizerPct > 0) organizerAmt += diff; else if (guildbankPct > 0) guildbankAmt += diff; else rlAmt += diff;
+            }
+
+            // Organizer → Tftroll-Golemagg
+            pushGold('Tftroll-Golemagg', organizerAmt);
+            // Helper → Lavol-Ashbringer
+            pushGold('Lavol-Ashbringer', helperAmt);
+            // Founders → split between Tftroll-Golemagg and Zaappi-Firemaw (odd 1g to Tftroll)
+            const foundersHalf = Math.floor(foundersAmt / 2);
+            const foundersRemainder = foundersAmt - foundersHalf * 2;
+            pushGold('Tftroll-Golemagg', foundersHalf + foundersRemainder);
+            pushGold('Zaappi-Firemaw', foundersHalf);
+            // Guildbank (if any) → Onepbank-Firemaw
+            if (guildbankAmt > 0) pushGold('Onepbank-Firemaw', guildbankAmt);
+
+            // Raidleader → the RL from roster input; map to -realm using nameToRealm
+            try {
+                const meta = await fetch(`/api/events/${this.currentEventId}/raidleader`).then(r => r.ok ? r.json() : null);
+                const rlNameRaw = meta && meta.success ? String(meta.raidleaderName||'').trim() : '';
+                if (rlNameRaw) {
+                    const realm = this.nameToRealm.get(rlNameRaw.toLowerCase());
+                    const nameOut = realm ? `${rlNameRaw}-${realm}` : rlNameRaw;
+                    pushGold(nameOut, rlAmt);
+                }
+            } catch {}
+
+            // Emit lines (in existing display order first, then any added)
+            const emitted = new Set();
+            sortedPlayers.forEach(p => {
+                const key = String(p.character_name||'').trim().toLowerCase();
+                const realm = this.nameToRealm.get(key);
+                const nameOut = realm ? `${p.character_name}-${realm}` : p.character_name;
+                if (!emitted.has(nameOut) && goldMap.has(nameOut)) {
+                    lines.push(`${nameOut},${Number(goldMap.get(nameOut)||0)}`);
+                    emitted.add(nameOut);
+                }
+            });
+            Array.from(goldMap.entries()).forEach(([name, amount]) => {
+                if (!emitted.has(name)) lines.push(`${name},${Number(amount||0)}`);
             });
             ta.value = lines.join('\n');
 
@@ -801,7 +873,6 @@ class GoldPotManager {
                         await navigator.clipboard.writeText(ta.value);
                         if (status) { status.style.display = 'block'; setTimeout(()=> status.style.display='none', 1200); }
                     } catch (e) {
-                        // Fallback
                         ta.select(); document.execCommand('copy'); if (status) { status.style.display='block'; setTimeout(()=> status.style.display='none', 1200); }
                     }
                 });

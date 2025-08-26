@@ -2665,6 +2665,65 @@ app.get('/api/events/:eventId/channel-flags', async (req, res) => {
   }
 });
 
+// Store raidleader name and cut per event (requires management)
+app.put('/api/events/:eventId/raidleader', requireManagement, express.json(), async (req, res) => {
+  const { eventId } = req.params;
+  const { raidleaderName, raidleaderCut } = req.body || {};
+  if (!eventId) return res.status(400).json({ success:false, message:'Missing eventId' });
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS event_metadata (
+        event_id VARCHAR(255) PRIMARY KEY,
+        raidleader_name VARCHAR(255),
+        raidleader_cut NUMERIC,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    const cutVal = (raidleaderCut == null || raidleaderCut === '') ? null : Number(raidleaderCut);
+    await client.query(
+      `INSERT INTO event_metadata (event_id, raidleader_name, raidleader_cut, updated_at)
+       VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+       ON CONFLICT (event_id)
+       DO UPDATE SET raidleader_name = EXCLUDED.raidleader_name, raidleader_cut = EXCLUDED.raidleader_cut, updated_at = CURRENT_TIMESTAMP`,
+      [eventId, raidleaderName || null, isNaN(cutVal) ? null : cutVal]
+    );
+    res.json({ success:true });
+  } catch (e) {
+    console.error('❌ [/api/events/:eventId/raidleader] Error:', e);
+    res.status(500).json({ success:false, message:'Failed to save raidleader' });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+app.get('/api/events/:eventId/raidleader', async (req, res) => {
+  const { eventId } = req.params;
+  if (!eventId) return res.status(400).json({ success:false, message:'Missing eventId' });
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS event_metadata (
+        event_id VARCHAR(255) PRIMARY KEY,
+        raidleader_name VARCHAR(255),
+        raidleader_cut NUMERIC,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    const r = await client.query('SELECT raidleader_name, raidleader_cut FROM event_metadata WHERE event_id = $1', [eventId]);
+    if (!r.rows.length) return res.json({ success:true, raidleaderName:null, raidleaderCut:null });
+    const row = r.rows[0];
+    res.json({ success:true, raidleaderName: row.raidleader_name || null, raidleaderCut: row.raidleader_cut != null ? Number(row.raidleader_cut) : null });
+  } catch (e) {
+    console.error('❌ [/api/events/:eventId/raidleader GET] Error:', e);
+    res.status(500).json({ success:false, message:'Failed to load raidleader' });
+  } finally {
+    if (client) client.release();
+  }
+});
+
 // Management-only endpoint for user data
 app.get('/api/management/users', requireManagement, async (req, res) => {
   try {

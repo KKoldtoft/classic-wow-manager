@@ -68,6 +68,50 @@ a.panel-button {
     box-sizing: border-box; /* Include padding and border in dimensions */
 }
 
+/* Make new inputs span the full panel width at the bottom */
+.toggle-container.wide {
+    grid-column: 1 / -1;
+    width: 100%;
+    height: auto;
+    padding: 8px;
+    gap: 8px;
+}
+
+#raidleader-container .input-wrap,
+#raidleader-cut-container .input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+#raidleader-input,
+#raidleader-cut-input {
+    background: #232229;
+    border: 1px solid #555555;
+    color: #e8e8e8;
+    border-radius: 6px;
+    padding: 6px 10px;
+    width: 100%;
+}
+
+#raidleader-suggestions.player-dropdown {
+    position: absolute;
+    top: 36px;
+    left: 0;
+    right: 0;
+    max-height: 220px;
+    overflow: auto;
+    z-index: 20;
+}
+
+#raidleader-cut-container .suffix {
+    color: #e8e8e8;
+    opacity: 0.85;
+    white-space: nowrap;
+}
+
 .toggle-label {
     color: white;
     font-size: 0.8em;
@@ -139,3 +183,29 @@ a.panel-button {
 .toggle-switch.active::after {
     color: #333;
 } 
+
+/* Inputs placed inside button panel containers */
+#raidleader-input,
+#raidleader-cut-input {
+    background: #232229;
+    border: 1px solid #555555;
+    color: #e8e8e8;
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+#raidleader-suggestions .player-dropdown-item {
+    color: #e8e8e8;
+}
+
+/* Class colors for suggestions (match roster class palette) */
+#raidleader-suggestions .player-dropdown-item.class-warrior { background: rgba(199, 156, 110, 1); color: #111; }
+#raidleader-suggestions .player-dropdown-item.class-tank { background: rgba(199, 156, 110, 1); color: #111; }
+#raidleader-suggestions .player-dropdown-item.class-paladin { background: rgba(245, 140, 186, 1); color: #111; }
+#raidleader-suggestions .player-dropdown-item.class-hunter { background: rgba(171, 212, 115, 1); color: #111; }
+#raidleader-suggestions .player-dropdown-item.class-rogue { background: rgba(255, 245, 105, 1); color: #111; }
+#raidleader-suggestions .player-dropdown-item.class-priest { background: rgba(255, 255, 255, 1); color: #111; }
+#raidleader-suggestions .player-dropdown-item.class-shaman { background: rgba(0, 112, 222, 1); color: #fff; }
+#raidleader-suggestions .player-dropdown-item.class-mage { background: rgba(105, 204, 240, 1); color: #111; }
+#raidleader-suggestions .player-dropdown-item.class-warlock { background: rgba(148, 130, 201, 1); color: #fff; }
+#raidleader-suggestions .player-dropdown-item.class-druid { background: rgba(255, 125, 10, 1); color: #111; }

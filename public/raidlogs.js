@@ -80,7 +80,7 @@ class RaidLogsManager {
         // Gold/points aggregates
         this.totalGoldPot = 0;
         this.sharedGoldPot = 0;
-        this.managementCuts = { management: 0, organizer: 0, raidleader: 0, founder: 0 };
+        this.managementCuts = { management: 0, organizer: 0, raidleader: 0, helper: 0, founder: 0 };
         this.myPoints = null;
         this.myGold = null;
         this.goldPerPoint = null;
@@ -1989,20 +1989,50 @@ class RaidLogsManager {
                 // Precompute shared and management cuts
                 this.sharedGoldPot = Math.floor(this.totalGoldPot * 0.85);
                 const mgmt = Math.floor(this.totalGoldPot * 0.15);
-                const raidleader = Math.floor(this.totalGoldPot * 0.05);
-                const founder = Math.floor(this.totalGoldPot * 0.02);
-                const organizer = Math.max(0, mgmt - raidleader - founder);
-                this.managementCuts = { management: mgmt, organizer, raidleader, founder };
+
+                // Dynamic raidleader percentage from event metadata
+                let rlPct = 4;
+                try {
+                    const meta = await fetch(`/api/events/${this.activeEventId}/raidleader`).then(r => r.ok ? r.json() : null);
+                    if (meta && meta.success && meta.raidleaderCut != null) rlPct = Number(meta.raidleaderCut);
+                } catch {}
+                rlPct = Math.max(0, Math.min(10, isNaN(rlPct) ? 4 : rlPct));
+                const helperPct = 3;
+                const foundersPct = 2;
+                const organizerBasePct = 6;
+                let guildbankPct = 0;
+                let organizerPct = organizerBasePct;
+                if (rlPct < 4) {
+                    guildbankPct = 4 - rlPct;
+                } else if (rlPct > 4) {
+                    const over = rlPct - 4;
+                    organizerPct = Math.max(0, organizerBasePct - over);
+                }
+                const amt = pct => Math.floor(this.totalGoldPot * (pct / 100));
+                let raidleader = amt(rlPct);
+                let helper = amt(helperPct);
+                let founder = amt(foundersPct);
+                let organizer = amt(organizerPct);
+                let guildbank = amt(guildbankPct);
+                // Fix rounding to match mgmt
+                let sumParts = raidleader + helper + founder + organizer + guildbank;
+                let diff = mgmt - sumParts;
+                if (diff !== 0) {
+                    if (organizerPct > 0) organizer += diff;
+                    else if (guildbankPct > 0) guildbank += diff;
+                    else raidleader += diff;
+                }
+                this.managementCuts = { management: mgmt, organizer, raidleader, helper, founder, guildbank, percents: { organizerPct, rlPct, helperPct, foundersPct, guildbankPct } };
             } else {
                 this.totalGoldPot = 0;
                 this.sharedGoldPot = 0;
-                this.managementCuts = { management: 0, organizer: 0, raidleader: 0, founder: 0 };
+                this.managementCuts = { management: 0, organizer: 0, raidleader: 0, helper: 0, founder: 0, guildbank: 0, percents: { organizerPct: 0, rlPct: 0, helperPct: 0, foundersPct: 0, guildbankPct: 0 } };
             }
         } catch (e) {
             console.error('❌ [GOLDPOT] Failed to fetch gold pot', e);
             this.totalGoldPot = 0;
             this.sharedGoldPot = 0;
-            this.managementCuts = { management: 0, organizer: 0, raidleader: 0, founder: 0 };
+            this.managementCuts = { management: 0, organizer: 0, raidleader: 0, helper: 0, founder: 0, guildbank: 0, percents: { organizerPct: 0, rlPct: 0, helperPct: 0, foundersPct: 0, guildbankPct: 0 } };
         }
     }
 
@@ -2039,10 +2069,12 @@ class RaidLogsManager {
         const mgmtVal = document.getElementById('gold-management-value');
         const mgmtDetail = document.getElementById('gold-management-detail');
         if (mgmtVal && mgmtDetail) {
-            const c = this.managementCuts || { management: 0, organizer: 0, raidleader: 0, founder: 0 };
+            const c = this.managementCuts || { management: 0, organizer: 0, raidleader: 0, helper: 0, founder: 0, guildbank: 0, percents: { organizerPct: 0, rlPct: 0, helperPct: 0, foundersPct: 0, guildbankPct: 0 } };
             const fmtInt = (n) => Math.round(Number(n || 0)).toLocaleString();
             mgmtVal.textContent = fmtInt(c.management);
-            mgmtDetail.textContent = `Organizers: ${fmtInt(c.organizer)} | Raidleader: ${fmtInt(c.raidleader)} | Founders: ${fmtInt(c.founder)}`;
+            // Keep styling; extend detail to include helper
+            const gbStr = c.guildbank && c.guildbank > 0 ? ` | Guildbank: ${fmtInt(c.guildbank)}` : '';
+            mgmtDetail.textContent = `Organizer: ${fmtInt(c.organizer)} | Raidleader: ${fmtInt(c.raidleader)} | Helper: ${fmtInt(c.helper)} | Founders: ${fmtInt(c.founder)}${gbStr}`;
             this.setupManagementTooltip(c);
         }
         // My Points and My Gold
@@ -2073,12 +2105,15 @@ class RaidLogsManager {
             const fmtInt = (n) => Math.round(Number(n || 0)).toLocaleString();
             const el = document.createElement('div');
             el.className = 'mgmt-tooltip';
+            const p = cuts.percents || { organizerPct: 6, rlPct: 4, helperPct: 3, foundersPct: 2, guildbankPct: 0 };
             el.innerHTML = `
                 <div class="mgmt-grid">
-                    <div class="mgmt-key">Total management cut:</div><div class="mgmt-val">${fmtInt(cuts.management)} Gold</div>
-                    <div class="mgmt-key">Organizer cut:</div><div class="mgmt-val">${fmtInt(cuts.organizer)} Gold</div>
-                    <div class="mgmt-key">Raidleader cut:</div><div class="mgmt-val">${fmtInt(cuts.raidleader)} Gold</div>
-                    <div class="mgmt-key">Founders cut:</div><div class="mgmt-val">${fmtInt(cuts.founder)} Gold</div>
+                    <div class="mgmt-key"><strong>Total management cut (15%):</strong></div><div class="mgmt-val"><strong>${fmtInt(cuts.management)} Gold</strong></div>
+                    <div class="mgmt-key">Organizer cut (${p.organizerPct}%):</div><div class="mgmt-val">${fmtInt(cuts.organizer)} Gold</div>
+                    <div class="mgmt-key">Raidleader cut (${p.rlPct}%):</div><div class="mgmt-val">${fmtInt(cuts.raidleader)} Gold</div>
+                    ${p.guildbankPct>0?`<div class="mgmt-key">Guildbank cut (${p.guildbankPct}%):</div><div class="mgmt-val">${fmtInt(cuts.guildbank||0)} Gold</div>`:''}
+                    <div class="mgmt-key">Helper cut (${p.helperPct}%):</div><div class="mgmt-val">${fmtInt(cuts.helper)} Gold</div>
+                    <div class="mgmt-key">Founders cut (2 x 1%):</div><div class="mgmt-val">${fmtInt(cuts.founder)} Gold</div>
                 </div>
             `;
             document.body.appendChild(el);

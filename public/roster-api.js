@@ -163,6 +163,25 @@ async function addExistingPlayerToRoster(eventId, characterData, targetPartyId, 
     return response.json();
 }
 
+// Event metadata: raidleader and cut
+async function getEventRaidleader(eventId) {
+    const r = await fetch(`/api/events/${encodeURIComponent(eventId)}/raidleader`);
+    if (!r.ok) return { success: false };
+    return r.json();
+}
+
+async function setEventRaidleader(eventId, raidleaderName, raidleaderCut) {
+    const r = await fetch(`/api/events/${encodeURIComponent(eventId)}/raidleader`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raidleaderName, raidleaderCut })
+    });
+    if (!r.ok) {
+        const err = await r.json().catch(()=>({message:'Failed'}));
+        throw new Error(err.message || 'Failed to save raidleader');
+    }
+    return r.json();
+}
 // Check if a player exists in the players table by exact (discord_id, character_name, class)
 async function checkPlayerExists(discordUserId, characterName, characterClass) {
     const url = `/api/players/search?q=${encodeURIComponent(characterName)}`;

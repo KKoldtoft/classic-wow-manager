@@ -925,6 +925,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             setupHideConfirmedToggle();
             setupPlayerSearchModal();
             setupFixNameModal();
+            wireRaidleaderControls();
             await prefetchPlayersDb();
             await applyDbMismatchStyling();
             
@@ -1168,6 +1169,105 @@ document.addEventListener('DOMContentLoaded', async () => {
             const player = (currentRosterData.bench || []).find(p => p && p.userid === userid);
             if (player) markCellDbMismatch(cell, player);
         });
+    }
+
+    // Raidleader inputs: autocomplete + save
+    function wireRaidleaderControls(){
+        const nameInput = document.getElementById('raidleader-input');
+        const cutInput = document.getElementById('raidleader-cut-input');
+        const suggestions = document.getElementById('raidleader-suggestions');
+        if (!nameInput || !cutInput) return;
+
+        // Load existing from event metadata
+        (async()=>{
+            try {
+                const meta = await getEventRaidleader(eventId);
+                if (meta && meta.success) {
+                    if (meta.raidleaderName) nameInput.value = meta.raidleaderName;
+                    if (meta.raidleaderCut != null) cutInput.value = String(meta.raidleaderCut);
+                }
+            } catch {}
+        })();
+
+        const buildRosterNames = ()=>{
+            try {
+                // Extract EXACT display names from roster grid only (exclude bench section)
+                const nameEls = document.querySelectorAll('#roster-grid .roster-cell.player-filled .player-name span');
+                const names = Array.from(nameEls).map(el => String(el.textContent||'').trim()).filter(Boolean);
+                const unique = Array.from(new Set(names));
+                // Map display name -> class from current roster data
+                const classMap = new Map();
+                const push = (p)=>{
+                    if (!p) return;
+                    const display = p.mainCharacterName || p.assigned_char_name || p.character_name || p.name;
+                    // Treat role Tank as warrior color when class is not warrior
+                    let cls = String(p.class_name || p.class || '').toLowerCase() || 'unknown';
+                    try {
+                        const role = deriveRole(p.class, p.spec);
+                        if (String(role).toLowerCase() === 'tank') cls = 'warrior';
+                    } catch {}
+                    if (display) classMap.set(String(display).trim(), cls);
+                };
+                (currentRosterData.raidDrop||[]).forEach(push); // exclude bench by request
+                return unique.map(n => ({ name: n, cls: classMap.get(n) || 'unknown' }));
+            } catch { return []; }
+        };
+
+        const allNames = ()=> buildRosterNames();
+
+        let hideTimer = null;
+        const hideSuggestionsSoon = ()=>{ clearTimeout(hideTimer); hideTimer = setTimeout(()=> suggestions.style.display='none', 150); };
+        const showSuggestions = (items)=>{
+            if(!suggestions) return;
+            if(!items || !items.length){ suggestions.style.display='none'; return; }
+            const esc = (s)=> String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]||c));
+            suggestions.innerHTML = items.map(it=>`<div class="player-dropdown-item class-${esc(it.cls)}">${esc(it.name)}</div>`).join('');
+            suggestions.style.display='block';
+            suggestions.querySelectorAll('.player-dropdown-item').forEach(el=>{
+                el.addEventListener('click', ()=>{
+                    nameInput.value = el.textContent;
+                    suggestions.style.display='none';
+                    saveMeta();
+                });
+            });
+        };
+
+        nameInput.addEventListener('input', ()=>{
+            const q = String(nameInput.value||'').toLowerCase();
+            const options = allNames().filter(it=> it.name.toLowerCase().includes(q)).slice(0,50);
+            showSuggestions(options);
+        });
+        nameInput.addEventListener('focus', ()=>{
+            const q = String(nameInput.value||'').toLowerCase();
+            const options = allNames().filter(it=> !q || it.name.toLowerCase().includes(q)).slice(0,50);
+            showSuggestions(options);
+        });
+        nameInput.addEventListener('blur', hideSuggestionsSoon);
+        suggestions.addEventListener('mousedown', e=> e.preventDefault());
+
+        const saveMeta = async()=>{
+            try {
+                // numeric only for cut
+                let cut = cutInput.value;
+                if (cut === '') cut = null;
+                if (cut != null) {
+                    const num = Number(cut);
+                    if (!isFinite(num)) return; // ignore invalid
+                    cut = num;
+                }
+                await setEventRaidleader(eventId, String(nameInput.value||'').trim() || null, cut);
+            } catch (e) { console.warn('Failed to save raidleader meta', e); }
+        };
+
+        nameInput.addEventListener('change', saveMeta);
+        nameInput.addEventListener('keyup', (e)=>{ if(e.key==='Enter') saveMeta(); });
+        cutInput.addEventListener('change', ()=>{
+            // sanitize to number
+            const v = Number(cutInput.value);
+            if (!isFinite(v) || v < 0) { cutInput.value = ''; return; }
+            saveMeta();
+        });
+        cutInput.addEventListener('keyup', (e)=>{ if(e.key==='Enter') cutInput.dispatchEvent(new Event('change')); });
     }
 
 
