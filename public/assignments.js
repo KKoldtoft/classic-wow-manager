@@ -339,7 +339,8 @@
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755150437/Gluth_mid_ju7cbx.jpg';
       defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755150438/Gluth_full_bkqgdj.png';
     } else if (panelKeyLower.includes('noth')) {
-      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756245157/Noth_mid_rvctaf.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756245157/Noth_full_o4oywn.png';
     } else if (panelKeyLower.includes('heig')) {
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
     } else if (panelKeyLower.includes('loatheb')) {

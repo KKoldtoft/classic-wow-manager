@@ -164,6 +164,7 @@ function injectRulesNavLink() {
         // Avoid duplicates
         const existingRules = nav.querySelector('a.top-nav-link[href="/rules"]');
         const existingStats = nav.querySelector('a.top-nav-link[href="/stats"]');
+        const existingFaq = nav.querySelector('a.top-nav-link[href="/faq"]');
 
         // Insert Stats link to the left of Rules
         if (!existingStats) {
@@ -184,6 +185,14 @@ function injectRulesNavLink() {
             rulesLink.className = 'top-nav-link';
             rulesLink.textContent = 'Rules';
             nav.appendChild(rulesLink);
+        }
+
+        if (!existingFaq) {
+            const faqLink = document.createElement('a');
+            faqLink.href = '/faq';
+            faqLink.className = 'top-nav-link';
+            faqLink.textContent = 'FAQ';
+            nav.appendChild(faqLink);
         }
     });
 }

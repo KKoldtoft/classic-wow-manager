@@ -1166,6 +1166,36 @@ body.admin :where(h1,h2,h3,h4) {
     color: #e8e8e8;
 }
 
+/* --- FAQ page styles --- */
+body.faq { background-color: #121214; color: #e8e8e8; overflow-y: scroll; }
+body.faq .content { background: transparent; box-shadow: none; }
+.faq-container { max-width: 900px; margin: 0 auto; padding: 24px 20px 40px; }
+.faq-title { margin: 0 0 16px; }
+.faq-accordion { display: flex; flex-direction: column; gap: 10px; }
+.faq-item { border: 1px solid #555555; border-radius: 10px; overflow: hidden; background: #1a191e; }
+.faq-question { width: 100%; text-align: left; background: #232229; color: #e8e8e8; border: none; padding: 14px 16px; font-size: 16px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background 0.2s ease; }
+.faq-question { min-height: 90px; }
+.faq-q-content { display: flex; flex-direction: column; gap: 4px; flex: 1; align-items: flex-start; }
+.faq-q-headline { font-size: 16px; font-weight: 700; color: #e8e8e8; line-height: 1.2; }
+.faq-q-text { font-size: 14px; color: #cfcfcf; line-height: 1.4; }
+.faq-question:hover { background: #2b2a31; }
+.faq-icon { transition: transform 0.2s ease; }
+.faq-item.open .faq-icon { transform: rotate(180deg); }
+.faq-answer { height: 0; overflow: hidden; color: #d0d0d0; line-height: 1.5; background: #1a191e; transition: height 1s ease-in-out; }
+.faq-answer-inner { padding: 14px 16px; }
+.faq-answer-headline { font-weight: 700; margin: 0 0 6px 0; color: #e8e8e8; }
+.faq-answer-text { font-size: 14px; color: #d0d0d0; }
+.faq-answer-text a { color: #5865F2; text-decoration: underline; }
+.faq-answer-text a:hover { color: #4752C4; }
+
+
+/* --- Item Log layout --- */
+.itemlog-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-items: start; }
+.itemlog-col { display: flex; flex-direction: column; gap: 16px; }
+.itemlog-raid { display: flex; flex-direction: column; gap: 12px; padding-bottom: 24px; border-bottom: 1px solid #333; }
+.itemlog-raid-title { font-weight: 600; color: #e8e8e8; opacity: 0.9; padding: 4px 2px; }
+.itemlog-raid-items { display: grid; grid-template-columns: 1fr; gap: 12px; }
+
 @media (max-width: 1400px) {
     .main-content-grid {
         grid-template-columns: 1fr 1fr; /* 2 columns on medium screens */

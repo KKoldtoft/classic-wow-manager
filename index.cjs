@@ -1355,6 +1355,14 @@ app.get('/rules', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'rules.html'));
 });
 
+app.get('/faq', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'faq.html'));
+});
+
+app.get('/itemlog', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'itemlog.html'));
+});
+
 // Minimal live view page
 app.get('/live', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'live.html'));
@@ -13625,6 +13633,61 @@ app.get('/api/items-hall-of-fame', async (req, res) => {
     } catch (error) {
         console.error(`❌ [ITEMS HALL OF FAME] Error fetching hall of fame items:`, error);
         return res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+});
+
+// Get full items log (all sold items) for the Item Log page
+app.get('/api/items-log', async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
+    }
+
+    try {
+        // Check if loot_items table exists
+        const tableExists = await pool.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'loot_items'
+            );
+        `);
+
+        if (!tableExists.rows[0].exists) {
+            return res.json({ success: true, items: [] });
+        }
+
+        const result = await pool.query(`
+            SELECT 
+                li.item_name,
+                li.player_name,
+                li.gold_amount,
+                li.wowhead_link,
+                li.icon_link,
+                li.event_id,
+                ec.event_data->>'channelName' AS channel_name,
+                (ec.event_data->>'startTime')::bigint AS start_time
+            FROM loot_items li
+            LEFT JOIN raid_helper_events_cache ec ON li.event_id = ec.event_id
+            WHERE li.gold_amount > 0
+            ORDER BY start_time DESC, li.gold_amount DESC
+            LIMIT 3000
+        `);
+
+        const items = result.rows.map(item => ({
+            itemName: item.item_name,
+            playerName: item.player_name,
+            goldAmount: item.gold_amount,
+            wowheadLink: item.wowhead_link,
+            iconLink: item.icon_link,
+            eventId: item.event_id,
+            channelName: item.channel_name,
+            startTime: item.start_time
+        }));
+
+        return res.json({ success: true, items });
+    } catch (error) {
+        console.error('❌ [ITEMS LOG] Error:', error);
+        return res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });
 

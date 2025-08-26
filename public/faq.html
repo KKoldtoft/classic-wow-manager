@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAQ - Classic WoW Manager</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body class="faq">
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Home</a>
+                <div class="top-nav-dropdown">
+                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+                        Upcoming Raids <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="upcoming-raids-menu">
+                        <div class="dropdown-loading">Loading raids...</div>
+                    </div>
+                </div>
+                <a href="/guild-members" class="top-nav-link">Guild Members</a>
+                <a href="/attendance" class="top-nav-link">Regular Attendance</a>
+            </nav>
+        </div>
+        <div id="auth-container"></div>
+    </div>
+
+    <div class="content">
+        <div class="faq-container">
+            <h1 class="faq-title">Frequently Asked Questions</h1>
+            <div class="faq-accordion" id="faqAccordion">
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <div class="faq-q-content">
+                            <div class="faq-q-headline">Item Prices</div>
+                            <div class="faq-q-text">How much do items typically go for?</div>
+                        </div>
+                        <i class="fas fa-chevron-down faq-icon"></i>
+                    </button>
+                    <div class="faq-answer">
+                        <div class="faq-answer-inner">
+                            <div class="faq-answer-headline">Item Prices</div>
+                            <div class="faq-answer-text">
+                                <p>The short answer: You can see a complete item log with selling prices <a href="/itemlog">here</a>.</p>
+                                <p>The longer answer is that it depends. Item prices fluctuate a lot, but generally set items (or tokens for set items) go for the minimum bid most of the time, while rare weapons and trinkets tend to be more expensive.</p>
+                                <p>The best way to get an idea is to check out our <a href="/stats">Stats</a> page or our <a href="/itemlog">Item Log</a> page for a general overview.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <div class="faq-q-content">
+                            <div class="faq-q-headline">The Points System</div>
+                            <div class="faq-q-text">How does the points system work?</div>
+                        </div>
+                        <i class="fas fa-chevron-down faq-icon"></i>
+                    </button>
+                    <div class="faq-answer">
+                        <div class="faq-answer-inner">
+                            <div class="faq-answer-headline">The Points System</div>
+                            <div class="faq-answer-text">
+                                <p>The short answer is that you earn points by contributing to the raid, and those points are converted into gold.</p>
+                                <p>The longer answer is that every player starts with 100 base points. You can then earn additional points by having a key role, such as being a tank, placing high on overall damage or healing, and through a series of contributing actions like applying sunders, decursing, using engineering, and more. For a full list of rewards and deductions, please see our <a href="/rules">Rules</a>.</p>
+                                <p>Once the raid is over, there will be a total number of points earned across all players and a total amount of gold collected. For simplicity, let’s say there is 100,000 gold in the shared gold pot and 5,000 total points. You divide 100,000 gold by 5,000 points, giving the value of one point (in this example, 1 point = 20 gold). So if you personally earned 140 points for your contribution, your share of the gold would be 140 × 20 = 2,800 gold.</p>
+                                <p><strong>In short:</strong> (Total gold ÷ Total points) × Your points = Your gold</p>
+                                <p>If you want to see real examples, visit any completed raid from the Completed Raids list on our front page and check the <a href="/event/1405672668258107537/raidlogs">Raidlogs</a> and <a href="/event/1405672668258107537/gold">Gold pages</a> for that event.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                
+                
+                
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <div class="faq-q-content">
+                            <div class="faq-q-headline">Why the Name?</div>
+                            <div class="faq-q-text">Why are you named 1Principles and what does that name mean?</div>
+                        </div>
+                        <i class="fas fa-chevron-down faq-icon"></i>
+                    </button>
+                    <div class="faq-answer">
+                        <div class="faq-answer-inner">
+                            <div class="faq-answer-headline">Why the Name?</div>
+                            <div class="faq-answer-text">
+                                <p><strong>Short answer:</strong> The name comes from the idea of First Principles.</p>
+                                <p><strong>Longer answer:</strong> A long time ago, I wanted the name First Principles, but it was already taken. So instead, I used 1Principles (which was also shorter). Over time, this naturally became One Principles or simply 1P for short.</p>
+                                <p><strong>But what does First Principles mean?</strong><br/>First principles are the most basic, foundational truths or assumptions that cannot be deduced from anything else. In problem-solving and reasoning, it means breaking a concept, system, or problem down into its simplest components and reasoning upward from there, rather than relying on analogy, precedent, or convention.</p>
+                                <p>This approach is common in physics, philosophy, and business strategy, and is often associated with rigorous innovation and clearer decision-making.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <div class="faq-q-content">
+                            <div class="faq-q-headline">Why Discord Sign-In?</div>
+                            <div class="faq-q-text">Why do I have to sign in with Discord, and is it safe?</div>
+                        </div>
+                        <i class="fas fa-chevron-down faq-icon"></i>
+                    </button>
+                    <div class="faq-answer">
+                        <div class="faq-answer-inner">
+                            <div class="faq-answer-headline">Why Discord Sign-In?</div>
+                            <div class="faq-answer-text">
+                                <p><strong>Short answer:</strong> Your Discord User ID is linked to your characters, and yes, it’s safe.</p>
+                                <p><strong>Longer answer:</strong> By using your Discord User ID, we can connect you to your characters, raids, items, assignments, and more. This allows us to show you only your personal raid assignments and highlight logs that belong to you.</p>
+                                <p><strong>Is it safe?</strong><br/>Yes, it’s completely safe. When you log in with Discord, you will see exactly what permissions we request. We only ask for the minimum necessary, such as knowing which servers you are in, so we can verify that you are on our server. We have even opted out of requesting your email address, since many people value privacy and may have personal details in their email.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <div class="faq-q-content">
+                            <div class="faq-q-headline">Do You Hard Reserve or Pre-Sell?</div>
+                            <div class="faq-q-text">Can I hard reserve or pre-buy an item?</div>
+                        </div>
+                        <i class="fas fa-chevron-down faq-icon"></i>
+                    </button>
+                    <div class="faq-answer">
+                        <div class="faq-answer-inner">
+                            <div class="faq-answer-headline">Do You Hard Reserve or Pre-Sell?</div>
+                            <div class="faq-answer-text">
+                                <p><strong>Short answer:</strong> No.</p>
+                                <p><strong>Longer answer:</strong> In the past, we have pre-sold certain items, such as bindings, but we no longer do this. Experience has shown that items like bindings can sell for much higher amounts in open auctions (up to 250,000 gold), making pre-selling at a lower fixed price unfair to the raid as a whole.</p>
+                                <p><strong>Any exceptions?</strong><br/>Yes. If you are after a specific item and absolutely must be the first to obtain it, you may reach out to us, and we will see if an arrangement can be made. However, it must benefit the entire raid. We will never make secret back-door deals, so there is no need to ask about those.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <div class="faq-q-content">
+                            <div class="faq-q-headline">15% Management Cut?</div>
+                            <div class="faq-q-text">Why do you take a 15% management cut when other raids take 10% or even less?</div>
+                        </div>
+                        <i class="fas fa-chevron-down faq-icon"></i>
+                    </button>
+                    <div class="faq-answer">
+                        <div class="faq-answer-inner">
+                            <div class="faq-answer-headline">15% Management Cut?</div>
+                            <div class="faq-answer-text">
+                                <p><strong>Short answer:</strong> Our product is better, and many of their advertised prices are artificially deflated.</p>
+                                <p><strong>Longer answer:</strong> We offer a superior product compared to low-priced GDKP runs in Classic. Here are some examples of how we stand out:</p>
+                                <ul>
+                                    <li>We build stronger rosters.</li>
+                                    <li>We attract better buyers.</li>
+                                    <li>We have never left a raid uncleared.</li>
+                                    <li>We have never missed a reset.</li>
+                                    <li>We consistently secure strong AQ40 and Naxxramas IDs.</li>
+                                    <li>We provide a great atmosphere and friendly raid leaders.</li>
+                                    <li>We have an excellent core of skilled, reliable regulars.</li>
+                                    <li>We maintain an extensive infrastructure and strong community.</li>
+                                    <li>We run a fair and balanced system that rewards everyone who contributes.</li>
+                                </ul>
+                                <p><strong>Are other GDKPs really cheaper?</strong><br/>Often, no. Many GDKPs advertise splits like 90/10 or 93/7, but then remove additional gold from the shared pot for tasks such as raid leading, master looting, or other administration. At 1Principles, we believe in full transparency, so we are upfront about our 15% cut with no hidden deductions.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <div class="faq-q-content">
+                            <div class="faq-q-headline">Where Is the Soft Reserve Link?</div>
+                            <div class="faq-q-text">The raid is about to start and I can’t find the soft reserve link.</div>
+                        </div>
+                        <i class="fas fa-chevron-down faq-icon"></i>
+                    </button>
+                    <div class="faq-answer">
+                        <div class="faq-answer-inner">
+                            <div class="faq-answer-headline">Where Is the Soft Reserve Link?</div>
+                            <div class="faq-answer-text">
+                                <p><strong>Short answer:</strong> Keep looking, you will find it eventually.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <div class="faq-q-content">
+                            <div class="faq-q-headline">Can You Mail the Gold?</div>
+                            <div class="faq-q-text">When and how do I get my gold cut? Can you mail it?</div>
+                        </div>
+                        <i class="fas fa-chevron-down faq-icon"></i>
+                    </button>
+                    <div class="faq-answer">
+                        <div class="faq-answer-inner">
+                            <div class="faq-answer-headline">Can You Mail the Gold?</div>
+                            <div class="faq-answer-text">
+                                <p><strong>Short answer:</strong> You receive it after the raid, in whatever way you prefer.</p>
+                                <p><strong>Longer answer:</strong> We aim to distribute gold as quickly as possible, usually right after the final item is sold. If you don’t need any of the items that dropped or if you prefer to leave early, we can mail you your cut instead.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/top-bar.js"></script>
+    <script src="/faq.js"></script>
+</body>
+</html>
+
+
