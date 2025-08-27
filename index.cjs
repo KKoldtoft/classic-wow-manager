@@ -1596,7 +1596,7 @@ app.post('/api/discord/announce-invites', async (req, res) => {
     descriptionParts.push(`If you have not read your assignments yet, go to [assignments](${assignmentsUrl}) and read through and confirm your assignments by clicking the grey checkmark icon next to your personal assignments (you must be logged in to confirm).`);
     descriptionParts.push('');
     descriptionParts.push('**Last chance:**');
-    descriptionParts.push('In order to get a full gold cut, you must be in the raid and ready to pull, no later than 20:20 (10 minutes before start).');
+    descriptionParts.push('In order to get a full gold cut, you must be in the raid and ready to pull, no later than 10 minutes before start.');
 
     const embed = {
       title: `🚨🚨 Invites are up! 🚨🚨`,
@@ -1686,6 +1686,7 @@ app.post('/api/discord/prompt-confirmation', async (req, res) => {
         let startsAtUtc = null;
         let channelId = null;
         let channelName = null;
+        let isNax = false;
         const ev = await pool.query(`SELECT event_data FROM raid_helper_events_cache WHERE event_id = $1`, [eventId]);
         if (ev.rows.length > 0) {
           const data = ev.rows[0].event_data || {};
@@ -1711,6 +1712,17 @@ app.post('/api/discord/prompt-confirmation', async (req, res) => {
           }
           channelId = data.channelId || data.channelID || data.channel_id || null;
           channelName = data.channelName || data.channel_name || null;
+          // Try determine isNax from DB flag if channelId present
+          try {
+            if (channelId) {
+              const cf = await pool.query('SELECT is_nax FROM channel_filters WHERE channel_id = $1', [channelId]);
+              if (cf.rows.length > 0) isNax = !!cf.rows[0].is_nax;
+            }
+            if (!isNax && channelName) {
+              const lower = String(channelName).toLowerCase();
+              if (lower.includes('nax') || lower.includes('naxx')) isNax = true;
+            }
+          } catch (_) {}
         }
         // Fallback 1 for time: try events cache blob posted events
         if (!startsAtUtc) {
@@ -1743,6 +1755,16 @@ app.post('/api/discord/prompt-confirmation', async (req, res) => {
                   }
                   if (startsAtUtc && isNaN(startsAtUtc.getTime())) startsAtUtc = null;
                 }
+                // Also consider isNax from this match if still unknown
+                try {
+                  if (!isNax) {
+                    const cname = match.channelName || match.channel_name || null;
+                    if (cname) {
+                      const lower = String(cname).toLowerCase();
+                      if (lower.includes('nax') || lower.includes('naxx')) isNax = true;
+                    }
+                  }
+                } catch (_) {}
               }
             }
           } catch (_) {}
@@ -1783,6 +1805,16 @@ app.post('/api/discord/prompt-confirmation', async (req, res) => {
                   }
                   if (startsAtUtc && isNaN(startsAtUtc.getTime())) startsAtUtc = null;
                 }
+                // Also consider isNax from this match if still unknown
+                try {
+                  if (!isNax) {
+                    const cname = match.channelName || match.channel_name || null;
+                    if (cname) {
+                      const lower = String(cname).toLowerCase();
+                      if (lower.includes('nax') || lower.includes('naxx')) isNax = true;
+                    }
+                  }
+                } catch (_) {}
               }
             }
           } catch (_) {}
@@ -1791,10 +1823,11 @@ app.post('/api/discord/prompt-confirmation', async (req, res) => {
         let dayDateTime;
         if (startsAtUtc) {
           const dt = startsAtUtc;
-          const weekday = dt.toLocaleDateString('en-GB', { weekday: 'long' });
-          const ddmmyyyy = dt.toLocaleDateString('en-GB').replace(/\//g, '-');
-          const hhmm = dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
-          dayDateTime = `${weekday} the ${ddmmyyyy} at ${hhmm}`;
+          const tz = 'Europe/Copenhagen';
+          const weekday = dt.toLocaleDateString('en-GB', { weekday: 'long', timeZone: tz });
+          const ddmmyyyy = dt.toLocaleDateString('en-GB', { timeZone: tz }).replace(/\//g, '-');
+          const defaultStart = isNax ? '20:30' : '20:00';
+          dayDateTime = `${weekday} the ${ddmmyyyy} at ${defaultStart}`;
         } else {
           dayDateTime = '[start time not found]';
         }
@@ -1875,6 +1908,135 @@ app.post('/api/discord/prompt-confirmation', async (req, res) => {
     } else {
       payload = { content: finalMessage };
     }
+
+    const msgResponse = await fetch(`https://discord.com/api/v10/channels/${dmChannelId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bot ${botToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!msgResponse.ok) {
+      const errText = await msgResponse.text();
+      return res.status(msgResponse.status).json({ ok: false, step: 'send_message', error: errText });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
+  }
+});
+
+// Prompt a specific user via DM to invite (uses a red embed and includes channel/character/invite person)
+app.post('/api/discord/prompt-invite', async (req, res) => {
+  try {
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    if (!botToken) {
+      return res.status(500).json({ ok: false, error: 'DISCORD_BOT_TOKEN not set' });
+    }
+    const body = req.body || {};
+    const userId = body.userId ? String(body.userId) : '';
+    const eventId = body.eventId ? String(body.eventId) : null;
+    const characterName = body.characterName ? String(body.characterName) : null;
+    const invitePerson = body.invitePerson ? String(body.invitePerson) : null;
+    if (!userId) {
+      return res.status(400).json({ ok: false, error: 'userId is required' });
+    }
+    if (!eventId) {
+      return res.status(400).json({ ok: false, error: 'eventId is required' });
+    }
+    if (!characterName) {
+      return res.status(400).json({ ok: false, error: 'characterName is required' });
+    }
+    if (!invitePerson) {
+      return res.status(400).json({ ok: false, error: 'invitePerson is required' });
+    }
+
+    // 1) Ensure DM channel exists
+    const dmResponse = await fetch('https://discord.com/api/v10/users/@me/channels', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bot ${botToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ recipient_id: userId })
+    });
+    if (!dmResponse.ok) {
+      const errText = await dmResponse.text();
+      return res.status(dmResponse.status).json({ ok: false, step: 'create_dm', error: errText });
+    }
+    const dmJson = await dmResponse.json();
+    const dmChannelId = dmJson && dmJson.id;
+    if (!dmChannelId) {
+      return res.status(500).json({ ok: false, error: 'Failed to create DM channel' });
+    }
+
+    // 2) Resolve channel info to produce a friendly channel label and jump link
+    let channelId = null;
+    let channelName = null;
+    try {
+      const ev = await pool.query(`SELECT event_data FROM raid_helper_events_cache WHERE event_id = $1`, [eventId]);
+      if (ev.rows.length > 0) {
+        const data = ev.rows[0].event_data || {};
+        channelId = data.channelId || data.channelID || data.channel_id || null;
+        channelName = data.channelName || data.channel_name || null;
+      }
+      if (!channelId) {
+        try {
+          const cached = await pool.query(
+            `SELECT events_data FROM events_cache WHERE cache_key = $1 AND expires_at > NOW()`,
+            ['raid_helper_events']
+          );
+          if (cached.rows.length > 0) {
+            const eventsBlob = cached.rows[0].events_data || {};
+            const list = Array.isArray(eventsBlob.postedEvents) ? eventsBlob.postedEvents : (Array.isArray(eventsBlob) ? eventsBlob : []);
+            const match = list.find(e => String(e.id) === String(eventId));
+            if (match) {
+              channelId = match.channelId || match.channelID || match.channel_id || null;
+              channelName = match.channelName || match.channel_name || null;
+            }
+          }
+        } catch (_) {}
+      }
+      if (!channelId) {
+        try {
+          const raidHelperApiKey = process.env.RAID_HELPER_API_KEY;
+          const guildId = process.env.DISCORD_GUILD_ID || '777268886939893821';
+          if (raidHelperApiKey) {
+            const nowUnixTimestamp = Math.floor(Date.now() / 1000);
+            const oneYearInSeconds = 365 * 24 * 60 * 60;
+            const futureUnixTimestamp = nowUnixTimestamp + oneYearInSeconds;
+            const resp = await axios.get(`https://raid-helper.dev/api/v3/servers/${guildId}/events`, {
+              headers: { 'Authorization': `${raidHelperApiKey}`, 'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)' },
+              params: { StartTimeFilter: nowUnixTimestamp - 7 * 24 * 3600, EndTimeFilter: futureUnixTimestamp },
+              timeout: 10000
+            });
+            const events = resp.data && Array.isArray(resp.data.postedEvents) ? resp.data.postedEvents : [];
+            const match = events.find(e => String(e.id) === String(eventId));
+            if (match) {
+              channelId = match.channelId || match.channelID || match.channel_id || null;
+              channelName = match.channelName || match.channel_name || null;
+            }
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    const guildId = process.env.DISCORD_GUILD_ID || '@me';
+    const channelJump = channelId ? `https://discord.com/channels/${guildId}/${channelId}` : null;
+    const channelLabel = channelName ? `#${channelName}` : (channelId ? `#channel-${String(channelId).slice(-4)}` : '#raid-channel');
+    const channelPart = channelJump ? `[${channelLabel}](${channelJump})` : channelLabel;
+
+    // 3) Build and send embed
+    const embedDescription = `The invites for ${channelPart} has started and we are still waiting for you to join.\n\nLog on ${characterName} and whisper ${invitePerson} the keyword "inv" for  invite. Once in the raid, write "123" in the raid chat to get a summon.`;
+    const embed = {
+      title: 'Time to join the raid!',
+      description: embedDescription,
+      color: 0xDC2626,
+      image: { url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756283173/b3f33037-00cf-4558-94a1-611a6ca32072_devlqr.png' },
+      timestamp: new Date().toISOString()
+    };
+    const payload = { embeds: [embed] };
 
     const msgResponse = await fetch(`https://discord.com/api/v10/channels/${dmChannelId}/messages`, {
       method: 'POST',

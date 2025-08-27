@@ -79,6 +79,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         console.error('Announce invites failed:', t);
                         showAlert('Announce failed', 'Failed to announce invites.');
                     } else {
+                        try { localStorage.setItem('lastInvitePerson', trimmed); } catch {}
                         showAlert('Invites sent', 'Your announcement was posted to Discord.');
                     }
                 } catch (e) {
@@ -872,6 +873,40 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 });
             });
+
+            // Prompt for invite action
+            cell.querySelectorAll('[data-action="prompt-invite"]').forEach(item => {
+                item.addEventListener('click', async (e) => {
+                    const { userid } = e.currentTarget.dataset;
+                    try {
+                        const cellEl = this.findPlayerCell(userid);
+                        const nameDiv = cellEl ? cellEl.querySelector('.player-name') : null;
+                        const characterName = nameDiv && nameDiv.dataset && nameDiv.dataset.characterName ? nameDiv.dataset.characterName : null;
+                        let invitePerson = null;
+                        try { invitePerson = localStorage.getItem('lastInvitePerson') || null; } catch {}
+                        if (!invitePerson) {
+                            const entered = window.prompt('Enter the name of the person doing invites:');
+                            if (!entered || !entered.trim()) return;
+                            invitePerson = entered.trim();
+                            try { localStorage.setItem('lastInvitePerson', invitePerson); } catch {}
+                        }
+                        const r = await fetch('/api/discord/prompt-invite', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ userId: userid, eventId, characterName, invitePerson })
+                        });
+                        if (!r.ok) {
+                            const t = await r.text();
+                            console.error('Prompt invite failed:', t);
+                            alert('Failed to send invite prompt');
+                        } else {
+                            alert('Invite prompt sent');
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        alert('Failed to send invite prompt');
+                    }
+                });
+            });
         }
     };
 
@@ -1338,11 +1373,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         const noAssignText = noAssign ? 'Allow assignments' : 'Give no assignments';
         content += `<div class="dropdown-item" data-action="toggle-no-assignments" data-userid="${player.userid}" data-current-status="${noAssign}"><i class="${noAssignIcon} menu-icon"></i>${noAssignText}</div>`;
 
-        // Prompt for confirmation (only when not confirmed)
+        // Prompt items: confirmation only for unconfirmed; invite always available
         try {
             const isUnconfirmed = !(player.isConfirmed === 'confirmed' || player.isConfirmed === true);
-            if (isUnconfirmed && player.userid) {
-                content += `<div class=\"dropdown-item\" data-action=\"prompt-confirmation\" data-userid=\"${player.userid}\"><i class=\"fas fa-bell menu-icon\"></i>Prompt for confirmation</div>`;
+            if (player.userid) {
+                if (isUnconfirmed) {
+                    content += `<div class=\"dropdown-item\" data-action=\"prompt-confirmation\" data-userid=\"${player.userid}\"><i class=\"fas fa-bell menu-icon\"></i>Prompt for confirmation</div>`;
+                }
+                content += `<div class=\"dropdown-item\" data-action=\"prompt-invite\" data-userid=\"${player.userid}\"><i class=\"fas fa-envelope-open-text menu-icon\"></i>Prompt for invite</div>`;
             }
         } catch {}
 
