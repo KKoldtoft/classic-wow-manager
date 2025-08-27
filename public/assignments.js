@@ -342,9 +342,11 @@
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756245157/Noth_mid_rvctaf.jpg';
       defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756245157/Noth_full_o4oywn.png';
     } else if (panelKeyLower.includes('heig')) {
-      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756331779/Heigan_mid_lk1jwv.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756331779/Heigan_full_glmqtw.png';
     } else if (panelKeyLower.includes('loatheb')) {
-      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756332738/Loatheb_mid_csdb1j.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756332739/Loatheb_full_wtnowa.png';
     } else if (panelKeyLower.includes('thadd')) {
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
     } else if (panelKeyLower.includes('horse')) {
@@ -389,19 +391,23 @@
       const isMaex = panelKeyLower.includes('maex');
       const isHorse = panelKeyLower.includes('horse');
       const isNoth = panelKeyLower.includes('noth');
+      const isLoatheb = panelKeyLower.includes('loatheb');
+      const isRazu = panelKeyLower.includes('razu');
       const isSkeram = panelKeyLower.includes('skeram') || panelKeyLower.includes('prophet');
       const isFankriss = panelKeyLower.includes('fankriss');
       const isViscidus = panelKeyLower.includes('viscidus');
       const isTwins = (panelKeyLower.includes('twin') && (panelKeyLower.includes('emperor') || panelKeyLower.includes('emperors'))) && !panelKeyLower.includes('trash');
       const isOuro = panelKeyLower.includes('ouro');
-      if (isSapphiron || isKelthuzad || isGothik || isAnub || isMaex || isHorse || isNoth || isSkeram || isFankriss || isViscidus || isTwins || isOuro) {
+      if (isSapphiron || isKelthuzad || isGothik || isAnub || isMaex || isHorse || isNoth || isLoatheb || isRazu || isSkeram || isFankriss || isViscidus || isTwins || isOuro) {
         const previewUrl =
-          isSapphiron ? 'https://res.cloudinary.com/duthjs0c3/video/upload/f_auto,q_auto/v1755864926/Saph-Small-1_cgscco.mp4' :
-          isKelthuzad ? 'https://res.cloudinary.com/duthjs0c3/video/upload/f_auto,q_auto/v1755867358/KT-small_p55l1i.mp4' :
+          isSapphiron ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756330270/Raz_siov1r.mp4' :
+          isKelthuzad ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756330583/KT_fakfgq.mp4' :
           isGothik ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756022062/Gothik-human-side_znqy6h.mp4' :
           isAnub ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756024672/anub_xgkjtx.mp4' :
           isHorse ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756148431/ForuHorseman_dipmqk.mp4' :
           isNoth ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756149354/NothThePlaguebringer_qree64.mp4' :
+          isLoatheb ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756333046/Loatheb_r8mbox.mp4' :
+          isRazu ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756329842/Razuvious_dpitqe.mp4' :
           isSkeram ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756152423/prophet_skarem_nuv5hs.mp4' :
           isFankriss ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756152422/Fankriss_t6rtpo.mp4' :
           isViscidus ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756152421/Viscidus_qpezj6.mp4' :
@@ -409,8 +415,8 @@
           isOuro ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756152422/Ouro_bo7bxp.mp4' :
           'https://res.cloudinary.com/duthjs0c3/video/upload/v1756025139/Spider_l0hqmr.mp4';
         imgWrapper.style.position = 'relative';
-        // Keep the tighter preview width for Sapphiron/Kel; let Gothik/Anub/Maex/Horsemen/Noth/AQ40 use full image width to match sizes exactly
-        if (!(isGothik || isAnub || isMaex || isHorse || isNoth || isSkeram || isFankriss || isViscidus || isTwins || isOuro)) { try { imgWrapper.style.maxWidth = '720px'; } catch {} }
+        // Keep the tighter preview width for Sapphiron/Kel; let Gothik/Anub/Maex/Horsemen/Noth/Loatheb/Razuvious/AQ40 use full image width to match sizes exactly
+        if (!(isGothik || isAnub || isMaex || isHorse || isNoth || isLoatheb || isRazu || isSkeram || isFankriss || isViscidus || isTwins || isOuro)) { try { imgWrapper.style.maxWidth = '720px'; } catch {} }
         try { imgWrapper.style.overflow = 'hidden'; } catch {}
         let played = false;
 
@@ -450,8 +456,8 @@
           video.style.maxWidth = '100%';
           video.style.maxHeight = '100%';
           video.style.width = '100%';
-          // For Gothik, Maexxna, Four Horsemen, Noth & AQ40 panels, ensure the video perfectly overlays the image by filling the overlay box
-          if (isGothik || isMaex || isHorse || isNoth || isSkeram || isFankriss || isViscidus || isTwins || isOuro) {
+          // For Gothik, Maexxna, Four Horsemen, Noth, Loatheb, Razuvious & AQ40 panels, ensure the video perfectly overlays the image by filling the overlay box
+          if (isGothik || isMaex || isHorse || isNoth || isLoatheb || isRazu || isSkeram || isFankriss || isViscidus || isTwins || isOuro) {
             video.style.height = '100%';
             video.style.objectFit = 'cover';
           } else {
