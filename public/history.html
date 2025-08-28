@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Event History</title>
+	<link rel="stylesheet" href="/style.css">
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body class="history">
+	<div class="top-bar">
+		<div class="top-bar-left">
+			<img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+			<nav class="top-nav">
+				<a href="/" class="top-nav-link">Home</a>
+				<a href="/history" class="top-nav-link active">History</a>
+				<a href="/guild-members" class="top-nav-link">Guild Members</a>
+				<a href="/attendance" class="top-nav-link">Regular Attendance</a>
+			</nav>
+		</div>
+		<div id="auth-container"></div>
+	</div>
+
+	<div class="container" style="max-width:1200px; padding: 24px 20px; margin: 0 auto;">
+		<h1 class="panel-title" style="margin-top:0;">Completed Events (Last 24 Months)</h1>
+		<div class="panel" style="overflow-x:auto;">
+			<div class="refresh-section" style="text-align:right; margin-top:0; padding-top:0;">
+				<button id="refresh-history-btn" class="refresh-button"><i class="fas fa-sync-alt"></i> Refresh</button>
+				<div id="history-refresh-status" class="refresh-status"></div>
+			</div>
+			<div class="table-container">
+				<table id="history-table" class="data-table" style="width:100%; border-collapse:collapse; table-layout: fixed;">
+					<thead>
+						<tr>
+							<th style="text-align:left; width:280px;">Event name</th>
+							<th style="text-align:left; width:250px;">Time</th>
+							<th style="text-align:right; width:160px;">Gold pot</th>
+							<th style="text-align:center;">RPB</th>
+							<th style="text-align:center;">World Buffs</th>
+							<th style="text-align:center;">Dmg/Heal</th>
+							<th style="text-align:left; width:180px;">Links</th>
+						</tr>
+					</thead>
+					<tbody id="history-tbody">
+						<tr><td colspan="7" style="padding:12px;">Loading…</td></tr>
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+
+	<script src="/top-bar.js"></script>
+	<script src="/history.js"></script>
+</body>
+</html>
+

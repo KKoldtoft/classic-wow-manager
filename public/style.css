@@ -1099,6 +1099,16 @@ body.admin .data-table { background: #1a191e !important; border: 1px solid #5555
 body.admin .data-table th { background: #232229 !important; color: #e8e8e8 !important; border-bottom: 1px solid #333 !important; }
 body.admin .data-table td { color: #e8e8e8 !important; border-bottom: 1px solid #333 !important; }
 body.admin .data-table tr:hover { background: #1f1e24 !important; }
+/* History table (reuse admin data-table look on dark bg) */
+body.history { background-color: #121214; color: #e8e8e8; }
+body.history .panel { background: #1a191e; border: 1px solid #555555; }
+body.history .data-table { background: #1a191e; border: 1px solid #555555; width: 100%; }
+body.history .data-table th { background: #232229; color: #e8e8e8; border-bottom: 1px solid #333; text-align: left; padding: 10px; }
+body.history .data-table td { color: #e8e8e8; border-bottom: 1px solid #333; padding: 10px; }
+body.history .data-table tr:hover { background: #1f1e24; }
+body.history a { color: #4ea3ff; text-decoration: none; }
+body.history a:hover { text-decoration: underline; }
+body.history .gold-color { color: #f5c542; font-weight: 700; }
 /* Blanket override of inline white cards within admin */
 body.admin div[style*="background: white"],
 body.admin div[style*="background:white"],

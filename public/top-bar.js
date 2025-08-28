@@ -165,6 +165,7 @@ function injectRulesNavLink() {
         const existingRules = nav.querySelector('a.top-nav-link[href="/rules"]');
         const existingStats = nav.querySelector('a.top-nav-link[href="/stats"]');
         const existingFaq = nav.querySelector('a.top-nav-link[href="/faq"]');
+        const existingHistory = nav.querySelector('a.top-nav-link[href="/history"]');
 
         // Insert Stats link to the left of Rules
         if (!existingStats) {
@@ -193,6 +194,14 @@ function injectRulesNavLink() {
             faqLink.className = 'top-nav-link';
             faqLink.textContent = 'FAQ';
             nav.appendChild(faqLink);
+        }
+
+        if (!existingHistory) {
+            const historyLink = document.createElement('a');
+            historyLink.href = '/history';
+            historyLink.className = 'top-nav-link';
+            historyLink.textContent = 'History';
+            nav.appendChild(historyLink);
         }
     });
 }

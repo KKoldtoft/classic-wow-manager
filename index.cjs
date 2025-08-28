@@ -445,6 +445,8 @@ const EVENTS_CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
 const HISTORIC_EVENTS_CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
 const EVENTS_CACHE_KEY = 'raid_helper_events';
 const HISTORIC_EVENTS_CACHE_KEY = 'raid_helper_historic_events';
+const HISTORIC_24M_EVENTS_CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
+const HISTORIC_24M_EVENTS_CACHE_KEY = 'raid_helper_historic_events_24m';
 
 async function getCachedEvents() {
   try {
@@ -593,6 +595,42 @@ async function setCachedHistoricEvents(eventsData) {
   }
 }
 
+async function getCachedHistoricEvents24m() {
+  try {
+    const result = await pool.query(
+      'SELECT events_data, expires_at FROM events_cache WHERE cache_key = $1 AND expires_at > NOW()',
+      [HISTORIC_24M_EVENTS_CACHE_KEY]
+    );
+    if (result.rows.length > 0) {
+      console.log('💾 Using cached 24-month historic events data');
+      return result.rows[0].events_data;
+    }
+    console.log('🔄 No valid cached 24-month historic events found - will fetch fresh data');
+    return null;
+  } catch (error) {
+    console.error('❌ Error retrieving cached 24-month historic events:', error);
+    return null;
+  }
+}
+
+async function setCachedHistoricEvents24m(eventsData) {
+  try {
+    const expiresAt = new Date(Date.now() + HISTORIC_24M_EVENTS_CACHE_TTL);
+    await pool.query(`
+      INSERT INTO events_cache (cache_key, events_data, expires_at)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (cache_key) 
+      DO UPDATE SET 
+        events_data = EXCLUDED.events_data,
+        created_at = CURRENT_TIMESTAMP,
+        expires_at = EXCLUDED.expires_at
+    `, [HISTORIC_24M_EVENTS_CACHE_KEY, JSON.stringify(eventsData), expiresAt]);
+    console.log('💾 24-month historic events cached successfully, expires at:', expiresAt.toISOString());
+  } catch (error) {
+    console.error('❌ Error caching 24-month historic events:', error);
+  }
+}
+
 // Raid-Helper individual event cache helper functions
 const RAID_HELPER_EVENT_CACHE_TTL_HOURS = 6; // 6 hours default TTL
 
@@ -709,6 +747,37 @@ async function fetchHistoricEventsFromAPI() {
   const pastUnixTimestamp = nowUnixTimestamp - oneYearInSeconds;
 
       console.log('🌐 Fetching historic events from Raid-Helper API (last year)...');
+
+  const response = await axios.get(
+    `https://raid-helper.dev/api/v3/servers/${discordGuildId}/events`,
+    {
+      headers: {
+        'Authorization': `${raidHelperApiKey}`,
+        'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+      },
+      params: {
+        StartTimeFilter: pastUnixTimestamp,
+        EndTimeFilter: nowUnixTimestamp,
+      }
+    }
+  );
+
+  return response.data.postedEvents || [];
+}
+
+// Generic helper: fetch historic events within the past N months
+async function fetchHistoricEventsFromAPIWithinMonths(months) {
+  const raidHelperApiKey = process.env.RAID_HELPER_API_KEY;
+  if (!raidHelperApiKey) {
+    throw new Error('RAID_HELPER_API_KEY is not set in environment variables.');
+  }
+
+  const discordGuildId = '777268886939893821';
+  const nowUnixTimestamp = Math.floor(Date.now() / 1000);
+  const days = Math.max(1, Math.floor(months * 30));
+  const pastUnixTimestamp = nowUnixTimestamp - (days * 24 * 60 * 60);
+
+  console.log(`🌐 Fetching historic events from Raid-Helper API (last ${months} months)...`);
 
   const response = await axios.get(
     `https://raid-helper.dev/api/v3/servers/${discordGuildId}/events`,
@@ -1053,6 +1122,23 @@ async function enrichHistoricEventsWithDiscordChannelNames(events) {
   console.log(`📊 Filtered to ${historicEvents.length} historic events (last year) from ${events.length} total`);
   
   // Now enrich with Discord channel names
+  return await enrichEventsWithDiscordChannelNames(historicEvents);
+}
+
+// Filter to historic events within the past N months and enrich with channel names
+async function enrichHistoricEventsWithDiscordChannelNamesWithinMonths(events, months) {
+  console.log(`🔄 Starting historic events filtering and enrichment for ${events.length} events (last ${months} months)`);
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - (Math.max(1, Math.floor(months * 30)) * 24 * 60 * 60 * 1000));
+  const historicEvents = events
+    .filter(event => {
+      if (!event.startTime) return false;
+      const eventStartDate = new Date(parseInt(event.startTime) * 1000);
+      return eventStartDate < now && eventStartDate >= cutoff;
+    })
+    .sort((a, b) => parseInt(b.startTime) - parseInt(a.startTime));
+
+  console.log(`📊 Filtered to ${historicEvents.length} historic events (last ${months} months) from ${events.length} total`);
   return await enrichEventsWithDiscordChannelNames(historicEvents);
 }
 
@@ -1403,6 +1489,10 @@ app.get('/gold', (req, res) => {
 
 app.get('/loot', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'loot.html'));
+});
+
+app.get('/history', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'history.html'));
 });
 
 app.get('/raidlogs', (req, res) => {
@@ -4190,6 +4280,73 @@ app.post('/api/events/historic/refresh', async (req, res) => {
     console.error('Error refreshing historic events cache:', error.response ? error.response.data : error.message);
     res.status(error.response ? error.response.status : 500).json({
       message: 'Failed to refresh historic events.',
+      error: error.response ? (error.response.data || error.message) : error.message
+    });
+  }
+});
+
+// Completed events (24 months) API endpoint
+app.get('/api/events/historic-24m', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
+  }
+
+  try {
+    let cachedEvents = await getCachedHistoricEvents24m();
+    if (!cachedEvents) {
+      console.log('🔄 Cache miss - fetching fresh 24-month historic events data and enriching with channel names');
+      const events = await fetchHistoricEventsFromAPIWithinMonths(24);
+      const enriched = await enrichHistoricEventsWithDiscordChannelNamesWithinMonths(events, 24);
+      await setCachedHistoricEvents24m(enriched);
+      cachedEvents = enriched;
+    } else {
+      console.log('💾 Using cached 24-month historic events data');
+    }
+
+    // Apply channel filters
+    const channelFilters = await getChannelFilterSettings();
+    const filteredEvents = cachedEvents.filter(event => {
+      const channelId = event.channelId || event.channelID || event.channel_id || event.discordChannelId;
+      if (!channelId) return true;
+      const isVisible = channelFilters.has(channelId) ? channelFilters.get(channelId) : true;
+      return isVisible;
+    });
+
+    res.json({ scheduledEvents: filteredEvents });
+  } catch (error) {
+    console.error('Error in /api/events/historic-24m:', error.response ? error.response.data : error.message);
+    res.status(error.response ? error.response.status : 500).json({
+      message: 'Failed to fetch 24-month completed events from Raid-Helper.',
+      error: error.response ? (error.response.data || error.message) : error.message
+    });
+  }
+});
+
+// Manual refresh 24 months
+app.post('/api/events/historic-24m/refresh', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord to refresh completed events.' });
+  }
+
+  try {
+    console.log('🔄 Manual refresh requested - fetching fresh 24-month historic events data');
+    const events = await fetchHistoricEventsFromAPIWithinMonths(24);
+    const enriched = await enrichHistoricEventsWithDiscordChannelNamesWithinMonths(events, 24);
+    await setCachedHistoricEvents24m(enriched);
+
+    const channelFilters = await getChannelFilterSettings();
+    const filteredEvents = enriched.filter(event => {
+      const channelId = event.channelId || event.channelID || event.channel_id || event.discordChannelId;
+      if (!channelId) return true;
+      const isVisible = channelFilters.has(channelId) ? channelFilters.get(channelId) : true;
+      return isVisible;
+    });
+
+    res.json({ message: 'Completed events (24m) refreshed successfully', scheduledEvents: filteredEvents });
+  } catch (error) {
+    console.error('Error refreshing 24-month historic events cache:', error.response ? error.response.data : error.message);
+    res.status(error.response ? error.response.status : 500).json({
+      message: 'Failed to refresh 24-month historic events.',
       error: error.response ? (error.response.data || error.message) : error.message
     });
   }
