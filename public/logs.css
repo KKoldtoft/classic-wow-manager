@@ -1,4 +1,33 @@
 /* Logs Page Specific Styles */
+/* Dark mode readable text defaults for logs page */
+.logs {
+    --text-primary: #ffffff;
+    --text-secondary: #ffffff;
+    --text-tertiary: #ffffff;
+    --text-color: #ffffff;
+}
+
+/* Do not alter comparison container text palette */
+.character-comparison-container {
+    --text-primary: #e0e0e0;
+    --text-secondary: #bbbbbb;
+    --text-tertiary: #888888;
+    --text-color: #ffffff;
+}
+
+/* Ensure checkbox labels are white for visibility */
+.checkbox-label {
+    color: #ffffff !important;
+}
+.checkbox-item input[type="checkbox"]:checked + .checkbox-label {
+    color: #ffffff !important;
+}
+
+/* Light notification block needs dark text for contrast */
+.stored-data-notification,
+.stored-data-notification * {
+    color: #000000 !important;
+}
 
 .logs-input-section {
     background: var(--card-bg, #1e1e1e);

@@ -1108,8 +1108,8 @@ passport.use(new DiscordStrategy({
 // Your Discord server ID - update this with your actual server ID
 const DISCORD_GUILD_ID = '777268886939893821'; // Your guild ID from the events API
 
-// Define management role - the only role that matters
-const MANAGEMENT_ROLE_NAME = 'Management';
+// Define management role - the only role that matters (override via env)
+const MANAGEMENT_ROLE_NAME = (process.env.MANAGEMENT_ROLE_NAME || 'Management');
 // Optional: prefer matching by Role ID to avoid needing guild roles name mapping
 const MANAGEMENT_ROLE_ID = process.env.MANAGEMENT_ROLE_ID || null;
 
@@ -1188,8 +1188,8 @@ setInterval(() => {
     }
 }, 30 * 60 * 1000); // Run every 30 minutes
 
-// Function to fetch guild roles to map role IDs to names
-async function fetchGuildRoles(guildId) {
+// Function to fetch guild roles to map role IDs to names (with one retry on failure)
+async function fetchGuildRoles(guildId, attempt = 1) {
     // Check cache first
     if (guildRolesCache && (Date.now() - guildRolesCacheTime) < GUILD_CACHE_TTL) {
         console.log(`💾 Using cached guild roles (${guildRolesCache.length} roles)`);
@@ -1227,6 +1227,11 @@ async function fetchGuildRoles(guildId) {
             message: error.message,
             botTokenExists: !!process.env.DISCORD_BOT_TOKEN
         });
+        if (attempt < 2 && process.env.DISCORD_BOT_TOKEN) {
+            console.log('🔁 Retrying guild roles fetch once...');
+            await new Promise(r => setTimeout(r, 300));
+            return fetchGuildRoles(guildId, attempt + 1);
+        }
         return [];
     }
 }
@@ -1254,9 +1259,22 @@ async function hasManagementRole(accessToken) {
     const roleMap = new Map(guildRoles.map(role => [role.id, role.name]));
     const userRoleNames = memberData.roles.map(roleId => roleMap.get(roleId)).filter(Boolean);
     console.log(`👤 User's role names: [${userRoleNames.join(', ')}]`);
-    const hasByName = userRoleNames.some(name => name === MANAGEMENT_ROLE_NAME);
+    const hasByName = userRoleNames.some(name => (name || '').toLowerCase() === MANAGEMENT_ROLE_NAME.toLowerCase());
     console.log(`🔍 Checking for "${MANAGEMENT_ROLE_NAME}" role by name: ${hasByName ? '✅ FOUND' : '❌ NOT FOUND'}`);
     return hasByName;
+}
+
+// Utility: clear cached role data for a specific user access token and global roles cache
+function clearRoleCachesForAccessToken(accessToken) {
+    try {
+        const prefix = `${accessToken}__`;
+        for (const key of userMemberCache.keys()) {
+            if (key.startsWith(prefix)) userMemberCache.delete(key);
+        }
+        guildRolesCache = null;
+        guildRolesCacheTime = 0;
+        console.log('🧹 Cleared role caches for current session');
+    } catch (_) {}
 }
 
 // Middleware to require Management role
@@ -2066,6 +2084,10 @@ app.get('/auth/logout', (req, res, next) => {
 app.get('/user', async (req, res) => {
   if (req.isAuthenticated()) {
     try {
+      // Optional: allow forcing a refresh of role caches via query param
+      if (String(req.query.refresh || '') === '1') {
+        clearRoleCachesForAccessToken(req.user.accessToken);
+      }
       // Check if user has Management role
       console.log(`👤 Checking permissions for user ${req.user.username}`);
       const isManagement = await hasManagementRole(req.user.accessToken);
