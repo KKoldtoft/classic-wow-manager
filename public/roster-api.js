@@ -170,6 +170,26 @@ async function getEventRaidleader(eventId) {
     return r.json();
 }
 
+// Replace assignments across all panels: replace occurrences of sourceName with targetName
+async function replaceAssignments(eventId, sourceName, targetName, matchMode = 'exact') {
+    const lowerSrc = String(sourceName||'').trim().toLowerCase();
+    const lowerTgt = String(targetName||'').trim().toLowerCase();
+    if (!lowerSrc || !lowerTgt) throw new Error('Missing names');
+
+    // Prefer backend bulk-safe endpoint to handle class/spec/color and accept states
+    const resp = await fetch(`/api/assignments/${encodeURIComponent(eventId)}/replace-name`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromName: sourceName, toName: targetName, matchMode })
+    });
+    if (!resp.ok) {
+        const err = await resp.json().catch(()=>({message:'Failed to replace assignments'}));
+        throw new Error(err.message || 'Failed to replace assignments');
+    }
+    const data = await resp.json();
+    return { replacedCount: Number(data.replacedCount||0), replacedList: Array.isArray(data.replacedList)?data.replacedList:[] };
+}
+
 async function setEventRaidleader(eventId, raidleaderName, raidleaderCut) {
     const r = await fetch(`/api/events/${encodeURIComponent(eventId)}/raidleader`, {
         method: 'PUT',

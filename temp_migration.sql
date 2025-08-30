@@ -2,8 +2,8 @@
 TRUNCATE TABLE players CASCADE;
 
 -- Insert data from players.tsv
-INSERT INTO players (discord_id, character_name, class) VALUES ('492023474437619732', 'Zaappi', 'Warrior') ON CONFLICT (discord_id, character_name) DO NOTHING;
-INSERT INTO players (discord_id, character_name, class) VALUES ('', 'Aivengard', 'Warrior') ON CONFLICT (discord_id, character_name) DO NOTHING;
+INSERT INTO players (discord_id, character_name, class) VALUES ('492023474437619732', 'Zaappi', 'Warrior') ON CONFLICT (discord_id, character_name, class) DO NOTHING;
+INSERT INTO players (discord_id, character_name, class) VALUES ('', 'Aivengard', 'Warrior') ON CONFLICT (discord_id, character_name, class) DO NOTHING;
 INSERT INTO players (discord_id, character_name, class) VALUES ('', 'Barbossa', 'Druid') ON CONFLICT (discord_id, character_name) DO NOTHING;
 INSERT INTO players (discord_id, character_name, class) VALUES ('', 'Cocomuffin', 'Hunter') ON CONFLICT (discord_id, character_name) DO NOTHING;
 INSERT INTO players (discord_id, character_name, class) VALUES ('', 'Colestah', 'Shaman') ON CONFLICT (discord_id, character_name) DO NOTHING;

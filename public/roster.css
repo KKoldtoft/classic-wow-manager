@@ -13,6 +13,81 @@ body, html {
     text-align: center; /* Center the roster-container */
 }
 
+/* Roster stats wraps the dashboard to the same max width look as roster container */
+.roster-stats-wrapper .stats-section {
+    background: #2c2f33;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 12px 16px;
+}
+
+/* Reuse raidlogs stat cards look */
+.stats-dashboard {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, auto);
+    gap: 12px;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #1a1a1a, #252525);
+    border: 1px solid #444;
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+}
+
+.stat-icon { font-size: 1.6em; margin-bottom: 8px; display:block; }
+.stat-value { font-size: 1.6em; font-weight: 700; color: #f0f0f0; display:block; }
+.stat-label { font-size: 0.85em; color: #ccc; text-transform: uppercase; letter-spacing: .5px; display:block; }
+.stat-detail { font-size: 0.8em; color: #aaa; margin-top: 6px; }
+.stat-detail .cat-notmatched { color: #ef4444; }
+/* Colored pills for Players card */
+.stat-pill { font-weight: 700; }
+.pill-regulars { color: #22c55e; }
+.pill-guildies { color: #fbbf24; }
+.pill-first { color: #f97316; }
+/* Colored category rows in detail */
+.stat-detail .cat-regulars { color: #22c55e; }
+.stat-detail .cat-guildies { color: #fbbf24; }
+.stat-detail .cat-first { color: #f97316; }
+
+@media (max-width: 900px) {
+    .stats-dashboard { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+    .stats-dashboard { grid-template-columns: 1fr; }
+}
+
+/* Cursor-bound overlay for Players card */
+.players-tooltip {
+    position: fixed;
+    z-index: 99999;
+    background: rgba(20,20,22,0.98);
+    color: #f0f0f0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.55), 0 6px 18px rgba(0,0,0,0.35);
+    opacity: 0;
+    transition: opacity 0.25s ease;
+    pointer-events: none;
+    max-width: 360px;
+}
+.players-tooltip.show { opacity: 1; }
+.players-tooltip h4 { margin: 0 0 6px 0; font-size: 13px; color: #cfcfcf; }
+.players-tooltip .list { font-size: 12px; }
+.players-tooltip .grid-list { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 6px 12px; }
+.players-tooltip .grid-item { white-space: nowrap; }
+.players-tooltip .list + h4 { margin-top: 10px; }
+.players-tooltip ul { display:none; }
+/* Color categories in tooltip */
+.players-tooltip .cat-regulars h4, .players-tooltip .cat-regulars .grid-item { color: #22c55e; }
+.players-tooltip .cat-guildies h4, .players-tooltip .cat-guildies .grid-item { color: #fbbf24; }
+.players-tooltip .cat-first h4, .players-tooltip .cat-first .grid-item { color: #f97316; }
+/* Extra spacing above Guildies and First time headings */
+.players-tooltip .cat-guildies h4 { margin-top: 12px; }
+.players-tooltip .cat-first h4 { margin-top: 12px; }
+
 .back-button-wrapper {
     text-align: left; /* Keep the back button left-aligned */
     margin-bottom: 20px;
@@ -442,6 +517,15 @@ body, html {
     border: 1px solid rgba(0,0,0,0.1);
 }
 
+/* Highlight cells with missing Discord ID */
+.roster-cell.player-filled.no-discord-id {
+    background-color: #b71c1c !important; /* red */
+    color: #fff;
+}
+.roster-cell.player-filled.no-discord-id .player-name span {
+    color: #fff !important;
+}
+
 /* Responsive grid for columns */
 @media (min-width: 768px) {
     #roster-grid {
@@ -581,6 +665,63 @@ body, html {
     text-align: center;
     color: #b9bbbe;
     font-style: italic;
+}
+
+/* Compare results styles */
+#compare-results {
+    background-color: #2c2f33;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 12px;
+    color: #fff;
+}
+
+.compare-results-summary {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 10px;
+    font-size: 0.95em;
+}
+
+.compare-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #3a3a3a;
+}
+
+.compare-row:last-child {
+    border-bottom: none;
+}
+
+.compare-name {
+    font-weight: 600;
+}
+
+.compare-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.85em;
+}
+
+.badge-ok {
+    background-color: #1b5e20;
+    color: #c8e6c9;
+}
+
+.badge-fail {
+    background-color: #4e342e;
+    color: #ffccbc;
+}
+
+.compare-badge i {
+    width: 14px;
+    text-align: center;
 }
 
 #bench-list {

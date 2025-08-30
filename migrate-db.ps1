@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS players (
     discord_id VARCHAR(255),
     character_name VARCHAR(255),
     class VARCHAR(50),
-    PRIMARY KEY (discord_id, character_name)
+    PRIMARY KEY (discord_id, character_name, class)
 );
 
 -- Create roster_overrides table  
@@ -114,7 +114,7 @@ if ($migrateData) {
                 $class = $class -replace "'", "''"
                 
                 if ($characterName -ne "" -and $class -ne "") {
-                    $migrationSQL += "INSERT INTO players (discord_id, character_name, class) VALUES ('$discordId', '$characterName', '$class') ON CONFLICT (discord_id, character_name) DO NOTHING;`n"
+                    $migrationSQL += "INSERT INTO players (discord_id, character_name, class) VALUES ('$discordId', '$characterName', '$class') ON CONFLICT (discord_id, character_name, class) DO NOTHING;`n"
                     $processedCount++
                 }
             }

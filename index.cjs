@@ -1110,8 +1110,11 @@ const DISCORD_GUILD_ID = '777268886939893821'; // Your guild ID from the events 
 
 // Define management role - the only role that matters (override via env)
 const MANAGEMENT_ROLE_NAME = (process.env.MANAGEMENT_ROLE_NAME || 'Management');
+// Helper role for roster-only privileges
+const HELPER_ROLE_NAME = (process.env.HELPER_ROLE_NAME || 'Helper');
 // Optional: prefer matching by Role ID to avoid needing guild roles name mapping
 const MANAGEMENT_ROLE_ID = process.env.MANAGEMENT_ROLE_ID || null;
+const HELPER_ROLE_ID = process.env.HELPER_ROLE_ID || null;
 
 // Function to fetch user's guild member data including roles (with caching)
 async function fetchUserGuildMember(accessToken, guildId) {
@@ -1264,6 +1267,34 @@ async function hasManagementRole(accessToken) {
     return hasByName;
 }
 
+// Check if user has Helper role (roster-only privileges)
+async function hasHelperRole(accessToken) {
+    const memberData = await fetchUserGuildMember(accessToken, DISCORD_GUILD_ID);
+    if (!memberData || !memberData.roles) {
+        console.log('❌ No member data or roles found');
+        return false;
+    }
+    // Prefer ID matching when configured
+    if (HELPER_ROLE_ID) {
+        const hasById = memberData.roles.some(rid => String(rid) === String(HELPER_ROLE_ID));
+        console.log(`🔍 Checking for Helper role by ID (${HELPER_ROLE_ID}): ${hasById ? '✅ FOUND' : '❌ NOT FOUND'}`);
+        return hasById;
+    }
+
+    // Fallback: resolve by role name via guild roles list
+    const guildRoles = await fetchGuildRoles(DISCORD_GUILD_ID);
+    if (guildRoles.length === 0) {
+        console.log('⚠️ No guild roles available - cannot verify Helper role by name');
+        return false;
+    }
+    const roleMap = new Map(guildRoles.map(role => [role.id, role.name]));
+    const userRoleNames = memberData.roles.map(roleId => roleMap.get(roleId)).filter(Boolean);
+    console.log(`👤 User's role names: [${userRoleNames.join(', ')}]`);
+    const hasByName = userRoleNames.some(name => (name || '').toLowerCase() === HELPER_ROLE_NAME.toLowerCase());
+    console.log(`🔍 Checking for "${HELPER_ROLE_NAME}" role by name: ${hasByName ? '✅ FOUND' : '❌ NOT FOUND'}`);
+    return hasByName;
+}
+
 // Utility: clear cached role data for a specific user access token and global roles cache
 function clearRoleCachesForAccessToken(accessToken) {
     try {
@@ -1288,6 +1319,19 @@ async function requireManagement(req, res, next) {
         return res.status(403).json({ message: 'Management role required' });
     }
 
+    next();
+}
+
+// Middleware: allow Management or Helper (roster-only access)
+async function requireRosterManager(req, res, next) {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'Authentication required' });
+    }
+    const isMgmt = await hasManagementRole(req.user.accessToken);
+    const isHelper = await hasHelperRole(req.user.accessToken);
+    if (!isMgmt && !isHelper) {
+        return res.status(403).json({ message: 'Management or Helper role required' });
+    }
     next();
 }
 
@@ -1509,7 +1553,7 @@ app.post('/api/discord/test/webhook', async (req, res) => {
 });
 
 // Announce invites for the current event (test version posts a simple embed to a hard-coded webhook)
-app.post('/api/discord/announce-invites', async (req, res) => {
+app.post('/api/discord/announce-invites', requireRosterManager, async (req, res) => {
   const { eventId, invitePerson, mentionContent, mentionUserIds } = req.body || {};
   if (!eventId) return res.status(400).json({ ok: false, error: 'eventId is required' });
   if (!invitePerson || !String(invitePerson).trim()) return res.status(400).json({ ok: false, error: 'invitePerson is required' });
@@ -1660,7 +1704,7 @@ app.post('/api/discord/announce-invites', async (req, res) => {
 });
 
 // Prompt a specific user via DM to confirm (test version sends a simple message)
-app.post('/api/discord/prompt-confirmation', async (req, res) => {
+app.post('/api/discord/prompt-confirmation', requireRosterManager, async (req, res) => {
   try {
     const botToken = process.env.DISCORD_BOT_TOKEN;
     if (!botToken) {
@@ -1946,7 +1990,7 @@ app.post('/api/discord/prompt-confirmation', async (req, res) => {
 });
 
 // Prompt a specific user via DM to invite (uses a red embed and includes channel/character/invite person)
-app.post('/api/discord/prompt-invite', async (req, res) => {
+app.post('/api/discord/prompt-invite', requireRosterManager, async (req, res) => {
   try {
     const botToken = process.env.DISCORD_BOT_TOKEN;
     if (!botToken) {
@@ -2088,9 +2132,10 @@ app.get('/user', async (req, res) => {
       if (String(req.query.refresh || '') === '1') {
         clearRoleCachesForAccessToken(req.user.accessToken);
       }
-      // Check if user has Management role
+      // Check if user has Management/Helper roles
       console.log(`👤 Checking permissions for user ${req.user.username}`);
       const isManagement = await hasManagementRole(req.user.accessToken);
+      const isHelper = await hasHelperRole(req.user.accessToken);
 
       res.json({
         loggedIn: true,
@@ -2100,8 +2145,10 @@ app.get('/user', async (req, res) => {
         avatar: req.user.avatar,
         email: req.user.email,
         hasManagementRole: isManagement,
+        hasHelperRole: isHelper,
         permissions: {
-          canManage: isManagement
+          canManage: isManagement,
+          canManageRoster: (isManagement || isHelper)
         }
       });
     } catch (error) {
@@ -2115,8 +2162,10 @@ app.get('/user', async (req, res) => {
         avatar: req.user.avatar,
         email: req.user.email,
         hasManagementRole: false,
+        hasHelperRole: false,
         permissions: {
-          canManage: false
+          canManage: false,
+          canManageRoster: false
         }
       });
     }
@@ -2675,7 +2724,7 @@ app.get('/api/assignments/:eventId/roster', async (req, res) => {
   }
 });
 
-app.post('/api/assignments/:eventId/save', requireManagement, express.json(), async (req, res) => {
+app.post('/api/assignments/:eventId/save', requireRosterManager, express.json(), async (req, res) => {
   const { eventId } = req.params;
   const { panels } = req.body || {};
   if (!Array.isArray(panels)) return res.status(400).json({ success: false, message: 'Invalid payload' });
@@ -2776,6 +2825,115 @@ app.post('/api/assignments/:eventId/save', requireManagement, express.json(), as
   }
 });
 
+// Replace assignments: rename character across all entries for an event, preserving other entries
+app.post('/api/assignments/:eventId/replace-name', requireRosterManager, express.json(), async (req, res) => {
+  const { eventId } = req.params;
+  const { fromName, toName, matchMode } = req.body || {};
+  if (!eventId || !fromName || !toName) {
+    return res.status(400).json({ success: false, message: 'Missing eventId, fromName or toName' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Resolve target player from roster for this event
+    const rosterRes = await client.query(
+      `SELECT assigned_char_name AS character_name,
+              assigned_char_class AS class_name,
+              assigned_char_spec  AS spec_name,
+              assigned_char_spec_emote AS spec_emote,
+              discord_user_id
+         FROM roster_overrides
+        WHERE event_id = $1 AND LOWER(assigned_char_name) = LOWER($2)
+        LIMIT 1`,
+      [eventId, toName]
+    );
+    if (!rosterRes.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: `Target '${toName}' is not in the roster for this event` });
+    }
+    const target = rosterRes.rows[0];
+    // Resolve class color
+    let classColor = null;
+    try {
+      const csm = await client.query(
+        `SELECT class_color_hex FROM class_spec_mappings WHERE LOWER(class_name) = LOWER($1) AND LOWER(spec_name) = LOWER($2) LIMIT 1`,
+        [target.class_name || '', target.spec_name || '']
+      );
+      classColor = csm.rows[0]?.class_color_hex || null;
+    } catch {}
+
+    // Fetch affected entries for reporting (exact or partial)
+    const isPartial = String(matchMode || '').toLowerCase() === 'partial';
+    const affected = await client.query(
+      isPartial ?
+      `SELECT dungeon, wing, boss, assignment, character_name
+         FROM raid_assignment_entries
+        WHERE event_id = $1 AND LOWER(character_name) LIKE LOWER($2)` :
+      `SELECT dungeon, wing, boss, assignment, character_name
+         FROM raid_assignment_entries
+        WHERE event_id = $1 AND LOWER(character_name) = LOWER($2)`,
+      [eventId, isPartial ? `%${fromName.toLowerCase()}%` : fromName]
+    );
+    const replacedList = affected.rows || [];
+
+    // Update entries
+    const upd = await client.query(
+      isPartial ?
+      `UPDATE raid_assignment_entries
+          SET character_name = $2,
+              class_name = $3,
+              class_color = $4,
+              spec_name = $5,
+              spec_emote = $6,
+              character_discord_id = $7
+        WHERE event_id = $1 AND LOWER(character_name) LIKE LOWER($8)` :
+      `UPDATE raid_assignment_entries
+          SET character_name = $2,
+              class_name = $3,
+              class_color = $4,
+              spec_name = $5,
+              spec_emote = $6,
+              character_discord_id = $7
+        WHERE event_id = $1 AND LOWER(character_name) = LOWER($8)`,
+      [eventId, target.character_name, target.class_name || null, classColor, target.spec_name || null, target.spec_emote || null, target.discord_user_id || null, isPartial ? `%${fromName.toLowerCase()}%` : fromName]
+    );
+
+    const replacedCount = Number(upd.rowCount || 0);
+
+    // Move accept/decline states from fromName to toName per panel
+    try {
+      const accRows = await client.query(
+        `SELECT dungeon, wing, boss, accept_status, accept_set_by, accept_updated_at
+           FROM raid_assignment_entry_accepts
+          WHERE event_id = $1 AND LOWER(character_name) = LOWER($2)`,
+        [eventId, fromName]
+      );
+      for (const row of accRows.rows) {
+        await client.query(
+          `INSERT INTO raid_assignment_entry_accepts (event_id, dungeon, wing, boss, character_name, accept_status, accept_set_by, accept_updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+           ON CONFLICT (event_id, dungeon, wing, boss, character_name)
+           DO UPDATE SET accept_status = EXCLUDED.accept_status, accept_set_by = EXCLUDED.accept_set_by, accept_updated_at = EXCLUDED.accept_updated_at`,
+          [eventId, row.dungeon, row.wing || '', row.boss, target.character_name, row.accept_status || null, row.accept_set_by || null, row.accept_updated_at || new Date()]
+        );
+      }
+      await client.query(
+        `DELETE FROM raid_assignment_entry_accepts WHERE event_id = $1 AND LOWER(character_name) = LOWER($2)`,
+        [eventId, fromName]
+      );
+    } catch {}
+
+    await client.query('COMMIT');
+    return res.json({ success: true, replacedCount, replacedList });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error replacing assignment names:', error);
+    return res.status(500).json({ success: false, message: 'Failed to replace assignments' });
+  } finally {
+    client.release();
+  }
+});
+
 // Page route
 app.get('/event/:eventId/assignments', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'assignments.html'));
@@ -2858,7 +3016,7 @@ app.get('/api/events/:eventId/channel-flags', async (req, res) => {
 });
 
 // Store raidleader name and cut per event (requires management)
-app.put('/api/events/:eventId/raidleader', requireManagement, express.json(), async (req, res) => {
+app.put('/api/events/:eventId/raidleader', requireRosterManager, express.json(), async (req, res) => {
   const { eventId } = req.params;
   const { raidleaderName, raidleaderCut } = req.body || {};
   if (!eventId) return res.status(400).json({ success:false, message:'Missing eventId' });
@@ -3629,7 +3787,7 @@ app.put('/api/players/:discordUserId/fix-name', async (req, res) => {
             await client.query(
                 `INSERT INTO players (discord_id, character_name, class)
                  VALUES ($1, $2, $3)
-                 ON CONFLICT (discord_id, character_name) DO UPDATE SET class = EXCLUDED.class`,
+                 ON CONFLICT (discord_id, character_name, class) DO NOTHING`,
                 [discordUserId, newName, characterClass]
             );
         }
@@ -4709,7 +4867,7 @@ async function getRaidDetailsFromRaidHelper(eventId) {
 }
 
 // Endpoint to handle swapping a player's character
-app.put('/api/roster/:eventId/player/:discordUserId', async (req, res) => {
+app.put('/api/roster/:eventId/player/:discordUserId', requireRosterManager, async (req, res) => {
     const { eventId, discordUserId } = req.params;
     let { characterName, characterClass } = req.body;
 
@@ -4772,7 +4930,7 @@ app.get('/api/specs', (req, res) => {
 });
 
 // Endpoint to handle updating a player's spec
-app.put('/api/roster/:eventId/player/:discordUserId/spec', async (req, res) => {
+app.put('/api/roster/:eventId/player/:discordUserId/spec', requireRosterManager, async (req, res) => {
     const { eventId, discordUserId } = req.params;
     const { specName } = req.body;
 
@@ -4831,7 +4989,7 @@ app.put('/api/roster/:eventId/player/:discordUserId/spec', async (req, res) => {
         });
 
 // Endpoint to toggle a player's "in raid" status
-app.put('/api/roster/:eventId/player/:discordUserId/in-raid', async (req, res) => {
+app.put('/api/roster/:eventId/player/:discordUserId/in-raid', requireRosterManager, async (req, res) => {
     const { eventId, discordUserId } = req.params;
     const { inRaid } = req.body;
 
@@ -4867,7 +5025,7 @@ app.put('/api/roster/:eventId/player/:discordUserId/in-raid', async (req, res) =
 });
 
 // Endpoint to handle adding a new character to roster
-app.post('/api/roster/:eventId/add-character', async (req, res) => {
+app.post('/api/roster/:eventId/add-character', requireRosterManager, async (req, res) => {
     const { eventId } = req.params;
     const { characterName, class: characterClass, discordId, spec, targetPartyId, targetSlotId } = req.body;
 
@@ -4979,7 +5137,7 @@ app.post('/api/roster/:eventId/add-character', async (req, res) => {
         await client.query(`
             INSERT INTO players (discord_id, character_name, class) 
             VALUES ($1, $2, $3)
-            ON CONFLICT (discord_id, character_name) DO NOTHING`,
+            ON CONFLICT (discord_id, character_name, class) DO NOTHING`,
             [discordId, characterName, characterClass]
         );
 
@@ -5022,7 +5180,7 @@ app.post('/api/roster/:eventId/add-character', async (req, res) => {
 });
 
 // Endpoint to handle adding a new character to roster (force creation, bypassing warnings)
-app.post('/api/roster/:eventId/add-character/force', async (req, res) => {
+app.post('/api/roster/:eventId/add-character/force', requireRosterManager, async (req, res) => {
     const { eventId } = req.params;
     const { characterName, class: characterClass, discordId, spec, targetPartyId, targetSlotId } = req.body;
 
@@ -5096,7 +5254,7 @@ app.post('/api/roster/:eventId/add-character/force', async (req, res) => {
         await client.query(`
             INSERT INTO players (discord_id, character_name, class) 
             VALUES ($1, $2, $3)
-            ON CONFLICT (discord_id, character_name) DO NOTHING`,
+            ON CONFLICT (discord_id, character_name, class) DO NOTHING`,
             [discordId, characterName, characterClass]
         );
 
@@ -5139,7 +5297,7 @@ app.post('/api/roster/:eventId/add-character/force', async (req, res) => {
 });
 
 // Endpoint to add an existing player to roster (from players table)
-app.post('/api/roster/:eventId/add-existing-player', async (req, res) => {
+app.post('/api/roster/:eventId/add-existing-player', requireRosterManager, async (req, res) => {
     const { eventId } = req.params;
     const { characterName, class: characterClass, discordId, spec, targetPartyId, targetSlotId } = req.body;
 
@@ -5249,7 +5407,7 @@ app.post('/api/roster/:eventId/add-existing-player', async (req, res) => {
 });
 
 // Endpoint to handle moving a player
-app.put('/api/roster/:eventId/player/:discordUserId/position', async (req, res) => {
+app.put('/api/roster/:eventId/player/:discordUserId/position', requireRosterManager, async (req, res) => {
     const { eventId, discordUserId } = req.params;
     const targetPartyId = parseInt(req.body.targetPartyId, 10);
     const targetSlotId = parseInt(req.body.targetSlotId, 10);
@@ -5341,7 +5499,7 @@ app.put('/api/roster/:eventId/player/:discordUserId/position', async (req, res) 
     }
 });
 
-app.post('/api/roster/:eventId/player/:discordUserId/bench', async (req, res) => {
+app.post('/api/roster/:eventId/player/:discordUserId/bench', requireRosterManager, async (req, res) => {
     const { eventId, discordUserId } = req.params;
     let client;
 
@@ -5380,7 +5538,7 @@ app.post('/api/roster/:eventId/player/:discordUserId/bench', async (req, res) =>
     }
 });
 
-app.post('/api/roster/:eventId/revert', async (req, res) => {
+app.post('/api/roster/:eventId/revert', requireRosterManager, async (req, res) => {
     const { eventId } = req.params;
     let client;
 
@@ -6374,7 +6532,7 @@ app.post('/api/admin/migrate-players', async (req, res) => {
                             await client.query(`
                                 INSERT INTO players (discord_id, character_name, class) 
                                 VALUES ($1, $2, $3) 
-                                ON CONFLICT (discord_id, character_name) DO NOTHING
+                                ON CONFLICT (discord_id, character_name, class) DO NOTHING
                             `, [discordId, characterName, characterClass]);
                             processedCount++;
                         } catch (error) {

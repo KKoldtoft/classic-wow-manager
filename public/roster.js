@@ -9,6 +9,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const autoAssignmentsButton = document.getElementById('auto-assignments-button');
     const benchContainer = document.getElementById('bench-container');
     const benchedList = document.getElementById('benched-list');
+    const compareButton = document.getElementById('compare-string-button');
+    const compareOverlay = document.getElementById('compare-overlay');
+    const compareInput = document.getElementById('compare-input');
+    const compareRunBtn = document.getElementById('compare-run');
+    const compareCancelBtn = document.getElementById('compare-cancel');
+    const compareCloseBtn = compareOverlay ? compareOverlay.querySelector('.compare-close') : null;
+    const compareResults = document.getElementById('compare-results');
 
     const pathParts = window.location.pathname.split('/');
     const eventKeywordIndex = pathParts.indexOf('event');
@@ -80,6 +87,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         showAlert('Announce failed', 'Failed to announce invites.');
                     } else {
                         try { localStorage.setItem('lastInvitePerson', trimmed); } catch {}
+                        try { localStorage.setItem(`invitesStarted:${eventId}`, JSON.stringify({ started: true, by: trimmed, ts: Date.now() })); } catch {}
+                        updateInvitesStartedStat().catch(()=>{});
                         showAlert('Invites sent', 'Your announcement was posted to Discord.');
                     }
                 } catch (e) {
@@ -91,6 +100,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
         modal.show();
+        // Prefill from invites-by input or stored value
+        try {
+            const field = modal.modal ? modal.modal.querySelector(`#${inputId}`) : null;
+            if (field) {
+                let preset = '';
+                const invitesByEl = document.getElementById('invites-by-input');
+                if (invitesByEl) preset = String(invitesByEl.value||'').trim();
+                if (!preset) {
+                    try { preset = localStorage.getItem(`invitesBy:${eventId}`) || localStorage.getItem('lastInvitePerson') || ''; } catch {}
+                }
+                if (preset) field.value = preset;
+            }
+        } catch {}
     }
 
     if (announceInvitesButton) {
@@ -98,6 +120,94 @@ document.addEventListener('DOMContentLoaded', async () => {
             openAnnounceInvitesModal();
         });
     }
+
+    // Compare string overlay handlers
+    function openCompareOverlay() {
+        if (!compareOverlay) return;
+        compareOverlay.style.display = 'flex';
+        if (compareInput) compareInput.focus();
+    }
+    function closeCompareOverlay() {
+        if (!compareOverlay) return;
+        compareOverlay.style.display = 'none';
+        if (compareInput) compareInput.value = '';
+    }
+    function parseCompareString(str) {
+        const items = String(str || '')
+            .split(';')
+            .map(s => s.trim())
+            .filter(Boolean);
+        const parsed = [];
+        for (const item of items) {
+            // Expect "<name> <class>"; class may be multiple words like "Death Knight" (but classic doesn't use DK)
+            const m = item.match(/^(\S+)\s+(.+)$/);
+            if (!m) continue;
+            const name = m[1];
+            const cls = m[2];
+            parsed.push({ name, cls });
+        }
+        return parsed;
+    }
+    function buildRosterNameClassMap() {
+        const map = new Map();
+        const push = (p) => {
+            if (!p) return;
+            const display = p.mainCharacterName || p.assigned_char_name || p.character_name || p.name;
+            if (!display) return;
+            let cls = String(p.class_name || p.class || '').toLowerCase();
+            try {
+                const role = deriveRole(p.class, p.spec);
+                if (String(role).toLowerCase() === 'tank') cls = 'warrior';
+            } catch {}
+            map.set(String(display).trim().toLowerCase(), getCanonicalClass(cls));
+        };
+        (currentRosterData.raidDrop || []).forEach(push);
+        (currentRosterData.bench || []).forEach(push);
+        return map;
+    }
+    function renderCompareResults(list) {
+        if (!compareResults) return;
+        const rosterMap = buildRosterNameClassMap();
+        let nameMatches = 0, classMatches = 0;
+        const rows = list.map(item => {
+            const key = String(item.name || '').trim().toLowerCase();
+            const inputClassCanonical = getCanonicalClass(item.cls);
+            const rosterClass = rosterMap.get(key);
+            const hasName = rosterMap.has(key);
+            const hasClass = hasName && rosterClass === inputClassCanonical;
+            if (hasName) nameMatches++;
+            if (hasClass) classMatches++;
+            const nameBadge = hasName
+                ? '<span class="compare-badge badge-ok"><i class="fas fa-check"></i> Name match</span>'
+                : '<span class="compare-badge badge-fail"><i class="fas fa-times"></i> Name missing</span>';
+            const classBadge = hasClass
+                ? '<span class="compare-badge badge-ok"><i class="fas fa-check"></i> Class match</span>'
+                : `<span class="compare-badge badge-fail"><i class="fas fa-times"></i> Class ${hasName && rosterClass ? '('+rosterClass+')' : ''}</span>`;
+            return `
+                <div class="compare-row">
+                    <div class="compare-name">${item.name} <span style="opacity:0.8; font-weight:400;">${item.cls}</span></div>
+                    <div>${nameBadge}</div>
+                    <div>${classBadge}</div>
+                </div>`;
+        }).join('');
+        const summary = `<div class="compare-results-summary"><div><strong>Total</strong>: ${list.length}</div><div><strong>Name matches</strong>: ${nameMatches}</div><div><strong>Class matches</strong>: ${classMatches}</div></div>`;
+        compareResults.innerHTML = summary + rows;
+        compareResults.style.display = 'block';
+        // Scroll into view
+        try { compareResults.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch {}
+    }
+    async function runCompare() {
+        const val = (compareInput && compareInput.value) ? compareInput.value : '';
+        const parsed = parseCompareString(val);
+        closeCompareOverlay();
+        renderCompareResults(parsed);
+    }
+    if (compareButton) compareButton.addEventListener('click', openCompareOverlay);
+    if (compareCloseBtn) compareCloseBtn.addEventListener('click', closeCompareOverlay);
+    if (compareCancelBtn) compareCancelBtn.addEventListener('click', closeCompareOverlay);
+    if (compareOverlay) compareOverlay.addEventListener('click', (e)=>{ if (e.target === compareOverlay) closeCompareOverlay(); });
+    if (compareRunBtn) compareRunBtn.addEventListener('click', runCompare);
+    document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && compareOverlay && compareOverlay.style.display === 'flex') closeCompareOverlay(); });
 
     let isManaged = false;
     let currentUserCanManage = false;
@@ -172,6 +282,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="player-details-dropdown">${dropdownContentHTML}</div>`;
 
             applyPlayerColor(cell, newPlayerData.color);
+            try {
+                if (!newPlayerData.userid) cell.classList.add('no-discord-id');
+                else cell.classList.remove('no-discord-id');
+            } catch {}
             applyNoAssignmentsStyling(cell, newPlayerData);
             
             // Re-attach event listeners for this specific cell
@@ -851,6 +965,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
             });
 
+            // Replace assignments action
+            cell.querySelectorAll('[data-action="replace-assignments"]').forEach(item => {
+                item.addEventListener('click', async (e) => {
+                    const { userid } = e.currentTarget.dataset;
+                    const player = currentRosterData.raidDrop?.find(p => p && p.userid === userid) || currentRosterData.bench?.find(p => p && p.userid === userid);
+                    if (!player) return;
+                    openReplaceAssignmentsOverlay(player);
+                });
+            });
+
             // Prompt for confirmation action
             cell.querySelectorAll('[data-action="prompt-confirmation"]').forEach(item => {
                 item.addEventListener('click', async (e) => {
@@ -916,7 +1040,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const uRes = await fetch('/user');
             if (uRes && uRes.ok) {
                 const u = await uRes.json();
-                currentUserCanManage = !!(u && u.loggedIn && u.hasManagementRole);
+                const canRoster = !!(u && u.permissions && (u.permissions.canManageRoster || u.permissions.canManage));
+                const isMgmt = !!(u && u.hasManagementRole);
+                const isHelper = !!(u && u.hasHelperRole);
+                currentUserCanManage = !!(u && u.loggedIn && (canRoster || isMgmt || isHelper));
             }
         } catch {}
 
@@ -969,6 +1096,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 applyInRaidVisibility();
                 applyConfirmedVisibility();
             }, 100);
+
+            // Update stats dashboard cards (Assignments comparison)
+            updateAssignmentsStat().catch(()=>{});
+            updatePlayersStat().catch(()=>{});
+            updateRosterStat().catch(()=>{});
+            updateRaidleaderStat().catch(()=>{});
+            updateInvitesByStat().catch(()=>{});
+            updateInvitesStartedStat().catch(()=>{});
         } catch (error) {
             console.error('roster.js: A critical error occurred during renderRoster:', error);
             const rosterGrid = document.getElementById('roster-grid');
@@ -977,6 +1112,266 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <p>${error.message}</p>
                 <pre style="white-space: pre-wrap; word-wrap: break-word;">${error.stack}</pre>
             </div>`;
+        }
+    }
+
+    async function updateAssignmentsStat() {
+        const valEl = document.getElementById('stat-assignments');
+        const detailEl = document.getElementById('stat-assignments-detail');
+        const cardEl = document.querySelector('.stat-card.assignments');
+        if (!valEl || !cardEl) return;
+        try {
+            // Load assignments panels
+            const aRes = await fetch(`/api/assignments/${encodeURIComponent(eventId)}`);
+            if (!aRes.ok) throw new Error('Failed to load assignments');
+            const aData = await aRes.json();
+            const panels = Array.isArray(aData?.panels) ? aData.panels : [];
+            const namesFromAssignments = new Map(); // lower -> display
+            for (const p of panels) {
+                const entries = Array.isArray(p?.entries) ? p.entries : [];
+                for (const e of entries) {
+                    const nm = String(e?.character_name || '').trim();
+                    if (!nm) continue;
+                    const lower = nm.toLowerCase();
+                    if (!namesFromAssignments.has(lower)) namesFromAssignments.set(lower, nm);
+                }
+            }
+
+            // If no assignment names exist at all, show Waiting state
+            if (namesFromAssignments.size === 0) {
+                valEl.textContent = 'Waiting';
+                valEl.style.color = '#fbbf24'; // yellow
+                if (detailEl) { detailEl.textContent = ''; }
+                cardEl.title = 'No assignments created yet';
+                return;
+            }
+
+            // Load roster names from DB
+            const rRes = await fetch(`/api/assignments/${encodeURIComponent(eventId)}/roster`);
+            if (!rRes.ok) throw new Error('Failed to load roster');
+            const rData = await rRes.json();
+            const rosterRows = Array.isArray(rData?.roster) ? rData.roster : [];
+            const namesFromRoster = new Map(); // lower -> display
+            for (const row of rosterRows) {
+                const nm = String(row?.character_name || '').trim();
+                if (!nm) continue;
+                const lower = nm.toLowerCase();
+                if (!namesFromRoster.has(lower)) namesFromRoster.set(lower, nm);
+            }
+
+            // Compute mismatches
+            const onlyInAssignments = [];
+            for (const [lower, disp] of namesFromAssignments.entries()) {
+                if (!namesFromRoster.has(lower)) onlyInAssignments.push(disp);
+            }
+            const onlyInRoster = [];
+            for (const [lower, disp] of namesFromRoster.entries()) {
+                if (!namesFromAssignments.has(lower)) onlyInRoster.push(disp);
+            }
+
+            const matched = onlyInAssignments.length === 0 && onlyInRoster.length === 0;
+            valEl.textContent = matched ? 'Matched' : 'Failed';
+            valEl.style.color = matched ? '#22c55e' : '#ef4444';
+            if (detailEl) {
+                if (matched) {
+                    detailEl.textContent = '';
+                    cardEl.title = 'All assignment names match the roster';
+                } else {
+                    const fmt = (arr)=> (arr.length? arr.sort((a,b)=>a.localeCompare(b)).join(', ') : '(none)');
+                    const html = `<div><strong>Only in assignments:</strong> ${fmt(onlyInAssignments)}</div><div style="margin-top:6px;"><strong>Only in roster:</strong> ${fmt(onlyInRoster)}</div>`;
+                    detailEl.innerHTML = html;
+                    cardEl.title = '';
+                }
+            }
+        } catch (e) {
+            valEl.textContent = 'Failed';
+            valEl.style.color = '#ef4444';
+            if (detailEl) detailEl.textContent = 'Error comparing names';
+        }
+    }
+
+    async function updateRosterStat() {
+        const valEl = document.getElementById('stat-roster');
+        const detailEl = document.getElementById('stat-roster-detail');
+        if (!valEl) return;
+        try {
+            // Only groups 1-8 (exclude bench)
+            const rosterPlayers = (currentRosterData.raidDrop || []).filter(p => p && p.userid);
+
+            // Ensure DB cache ready for all
+            const fetches = [];
+            for (const p of rosterPlayers) {
+                if (playersDbCache[p.userid] === undefined) fetches.push(fetchDbCharactersForUser(p.userid));
+            }
+            if (fetches.length) { try { await Promise.all(fetches); } catch {} }
+
+            let confirmedCount = 0;
+            let notMatchedCount = 0;
+            for (const p of rosterPlayers) {
+                if (p.isConfirmed === true || p.isConfirmed === 'confirmed') confirmedCount += 1;
+                try { if (!doesPlayerExistInDbCached(p)) notMatchedCount += 1; } catch {}
+            }
+            const notConfirmedCount = Math.max(0, rosterPlayers.length - confirmedCount);
+
+            // Value shows total roster size
+            valEl.textContent = String(rosterPlayers.length);
+            if (detailEl) {
+                detailEl.innerHTML = `<div><strong>Confirmed</strong>: ${confirmedCount}</div><div><strong>Not confirmed</strong>: ${notConfirmedCount}</div><div class="cat-notmatched"><strong>Not matched</strong>: ${notMatchedCount}</div>`;
+            }
+        } catch (e) {
+            // Leave previous content on error
+        }
+    }
+
+    async function updateRaidleaderStat() {
+        const valEl = document.getElementById('stat-raidleader');
+        if (!valEl) return;
+        try {
+            const meta = await getEventRaidleader(eventId);
+            const name = meta && meta.raidleaderName ? meta.raidleaderName : '';
+            valEl.textContent = name || '-';
+        } catch { valEl.textContent = '-'; }
+    }
+
+    async function updateInvitesByStat() {
+        const valEl = document.getElementById('stat-invites');
+        if (!valEl) return;
+        let name = '';
+        try { name = localStorage.getItem(`invitesBy:${eventId}`) || ''; } catch {}
+        valEl.textContent = name || '-';
+    }
+
+    async function updateInvitesStartedStat() {
+        const valEl = document.getElementById('stat-invites-started');
+        const detailEl = document.getElementById('stat-invites-started-detail');
+        if (!valEl) return;
+        try {
+            let info = null;
+            try { info = JSON.parse(localStorage.getItem(`invitesStarted:${eventId}`) || 'null'); } catch {}
+            const started = !!(info && info.started);
+            const by = (info && info.by) ? String(info.by) : '';
+            valEl.textContent = started ? 'Yes' : 'No';
+            if (detailEl) {
+                detailEl.textContent = started && by ? `(${by})` : '';
+            }
+        } catch {
+            valEl.textContent = 'No';
+            if (detailEl) detailEl.textContent = '';
+        }
+    }
+
+    async function updatePlayersStat() {
+        const valEl = document.getElementById('stat-players');
+        const detailEl = document.getElementById('stat-players-detail');
+        const cardEl = document.querySelector('.stat-card.players');
+        if (!valEl) return;
+        try {
+            // Collect roster user IDs (only groups 1-8; exclude bench)
+            const userIdSet = new Set();
+            (currentRosterData.raidDrop || []).forEach(p => { if (p && p.userid) userIdSet.add(String(p.userid)); });
+            const rosterUserIds = Array.from(userIdSet);
+            const rosterUsersSet = new Set(rosterUserIds);
+
+            // Guildies via /api/guild-members
+            let guildiesCount = 0;
+            let guildiesList = [];
+            try {
+                const gRes = await fetch('/api/guild-members');
+                if (gRes.ok) {
+                    const gData = await gRes.json();
+                    const mems = Array.isArray(gData?.members) ? gData.members : [];
+                    const guildIdSet = new Set(mems.map(m => String(m.discord_id || m.discordId || '').trim()).filter(Boolean));
+                    const list = rosterUserIds.filter(id => guildIdSet.has(String(id)));
+                    guildiesCount = list.length;
+                    guildiesList = list;
+                }
+            } catch {}
+
+            // Attendance via /api/attendance (use the same structure as attendance page)
+            let regularsCount = 0;
+            let firstTimeCount = 0;
+            let regularsList = [];
+            let firstTimeList = [];
+            try {
+                const aRes = await fetch('/api/attendance');
+                if (aRes.ok) {
+                    const result = await aRes.json();
+                    if (result && result.success && result.data) {
+                        const { weeks = [], attendance = {} } = result.data;
+                        // last 12 weeks from provided ordered weeks array
+                        const last12 = weeks.slice(-12);
+                        const last12Keys = last12.map(w => `${w.weekYear}-${w.weekNumber}`);
+                        const allKeys = weeks.map(w => `${w.weekYear}-${w.weekNumber}`);
+
+                        // DB mismatch (red outline) users should also be counted as first time
+                        const mismatchSet = new Set();
+                        const pushMismatch = (p)=>{ if(!p||!p.userid) return; try{ if(!doesPlayerExistInDbCached(p)) mismatchSet.add(String(p.userid)); }catch{} };
+                        (currentRosterData.raidDrop||[]).forEach(pushMismatch); // only groups 1-8
+
+                        for (const uid of rosterUserIds) {
+                            const uidStr = String(uid);
+                            const userWeeks = attendance[uidStr] || {};
+                            // Count hits in last 12
+                            let hits = 0;
+                            for (const key of last12Keys) {
+                                const arr = userWeeks[key];
+                                if (Array.isArray(arr) && arr.length > 0) hits += 1;
+                            }
+                            if (hits >= 3) { regularsCount += 1; regularsList.push(uidStr); }
+                            // Ever attended (any week in dataset)
+                            let ever = false;
+                            for (const key of allKeys) {
+                                const arr = userWeeks[key];
+                                if (Array.isArray(arr) && arr.length > 0) { ever = true; break; }
+                            }
+                            if (!ever || mismatchSet.has(uidStr)) { firstTimeCount += 1; firstTimeList.push(uidStr); }
+                        }
+                    }
+                }
+            } catch {}
+
+            // Render card with colored pills
+            valEl.innerHTML = `<span class="stat-pill pill-regulars">${regularsCount}</span> / <span class="stat-pill pill-guildies">${guildiesCount}</span> / <span class="stat-pill pill-first">${firstTimeCount}</span>`;
+            if (detailEl) {
+                detailEl.innerHTML = `<div class="cat-regulars"><strong>Regulars</strong>: ${regularsCount}</div><div class="cat-guildies"><strong>Guildies</strong>: ${guildiesCount}</div><div class="cat-first"><strong>First time</strong>: ${firstTimeCount}</div>`;
+            }
+
+            // Build tooltip content lists by resolving current roster display names for userIds
+            const userIdToName = new Map();
+            const pushName = (p)=>{ if(!p||!p.userid) return; const disp = p.mainCharacterName||p.assigned_char_name||p.character_name||p.name||p.userid; userIdToName.set(String(p.userid), String(disp)); };
+            (currentRosterData.raidDrop||[]).forEach(pushName); // only groups 1-8
+            const listHtmlGrid = (arr)=>{
+                const uniq = Array.from(new Set(arr.map(id=> userIdToName.get(String(id)) || String(id))));
+                if (!uniq.length) return '<div class="grid-list"><div class="grid-item">None</div></div>';
+                const items = uniq.sort((a,b)=>a.localeCompare(b)).map(n=>`<div class="grid-item">${n}</div>`).join('');
+                return `<div class="grid-list">${items}</div>`;
+            };
+
+            // Setup hover tooltip with 1s delay
+            if (cardEl) {
+                let tt=null, timer=null;
+                const ensureTooltip = ()=>{
+                    if (tt) return tt;
+                    tt = document.createElement('div');
+                    tt.className = 'players-tooltip';
+                    document.body.appendChild(tt);
+                    return tt;
+                };
+                const showAt = (x,y)=>{
+                    const el = ensureTooltip();
+                    el.innerHTML = `<div class=\"cat-regulars\"><h4>Regulars (${regularsCount})</h4><div class=\"list\">${listHtmlGrid(regularsList)}</div></div><div class=\"cat-guildies\"><h4>Guildies (${guildiesCount})</h4><div class=\"list\">${listHtmlGrid(guildiesList)}</div></div><div class=\"cat-first\"><h4>First time (${firstTimeCount})</h4><div class=\"list\">${listHtmlGrid(firstTimeList)}</div></div>`;
+                    const pad=12; el.style.left = (x+pad)+'px'; el.style.top=(y+pad)+'px';
+                    requestAnimationFrame(()=> el.classList.add('show'));
+                };
+                const hide = ()=>{ if (!tt) return; tt.classList.remove('show'); };
+                const onMove = (e)=>{ if (tt && tt.classList.contains('show')) { tt.style.left=(e.clientX+12)+'px'; tt.style.top=(e.clientY+12)+'px'; } };
+                cardEl.addEventListener('mouseenter', (e)=>{ clearTimeout(timer); timer = setTimeout(()=> showAt(e.clientX, e.clientY), 1000); });
+                cardEl.addEventListener('mousemove', onMove);
+                cardEl.addEventListener('mouseleave', ()=>{ clearTimeout(timer); hide(); });
+            }
+        } catch (e) {
+            valEl.textContent = 'N/A';
+            if (detailEl) detailEl.textContent = 'Failed to load player stats';
         }
     }
 
@@ -1028,6 +1423,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="player-details-dropdown">${dropdownContentHTML}</div>`;
 
                     applyPlayerColor(cellDiv, player.color);
+                    if (!player.userid) { try { cellDiv.classList.add('no-discord-id'); } catch {} }
                     applyNoAssignmentsStyling(cellDiv, player);
                     markCellDbMismatch(cellDiv, player);
                     } else {
@@ -1121,6 +1517,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="player-details-dropdown">${dropdownContentHTML}</div>`;
 
         applyPlayerColor(cellDiv, player.color);
+        if (!player.userid) { try { cellDiv.classList.add('no-discord-id'); } catch {} }
         applyNoAssignmentsStyling(cellDiv, player);
         markCellDbMismatch(cellDiv, player);
         return cellDiv;
@@ -1291,6 +1688,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     cut = num;
                 }
                 await setEventRaidleader(eventId, String(nameInput.value||'').trim() || null, cut);
+                updateRaidleaderStat().catch(()=>{});
             } catch (e) { console.warn('Failed to save raidleader meta', e); }
         };
 
@@ -1303,6 +1701,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             saveMeta();
         });
         cutInput.addEventListener('keyup', (e)=>{ if(e.key==='Enter') cutInput.dispatchEvent(new Event('change')); });
+
+        // Invites-by local field
+        const invitesInput = document.getElementById('invites-by-input');
+        if (invitesInput) {
+            try { invitesInput.value = localStorage.getItem(`invitesBy:${eventId}`) || ''; } catch {}
+            const saveInv = ()=>{
+                try { localStorage.setItem(`invitesBy:${eventId}`, String(invitesInput.value||'').trim()); } catch {}
+                updateInvitesByStat().catch(()=>{});
+            };
+            invitesInput.addEventListener('change', saveInv);
+            invitesInput.addEventListener('keyup', (e)=>{ if(e.key==='Enter') saveInv(); });
+        }
     }
 
 
@@ -1366,6 +1776,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Add Fix name action (available for both roster and bench players)
         content += `<div class="dropdown-item" data-action="fix-name" data-userid="${player.userid}"><i class="fas fa-edit menu-icon"></i>Fix name</div>`;
+        // Replace assignments action (available for both roster and bench players)
+        content += `<div class="dropdown-item" data-action="replace-assignments" data-userid="${player.userid}" data-player-name="${(player.mainCharacterName||player.name||'').replace(/"/g,'&quot;')}"><i class="fas fa-exchange-alt menu-icon"></i>Replace assignments</div>`;
 
         // Give no assignments toggle (available for both roster and bench players)
         const noAssign = isNoAssignments(player.userid);
@@ -1434,7 +1846,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Character list building (debug removed for cleaner logs)
         
-        const existingNames = new Set();
+        const existingKeys = new Set();
         
         // First, add the current character (what's displayed in the roster)
         if (currentCharacterName) {
@@ -1447,15 +1859,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 isMain: false, // We'll determine if this is main later
                 isCurrent: true
             });
-            existingNames.add(currentCharacterName);
+            existingKeys.add(`${currentCharacterName}::${currentCanonicalClass}`);
         }
         
         // Add registered character from database (if different from current)
         let registeredCharacter = null;
         try {
             registeredCharacter = await getRegisteredCharacter(player.userid);
-            if (registeredCharacter && !existingNames.has(registeredCharacter.characterName)) {
+            if (registeredCharacter) {
                 const mainCanonicalClass = getCanonicalClass(registeredCharacter.characterClass);
+                const key = `${registeredCharacter.characterName}::${mainCanonicalClass}`;
+                if (!existingKeys.has(key)) {
                 allCharacters.push({
                     name: registeredCharacter.characterName,
                     class: registeredCharacter.characterClass,
@@ -1464,8 +1878,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     isMain: true,
                     isCurrent: false
                 });
-                existingNames.add(registeredCharacter.characterName);
+                existingKeys.add(key);
                 playerCharacterHistory[player.userid].add(registeredCharacter.characterName);
+                }
             } else if (registeredCharacter && registeredCharacter.characterName === currentCharacterName) {
                 // Current character is the registered main character
                 const currentCharIndex = allCharacters.findIndex(char => char.isCurrent);
@@ -1484,23 +1899,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Add ALL characters from history with their stored class information
         playerCharacterHistory[player.userid].forEach(characterName => {
-            if (!existingNames.has(characterName)) {
                 const charDetails = playerCharacterDetails[player.userid][characterName];
                 const characterClass = charDetails ? charDetails.class : player.class;
                 const characterIcon = charDetails ? charDetails.icon : null;
                 const characterColor = charDetails ? charDetails.color : null;
                 
                 const canonicalClass = getCanonicalClass(characterClass);
-                allCharacters.push({
-                    name: characterName,
-                    class: characterClass,
-                    icon: characterIcon,
-                    color: characterColor || getClassColor(canonicalClass),
-                    isMain: false,
-                    isCurrent: false
-                });
-                existingNames.add(characterName);
-            }
+                const key = `${characterName}::${canonicalClass}`;
+                if (!existingKeys.has(key)) {
+                    allCharacters.push({
+                        name: characterName,
+                        class: characterClass,
+                        icon: characterIcon,
+                        color: characterColor || getClassColor(canonicalClass),
+                        isMain: false,
+                        isCurrent: false
+                    });
+                    existingKeys.add(key);
+                }
         });
         
         if (allCharacters.length > 1) { // Only show if there are options to switch to
@@ -1911,7 +2327,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Reset the modal
         input.value = '';
-        results.innerHTML = '<div class="player-search-no-results">Type at least 3 characters to search</div>';
+        results.innerHTML = '<div class="player-search-no-results">Type at least 2 characters to search</div>';
         
         // Show the modal
         overlay.style.display = 'flex';
@@ -1925,9 +2341,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function searchPlayers(query) {
-        if (query.length < 3) {
+        if (query.length < 2) {
             const results = document.getElementById('player-search-results');
-            results.innerHTML = '<div class="player-search-no-results">Type at least 3 characters to search</div>';
+            results.innerHTML = '<div class="player-search-no-results">Type at least 2 characters to search</div>';
             return;
         }
 
@@ -2107,6 +2523,96 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
     }
+
+    // Replace assignments modal
+    let currentReplaceTarget = null; // player object to replace with
+    function openReplaceAssignmentsOverlay(player) {
+        currentReplaceTarget = player;
+        const overlay = document.getElementById('replace-assignments-overlay');
+        const srcInput = document.getElementById('replace-source-input');
+        const suggBox = document.getElementById('replace-source-suggestions');
+        const tgtDiv = document.getElementById('replace-target-display');
+        if (!overlay || !srcInput || !tgtDiv) return;
+        const targetName = player.mainCharacterName || player.name || '';
+        tgtDiv.textContent = targetName;
+        srcInput.value = '';
+        if (suggBox) suggBox.style.display = 'none';
+        overlay.style.display = 'flex';
+        srcInput.focus();
+    }
+    function closeReplaceAssignmentsOverlay() {
+        const overlay = document.getElementById('replace-assignments-overlay');
+        if (overlay) overlay.style.display = 'none';
+        currentReplaceTarget = null;
+    }
+    // Wire modal events
+    (function setupReplaceAssignmentsModal(){
+        const overlay = document.getElementById('replace-assignments-overlay');
+        if (!overlay) return;
+        const closeBtn = overlay.querySelector('.replace-assignments-close');
+        const cancelBtn = document.getElementById('replace-assignments-cancel');
+        const runBtn = document.getElementById('replace-assignments-run');
+        const srcInput = document.getElementById('replace-source-input');
+        const suggBox = document.getElementById('replace-source-suggestions');
+        const partialToggle = document.getElementById('replace-partial-toggle');
+        closeBtn.addEventListener('click', closeReplaceAssignmentsOverlay);
+        cancelBtn.addEventListener('click', closeReplaceAssignmentsOverlay);
+        overlay.addEventListener('click', (e)=>{ if (e.target === overlay) closeReplaceAssignmentsOverlay(); });
+        document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && overlay.style.display === 'flex') closeReplaceAssignmentsOverlay(); });
+        const rosterNames = ()=>{
+            const names = new Set();
+            const push = p=>{ if(!p) return; const n = p.mainCharacterName||p.assigned_char_name||p.character_name||p.name; if(n) names.add(String(n).trim()); };
+            (currentRosterData.raidDrop||[]).forEach(push);
+            (currentRosterData.bench||[]).forEach(push);
+            return Array.from(names).sort((a,b)=>a.localeCompare(b));
+        };
+        const showSuggestions = (q)=>{
+            if (!suggBox) return;
+            const list = rosterNames().filter(n=> n.toLowerCase().includes(q.toLowerCase())).slice(0,50);
+            if (!q || !list.length) { suggBox.style.display='none'; suggBox.innerHTML=''; return; }
+            const esc = s=> String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]||c));
+            suggBox.innerHTML = list.map(n=>`<div class="player-dropdown-item">${esc(n)}</div>`).join('');
+            suggBox.style.display='block';
+            suggBox.querySelectorAll('.player-dropdown-item').forEach(el=>{
+                el.addEventListener('mousedown', (e)=>{ e.preventDefault(); });
+                el.addEventListener('click', ()=>{ srcInput.value = el.textContent; suggBox.style.display='none'; srcInput.focus(); });
+            });
+        };
+        if (srcInput) {
+            let t=null; srcInput.addEventListener('input', ()=>{ clearTimeout(t); const val=srcInput.value||''; t=setTimeout(()=>showSuggestions(val),150); });
+            srcInput.addEventListener('focus', ()=>{ const val=srcInput.value||''; showSuggestions(val); });
+            srcInput.addEventListener('blur', ()=>{ setTimeout(()=>{ if(suggBox) suggBox.style.display='none'; }, 120); });
+        }
+        const run = async () => {
+            try {
+                if (!currentReplaceTarget) return;
+                const src = String(srcInput.value||'').trim();
+                const tgt = String(currentReplaceTarget.mainCharacterName || currentReplaceTarget.name || '').trim();
+                if (!src || !tgt) { showAlert('Invalid input', 'Please enter the name to replace.'); return; }
+                runBtn.disabled = true;
+                const matchMode = (partialToggle && partialToggle.checked) ? 'partial' : 'exact';
+                const { replacedCount, replacedList } = await replaceAssignments(eventId, src, tgt, matchMode);
+                closeReplaceAssignmentsOverlay();
+                const listHtml = (replacedList||[]).map(r=>`<li>${r.dungeon}${r.wing?` / ${r.wing}`:''} / ${r.boss}${r.assignment?` - ${r.assignment}`:''}</li>`).join('');
+                showCustomModal({
+                    type: 'alert',
+                    title: 'Replace assignments',
+                    message: `<p><strong>${src}</strong> was replaced with <strong>${tgt}</strong> in <strong>${replacedCount}</strong> assignments.</p>${replacedCount?`<ul style="margin-top:10px;">${listHtml}</ul>`:''}`,
+                    allowHtmlContent: true,
+                    buttons: [{ text: 'OK', action: 'confirm', style: 'primary' }]
+                });
+                // No need to rerender assignments page; roster can stay
+            } catch (err) {
+                // Close overlay to avoid stacking behind alerts
+                closeReplaceAssignmentsOverlay();
+                showAlert('Replace failed', err?.message || 'Failed to replace assignments');
+            } finally {
+                runBtn.disabled = false;
+            }
+        };
+        runBtn.addEventListener('click', run);
+        srcInput.addEventListener('keyup', (e)=>{ if (e.key === 'Enter') run(); });
+    })();
 
     function deriveRole(className, specName) {
         if (!className) return 'Unknown';

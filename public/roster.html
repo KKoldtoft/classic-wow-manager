@@ -69,6 +69,48 @@
         </div>
 
         <h1 id="roster-event-title">Loading Roster...</h1>
+        <div class="roster-stats-wrapper" style="display:flex; justify-content:center;">
+            <div class="stats-section" style="margin: 10px 0 20px 0; width: 100%; max-width: 1200px;">
+                <div class="stats-dashboard">
+                    <div class="stat-card assignments">
+                        <i class="fas fa-tasks stat-icon"></i>
+                        <span class="stat-label">Assignments</span>
+                        <span class="stat-value" id="stat-assignments">-</span>
+                        <div class="stat-detail" id="stat-assignments-detail"></div>
+                    </div>
+                    <div class="stat-card players">
+                        <i class="fas fa-users stat-icon"></i>
+                        <span class="stat-label">Players</span>
+                        <span class="stat-value" id="stat-players">-</span>
+                        <div class="stat-detail" id="stat-players-detail"></div>
+                    </div>
+                    <div class="stat-card roster">
+                        <i class="fas fa-user-friends stat-icon"></i>
+                        <span class="stat-label">Roster</span>
+                        <span class="stat-value" id="stat-roster">-</span>
+                        <div class="stat-detail" id="stat-roster-detail"></div>
+                    </div>
+                    <div class="stat-card raidleader">
+                        <i class="fas fa-crown stat-icon"></i>
+                        <span class="stat-label">Raidleader</span>
+                        <span class="stat-value" id="stat-raidleader">-</span>
+                        <div class="stat-detail" id="stat-raidleader-detail"></div>
+                    </div>
+                    <div class="stat-card invites-by">
+                        <i class="fas fa-bullhorn stat-icon"></i>
+                        <span class="stat-label">Invites by</span>
+                        <span class="stat-value" id="stat-invites">-</span>
+                        <div class="stat-detail" id="stat-invites-detail"></div>
+                    </div>
+                    <div class="stat-card invites-started">
+                        <i class="fas fa-play-circle stat-icon"></i>
+                        <span class="stat-label">Invites started</span>
+                        <span class="stat-value" id="stat-invites-started">No</span>
+                        <div class="stat-detail" id="stat-invites-started-detail"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="roster-container">
             <div id="roster-grid">
                 <p>Loading roster data...</p>
@@ -87,6 +129,10 @@
                 <i class="fas fa-wrench"></i>
                 <span>Comp-tool</span>
             </a>
+            <button id="compare-string-button" class="panel-button">
+                <i class="fas fa-clipboard-check"></i>
+                <span>Compare string to roster</span>
+            </button>
             <button id="revert-roster-button" class="panel-button" style="display: none;">
                 <i class="fas fa-undo"></i>
                 <span>Revert</span>
@@ -132,20 +178,27 @@
             <!-- Raidleader name (autocomplete) -->
             <div class="toggle-container wide" id="raidleader-container">
                 <span class="toggle-label">Raidleader</span>
-                <div class="input-wrap">
-                    <input id="raidleader-input" type="text" class="player-search-input" placeholder="Type to search roster..." autocomplete="off">
-                    <div id="raidleader-suggestions" class="player-dropdown" style="display:none;"></div>
+                <div class="input-wrap rl-inline">
+                    <div class="rl-name">
+                        <input id="raidleader-input" type="text" class="player-search-input" placeholder="Type to search roster..." autocomplete="off">
+                        <div id="raidleader-suggestions" class="player-dropdown" style="display:none;"></div>
+                    </div>
+                    <div class="rl-cut">
+                        <input id="raidleader-cut-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="e.g. 4">
+                    </div>
                 </div>
             </div>
 
-            <!-- Raidleader cut (numeric, percent) -->
-            <div class="toggle-container wide" id="raidleader-cut-container">
-                <span class="toggle-label">Raidleader cut (%)</span>
+            <!-- Invites by (saved locally per event) -->
+            <div class="toggle-container wide" id="invites-by-container">
+                <span class="toggle-label">Invites by</span>
                 <div class="input-wrap">
-                    <input id="raidleader-cut-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="e.g. 4">
-                    <span class="suffix">%</span>
+                    <input id="invites-by-input" type="text" class="player-search-input" placeholder="Type name..." autocomplete="off">
                 </div>
             </div>
+
+            
+            <div id="compare-results" style="display:none; margin-top:15px; width: 100%;"></div>
         </div>
     </div>
 
@@ -154,9 +207,22 @@
         <div class="player-search-modal">
             <button class="player-search-close">&times;</button>
             <div class="player-search-header">Search for Player</div>
-            <input type="text" id="player-search-input" class="player-search-input" placeholder="Type player name (min 3 characters)..." autocomplete="off">
+            <input type="text" id="player-search-input" class="player-search-input" placeholder="Type player name (min 2 characters)..." autocomplete="off">
             <div id="player-search-results" class="player-search-results">
-                <div class="player-search-no-results">Type at least 3 characters to search</div>
+                <div class="player-search-no-results">Type at least 2 characters to search</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Compare String Overlay -->
+    <div id="compare-overlay" class="player-search-overlay">
+        <div class="player-search-modal">
+            <button class="compare-close">&times;</button>
+            <div class="player-search-header">Compare string to roster</div>
+            <textarea id="compare-input" class="player-search-input" placeholder="Paste names like: Zaappi Warrior;Zuppi Warrior;..." style="min-height: 120px;"></textarea>
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+                <button id="compare-cancel" class="panel-button" type="button"><i class="fas fa-times"></i><span>Cancel</span></button>
+                <button id="compare-run" class="panel-button" type="button"><i class="fas fa-clipboard-check"></i><span>Compare</span></button>
             </div>
         </div>
     </div>
@@ -174,6 +240,23 @@
                 <div class="fix-name-actions" style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
                     <button id="fix-name-cancel" class="panel-button" type="button"><i class="fas fa-times"></i><span>Cancel</span></button>
                     <button id="fix-name-save" class="panel-button" type="button"><i class="fas fa-save"></i><span>Save</span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Replace Assignments Overlay -->
+    <div id="replace-assignments-overlay" class="player-search-overlay">
+        <div class="player-search-modal">
+            <button class="replace-assignments-close">&times;</button>
+            <div class="player-search-header">Replace Assignments</div>
+            <div class="fix-name-form">
+                <div class="fix-name-row"><label>Replace name</label><div class="input-wrap"><input id="replace-source-input" type="text" class="player-search-input" placeholder="Enter name to replace (e.g., Joe)" autocomplete="off"><div id="replace-source-suggestions" class="player-dropdown" style="display:none;"></div></div></div>
+                <div class="fix-name-row"><label>Replace with</label><div id="replace-target-display" class="fix-name-value"></div></div>
+                <div class="fix-name-row"><label>Match mode</label><div class="fix-name-value" style="display:flex; align-items:center; gap:8px;"><input id="replace-partial-toggle" type="checkbox" style="width:auto;"> <span style="opacity:0.9;">Use partial match (contains)</span></div></div>
+                <div class="fix-name-actions" style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
+                    <button id="replace-assignments-cancel" class="panel-button" type="button"><i class="fas fa-times"></i><span>Cancel</span></button>
+                    <button id="replace-assignments-run" class="panel-button" type="button"><i class="fas fa-exchange-alt"></i><span>Run</span></button>
                 </div>
             </div>
         </div>

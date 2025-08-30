@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS players (
     discord_id VARCHAR(255),
     character_name VARCHAR(255),
     class VARCHAR(50),
-    PRIMARY KEY (discord_id, character_name)
+    PRIMARY KEY (discord_id, character_name, class)
 );
 
 -- Create roster_overrides table  
