@@ -213,7 +213,7 @@
   }
 
   function buildPanel(panel, user, roster) {
-    const { dungeon, wing, boss, strategy_text, image_url } = panel;
+    const { dungeon, wing, boss, strategy_text, image_url, default_strategy_text } = panel;
     const canManage = !!(user && user.loggedIn && user.hasManagementRole);
     const headerTitle = boss || 'Encounter';
     const entries = Array.isArray(panel.entries) ? panel.entries : [];
@@ -250,7 +250,7 @@
       } else if (bossKeyForIcon.includes('skeram')) {
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756629772/prohpet_skarem_mjxxzt.png';
       } else if (bossKeyForIcon.includes('sartura')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142954/ui-ej-boss-battleguard-sartura_zdcfbh.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756630715/sartura_soipg5.png';
       } else if (bossKeyForIcon.includes('fank')) {
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756630878/fankriss_ju6b9b.png';
       } else if (bossKeyForIcon.includes('visc')) {
@@ -355,6 +355,33 @@
     } else if (panelKeyLower.includes("c'thun") || panelKeyLower.includes('cthun')) {
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756133303/aq40positions_hbtfb6.png';
       defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756133303/aq40positions_hbtfb6.png';
+    } else if (panelKeyLower.includes('twins trash')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+    } else if (panelKeyLower.includes('twin emperors') || (panelKeyLower.includes('twin') && !panelKeyLower.includes('trash'))) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+    } else if (panelKeyLower.includes('skeram') || panelKeyLower.includes('prophet')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+    } else if (panelKeyLower.includes('bug')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+    } else if (panelKeyLower.includes('sartura')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+    } else if (panelKeyLower.includes('fankriss') || panelKeyLower.includes('fank')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+    } else if (panelKeyLower.includes('viscidus') || panelKeyLower.includes('visc')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+    } else if (panelKeyLower.includes('huhuran') || panelKeyLower.includes('huhu')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+    } else if (panelKeyLower.includes('ouro')) {
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
     }
     let displayImageUrl = (image_url && !String(image_url).includes('placehold.co')) ? image_url : defaultMid;
     if (panelKeyLower.includes('faerlina') || panelKeyLower.includes('maex') || panelKeyLower.includes('razu') || panelKeyLower.includes('goth') || panelKeyLower.includes('patch') || panelKeyLower.includes('grobb') || panelKeyLower.includes('gluth') || panelKeyLower.includes('noth') || panelKeyLower.includes('heig') || panelKeyLower.includes('loatheb') || panelKeyLower.includes('thadd') || panelKeyLower.includes('horse') || panelKeyLower.includes('sapph') || panelKeyLower.includes('kel') || panelKeyLower.includes("c'thun") || panelKeyLower.includes('cthun')) {
@@ -364,7 +391,7 @@
     const imgLink = document.createElement('a');
     imgLink.href = (panel.image_url_full && panel.image_url_full.trim().length > 0)
       ? panel.image_url_full
-      : ((panelKeyLower.includes('faerlina') || panelKeyLower.includes('maex') || panelKeyLower.includes('razu') || panelKeyLower.includes('goth') || panelKeyLower.includes('patch') || panelKeyLower.includes('grobb') || panelKeyLower.includes('gluth') || panelKeyLower.includes('noth') || panelKeyLower.includes('heig') || panelKeyLower.includes('loatheb') || panelKeyLower.includes('thadd') || panelKeyLower.includes('horse') || panelKeyLower.includes('sapph') || panelKeyLower.includes('kel')) ? defaultFull : displayImageUrl);
+      : ((panelKeyLower.includes('faerlina') || panelKeyLower.includes('maex') || panelKeyLower.includes('razu') || panelKeyLower.includes('goth') || panelKeyLower.includes('patch') || panelKeyLower.includes('grobb') || panelKeyLower.includes('gluth') || panelKeyLower.includes('noth') || panelKeyLower.includes('heig') || panelKeyLower.includes('loatheb') || panelKeyLower.includes('thadd') || panelKeyLower.includes('horse') || panelKeyLower.includes('sapph') || panelKeyLower.includes('kel') || panelKeyLower.includes('skeram') || panelKeyLower.includes('prophet') || panelKeyLower.includes('bug') || panelKeyLower.includes('sartura') || panelKeyLower.includes('fank') || panelKeyLower.includes('fankriss') || panelKeyLower.includes('visc') || panelKeyLower.includes('viscidus') || panelKeyLower.includes('huhu') || panelKeyLower.includes('huhuran') || panelKeyLower.includes('twin emperors') || panelKeyLower.includes('twins trash') || panelKeyLower.includes('ouro')) ? defaultFull : displayImageUrl);
     imgLink.target = '_blank';
     imgLink.rel = 'noopener noreferrer';
     const img = document.createElement('img');
@@ -605,7 +632,8 @@
     // Removed URL input under the image
 
     // Description (managed by panel Edit/Save)
-    let currentStrategy = strategy_text || '';
+    const fallbackDefault = default_strategy_text || '';
+    let currentStrategy = strategy_text || fallbackDefault || '';
     let currentVideoUrl = panel.video_url || '';
     const desc = document.createElement('div');
     function renderDesc(readOnly) {
@@ -2852,15 +2880,53 @@
         });
 
         saveBtn?.addEventListener('click', async () => {
+        const editedText = (content.querySelector('[data-field="strategy_text"]')?.value) || strategy_text || '';
         const payloadPanel = {
             dungeon,
             wing: wing || '',
             boss,
-            strategy_text: (content.querySelector('[data-field="strategy_text"]')?.value) || strategy_text || '',
+            strategy_text: editedText,
             image_url: (content.querySelector('[data-field="image_url"]')?.value) || image_url || '',
             video_url: (content.querySelector('[data-field="video_url"]')?.value) || '',
             entries: []
           };
+          // Prompt to save per-event vs as new default when changing from default
+          try {
+            const wasDefault = String(strategy_text||'').trim().length === 0 && String(fallbackDefault||'').trim().length > 0;
+            const changed = String(editedText).trim() !== String(strategy_text||'').trim();
+            if (changed && (wasDefault || String(editedText).trim() !== String(fallbackDefault||'').trim())) {
+              const choice = await new Promise((resolve, reject) => {
+                const buttons = [
+                  { text: 'For this event', action: 'confirm', style: 'primary' },
+                  { text: 'Save as new default', action: 'save_default', style: 'success' },
+                  { text: 'Cancel', action: 'cancel', style: 'secondary' }
+                ];
+                window.showCustomModal({
+                  title: 'Save strategy text',
+                  message: 'Do you want to save the updated strategy text for this event, or save as the new default text?',
+                  buttons,
+                  onConfirm: () => resolve('event'),
+                  onCancel: () => reject(new Error('cancelled'))
+                });
+                setTimeout(() => {
+                  try {
+                    const modal = document.querySelector('.confirmation-overlay');
+                    const btns = modal ? Array.from(modal.querySelectorAll('.btn')) : [];
+                    const saveDefaultBtn = btns.find(b => (b.textContent||'').toLowerCase().includes('save as new default'));
+                    if (saveDefaultBtn) saveDefaultBtn.addEventListener('click', () => resolve('default'));
+                  } catch {}
+                }, 0);
+              });
+              if (choice === 'default') {
+                try {
+                  await fetch('/api/assignments/defaults/save', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ dungeon, wing: wing || '', boss, default_strategy_text: editedText })
+                  });
+                } catch {}
+              }
+            }
+          } catch { return; }
           // Persist Four Horsemen grid state if present
           if (isHorsemenPanel && horseGridState) {
             payloadPanel.horsemen_tanks = horseGridState.tanksByRow;
@@ -4116,7 +4182,7 @@
             strategy_text: 'Stack & AOE adds. Pull boss out. Keep boss far away with taunt rotation when pinning. Be ready to LIP and commit.',
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: '',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756630343/sartura_soipg5.png',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756630715/sartura_soipg5.png',
             entries: []
           };
           const fankrissPanel = {
@@ -4679,7 +4745,7 @@
             strategy_text: 'Stack & AOE adds. Pull boss out. Keep boss far away with taunt rotation when pinning. Be ready to LIP and commit.',
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: '',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756128839/121553_h0v8vf.png',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756630715/sartura_soipg5.png',
             entries: []
           };
           container.appendChild(buildPanel(sarturaPanel, user, roster));

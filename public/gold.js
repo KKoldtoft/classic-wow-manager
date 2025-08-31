@@ -340,6 +340,7 @@ class GoldPotManager {
             });
         };
         addFrom(this.datasets.abilitiesData);
+        addFrom(this.datasets.rocketHelmetData);
         addFrom(this.datasets.manaPotionsData);
         addFrom(this.datasets.runesData);
         addFrom(this.datasets.interruptsData);
@@ -618,7 +619,12 @@ class GoldPotManager {
         const playersTooltip = document.getElementById('playersTooltip');
         const totalPointsEl = document.getElementById('totalPoints');
         const totalGoldEl = document.getElementById('totalGold');
-        if (playersCountEl) playersCountEl.textContent = (players?.length||0).toLocaleString();
+        if (playersCountEl) {
+            const count = (players?.length || 0);
+            playersCountEl.textContent = count.toLocaleString();
+            // Highlight in red when not a full 40-player raid
+            playersCountEl.style.color = (count === 40 ? '#f0f0f0' : '#ef4444');
+        }
         if (playersTooltip) playersTooltip.innerHTML = players.map(p=>{
             const key = String(p.character_name||'').trim().toLowerCase();
             const realm = this.nameToRealm.get(key);
@@ -768,6 +774,27 @@ class GoldPotManager {
                 collectFromArray(fights.friendlies);
             }
             console.log('[Gold] Built name→realm map entries:', this.nameToRealm.size);
+
+            // Additionally collect Goblin Rocket Helmet users for +5 points panel
+            try {
+                const users = new Set();
+                const wanted = 'Goblin Rocket Helmet';
+                const friendlies = (fights && Array.isArray(fights.friendlies)) ? fights.friendlies : [];
+                const nameToClass = new Map();
+                (friendlies||[]).forEach(f => { if (f && f.name && f.type) nameToClass.set(String(f.name), String(f.type)); });
+                function walk(node){
+                    if(!node||typeof node!=='object') return;
+                    if(node.combatantInfo && Array.isArray(node.combatantInfo.gear) && (node.name||node.playerName||node.characterName)){
+                        const gear = node.combatantInfo.gear;
+                        if(gear.some(it=>it&&it.name===wanted)){
+                            users.add(String(node.name||node.playerName||node.characterName));
+                        }
+                    }
+                    if(Array.isArray(node)) node.forEach(walk); else Object.values(node).forEach(walk);
+                }
+                walk(wcl);
+                this.datasets.rocketHelmetData = Array.from(users).map(name => ({ character_name: name, character_class: nameToClass.get(name) || 'Unknown', points: 5 }));
+            } catch { this.datasets.rocketHelmetData = []; }
         } catch {}
     }
 
@@ -923,6 +950,7 @@ class GoldPotManager {
 
         // Dataset-based panels
         push('Abilities', sumFrom(this.datasets.abilitiesData));
+        push('RocketHelm', sumFrom(this.datasets.rocketHelmetData));
         push('Mana Potions', sumFrom(this.datasets.manaPotionsData));
         push('Runes', sumFrom(this.datasets.runesData));
         push('Interrupts', sumFrom(this.datasets.interruptsData));
@@ -1225,7 +1253,8 @@ class GoldPotManager {
     shouldIgnorePlayer(name) {
         if (!name) return false;
         const n = String(name).toLowerCase();
-        return /(zzold|totem|ward|trap|dummy|battle\s*chicken)/i.test(n);
+        // Do not exclude names containing 'ward' (e.g., 'Warduro'); only filter clear non-player entities
+        return /(zzold|totem|trap|dummy|battle\s*chicken)/i.test(n);
     }
 
 

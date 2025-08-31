@@ -5225,6 +5225,7 @@ class RaidLogsManager {
             { key:'shamanHealers', label:'Top Shaman Healers' },
             { key:'priestHealers', label:'Top Priest Healers' },
             { key:'druidHealers', label:'Top Druid Healer' },
+            { key:'rocketHelmet', label:'Rocket Helmet' },
             { key:'abilities', label:'Engineering & Holywater' },
             { key:'mana', label:'Major Mana Potions' },
             { key:'runes', label:'Dark/Demonic Runes' },
@@ -5276,6 +5277,7 @@ class RaidLogsManager {
             return m;
         };
         let abilitiesMap = collectMap(this.abilitiesData);
+        let rocketHelmetMap = collectMap(this.rocketHelmetData);
         let manaMap = collectMap(this.manaPotionsData);
         let runesMap = collectMap(this.runesData);
         let interruptsMap = collectMap(this.interruptsData);
@@ -5313,6 +5315,7 @@ class RaidLogsManager {
             buildSnapshotIndex();
             // Replace maps per known panel_key identifiers used by snapshot
             abilitiesMap = mapFromPanel('abilities');
+            // No explicit snapshot panel for Rocket Helmet; keep computed map (zeros if not present)
             manaMap = mapFromPanel('mana_potions');
             runesMap = mapFromPanel('runes');
             interruptsMap = mapFromPanel('interrupts');
@@ -5444,6 +5447,7 @@ class RaidLogsManager {
                     case 'priestHealers': return priestMap.get(key)||0;
                     case 'druidHealers': return druidMap.get(key)||0;
                     case 'abilities': return abilitiesMap.get(key)||0;
+                    case 'rocketHelmet': return rocketHelmetMap.get(key)||0;
                     case 'mana': return manaMap.get(key)||0;
                     case 'runes': return runesMap.get(key)||0;
                     case 'interrupts': return interruptsMap.get(key)||0;
