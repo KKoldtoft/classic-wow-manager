@@ -4380,7 +4380,7 @@
           'fankriss the unyielding','fank',
           'viscidus','visc',
           'princess huhuran','huhu','huhuran',
-          'twin emperors','twin',
+          'twin emperors',
           'twins trash',
           'ouro',
           "c'thun", 'cthun'
