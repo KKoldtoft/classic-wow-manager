@@ -5538,11 +5538,18 @@ class RaidLogsManager {
 
     showNoData(message) {
         document.getElementById('loading-indicator').style.display = 'none';
-        document.getElementById('raid-logs-container').style.display = 'none';
+        // Keep the main container visible so manual-rewards remains usable before logs
+        document.getElementById('raid-logs-container').style.display = 'block';
         document.getElementById('error-display').style.display = 'none';
         
         const noDataMessage = document.getElementById('no-data-message');
         noDataMessage.style.display = 'flex';
+        
+        // Ensure manual rewards section is visible
+        try {
+            const manualSection = document.getElementById('manual-rewards-section');
+            if (manualSection) manualSection.style.display = 'block';
+        } catch {}
         
         // Update the message if provided
         if (message) {
@@ -6565,13 +6572,15 @@ class RaidLogsManager {
             actionsDiv.appendChild(deleteBtn);
         }
         
-        // Mark entries whose names are not in WoW logs (filtered list)
+        // Mark entries whose names are not in WoW logs (only if logs are present)
         try {
-            const nameLower = String(entry.player_name||'').toLowerCase();
-            const isInLogs = (this.logData||[]).some(p => String(p.character_name||'').toLowerCase() === nameLower);
-            if (!isInLogs && !isTemplateEntry) {
-                rankingItem.style.border = '2px solid #ef4444';
-                rankingItem.style.borderRadius = '8px';
+            if (this.logData && Array.isArray(this.logData) && this.logData.length > 0) {
+                const nameLower = String(entry.player_name||'').toLowerCase();
+                const isInLogs = this.logData.some(p => String(p.character_name||'').toLowerCase() === nameLower);
+                if (!isInLogs && !isTemplateEntry) {
+                    rankingItem.style.border = '2px solid #ef4444';
+                    rankingItem.style.borderRadius = '8px';
+                }
             }
         } catch {}
 

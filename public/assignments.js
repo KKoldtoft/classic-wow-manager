@@ -288,7 +288,7 @@
     header.innerHTML = `
       <h2><img src="${bossIconUrl}" alt="Boss" class="boss-icon"> ${headerTitle}</h2>
       <div class="assignments-actions" ${canManage ? '' : 'style="display:none;"'}>
-        <button class="btn-add-defaults" title="Add default assignments" data-panel-key="${dungeon}|${wing || ''}|${boss}"><i class="fas fa-magic"></i> Add default assignments</button>
+        <button class="btn-add-defaults" title="Auto assign" data-panel-key="${dungeon}|${wing || ''}|${boss}"><i class="fas fa-magic"></i> Auto assign</button>
         <button class="btn-edit" title="Edit Panel" data-panel-key="${dungeon}|${wing || ''}|${boss}"><i class="fas fa-edit"></i> Edit</button>
         <button class="btn-save" style="display:none;" title="Save" data-panel-key="${dungeon}|${wing || ''}|${boss}"><i class="fas fa-save"></i> Save</button>
       </div>
@@ -1720,7 +1720,6 @@
         const editBtn = header.querySelector('.btn-edit');
         const saveBtn = header.querySelector('.btn-save');
         const addDefaultsBtn = header.querySelector('.btn-add-defaults');
-        if (addDefaultsBtn) addDefaultsBtn.style.display = 'none'; // only visible in edit mode
 
         // Add controls
         const controls = document.createElement('div');
@@ -1746,6 +1745,13 @@
         // Default templates per boss
         addDefaultsBtn?.addEventListener('click', async () => {
           try {
+            // Confirm and clear existing assignments if present
+            const hasExisting = !!(list && list.children && list.children.length > 0);
+            if (hasExisting) {
+              const sure = window.confirm('This panel already have assignments, are you sure you want to clear then and auto assign new characters?');
+              if (!sure) return;
+              try { list.innerHTML = ''; } catch {}
+            }
             // fetch roster to know party/slot mapping
             const eventId = getActiveEventId();
             const roster = await fetchRoster(eventId);
@@ -2761,8 +2767,7 @@
             }
 
             // Insert at top in order; ensure edit mode for visibility
-            Array.from(list.children).forEach(r => { if (typeof r._setEdit === 'function') r._setEdit(); });
-            controls.style.display = 'flex';
+            // stay in view mode; do not force edit
             // Replace flagged players with next suitable candidates where applicable
             const replaced = ensureToAddReplacements(
               toAdd,
@@ -2785,12 +2790,56 @@
               if (newRow) list.insertBefore(newRow, list.firstElementChild);
             }
             renumberRows();
+            // Auto-save after auto-assign on detailed boss panels
+            try {
+              const payloadPanel = {
+                dungeon,
+                wing: wing || '',
+                boss,
+                strategy_text: currentStrategy || strategy_text || '',
+                image_url: image_url || '',
+                video_url: currentVideoUrl || '',
+                entries: []
+              };
+              if (isHorsemenPanel && horseGridState) {
+                payloadPanel.horsemen_tanks = horseGridState.tanksByRow;
+                Object.entries(horseGridState.tanksByRow).forEach(([row, arr]) => {
+                  const name = (arr||[])[0];
+                  if (!name) return;
+                  payloadPanel.entries.push({ character_name: name, marker_icon_url: null, assignment: `__HGRID__:${row}:1`, accept_status: (horseGridState.acceptByRow && horseGridState.acceptByRow[row]) ? horseGridState.acceptByRow[row] : null });
+                });
+              }
+              if (isLoathebPanel && sporeGridState) {
+                payloadPanel.spore_groups = sporeGridState.groups;
+                Object.entries(sporeGridState.groups).forEach(([group, arr]) => { (arr||[]).forEach((name, idx) => { if (!name) return; payloadPanel.entries.push({ character_name: name, marker_icon_url: null, assignment: `__SPORE__:${group}:${idx+1}`, accept_status: null }); }); });
+              }
+              if (isKelPanel && kelGridState) {
+                payloadPanel.kel_groups = kelGridState.groups;
+                Object.entries(kelGridState.groups).forEach(([group, arr]) => { (arr||[]).forEach((name, idx) => { if (!name) return; payloadPanel.entries.push({ character_name: name, marker_icon_url: null, assignment: `__KEL__:${group}:${idx+1}`, accept_status: null }); }); });
+              }
+              if (isCthunPanel && cthunGridState) {
+                payloadPanel.cthun_positions = cthunGridState.groups;
+                Object.entries(cthunGridState.groups).forEach(([group, arr]) => { (arr||[]).forEach((name, idx) => { if (!name) return; payloadPanel.entries.push({ character_name: name, marker_icon_url: null, assignment: `__CTHUN__:${group}:${idx+1}`, accept_status: null }); }); });
+              }
+              for (const row of Array.from(list.children)) {
+                if (!row.querySelector) continue;
+                const getVal = sel => row.querySelector(sel)?.value || '';
+                const entry = {
+                  character_name: getVal('[data-field="character_name"]') || row.querySelector('.character-name')?.textContent || '',
+                  marker_icon_url: row.dataset.markerUrl || null,
+                  assignment: getVal('[data-field="assignment"]') || row.querySelector('.entry-assignment-text')?.textContent || '',
+                  accept_status: row.dataset.acceptStatus || null
+                };
+                if (entry.character_name) payloadPanel.entries.push(entry);
+              }
+              const eventId = getActiveEventId();
+              await fetch(`/api/assignments/${eventId}/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ panels: [payloadPanel] }) });
+            } catch {}
           } catch {}
         });
 
         editBtn?.addEventListener('click', () => {
-          Array.from(list.children).forEach(r => { if (typeof r._setEdit === 'function') r._setEdit(); });
-          controls.style.display = 'flex';
+          // stay in view mode; do not force edit
           renderDesc(false);
           renderVideoInput(false);
           // show save, hide edit while in edit mode
@@ -2902,10 +2951,10 @@
             renderDesc(true);
             renderVideoInput(true);
             renderVideo();
-            // hide save, show edit
+            // hide save, show edit; keep Auto assign visible
             if (saveBtn) saveBtn.style.display = 'none';
             if (editBtn) editBtn.style.display = 'inline-block';
-            if (addDefaultsBtn) addDefaultsBtn.style.display = 'none';
+            if (addDefaultsBtn) addDefaultsBtn.style.display = 'inline-block';
           if (isHorsemenPanel && typeof panelDiv._renderHorseGrid === 'function') panelDiv._renderHorseGrid(true);
           if (isLoathebPanel && typeof panelDiv._renderSporeGrid === 'function') panelDiv._renderSporeGrid(true);
           if (isKelPanel && typeof panelDiv._renderKelGrid === 'function') panelDiv._renderKelGrid(true);
@@ -2939,7 +2988,7 @@
     header.innerHTML = `
       <h2>${headerImg ? `<img src="${headerImg}" alt="Header" class="boss-icon" style="width:50px;height:50px;border-radius:50%;border:2px solid #fff;">` : ''} ${headerTitle}</h2>
       <div class="assignments-actions" ${canManage ? '' : 'style="display:none;"'}>
-        <button class="btn-add-defaults" title="Add default assignments" data-panel-key="${dungeon}|${wing || ''}|${boss}"><i class="fas fa-magic"></i> Add default assignments</button>
+        <button class="btn-add-defaults" title="Auto assign" data-panel-key="${dungeon}|${wing || ''}|${boss}"><i class="fas fa-magic"></i> Auto assign</button>
         <button class="btn-edit" title="Edit Panel" data-panel-key="${dungeon}|${wing || ''}|${boss}"><i class="fas fa-edit"></i> Edit</button>
         <button class="btn-save" style="display:none;" title="Save" data-panel-key="${dungeon}|${wing || ''}|${boss}"><i class="fas fa-save"></i> Save</button>
       </div>
@@ -3260,7 +3309,6 @@
       const editBtn = header.querySelector('.btn-edit');
       const saveBtn = header.querySelector('.btn-save');
       const addDefaultsBtn = header.querySelector('.btn-add-defaults');
-      if (addDefaultsBtn) addDefaultsBtn.style.display = 'none';
 
       const controls = document.createElement('div');
       controls.style.display = 'flex';
@@ -3295,6 +3343,13 @@
       // Defaults per panel (Tanking / Healing / Buffs / Curses)
       addDefaultsBtn?.addEventListener('click', async () => {
         try {
+          // Confirm and clear existing assignments if present
+          const hasExisting = !!(list && list.children && list.children.length > 0);
+          if (hasExisting) {
+            const sure = window.confirm('This panel already have assignments, are you sure you want to clear then and auto assign new characters?');
+            if (!sure) return;
+            try { list.innerHTML = ''; } catch {}
+          }
           const eventId = getActiveEventId();
           const rosterData = await fetchRoster(eventId);
           const sortByGS = (a,b) => ((Number(a.party_id)||99) - (Number(b.party_id)||99)) || ((Number(a.slot_id)||99) - (Number(b.slot_id)||99));
@@ -3457,6 +3512,33 @@
             renderEntryRow(entry, list.children.length);
           }
           renumberRows();
+          // Auto-save after auto-assign on main panels
+          try {
+            const payloadPanel = {
+              dungeon,
+              wing: wing || '',
+              boss,
+              strategy_text: (currentStrategy || strategy_text || ''),
+              image_url: '',
+              video_url: '',
+              entries: []
+            };
+            for (const row of Array.from(list.children)) {
+              if (!row.querySelector) continue;
+              const getVal = sel => row.querySelector(sel)?.value || '';
+              const isHealing = String(panel.variant || '').toLowerCase() === 'healing';
+              const targetText = isHealing ? (row.querySelector('[data-field="target_character_name"]')?.value || row.dataset.assignment || row.querySelector('.entry-assignment-text')?.textContent || '') : (getVal('[data-field="assignment"]') || row.querySelector('.entry-assignment-text')?.textContent || '');
+              const entry = {
+                character_name: getVal('[data-field="character_name"]') || row.querySelector('.character-name')?.textContent || '',
+                marker_icon_url: row.dataset.markerUrl || null,
+                assignment: targetText,
+                accept_status: row.dataset.acceptStatus || null
+              };
+              if (entry.character_name) payloadPanel.entries.push(entry);
+            }
+            const eventId = getActiveEventId();
+            await fetch(`/api/assignments/${eventId}/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ panels: [payloadPanel] }) });
+          } catch {}
         } catch {}
       });
 
@@ -3510,7 +3592,7 @@
         renderDesc(true);
             if (saveBtn) saveBtn.style.display = 'none';
             if (editBtn) editBtn.style.display = 'inline-block';
-            if (addDefaultsBtn) addDefaultsBtn.style.display = 'none';
+            if (addDefaultsBtn) addDefaultsBtn.style.display = 'inline-block';
         });
     }
 
