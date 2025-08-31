@@ -2833,7 +2833,9 @@
         });
 
         editBtn?.addEventListener('click', () => {
-          // stay in view mode; do not force edit
+          // Switch rows to edit mode so delete X appears
+          Array.from(list.children).forEach(r => { if (typeof r._setEdit === 'function') r._setEdit(); });
+          controls.style.display = 'flex';
           renderDesc(false);
           renderVideoInput(false);
           // show save, hide edit while in edit mode
