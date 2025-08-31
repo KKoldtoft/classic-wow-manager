@@ -3810,35 +3810,43 @@ app.put('/api/players/:discordUserId/fix-name', async (req, res) => {
         client = await pool.connect();
         await client.query('BEGIN');
 
-        // Ensure the player does not already have a character with the same name/class
-        const dupCheck = await client.query(
+        // Gracefully handle rename with composite PK (discord_id, character_name, class)
+        const existsNewRes = await client.query(
             `SELECT 1 FROM players 
              WHERE discord_id = $1 AND LOWER(character_name) = LOWER($2) AND LOWER(class) = LOWER($3)`,
             [discordUserId, newName, characterClass]
         );
-        if (dupCheck.rows.length > 0 && (!oldName || oldName.toLowerCase() !== newName.toLowerCase())) {
-            await client.query('ROLLBACK');
-            return res.status(409).json({ message: `A character named "${newName}" already exists for this class.` });
-        }
+        const existsOldRes = oldName ? await client.query(
+            `SELECT 1 FROM players 
+             WHERE discord_id = $1 AND LOWER(character_name) = LOWER($2) AND LOWER(class) = LOWER($3)`,
+            [discordUserId, oldName, characterClass]
+        ) : { rows: [] };
 
-        // Try to update existing row (based on old name if provided)
-        let updated = false;
-        if (oldName) {
-            const updateResult = await client.query(
+        const existsNew = existsNewRes.rows.length > 0;
+        const existsOld = existsOldRes.rows.length > 0;
+
+        if (existsNew) {
+            // New row already exists for this class/name; delete old if present
+            if (existsOld && oldName && oldName.toLowerCase() !== newName.toLowerCase()) {
+                await client.query(
+                    `DELETE FROM players WHERE discord_id = $1 AND LOWER(character_name) = LOWER($2) AND LOWER(class) = LOWER($3)`,
+                    [discordUserId, oldName, characterClass]
+                );
+            }
+        } else if (existsOld) {
+            // Safe to rename old -> new (no conflict)
+            await client.query(
                 `UPDATE players 
                  SET character_name = $1 
                  WHERE discord_id = $2 AND LOWER(character_name) = LOWER($3) AND LOWER(class) = LOWER($4)`,
                 [newName, discordUserId, oldName, characterClass]
             );
-            updated = updateResult.rowCount > 0;
-        }
-
-        // If no old row was updated, ensure a row exists with the new name (insert if missing)
-        if (!updated) {
+        } else {
+            // Neither exists; ensure a row with the new name exists
             await client.query(
                 `INSERT INTO players (discord_id, character_name, class)
                  VALUES ($1, $2, $3)
-                 ON CONFLICT (discord_id, character_name, class) DO NOTHING`,
+                 ON CONFLICT DO NOTHING`,
                 [discordUserId, newName, characterClass]
             );
         }
