@@ -5192,30 +5192,39 @@ app.post('/api/roster/:eventId/add-character', requireRosterManager, async (req,
         };
         const playerColor = classColors[canonicalClass] || '128,128,128';
 
-        // First, add the character to the main players table
+        // First, add the character to the main players table (do nothing on any conflict)
         await client.query(`
             INSERT INTO players (discord_id, character_name, class) 
             VALUES ($1, $2, $3)
-            ON CONFLICT (discord_id, character_name, class) DO NOTHING`,
+            ON CONFLICT DO NOTHING`,
             [discordId, characterName, characterClass]
         );
 
-        // Then, insert the new character into the roster
-        await client.query(`
-            INSERT INTO roster_overrides 
-            (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, player_color, party_id, slot_id) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            ON CONFLICT (event_id, discord_user_id) 
-            DO UPDATE SET 
-                assigned_char_name = EXCLUDED.assigned_char_name,
-                assigned_char_class = EXCLUDED.assigned_char_class,
-                assigned_char_spec = EXCLUDED.assigned_char_spec,
-                assigned_char_spec_emote = EXCLUDED.assigned_char_spec_emote,
-                player_color = EXCLUDED.player_color,
-                party_id = EXCLUDED.party_id,
-                slot_id = EXCLUDED.slot_id`,
-            [eventId, discordId, characterName, characterName, characterClass, selectedSpec.name, selectedSpec.emote, playerColor, targetPartyId, targetSlotId]
+        // Then, upsert into roster_overrides using explicit existence check
+        const existingOverride = await client.query(
+            'SELECT 1 FROM roster_overrides WHERE event_id = $1 AND discord_user_id = $2',
+            [eventId, discordId]
         );
+        if (existingOverride.rows.length > 0) {
+            await client.query(`
+                UPDATE roster_overrides SET 
+                    original_signup_name = $3,
+                    assigned_char_name = $4,
+                    assigned_char_class = $5,
+                    assigned_char_spec = $6,
+                    assigned_char_spec_emote = $7,
+                    player_color = $8,
+                    party_id = $9,
+                    slot_id = $10
+                WHERE event_id = $1 AND discord_user_id = $2
+            `, [eventId, discordId, characterName, characterName, characterClass, selectedSpec.name, selectedSpec.emote, playerColor, targetPartyId, targetSlotId]);
+        } else {
+            await client.query(`
+                INSERT INTO roster_overrides 
+                (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, player_color, party_id, slot_id) 
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            `, [eventId, discordId, characterName, characterName, characterClass, selectedSpec.name, selectedSpec.emote, playerColor, targetPartyId, targetSlotId]);
+        }
 
         await client.query('COMMIT');
         res.json({ 
@@ -5426,22 +5435,28 @@ app.post('/api/roster/:eventId/add-existing-player', requireRosterManager, async
         };
         const playerColor = classColors[canonicalClass] || '128,128,128';
 
-        // Insert the existing player into the roster (no need to add to players table - they already exist)
-        await client.query(`
-            INSERT INTO roster_overrides 
-            (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, player_color, party_id, slot_id) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            ON CONFLICT (event_id, discord_user_id) 
-            DO UPDATE SET 
-                assigned_char_name = EXCLUDED.assigned_char_name,
-                assigned_char_class = EXCLUDED.assigned_char_class,
-                assigned_char_spec = EXCLUDED.assigned_char_spec,
-                assigned_char_spec_emote = EXCLUDED.assigned_char_spec_emote,
-                player_color = EXCLUDED.player_color,
-                party_id = EXCLUDED.party_id,
-                slot_id = EXCLUDED.slot_id`,
-            [eventId, discordId, characterName, characterName, characterClass, selectedSpec.name, selectedSpec.emote, playerColor, targetPartyId, targetSlotId]
-        );
+        // Insert/update the existing player into the roster using existence check
+        const exists = await client.query('SELECT 1 FROM roster_overrides WHERE event_id = $1 AND discord_user_id = $2', [eventId, discordId]);
+        if (exists.rows.length > 0) {
+            await client.query(`
+                UPDATE roster_overrides SET 
+                    original_signup_name = $3,
+                    assigned_char_name = $4,
+                    assigned_char_class = $5,
+                    assigned_char_spec = $6,
+                    assigned_char_spec_emote = $7,
+                    player_color = $8,
+                    party_id = $9,
+                    slot_id = $10
+                WHERE event_id = $1 AND discord_user_id = $2
+            `, [eventId, discordId, characterName, characterName, characterClass, selectedSpec.name, selectedSpec.emote, playerColor, targetPartyId, targetSlotId]);
+        } else {
+            await client.query(`
+                INSERT INTO roster_overrides 
+                (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, player_color, party_id, slot_id) 
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            `, [eventId, discordId, characterName, characterName, characterClass, selectedSpec.name, selectedSpec.emote, playerColor, targetPartyId, targetSlotId]);
+        }
 
         await client.query('COMMIT');
         res.json({ 
