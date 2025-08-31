@@ -4493,6 +4493,51 @@
           return av - bv;
         });
       }
+      // Hardcode AQ40 order with 100% certainty by composing the container in sequence
+      if (wing === 'aq40') {
+        const normalize = (s) => String(s || '').toLowerCase();
+        const keyOf = (name) => {
+          const n = normalize(name);
+          if (n.includes('prophet') || n.includes('skeram')) return 'skeram';
+          if (n.includes('bug trio') || n === 'bug') return 'bug';
+          if (n.includes('sartura')) return 'sartura';
+          if (n.includes('fankriss')) return 'fank';
+          if (n.includes('viscidus') || n.includes('visc')) return 'visc';
+          if (n.includes('huhuran') || n.includes('huhu')) return 'huhu';
+          if (n.includes('twin emperors')) return 'twin';
+          if (n.includes('twins trash')) return 'twins trash';
+          if (n === 'ouro' || n.includes('ouro')) return 'ouro';
+          if (n.includes("c'thun") || n.includes('cthun')) return 'cthun';
+          return '';
+        };
+        const existingByKey = new Map();
+        (toRender || []).forEach(p => {
+          const k = keyOf(p.boss);
+          if (k && !existingByKey.has(k)) existingByKey.set(k, p);
+        });
+        function defPanel(key) {
+          const base = { dungeon: 'AQ40', wing: 'AQ40', entries: [] };
+          if (key === 'skeram') return { ...base, boss: 'The Prophet Skeram', strategy_text: "Odd groups left. Even groups right. Interupt Arcane Explotions.\n\nIf the real one spawns on your side, run to the middle and kill the clone first.\n\nHelp CC mind controlled players (Sheep, Coil, Blind, Stomp etc.)", image_url: '' };
+          if (key === 'bug') return { ...base, boss: 'Bug Trio', strategy_text: 'First kill Yauj and aoe the adds when she dies.\nThen kill Kri and move away from poision.\nTaunt rotate on Vem and move on with your life.\nTremor + Poison cleansing totems', image_url: '' };
+          if (key === 'sartura') return { ...base, boss: 'Battleguard Sartura', strategy_text: 'Stack & AOE adds. Pull boss out. Keep boss far away with taunt rotation when pinning. Be ready to LIP and commit.', image_url: '' };
+          if (key === 'fank') return { ...base, boss: 'Fankriss the Unyielding', strategy_text: "Tank & Spank. Stand behind boss.\nOhhhh it's a snaaaaake!.", image_url: '' };
+          if (key === 'visc') return { ...base, boss: 'Viscidus', strategy_text: 'Melee = Frost weapons with Frost oil\nMages = Rank 1 frost bolts\nWarlocks = Frost wands\nShamans = Rank 1 frost shocks + Poison Cleansing Totems\nEveryone = Sapper the adds', image_url: '' };
+          if (key === 'huhu') return { ...base, boss: 'Princess Huhuran', strategy_text: 'Casters on max range and spread out. Save cooldowns to 50%. Dispell sleeping people with full helath. Lots of tank and melee chain healing! Keep healing tank when boss dies.', image_url: '' };
+          if (key === 'twin') return { ...base, boss: 'The Twin Emperors', strategy_text: "Casters kill Caster, Melee kill melee. Melee run 1-2 seconds before teleport. Tank must be the only one in melee range  when he teleports in. Don't drag bugs.", image_url: '' };
+          if (key === 'twins trash') return { ...base, boss: 'Twins trash', strategy_text: 'Your main goal is to not die. If 4 Slayers, split them before you go in. Alawys kill Mindslayers last. CoR on mind controlled players.', image_url: '' };
+          if (key === 'ouro') return { ...base, boss: 'Ouro', strategy_text: "Warriors who are high on threat, be ready to shield and stoneshield potion and go behind the boss when u agro. Casters spread on caster position. (don't over agro when tank gets knocked back, right before the sand blast)", image_url: '' };
+          if (key === 'cthun') return { ...base, boss: "C'Thun", strategy_text: "Phase 1: Tank run in first. Rest runs in when tank says go. Mellee stack in 2 on raid markers (see drawing).\nDo not chain. Casters/Healers spread out.\nKill small eyes when they spawn.\n\nPhase 2: Casters, Rogues and hunters kill/stun big eyes. Warriors kill small eyes. Kill tentacles when big eye is dead.", image_url: '' };
+          return base;
+        }
+        const orderKeys = ['skeram','bug','sartura','fank','visc','huhu','twin','twins trash','ouro','cthun'];
+        try { container.innerHTML = ''; } catch {}
+        orderKeys.forEach(k => {
+          const panelObj = existingByKey.get(k) || defPanel(k);
+          container.appendChild(buildPanel(panelObj, user, roster));
+        });
+        return;
+      }
+
       toRender.forEach(p => container.appendChild(buildPanel(p, user, roster)));
 
       // AQ40: ensure Skeram and Bug Trio panels are present even if not saved yet
