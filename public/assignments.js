@@ -248,25 +248,25 @@
       } else if (bossKeyForIcon.includes('noth')) {
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755074097/16590_ezmekl.png';
       } else if (bossKeyForIcon.includes('skeram')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142955/ui-ej-boss-the-prophet-skeram_p0d4x8.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756629772/prohpet_skarem_mjxxzt.png';
       } else if (bossKeyForIcon.includes('sartura')) {
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142954/ui-ej-boss-battleguard-sartura_zdcfbh.png';
       } else if (bossKeyForIcon.includes('fank')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142954/ui-ej-boss-fankriss-the-unyielding_axiavb.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756630878/fankriss_ju6b9b.png';
       } else if (bossKeyForIcon.includes('visc')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142955/ui-ej-boss-viscidus_xbvkio.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631416/viscidus_whpcsx.png';
       } else if (bossKeyForIcon.includes('huhu') || bossKeyForIcon.includes('huhuran')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142955/ui-ej-boss-princess-huhuran_uwiulg.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631406/huhuran_uhgd1p.png';
       } else if (bossKeyForIcon.includes('twins trash')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142954/ui-ej-boss-moam_bclnhs.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631415/twinstrash_xwopji.png';
       } else if (bossKeyForIcon.includes('twin emperors')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142954/ui-ej-boss-twin-emperors_esvjgr.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631414/twins_ufymht.png';
       } else if (bossKeyForIcon.includes('ouro')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142955/ui-ej-boss-ouro_phtjnz.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631413/ouro_vvmd0k.png';
       } else if (bossKeyForIcon.includes("c'thun") || bossKeyForIcon.includes('cthun')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142954/ui-ej-boss-cthun_sfw3oz.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631406/cthun_ke0e7s.png';
       } else if (bossKeyForIcon.includes('bug')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756142955/ui-ej-boss-silithid-royalty_f1becj.png';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756630087/bug_trio_ofvrvg.png';
       } else if (bossKeyForIcon.includes('loatheb')) {
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755080534/Fungal_monster_s0zutr.webp';
       } else if (bossKeyForIcon.includes('patch')) {
@@ -293,14 +293,7 @@
         <button class="btn-save" style="display:none;" title="Save" data-panel-key="${dungeon}|${wing || ''}|${boss}"><i class="fas fa-save"></i> Save</button>
       </div>
     `;
-    // Adjust oversize boss icons per boss
-    try {
-      const bossImgEl = header.querySelector('.boss-icon');
-      if (bossImgEl && (bossKeyForIcon.includes('goth') || bossKeyForIcon.includes('horse'))) {
-        bossImgEl.style.width = '70px';
-        bossImgEl.style.height = '70px';
-      }
-    } catch {}
+    // All boss icons use uniform CSS sizing; no per-boss overrides
 
     const content = document.createElement('div');
     content.className = 'manual-rewards-content';
@@ -348,7 +341,8 @@
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756332738/Loatheb_mid_csdb1j.jpg';
       defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756332739/Loatheb_full_wtnowa.png';
     } else if (panelKeyLower.includes('thadd')) {
-      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756597753/Thaddius-mid2_rz7754.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756597753/Thaddius-full_ndtgba.png';
     } else if (panelKeyLower.includes('horse')) {
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848571/4h_mid_gorjji.jpg';
       defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848571/4h_full_o1bgfc.png';
@@ -2986,7 +2980,7 @@
     if (panel.header_color) header.style.background = panel.header_color;
     const headerImg = panel.header_icon_url || '';
     header.innerHTML = `
-      <h2>${headerImg ? `<img src="${headerImg}" alt="Header" class="boss-icon" style="width:50px;height:50px;border-radius:50%;border:2px solid #fff;">` : ''} ${headerTitle}</h2>
+      <h2>${headerImg ? `<img src="${headerImg}" alt="Header" class="boss-icon">` : ''} ${headerTitle}</h2>
       <div class="assignments-actions" ${canManage ? '' : 'style="display:none;"'}>
         <button class="btn-add-defaults" title="Auto assign" data-panel-key="${dungeon}|${wing || ''}|${boss}"><i class="fas fa-magic"></i> Auto assign</button>
         <button class="btn-edit" title="Edit Panel" data-panel-key="${dungeon}|${wing || ''}|${boss}"><i class="fas fa-edit"></i> Edit</button>
@@ -4110,7 +4104,7 @@
             strategy_text: 'First kill Yauj and aoe the adds when she dies.\nThen kill Kri and move away from poision.\nTaunt rotate on Vem and move on with your life.\nTremor + Poison cleansing totems',
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: 'https://www.youtube.com/embed/YQp60n1VnPk',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756127717/-15511_ebf20d.png',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756630087/bug_trio_ofvrvg.png',
             entries: []
           };
           const sarturaPanel = {
@@ -4120,7 +4114,7 @@
             strategy_text: 'Stack & AOE adds. Pull boss out. Keep boss far away with taunt rotation when pinning. Be ready to LIP and commit.',
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: '',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756128839/121553_h0v8vf.png',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756630343/sartura_soipg5.png',
             entries: []
           };
           const fankrissPanel = {
@@ -4130,7 +4124,7 @@
             strategy_text: "Tank & Spank. Stand behind boss. \nOhhhh it's a snaaaaake!.",
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: 'https://www.youtube.com/embed/Qc1kmG2s0Y8',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756129338/Sand_Reaver_jxmv5b.webp',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756630878/fankriss_ju6b9b.png',
             entries: []
           };
           const viscidusPanel = {
@@ -4140,7 +4134,7 @@
             strategy_text: 'Melee = Frost weapons with Frost oil\nMages = Rank 1 frost bolts\nWarlocks = Frost wands\nShamans = Rank 1 frost shocks + Poison Cleansing Totems\nEveryone = Sapper the adds',
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: 'https://www.youtube.com/embed/2molET26BxM',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756129812/15686_o9r8wn.png',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631416/viscidus_whpcsx.png',
             entries: []
           };
           const huhuranPanel = {
@@ -4150,7 +4144,7 @@
             strategy_text: 'Casters on max range and spread out. Save cooldowns to 50%. Dispell sleeping people with full helath. Lots of tank and melee chain healing! Keep healing tank when boss dies.',
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: 'https://www.youtube.com/embed/MGtX66nxFhg?t=2s',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756130180/121559_smtx9g.png',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631406/huhuran_uhgd1p.png',
             entries: []
           };
           const twinPanel = {
@@ -4160,7 +4154,7 @@
             strategy_text: 'Casters kill Caster, Melee kill melee. Melee run 1-2 seconds before teleport. Tank must be the only one in melee range  when he teleports in. Don\'t drag bugs.',
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: 'https://www.youtube.com/embed/0oIVus5SYbA',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756130839/Twin_Emperors_ojdumc.webp',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631414/twins_ufymht.png',
             entries: []
           };
           const twinsTrashPanel = {
@@ -4170,7 +4164,7 @@
             strategy_text: 'Your main goal is to not die. If 4 Slayers, split them before you go in. Alawys kill Mindslayers last. CoR on mind controlled players.',
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: '',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756131244/2025-08-25_16h13_58_a5f10k.png',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631415/twinstrash_xwopji.png',
             entries: []
           };
           const ouroPanel = {
@@ -4180,7 +4174,7 @@
             strategy_text: 'Warriors who are high on threat, be ready to shield and stoneshield potion and go behind the boss when u agro. Casters spread on caster position. (don\'t over agro when tank gets knocked back, right before the sand blast)',
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: 'https://www.youtube.com/embed/YtqsFMmnRW8',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756132646/ui-ej-boss-ouro_xpigga.png',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631413/ouro_vvmd0k.png',
             entries: []
           };
           const cthunPanel = {
@@ -4190,7 +4184,7 @@
             strategy_text: "Phase 1: Tank run in first. Rest runs in when tank says go. Mellee stack in 2 on raid markers (see drawing).\nDo not chain. Casters/Healers spread out.\nKill small eyes when they spawn.\n\nPhase 2: Casters, Rogues and hunters kill/stun big eyes. Warriors kill small eyes. Kill tentacles when big eye is dead.",
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: 'https://www.youtube.com/embed/2WMzsnJdTjQ',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756132826/C_27thun_e5jjfj.webp',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631406/cthun_ke0e7s.png',
             entries: []
           };
           container.innerHTML = '';
@@ -4534,7 +4528,7 @@
             strategy_text: 'Melee = Frost weapons with Frost oil\nMages = Rank 1 frost bolts\nWarlocks = Frost wands\nShamans = Rank 1 frost shocks + Poison Cleansing Totems\nEveryone = Sapper the adds',
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: 'https://www.youtube.com/embed/2molET26BxM',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756129812/15686_o9r8wn.png',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631416/viscidus_whpcsx.png',
             entries: []
           };
           container.appendChild(buildPanel(viscidusPanel, user, roster));
@@ -4547,7 +4541,7 @@
             strategy_text: 'Casters on max range and spread out. Save cooldowns to 50%. Dispell sleeping people with full helath. Lots of tank and melee chain healing! Keep healing tank when boss dies.',
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: 'https://www.youtube.com/embed/MGtX66nxFhg?t=2s',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756130180/121559_smtx9g.png',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631406/huhuran_uhgd1p.png',
             entries: []
           };
           container.appendChild(buildPanel(huhuranPanel, user, roster));
@@ -4560,7 +4554,7 @@
             strategy_text: 'Casters kill Caster, Melee kill melee. Melee run 1-2 seconds before teleport. Tank must be the only one in melee range  when he teleports in. Don\'t drag bugs.',
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: 'https://www.youtube.com/embed/0oIVus5SYbA',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756130839/Twin_Emperors_ojdumc.webp',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631414/twins_ufymht.png',
             entries: []
           };
           container.appendChild(buildPanel(twinPanel, user, roster));
@@ -4573,7 +4567,7 @@
             strategy_text: 'Your main goal is to not die. If 4 Slayers, split them before you go in. Alawys kill Mindslayers last. CoR on mind controlled players.',
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: '',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756131244/2025-08-25_16h13_58_a5f10k.png',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631415/twinstrash_xwopji.png',
             entries: []
           };
           container.appendChild(buildPanel(twinsTrashPanel, user, roster));
@@ -4586,7 +4580,7 @@
             strategy_text: 'Warriors who are high on threat, be ready to shield and stoneshield potion and go behind the boss when u agro. Casters spread on caster position. (don\'t over agro when tank gets knocked back, right before the sand blast)',
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: 'https://www.youtube.com/embed/YtqsFMmnRW8',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756132646/ui-ej-boss-ouro_xpigga.png',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631413/ouro_vvmd0k.png',
             entries: []
           };
           container.appendChild(buildPanel(ouroPanel, user, roster));
@@ -4599,7 +4593,7 @@
             strategy_text: "Phase 1: Tank run in first. Rest runs in when tank says go. Mellee stack in 2 on raid markers (see drawing).\nDo not chain. Casters/Healers spread out.\nKill small eyes when they spawn.\n\nPhase 2: Casters, Rogues and hunters kill/stun big eyes. Warriors kill small eyes. Kill tentacles when big eye is dead.",
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: 'https://www.youtube.com/embed/2WMzsnJdTjQ',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756132826/C_27thun_e5jjfj.webp',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631406/cthun_ke0e7s.png',
             entries: []
           };
           container.appendChild(buildPanel(cthunPanel, user, roster));
@@ -4612,7 +4606,7 @@
             strategy_text: "Tank & Spank. Stand behind boss. \nOhhhh it's a snaaaaake!.",
             image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
             video_url: 'https://www.youtube.com/embed/Qc1kmG2s0Y8',
-            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756129338/Sand_Reaver_jxmv5b.webp',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756630878/fankriss_ju6b9b.png',
             entries: []
           };
           container.appendChild(buildPanel(fankrissPanel, user, roster));

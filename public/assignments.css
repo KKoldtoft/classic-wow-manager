@@ -21,20 +21,14 @@
 }
 
 .boss-icon {
-  width: 90px;
-  height: 90px;
+  width: 64px;
+  height: 64px;
   position: absolute;
-  left: 7px;
-  top: 46%;
+  left: 29px;
+  top: 51%;
   transform: translateY(-50%);
   object-fit: contain;
   pointer-events: none;
-}
-
-/* Smaller boss icon specifically for Noth panel */
-.manual-rewards-section[data-panel-boss~="noth"] .boss-icon {
-  width: 60px;
-  height: 60px;
 }
 
 .assignments-actions {

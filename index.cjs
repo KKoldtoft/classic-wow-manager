@@ -2481,6 +2481,18 @@ app.get('/api/user/permissions', async (req, res) => {
 app.get('/api/assignments/:eventId', async (req, res) => {
   const { eventId } = req.params;
   try {
+    // Ensure defaults table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS raid_assignment_defaults (
+        dungeon TEXT NOT NULL,
+        wing TEXT NOT NULL,
+        boss TEXT NOT NULL,
+        default_strategy_text TEXT,
+        updated_by TEXT,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        PRIMARY KEY (dungeon, wing, boss)
+      )
+    `);
     // Ensure core Naxx Spider Wing panels exist (Anub'Rekhan, Grand Widow Faerlina)
     const base = await pool.query(
       `SELECT * FROM raid_assignments WHERE event_id = $1 ORDER BY id ASC`,
@@ -2528,6 +2540,12 @@ app.get('/api/assignments/:eventId', async (req, res) => {
        ORDER BY dungeon, wing NULLS FIRST, boss`,
       [eventId]
     );
+    // Load defaults and merge by (dungeon, wing, boss)
+    const defaultsRes = await pool.query(
+      `SELECT dungeon, wing, boss, default_strategy_text FROM raid_assignment_defaults`
+    );
+    const dKey = (d,w,b) => `${String(d||'')}|${String(w||'')}|${String(b||'')}`;
+    const defaultsMap = new Map(defaultsRes.rows.map(r => [dKey(r.dungeon, r.wing, r.boss), r.default_strategy_text || '']));
     const entriesResult = await pool.query(
       `SELECT * FROM raid_assignment_entries WHERE event_id = $1 ORDER BY sort_index, id`,
       [eventId]
@@ -2542,6 +2560,7 @@ app.get('/api/assignments/:eventId', async (req, res) => {
 
     const panels = panelsResult.rows.map(p => ({
       ...p,
+      default_strategy_text: defaultsMap.get(dKey(p.dungeon, p.wing || '', p.boss)) || '',
       entries: entriesResult.rows
         .filter(e => e.dungeon === p.dungeon && (e.wing || '') === (p.wing || '') && e.boss === p.boss)
         .map(e => {
@@ -2822,6 +2841,38 @@ app.post('/api/assignments/:eventId/save', requireRosterManager, express.json(),
     res.status(500).json({ success: false, message: 'Failed to save assignments' });
   } finally {
     client.release();
+  }
+});
+
+// Save or update a default strategy text (manager only)
+app.post('/api/assignments/defaults/save', requireManagement, express.json(), async (req, res) => {
+  try {
+    const { dungeon, wing = '', boss, default_strategy_text } = req.body || {};
+    if (!dungeon || !boss) return res.status(400).json({ success: false, message: 'Invalid payload' });
+    // Ensure table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS raid_assignment_defaults (
+        dungeon TEXT NOT NULL,
+        wing TEXT NOT NULL,
+        boss TEXT NOT NULL,
+        default_strategy_text TEXT,
+        updated_by TEXT,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        PRIMARY KEY (dungeon, wing, boss)
+      )
+    `);
+    const actingUserId = req.user?.id || null;
+    await pool.query(
+      `INSERT INTO raid_assignment_defaults (dungeon, wing, boss, default_strategy_text, updated_by, updated_at)
+       VALUES ($1,$2,$3,$4,$5,NOW())
+       ON CONFLICT (dungeon, wing, boss)
+       DO UPDATE SET default_strategy_text = EXCLUDED.default_strategy_text, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+      [dungeon, wing || '', boss, default_strategy_text || '', actingUserId]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error saving assignment default:', error);
+    res.status(500).json({ success: false, message: 'Failed to save default' });
   }
 });
 
