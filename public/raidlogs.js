@@ -5310,9 +5310,27 @@ class RaidLogsManager {
         let voidMap = collectMap(this.voidDamageData);
         let bigBuyerMap = collectMap(this.bigBuyerData);
 
-        // If snapshot mode is active, override per-panel maps from snapshot entries
-        if (this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length > 0) {
+        // Decide whether to use snapshot maps or computed
+        let useSnapshot = this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length > 0;
+        if (useSnapshot) {
             buildSnapshotIndex();
+            // Sanity check: if snapshot healing is missing any current healer rankers, fall back to computed
+            const hpsPointsChk = this.rewardSettings?.healing?.points_array||[];
+            const hSortedChk = (this.logData||[])
+                .filter(p=>!this.shouldIgnorePlayer(p.character_name))
+                .filter(p=>{
+                    const nm = String(p.character_name||'').trim().toLowerCase();
+                    const pr = this.primaryRoles ? String(this.primaryRoles[nm]||'').toLowerCase() : '';
+                    const detected = String(p.role_detected||'').toLowerCase();
+                    return ((pr==='healer') || (detected==='healer')) && (parseInt(p.healing_amount)||0)>0;
+                })
+                .sort((a,b)=>(parseInt(b.healing_amount)||0)-(parseInt(a.healing_amount)||0))
+                .slice(0, Math.max(0, hpsPointsChk.length));
+            const healSnap = mapFromPanel('healing');
+            for (const p of hSortedChk) { if (!healSnap.has(nameKey(p))) { useSnapshot = false; break; } }
+        }
+
+        if (useSnapshot) {
             // Replace maps per known panel_key identifiers used by snapshot
             abilitiesMap = mapFromPanel('abilities');
             // No explicit snapshot panel for Rocket Helmet; keep computed map (zeros if not present)
@@ -5386,8 +5404,21 @@ class RaidLogsManager {
         } else {
             const dpsPoints = this.rewardSettings?.damage?.points_array||[];
             const hpsPoints = this.rewardSettings?.healing?.points_array||[];
-            const dpsSorted = (this.logData||[]).filter(p=>!this.shouldIgnorePlayer(p.character_name) && (((p.role_detected||'').toLowerCase()==='dps')||((p.role_detected||'').toLowerCase()==='tank')) && (parseInt(p.damage_amount)||0)>0).sort((a,b)=>(parseInt(b.damage_amount)||0)-(parseInt(a.damage_amount)||0));
-            const hSorted = (this.logData||[]).filter(p=>!this.shouldIgnorePlayer(p.character_name) && (String(p.role_detected||'').toLowerCase()==='healer') && (parseInt(p.healing_amount)||0)>0).sort((a,b)=>(parseInt(b.healing_amount)||0)-(parseInt(a.healing_amount)||0));
+            const dpsSorted = (this.logData||[])
+                .filter(p=>!this.shouldIgnorePlayer(p.character_name)
+                    && ((((p.role_detected||'').toLowerCase()==='dps')||((p.role_detected||'').toLowerCase()==='tank')))
+                    && (parseInt(p.damage_amount)||0)>0)
+                .sort((a,b)=>(parseInt(b.damage_amount)||0)-(parseInt(a.damage_amount)||0));
+            const hSorted = (this.logData||[])
+                .filter(p=>!this.shouldIgnorePlayer(p.character_name))
+                .filter(p=>{
+                    const nm = String(p.character_name||'').trim().toLowerCase();
+                    const pr = this.primaryRoles ? String(this.primaryRoles[nm]||'').toLowerCase() : '';
+                    const detected = String(p.role_detected||'').toLowerCase();
+                    const isHealer = (pr==='healer') || (detected==='healer');
+                    return isHealer && (parseInt(p.healing_amount)||0)>0;
+                })
+                .sort((a,b)=>(parseInt(b.healing_amount)||0)-(parseInt(a.healing_amount)||0));
             damageMap = new Map(); dpsSorted.forEach((p,i)=>{ if(i<dpsPoints.length){ const pts=dpsPoints[i]||0; if(pts) damageMap.set(nameKey(p),pts); }});
             healingMap = new Map(); hSorted.forEach((p,i)=>{ if(i<hpsPoints.length){ const pts=hpsPoints[i]||0; if(pts) healingMap.set(nameKey(p),pts); }});
 

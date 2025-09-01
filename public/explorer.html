@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Explorer</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/logs.css">
+</head>
+<body>
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <a href="/" class="logo-link"><img src="/images/1p_logo.png" alt="Logo" class="logo"></a>
+            <nav class="top-nav"></nav>
+        </div>
+        <div class="top-bar-right">
+            <div id="auth-container"></div>
+        </div>
+    </div>
+
+    <div class="content" style="max-width:1200px; margin: 80px auto 40px; padding: 0 16px;">
+        <h1>Event Explorer</h1>
+        <p id="explorer-hint" style="color:#aaa; margin-bottom:12px;">Select a raid first. This page shows saved events summaries for the active event.</p>
+
+        <div id="explorer-controls" style="display:flex; gap:8px; align-items:center; margin-bottom:16px;">
+            <input id="explorer-event-id" type="text" placeholder="Event ID (auto-filled)" style="flex: 0 0 320px;">
+            <button id="explorer-load-btn" class="btn primary">Load summaries</button>
+        </div>
+
+        <section id="raid-summary" style="margin-top: 16px;">
+            <h2 style="margin-bottom:8px;">Raid Summary</h2>
+            <div id="raid-summary-meta" style="font-size:14px; color:#ccc; margin-bottom:8px;"></div>
+            <div id="raid-summary-table" class="table-container"></div>
+        </section>
+
+        <section id="players-summary" style="margin-top: 24px;">
+            <h2 style="margin-bottom:8px;">Players</h2>
+            <div id="players-summary-table" class="table-container"></div>
+        </section>
+    </div>
+
+    <script src="/top-bar.js"></script>
+    <script src="/explorer.js"></script>
+</body>
+    
+</html>
+

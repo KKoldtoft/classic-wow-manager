@@ -2537,6 +2537,514 @@ app.get('/api/wcl/fights', async (req, res) => {
   }
 });
 
+// --- Persist full Warcraft Logs v2 event stream (independent of live) ---
+async function ensureWclIngestTables(client) {
+  // Create tables if they do not exist
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS wcl_event_pages (
+      id BIGSERIAL PRIMARY KEY,
+      event_id TEXT NOT NULL,
+      report_code TEXT NOT NULL,
+      start_time BIGINT NOT NULL,
+      end_time BIGINT NOT NULL,
+      next_cursor BIGINT,
+      events JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(event_id, report_code, start_time, end_time)
+    );
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_wcl_event_pages_event_time ON wcl_event_pages(event_id, start_time);
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_wcl_event_pages_report_time ON wcl_event_pages(report_code, start_time);
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS wcl_report_meta (
+      report_code TEXT PRIMARY KEY,
+      api_url TEXT,
+      actors_by_id JSONB,
+      abilities_by_id JSONB,
+      fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+}
+
+// Ingest all events for an event/report into paged storage
+app.post('/api/wcl/events/ingest', express.json({ limit: '1mb' }), async (req, res) => {
+  let client;
+  try {
+    const eventId = String(req.body && req.body.eventId || '').trim();
+    const reportInput = String(req.body && req.body.report || '').trim();
+    if (!eventId) return res.status(400).json({ ok: false, error: 'Missing eventId' });
+    const reportCode = extractWclReportCode(reportInput);
+    if (!reportCode) return res.status(400).json({ ok: false, error: 'Invalid report parameter' });
+    const apiUrl = getWclApiUrlFromInput(reportInput);
+
+    client = await pool.connect();
+    await ensureWclIngestTables(client);
+
+    // Upsert report meta once
+    try {
+      const meta = await fetchWclReportMeta({ reportCode, apiUrl });
+      await client.query(`
+        INSERT INTO wcl_report_meta (report_code, api_url, actors_by_id, abilities_by_id, fetched_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (report_code)
+        DO UPDATE SET api_url = EXCLUDED.api_url,
+                      actors_by_id = EXCLUDED.actors_by_id,
+                      abilities_by_id = EXCLUDED.abilities_by_id,
+                      fetched_at = NOW();
+      `, [reportCode, apiUrl, JSON.stringify(meta.actorsById || {}), JSON.stringify(meta.abilitiesById || {})]);
+    } catch (_) {}
+
+    // Determine starting cursor: resume from last stored end_time if exists; otherwise from earliest fight start - 5s
+    let startCursor = 0;
+    try {
+      const existing = await client.query(`SELECT COALESCE(MAX(end_time), NULL) AS last_end FROM wcl_event_pages WHERE event_id = $1 AND report_code = $2`, [eventId, reportCode]);
+      const lastEnd = existing && existing.rows && existing.rows[0] && existing.rows[0].last_end;
+      if (lastEnd != null) {
+        startCursor = Math.max(0, Number(lastEnd) || 0);
+      } else {
+        const earliest = await fetchWclEarliestFightStart({ reportCode, apiUrl });
+        if (earliest > 0) startCursor = Math.max(0, earliest - 5000);
+      }
+    } catch (_) {}
+
+    // Determine report cutoff using fights end times
+    let reportMaxEnd = null;
+    try {
+      const fights = await fetchWclFights({ reportCode, apiUrl });
+      for (const f of fights || []) {
+        if (f && typeof f.endTime === 'number') reportMaxEnd = reportMaxEnd == null ? f.endTime : Math.max(reportMaxEnd, f.endTime);
+      }
+    } catch (_) {}
+
+    const windowMs = 30000; // 30s pages
+    let pagesStored = 0;
+    let guard = 0;
+    let lastCursor = startCursor;
+
+    while (guard < 100000) { // hard guard
+      const end = lastCursor + windowMs;
+      let page;
+      try {
+        page = await fetchWclEventsPage({ reportCode, startTime: lastCursor, endTime: end, apiUrl });
+      } catch (err) {
+        return res.status(502).json({ ok: false, error: 'Failed to fetch events page', details: String(err && err.message ? err.message : err) });
+      }
+
+      const nextCursor = page.nextPageTimestamp != null ? page.nextPageTimestamp : end;
+      // Store this page (idempotent by unique key)
+      try {
+        await client.query(`
+          INSERT INTO wcl_event_pages (event_id, report_code, start_time, end_time, next_cursor, events)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (event_id, report_code, start_time, end_time) DO NOTHING;
+        `, [eventId, reportCode, lastCursor, end, nextCursor, JSON.stringify(page.events || [])]);
+        pagesStored += 1;
+      } catch (err) {
+        return res.status(500).json({ ok: false, error: 'Failed to store events page', details: String(err && err.message ? err.message : err) });
+      }
+
+      // Stop if API did not advance
+      if (nextCursor == null || nextCursor <= lastCursor) break;
+      lastCursor = nextCursor;
+
+      // If we have a known report end time, stop after passing it by 60s buffer
+      if (reportMaxEnd != null && lastCursor >= (reportMaxEnd + 60000)) break;
+      guard++;
+
+      // Safety: stop if too many pages in one request
+      if (pagesStored >= 1000) break;
+    }
+
+    res.json({ ok: true, reportCode, pagesStored, startCursor, lastCursor });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Simple ingestion status for visibility
+app.get('/api/wcl/events/ingest-status', async (req, res) => {
+  let client;
+  try {
+    const eventId = String(req.query && req.query.eventId || '').trim();
+    const reportInput = String(req.query && req.query.report || '').trim();
+    if (!eventId) return res.status(400).json({ ok: false, error: 'Missing eventId' });
+    const reportCode = extractWclReportCode(reportInput);
+    if (!reportCode) return res.status(400).json({ ok: false, error: 'Invalid report parameter' });
+    client = await pool.connect();
+    await ensureWclIngestTables(client);
+    const stats = await client.query(`
+      SELECT COUNT(*)::int AS pages,
+             COALESCE(MIN(start_time), 0)::bigint AS min_start,
+             COALESCE(MAX(end_time), 0)::bigint AS max_end
+      FROM wcl_event_pages
+      WHERE event_id = $1 AND report_code = $2
+    `, [eventId, reportCode]);
+    res.json({ ok: true, eventId, reportCode, pages: stats.rows[0].pages, minStart: stats.rows[0].min_start, maxEnd: stats.rows[0].max_end });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// --- Summaries (compute-on-read) ---
+function resolveActorName(actorsById, ev, idField) {
+  if (!ev) return 'unknown';
+  let id = null;
+  if (Object.prototype.hasOwnProperty.call(ev, idField) && ev[idField] != null) {
+    id = ev[idField];
+  } else if (idField === 'sourceID') {
+    id = ev.source && ev.source.id != null ? ev.source.id : null;
+  } else if (idField === 'targetID') {
+    id = ev.target && ev.target.id != null ? ev.target.id : null;
+  }
+  if (id != null && actorsById && actorsById[id] && actorsById[id].name) return actorsById[id].name;
+  const obj = idField === 'sourceID' ? ev.source : ev.target;
+  if (obj && obj.name) return obj.name;
+  return id != null ? `#${id}` : 'unknown';
+}
+
+async function loadReportMetaForEvent(client, eventId) {
+  const row = await client.query(`
+    SELECT report_code FROM wcl_event_pages WHERE event_id = $1 ORDER BY created_at DESC LIMIT 1
+  `, [eventId]);
+  const rc = row.rows[0] && row.rows[0].report_code;
+  if (!rc) return { code: null, actorsById: {}, abilitiesById: {} };
+  const meta = await client.query(`SELECT actors_by_id, abilities_by_id FROM wcl_report_meta WHERE report_code = $1`, [rc]);
+  const m = meta.rows[0] || {};
+  return { code: rc, actorsById: m.actors_by_id || {}, abilitiesById: m.abilities_by_id || {} };
+}
+
+// Per-raid overview
+app.get('/api/wcl/summary/raid/:eventId', async (req, res) => {
+  let client;
+  try {
+    const eventId = req.params.eventId;
+    client = await pool.connect();
+    await ensureWclIngestTables(client);
+    const meta = await loadReportMetaForEvent(client, eventId);
+    const pages = await client.query(`
+      SELECT start_time, end_time, events FROM wcl_event_pages WHERE event_id = $1 ORDER BY start_time ASC
+    `, [eventId]);
+
+    const bySource = {}; // name -> { dmg, heal, deaths }
+    let totalEvents = 0;
+    let minTs = null;
+    let maxTs = null;
+
+    for (const row of pages.rows) {
+      const arr = Array.isArray(row.events) ? row.events : [];
+      totalEvents += arr.length;
+      for (const ev of arr) {
+        const t = ev && typeof ev.timestamp === 'number' ? ev.timestamp : null;
+        if (t != null) {
+          if (minTs == null || t < minTs) minTs = t;
+          if (maxTs == null || t > maxTs) maxTs = t;
+        }
+        const type = (ev && ev.type || '').toLowerCase();
+        if (type === 'damage' || type === 'heal') {
+          const name = resolveActorName(meta.actorsById, ev, 'sourceID');
+          const rec = bySource[name] || { dmg: 0, heal: 0, deaths: 0 };
+          const amt = Number(ev.amount || 0);
+          if (type === 'damage') rec.dmg += amt;
+          if (type === 'heal') rec.heal += amt;
+          bySource[name] = rec;
+        } else if (type === 'death') {
+          const name = resolveActorName(meta.actorsById, ev, 'targetID');
+          const rec = bySource[name] || { dmg: 0, heal: 0, deaths: 0 };
+          rec.deaths += 1;
+          bySource[name] = rec;
+        }
+      }
+    }
+
+    res.json({
+      ok: true,
+      eventId,
+      reportCode: meta.code,
+      timeRange: { min: minTs || 0, max: maxTs || 0 },
+      totalEvents,
+      bySource
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Per-player totals
+app.get('/api/wcl/summary/players/:eventId', async (req, res) => {
+  let client;
+  try {
+    const eventId = req.params.eventId;
+    client = await pool.connect();
+    await ensureWclIngestTables(client);
+    const meta = await loadReportMetaForEvent(client, eventId);
+    const pages = await client.query(`
+      SELECT events FROM wcl_event_pages WHERE event_id = $1 ORDER BY start_time ASC
+    `, [eventId]);
+    const players = {}; // name -> { dmg, heal, deaths }
+    for (const row of pages.rows) {
+      const arr = Array.isArray(row.events) ? row.events : [];
+      for (const ev of arr) {
+        const type = (ev && ev.type || '').toLowerCase();
+        if (type === 'damage' || type === 'heal') {
+          const name = resolveActorName(meta.actorsById, ev, 'sourceID');
+          const rec = players[name] || { dmg: 0, heal: 0, deaths: 0 };
+          const amt = Number(ev.amount || 0);
+          if (type === 'damage') rec.dmg += amt;
+          if (type === 'heal') rec.heal += amt;
+          players[name] = rec;
+        } else if (type === 'death') {
+          const name = resolveActorName(meta.actorsById, ev, 'targetID');
+          const rec = players[name] || { dmg: 0, heal: 0, deaths: 0 };
+          rec.deaths += 1;
+          players[name] = rec;
+        }
+      }
+    }
+    res.json({ ok: true, eventId, reportCode: meta.code, players });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Serve Explorer page at /explorer
+app.get('/explorer', (req, res) => {
+  try {
+    res.sendFile(path.join(__dirname, 'public', 'explorer.html'));
+  } catch (err) {
+    res.status(500).send('Failed to load explorer page');
+  }
+});
+
+// Fights summary from stored events (encounterstart/encounterend)
+app.get('/api/wcl/summary/fights/:eventId', async (req, res) => {
+  let client;
+  try {
+    const eventId = req.params.eventId;
+    client = await pool.connect();
+    await ensureWclIngestTables(client);
+    const meta = await loadReportMetaForEvent(client, eventId);
+    const pages = await client.query(`
+      SELECT events FROM wcl_event_pages WHERE event_id = $1 ORDER BY start_time ASC
+    `, [eventId]);
+    const fights = [];
+    let current = null;
+    for (const row of pages.rows) {
+      const arr = Array.isArray(row.events) ? row.events : [];
+      for (const ev of arr) {
+        const type = (ev && ev.type || '').toLowerCase();
+        if (type === 'encounterstart') {
+          if (current) fights.push(current);
+          current = {
+            name: ev.encounterName || ev.bossName || ev.name || 'Unknown',
+            start: typeof ev.timestamp === 'number' ? ev.timestamp : null,
+            end: null,
+            kill: !!ev.kill
+          };
+        } else if (type === 'encounterend') {
+          if (!current) {
+            current = { name: ev.encounterName || ev.bossName || ev.name || 'Unknown', start: null, end: null, kill: !!ev.kill };
+          }
+          current.end = typeof ev.timestamp === 'number' ? ev.timestamp : current.end;
+          if (typeof ev.kill === 'boolean') current.kill = ev.kill;
+          fights.push(current);
+          current = null;
+        }
+      }
+    }
+    if (current) fights.push(current);
+    const out = fights.map(f => ({
+      name: f.name,
+      start: f.start || 0,
+      end: f.end || f.start || 0,
+      durationMs: (f.end && f.start) ? Math.max(0, f.end - f.start) : 0,
+      kill: !!f.kill
+    }));
+    res.json({ ok: true, eventId, reportCode: meta.code, fights: out });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Deaths summary
+app.get('/api/wcl/summary/deaths/:eventId', async (req, res) => {
+  let client;
+  try {
+    const eventId = req.params.eventId;
+    client = await pool.connect();
+    await ensureWclIngestTables(client);
+    const meta = await loadReportMetaForEvent(client, eventId);
+    const pages = await client.query(`
+      SELECT events FROM wcl_event_pages WHERE event_id = $1 ORDER BY start_time ASC
+    `, [eventId]);
+    const deaths = {};
+    const list = [];
+    for (const row of pages.rows) {
+      const arr = Array.isArray(row.events) ? row.events : [];
+      for (const ev of arr) {
+        const type = (ev && ev.type || '').toLowerCase();
+        if (type !== 'death') continue;
+        const name = resolveActorName(meta.actorsById, ev, 'targetID');
+        deaths[name] = (deaths[name] || 0) + 1;
+        list.push({ name, ts: typeof ev.timestamp === 'number' ? ev.timestamp : null });
+      }
+    }
+    res.json({ ok: true, eventId, reportCode: meta.code, totals: deaths, list });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Abilities totals (damage/heal)
+app.get('/api/wcl/summary/abilities/:eventId', async (req, res) => {
+  let client;
+  try {
+    const eventId = req.params.eventId;
+    const kind = String(req.query && req.query.kind || '').toLowerCase();
+    client = await pool.connect();
+    await ensureWclIngestTables(client);
+    const meta = await loadReportMetaForEvent(client, eventId);
+    const pages = await client.query(`
+      SELECT events FROM wcl_event_pages WHERE event_id = $1 ORDER BY start_time ASC
+    `, [eventId]);
+    const damage = new Map();
+    const healing = new Map();
+    function add(map, abilityName, amount){
+      const key = abilityName || 'Unknown';
+      const rec = map.get(key) || { total: 0, hits: 0 };
+      rec.total += amount;
+      rec.hits += 1;
+      map.set(key, rec);
+    }
+    for (const row of pages.rows) {
+      const arr = Array.isArray(row.events) ? row.events : [];
+      for (const ev of arr) {
+        const type = (ev && ev.type || '').toLowerCase();
+        if (type !== 'damage' && type !== 'heal') continue;
+        if (kind && type !== kind) continue;
+        const abilityId = ev.abilityGameID || (ev.ability && ev.ability.guid);
+        const abilityName = (abilityId != null && meta.abilitiesById && meta.abilitiesById[abilityId] && meta.abilitiesById[abilityId].name) || (ev.ability && ev.ability.name) || `#${abilityId||''}`;
+        const amount = Number(ev.amount || 0);
+        if (type === 'damage') add(damage, abilityName, amount);
+        else add(healing, abilityName, amount);
+      }
+    }
+    function toSortedArray(map){
+      return Array.from(map.entries()).map(([name, rec])=>({ ability: name, total: rec.total, hits: rec.hits }))
+        .sort((a,b)=> b.total - a.total);
+    }
+    res.json({ ok: true, eventId, reportCode: meta.code, damage: toSortedArray(damage), healing: toSortedArray(healing) });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Targets totals (damage to targets, healing on targets)
+app.get('/api/wcl/summary/targets/:eventId', async (req, res) => {
+  let client;
+  try {
+    const eventId = req.params.eventId;
+    const kind = String(req.query && req.query.kind || '').toLowerCase();
+    client = await pool.connect();
+    await ensureWclIngestTables(client);
+    const meta = await loadReportMetaForEvent(client, eventId);
+    const pages = await client.query(`
+      SELECT events FROM wcl_event_pages WHERE event_id = $1 ORDER BY start_time ASC
+    `, [eventId]);
+    const dmgTargets = new Map();
+    const healTargets = new Map();
+    function add(map, name, amount){
+      const key = name || 'Unknown';
+      map.set(key, (map.get(key)||0) + amount);
+    }
+    for (const row of pages.rows) {
+      const arr = Array.isArray(row.events) ? row.events : [];
+      for (const ev of arr) {
+        const type = (ev && ev.type || '').toLowerCase();
+        if (type !== 'damage' && type !== 'heal') continue;
+        if (kind && type !== kind) continue;
+        const tgtName = resolveActorName(meta.actorsById, ev, 'targetID');
+        const amount = Number(ev.amount || 0);
+        if (type === 'damage') add(dmgTargets, tgtName, amount);
+        else add(healTargets, tgtName, amount);
+      }
+    }
+    function toSorted(map){
+      return Array.from(map.entries()).map(([name, total])=>({ name, total }))
+        .sort((a,b)=> b.total - a.total);
+    }
+    res.json({ ok: true, eventId, reportCode: meta.code, damage: toSorted(dmgTargets), healing: toSorted(healTargets) });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// --- RAW DATA DUMPS ---
+// All event pages for an event (raw JSON)
+app.get('/api/wcl/raw/event-pages/:eventId', async (req, res) => {
+  let client;
+  try {
+    const eventId = req.params.eventId;
+    client = await pool.connect();
+    await ensureWclIngestTables(client);
+    const rows = await client.query(`
+      SELECT id, event_id, report_code, start_time, end_time, next_cursor, events, created_at
+      FROM wcl_event_pages
+      WHERE event_id = $1
+      ORDER BY start_time ASC
+    `, [eventId]);
+    res.json({ ok: true, count: rows.rows.length, rows: rows.rows });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Report meta rows referenced by an event (raw JSON)
+app.get('/api/wcl/raw/report-meta/:eventId', async (req, res) => {
+  let client;
+  try {
+    const eventId = req.params.eventId;
+    client = await pool.connect();
+    await ensureWclIngestTables(client);
+    const codesRes = await client.query(`
+      SELECT DISTINCT report_code FROM wcl_event_pages WHERE event_id = $1
+    `, [eventId]);
+    const codes = codesRes.rows.map(r => r.report_code).filter(Boolean);
+    if (codes.length === 0) return res.json({ ok: true, reportCodes: [], meta: [] });
+    const metaRes = await client.query(`
+      SELECT report_code, api_url, actors_by_id, abilities_by_id, fetched_at
+      FROM wcl_report_meta
+      WHERE report_code = ANY($1)
+    `, [codes]);
+    res.json({ ok: true, reportCodes: codes, meta: metaRes.rows });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
+  } finally {
+    if (client) client.release();
+  }
+});
+
 app.get('/api/db-status', (req, res) => {
   res.json({ status: dbConnectionStatus });
 });

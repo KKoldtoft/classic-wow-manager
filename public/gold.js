@@ -321,7 +321,13 @@ class GoldPotManager {
         const healingPoints = this.rewardSettings.healing?.points_array || [];
         const healers = (this.logData || [])
             .filter(p => !this.shouldIgnorePlayer(p.character_name))
-            .filter(p => (p.role_detected || '').toLowerCase() === 'healer' && (parseInt(p.healing_amount) || 0) > 0)
+            .filter(p => {
+                const nameKey = String(p.character_name||'').trim().toLowerCase();
+                const primaryRole = this.primaryRoles ? String(this.primaryRoles[nameKey]||'').toLowerCase() : '';
+                const detected = String(p.role_detected||'').toLowerCase();
+                const isHealer = (primaryRole === 'healer') || (detected === 'healer');
+                return isHealer && (parseInt(p.healing_amount)||0) > 0;
+            })
             .sort((a,b)=>(parseInt(b.healing_amount)||0)-(parseInt(a.healing_amount)||0));
         healers.forEach((p, idx) => {
             const pts = idx < healingPoints.length ? (healingPoints[idx] || 0) : 0;
@@ -503,7 +509,13 @@ class GoldPotManager {
             const healingPoints = this.rewardSettings.healing?.points_array || [];
             const healers = (this.logData || [])
                 .filter(p => !this.shouldIgnorePlayer(p.character_name))
-                .filter(p => (p.role_detected||'').toLowerCase()==='healer' && (parseInt(p.healing_amount)||0)>0)
+                .filter(p => {
+                    const nameKey = String(p.character_name||'').trim().toLowerCase();
+                    const primaryRole = this.primaryRoles ? String(this.primaryRoles[nameKey]||'').toLowerCase() : '';
+                    const detected = String(p.role_detected||'').toLowerCase();
+                    const isHealer = (primaryRole === 'healer') || (detected === 'healer');
+                    return isHealer && (parseInt(p.healing_amount)||0)>0;
+                })
                 .sort((a,b)=>(parseInt(b.healing_amount)||0)-(parseInt(a.healing_amount)||0));
             healers.forEach((p, idx) => { const pts = idx < healingPoints.length ? (healingPoints[idx] || 0) : 0; const v = nameToPlayer.get(String(p.character_name).toLowerCase()); if (v && pts) v.points += pts; });
 

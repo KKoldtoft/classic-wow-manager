@@ -5090,6 +5090,16 @@ class WoWLogsAnalyzer {
                             body: JSON.stringify(payload)
                         });
                     }
+
+                    // NEW: Persist full v2 event stream independently of live feature
+                    try {
+                        const ingestBody = { eventId: eventIdSafe, report: String(logUrl || '').trim() };
+                        await fetch('/api/wcl/events/ingest', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(ingestBody)
+                        }).catch(()=>{});
+                    } catch (_) {}
                 }
             } catch (persistErr) {
                 console.warn('⚠️ [WORKFLOW] Failed to persist event endpoints JSON after Step 1:', persistErr);
