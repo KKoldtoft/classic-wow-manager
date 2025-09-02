@@ -8,6 +8,7 @@ const DiscordStrategy = require('passport-discord').Strategy;
 const { Pool } = require('pg');
 const path = require('path');
 const axios = require('axios');
+const { S3Client, PutObjectCommand, ListObjectsV2Command, GetObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
 const multer = require('multer');
 const fs = require('fs');
 const cloudinary = require('cloudinary').v2;
@@ -2570,6 +2571,180 @@ async function ensureWclIngestTables(client) {
   `);
 }
 
+// --- R2 (S3-compatible) client ---
+const R2_ENABLED = !!process.env.R2_ENDPOINT && !!process.env.R2_ACCESS_KEY_ID && !!process.env.R2_SECRET_ACCESS_KEY && !!process.env.R2_BUCKET;
+let r2Client = null;
+if (R2_ENABLED) {
+  try {
+    r2Client = new S3Client({
+      region: 'auto',
+      endpoint: process.env.R2_ENDPOINT,
+      credentials: {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
+      }
+    });
+  } catch (e) {
+    console.warn('⚠️ Failed to initialize R2 client:', e && e.message ? e.message : e);
+  }
+}
+
+// In-memory export tracker (simple)
+const activeExports = new Map(); // key: `${eventId}::${reportCode}` -> { startedAt, lastCursor, pages, totalEvents, reportMaxEnd, done, error }
+
+function makeExportKey(eventId, reportCode){ return `${eventId}::${reportCode}`; }
+
+// Utility to export all events for a report/event as multiple JSONL page files uploaded to R2
+async function exportFullEventsToR2(params) {
+  const { eventId, reportCode, apiUrl } = params;
+  if (!R2_ENABLED || !r2Client) return { ok: false, error: 'R2 not configured' };
+  // Upload each page as its own JSONL object to avoid large memory usage
+  let startCursor = 0;
+  try {
+    const earliest = await fetchWclEarliestFightStart({ reportCode, apiUrl });
+    if (earliest > 0) startCursor = Math.max(0, earliest - 5000);
+  } catch {}
+  // Also try to find end via fights
+  let reportMaxEnd = null;
+  try {
+    const fights = await fetchWclFights({ reportCode, apiUrl });
+    for (const f of fights || []) {
+      if (f && typeof f.endTime === 'number') reportMaxEnd = reportMaxEnd == null ? f.endTime : Math.max(reportMaxEnd, f.endTime);
+    }
+  } catch {}
+  const windowMs = 30000;
+  let lastCursor = startCursor;
+  let guard = 0;
+  const uploaded = [];
+  let totalEvents = 0;
+  while (guard < 200000) {
+    const end = lastCursor + windowMs;
+    let page;
+    try {
+      page = await fetchWclEventsPage({ reportCode, startTime: lastCursor, endTime: end, apiUrl });
+    } catch (err) {
+      return { ok: false, error: `Failed to fetch events page: ${String(err && err.message ? err.message : err)}` };
+    }
+    const events = Array.isArray(page.events) ? page.events : [];
+    totalEvents += events.length;
+    // Serialize this page as JSONL
+    let bodyStr = '';
+    if (events.length > 0) {
+      try {
+        bodyStr = events.map(e => {
+          try { return JSON.stringify(e); } catch { return ''; }
+        }).filter(Boolean).join('\n');
+      } catch {}
+    }
+    const key = `events/${eventId}/${reportCode}/page_${lastCursor}_${end}.jsonl`;
+    try {
+      await r2Client.send(new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET,
+        Key: key,
+        ContentType: 'application/jsonl',
+        Body: bodyStr
+      }));
+      uploaded.push({ key, start: lastCursor, end, count: events.length });
+    } catch (err) {
+      return { ok: false, error: `Failed to upload page to R2: ${String(err && err.message ? err.message : err)}` };
+    }
+    const nextCursor = page.nextPageTimestamp != null ? page.nextPageTimestamp : end;
+    if (nextCursor == null || nextCursor <= lastCursor) break;
+    lastCursor = nextCursor;
+    if (reportMaxEnd != null && lastCursor >= (reportMaxEnd + 60000)) break;
+    guard++;
+  }
+  // Upload a small manifest to help consumers
+  const manifestKey = `events/${eventId}/${reportCode}/manifest.json`;
+  const manifest = {
+    eventId,
+    reportCode,
+    totalEvents,
+    startCursor,
+    lastCursor,
+    reportMaxEnd,
+    windowMs,
+    uploaded
+  };
+  try {
+    await r2Client.send(new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET,
+      Key: manifestKey,
+      ContentType: 'application/json',
+      Body: JSON.stringify(manifest)
+    }));
+  } catch {}
+  return { ok: true, manifestKey, pages: uploaded.length, totalEvents };
+}
+
+// Background export with progress updates
+async function exportFullEventsToR2Background(eventId, reportCode, apiUrl){
+  const key = makeExportKey(eventId, reportCode);
+  const state = { startedAt: Date.now(), lastCursor: 0, pages: 0, totalEvents: 0, reportMaxEnd: null, done: false, error: null };
+  activeExports.set(key, state);
+  try {
+    // Determine start and end
+    let startCursor = 0;
+    try {
+      const earliest = await fetchWclEarliestFightStart({ reportCode, apiUrl });
+      if (earliest > 0) startCursor = Math.max(0, earliest - 5000);
+    } catch {}
+    let reportMaxEnd = null;
+    try {
+      const fights = await fetchWclFights({ reportCode, apiUrl });
+      for (const f of fights || []) {
+        if (f && typeof f.endTime === 'number') reportMaxEnd = reportMaxEnd == null ? f.endTime : Math.max(reportMaxEnd, f.endTime);
+      }
+    } catch {}
+    state.reportMaxEnd = reportMaxEnd;
+
+    const windowMs = 30000;
+    let lastCursor = startCursor;
+    let guard = 0;
+    while (guard < 200000) {
+      const end = lastCursor + windowMs;
+      let page;
+      try {
+        page = await fetchWclEventsPage({ reportCode, startTime: lastCursor, endTime: end, apiUrl });
+      } catch (err) {
+        state.error = `Failed to fetch events page: ${String(err && err.message ? err.message : err)}`;
+        break;
+      }
+      const events = Array.isArray(page.events) ? page.events : [];
+      state.totalEvents += events.length;
+      // Serialize and upload page
+      let bodyStr = '';
+      if (events.length > 0) {
+        try { bodyStr = events.map(e => { try { return JSON.stringify(e); } catch { return ''; } }).filter(Boolean).join('\n'); } catch {}
+      }
+      const objKey = `events/${eventId}/${reportCode}/page_${lastCursor}_${end}.jsonl`;
+      try {
+        await r2Client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET, Key: objKey, ContentType: 'application/jsonl', Body: bodyStr }));
+        state.pages += 1;
+      } catch (err) {
+        state.error = `Failed to upload page to R2: ${String(err && err.message ? err.message : err)}`;
+        break;
+      }
+      const nextCursor = page.nextPageTimestamp != null ? page.nextPageTimestamp : end;
+      state.lastCursor = nextCursor;
+      if (nextCursor == null || nextCursor <= lastCursor) break;
+      lastCursor = nextCursor;
+      if (reportMaxEnd != null && lastCursor >= (reportMaxEnd + 60000)) break;
+      guard++;
+    }
+    // Write manifest
+    try {
+      const manifestKey = `events/${eventId}/${reportCode}/manifest.json`;
+      await r2Client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET, Key: manifestKey, ContentType: 'application/json', Body: JSON.stringify({ eventId, reportCode, totalEvents: state.totalEvents, startCursor, lastCursor: state.lastCursor, reportMaxEnd, windowMs, uploadedPages: state.pages }) }));
+    } catch {}
+    state.done = !state.error;
+  } catch (err) {
+    state.error = String(err && err.message ? err.message : err);
+  } finally {
+    activeExports.set(key, state);
+  }
+}
+
 // Ingest all events for an event/report into paged storage
 app.post('/api/wcl/events/ingest', express.json({ limit: '1mb' }), async (req, res) => {
   let client;
@@ -2690,6 +2865,75 @@ app.get('/api/wcl/events/ingest-status', async (req, res) => {
     res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
   } finally {
     if (client) client.release();
+  }
+});
+
+// Step 0: Export full combat logs to R2 as a single JSONL file
+app.post('/api/wcl/events/export-r2', express.json({ limit: '1mb' }), async (req, res) => {
+  try {
+    if (!R2_ENABLED) return res.status(400).json({ ok: false, error: 'R2 not configured' });
+    const eventId = String(req.body && req.body.eventId || '').trim();
+    const reportInput = String(req.body && req.body.report || '').trim();
+    if (!eventId) return res.status(400).json({ ok: false, error: 'Missing eventId' });
+    const reportCode = extractWclReportCode(reportInput);
+    if (!reportCode) return res.status(400).json({ ok: false, error: 'Invalid report parameter' });
+    const apiUrl = getWclApiUrlFromInput(reportInput);
+    const result = await exportFullEventsToR2({ eventId, reportCode, apiUrl });
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
+  }
+});
+
+// Start background export (returns immediately)
+app.post('/api/wcl/events/export-r2/start', express.json({ limit: '1mb' }), async (req, res) => {
+  try {
+    if (!R2_ENABLED) return res.status(400).json({ ok: false, error: 'R2 not configured' });
+    const eventId = String(req.body && req.body.eventId || '').trim();
+    const reportInput = String(req.body && req.body.report || '').trim();
+    if (!eventId) return res.status(400).json({ ok: false, error: 'Missing eventId' });
+    const reportCode = extractWclReportCode(reportInput);
+    if (!reportCode) return res.status(400).json({ ok: false, error: 'Invalid report parameter' });
+    const apiUrl = getWclApiUrlFromInput(reportInput);
+    const jobKey = makeExportKey(eventId, reportCode);
+    // If running, return existing
+    const existing = activeExports.get(jobKey);
+    if (!existing || existing.done || existing.error) {
+      // Fire and forget
+      exportFullEventsToR2Background(eventId, reportCode, apiUrl).catch(()=>{});
+    }
+    return res.json({ ok: true, jobKey });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
+  }
+});
+
+// Background export status
+app.get('/api/wcl/events/export-r2/status', async (req, res) => {
+  try {
+    if (!R2_ENABLED) return res.status(400).json({ ok: false, error: 'R2 not configured' });
+    const eventId = String(req.query && req.query.eventId || '').trim();
+    const reportInput = String(req.query && req.query.report || '').trim();
+    if (!eventId) return res.status(400).json({ ok: false, error: 'Missing eventId' });
+    const reportCode = extractWclReportCode(reportInput);
+    if (!reportCode) return res.status(400).json({ ok: false, error: 'Invalid report parameter' });
+    const jobKey = makeExportKey(eventId, reportCode);
+    const st = activeExports.get(jobKey) || null;
+    // Also try to read manifest if present for final confirmation
+    let manifest = null;
+    try {
+      const manifestKey = `events/${eventId}/${reportCode}/manifest.json`;
+      await r2Client.send(new HeadObjectCommand({ Bucket: process.env.R2_BUCKET, Key: manifestKey }));
+      manifest = { key: manifestKey };
+    } catch (_) {}
+    let percent = null;
+    if (st && st.reportMaxEnd != null && st.lastCursor != null) {
+      const range = Math.max(1, st.reportMaxEnd);
+      percent = Math.min(100, Math.max(0, Math.round((st.lastCursor / range) * 100)));
+    }
+    return res.json({ ok: true, jobKey, state: st, manifest, percent });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
   }
 });
 
@@ -5884,10 +6128,10 @@ app.post('/api/roster/:eventId/add-character', requireRosterManager, async (req,
                 WHERE event_id = $1 AND discord_user_id = $2
             `, [eventId, discordId, characterName, characterName, characterClass, selectedSpec.name, selectedSpec.emote, playerColor, targetPartyId, targetSlotId]);
         } else {
-            await client.query(`
-                INSERT INTO roster_overrides 
-                (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, player_color, party_id, slot_id) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        await client.query(`
+            INSERT INTO roster_overrides 
+            (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, player_color, party_id, slot_id) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             `, [eventId, discordId, characterName, characterName, characterClass, selectedSpec.name, selectedSpec.emote, playerColor, targetPartyId, targetSlotId]);
         }
 
@@ -6116,10 +6360,10 @@ app.post('/api/roster/:eventId/add-existing-player', requireRosterManager, async
                 WHERE event_id = $1 AND discord_user_id = $2
             `, [eventId, discordId, characterName, characterName, characterClass, selectedSpec.name, selectedSpec.emote, playerColor, targetPartyId, targetSlotId]);
         } else {
-            await client.query(`
-                INSERT INTO roster_overrides 
-                (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, player_color, party_id, slot_id) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        await client.query(`
+            INSERT INTO roster_overrides 
+            (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, assigned_char_spec, assigned_char_spec_emote, player_color, party_id, slot_id) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             `, [eventId, discordId, characterName, characterName, characterClass, selectedSpec.name, selectedSpec.emote, playerColor, targetPartyId, targetSlotId]);
         }
 
