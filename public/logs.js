@@ -21,12 +21,16 @@ class WoWLogsAnalyzer {
             const isLogsPage = parts.includes('logs');
             const activeEventId = localStorage.getItem('activeEventSession');
             if (!isEventScoped && isLogsPage && activeEventId) {
-                try {
-                    history.replaceState({}, '', `/event/${activeEventId}/logs`);
-                    if (typeof updateRaidBar === 'function') setTimeout(() => updateRaidBar(), 0);
-                } catch (_) {
-                    window.location.replace(`/event/${activeEventId}/logs`);
-                    return;
+                const triedKey = `logs_norm_${activeEventId}`;
+                if (!sessionStorage.getItem(triedKey)) {
+                    sessionStorage.setItem(triedKey, '1');
+                    try {
+                        history.replaceState({}, '', `/event/${activeEventId}/logs`);
+                        if (typeof updateRaidBar === 'function') setTimeout(() => updateRaidBar(), 0);
+                    } catch (_) {
+                        window.location.replace(`/event/${activeEventId}/logs`);
+                        return;
+                    }
                 }
             }
             // If URL has an event ID, set it into localStorage to become active
@@ -1142,49 +1146,7 @@ class WoWLogsAnalyzer {
             if (el) el.addEventListener('click', handler);
         };
 
-        // Step 0: Export to R2 (background) with progress polling
-        safeAdd('runStep0Btn', async () => {
-            ensureWorkflowState();
-            const eventId = getEventId();
-            const logUrl = getLogUrl();
-            if (!eventId) { alert('No active event selected.'); return; }
-            if (!logUrl) { alert('Enter a Warcraft Logs report URL or code.'); return; }
-            this.updateWorkflowStep(0, 'active', 'Exporting to R2 (background)...', '🔄');
-            // Kick off background export
-            try {
-                await fetch('/api/wcl/events/export-r2/start', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ eventId, report: logUrl })
-                });
-            } catch {}
-            // Poll status
-            const statusLbl = document.getElementById('step0Status');
-            const bar = document.getElementById('step0Bar');
-            let tries = 0;
-            const tick = async () => {
-                try {
-                    const r = await fetch(`/api/wcl/events/export-r2/status?eventId=${encodeURIComponent(eventId)}&report=${encodeURIComponent(logUrl)}`);
-                    if (!r.ok) throw new Error('status failed');
-                    const s = await r.json();
-                    const pct = typeof s.percent === 'number' ? s.percent : null;
-                    if (pct != null && bar) bar.style.width = `${pct}%`;
-                    if (statusLbl) {
-                        const pages = s?.state?.pages || 0;
-                        const total = s?.state?.totalEvents || 0;
-                        statusLbl.textContent = pct!=null ? `Progress: ${pct}% • Pages: ${pages} • Events: ${total}` : `Pages: ${pages} • Events: ${total}`;
-                    }
-                    if (s?.manifest || (s?.state && s.state.done)) {
-                        this.updateWorkflowStep(0, 'completed', 'Export complete', '✅');
-                        if (bar) bar.style.width = '100%';
-                        return; // stop polling
-                    }
-                } catch {}
-                tries++;
-                if (tries < 600) setTimeout(tick, 3000); // poll up to ~30 minutes
-                else this.updateWorkflowStep(0, 'error', 'Export timed out. You can resume by running Step 0 again.', '❌');
-            };
-            tick();
-        });
+        // Step 0 removed: legacy R2 export disabled, original 10-step flow restored
 
         safeAdd('runStep1Btn', async () => {
             ensureWorkflowState();
@@ -5115,17 +5077,6 @@ class WoWLogsAnalyzer {
                 mainLogInput.value = logUrl;
             }
 
-            // If Step 0 should precede Step 1 and we haven't completed it, warn (non-blocking)
-            try {
-                const eventIdSafe = String(this?.workflowState?.eventId || this.getActiveEventSession() || '').trim();
-                if (eventIdSafe) {
-                    const st = await fetch(`/api/wcl/events/export-r2/status?eventId=${encodeURIComponent(eventIdSafe)}&report=${encodeURIComponent(logUrl)}`).then(r=>r.ok?r.json():null).catch(()=>null);
-                    if (!st || (!st.manifest && !(st.state && st.state.done))) {
-                        console.warn('Step 0 export not completed yet; continuing Step 1 anyway.');
-                    }
-                }
-            } catch {}
-
             // Run the existing analyzeLog function (which now includes automatch)
             await this.analyzeLog();
             
@@ -5139,17 +5090,19 @@ class WoWLogsAnalyzer {
                         fightsJson: this.lastFightsData || null
                     };
                     if (payload.wclSummaryJson || payload.eventRolesJson || payload.fightsJson) {
-                        await fetch(`/api/event-endpoints-json/${encodeURIComponent(eventIdSafe)}`, {
+                        // Fire-and-forget: do not block Step 1 completion
+                        fetch(`/api/event-endpoints-json/${encodeURIComponent(eventIdSafe)}`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(payload)
-                        });
+                        }).catch(() => {});
                     }
 
                     // NEW: Persist full v2 event stream independently of live feature
                     try {
                         const ingestBody = { eventId: eventIdSafe, report: String(logUrl || '').trim() };
-                        await fetch('/api/wcl/events/ingest', {
+                        // Fire-and-forget: do not block Step 1 completion
+                        fetch('/api/wcl/events/ingest', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(ingestBody)

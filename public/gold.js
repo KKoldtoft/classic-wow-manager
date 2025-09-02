@@ -62,14 +62,18 @@ class GoldPotManager {
             // Get the active event session ID
             this.currentEventId = eventIdFromUrl || localStorage.getItem('activeEventSession');
 
-            // Normalize URL: if we have an active event but current URL is not event-scoped, redirect
+            // Normalize URL: if we have an active event but current URL is not event-scoped, guard against loops
             try {
                 const parts = window.location.pathname.split('/').filter(Boolean);
                 const isEventScoped = parts.includes('event') && parts[parts.indexOf('event') + 1];
                 const isGoldPage = parts.includes('gold');
+                const triedKey = `gold_norm_${this.currentEventId}`;
                 if (!isEventScoped && isGoldPage && this.currentEventId) {
-                    window.location.replace(`/event/${this.currentEventId}/gold`);
-                    return;
+                    if (!sessionStorage.getItem(triedKey)) {
+                        sessionStorage.setItem(triedKey, '1');
+                        window.location.replace(`/event/${this.currentEventId}/gold`);
+                        return;
+                    }
                 }
             } catch {}
 
@@ -241,6 +245,7 @@ class GoldPotManager {
             [`/api/abilities-data/${id}`, 'abilitiesData'],
             [`/api/mana-potions-data/${id}`, 'manaPotionsData'],
             [`/api/runes-data/${id}`, 'runesData'],
+            [`/api/windfury-data/${id}`, 'windfuryData'],
             [`/api/interrupts-data/${id}`, 'interruptsData'],
             [`/api/disarms-data/${id}`, 'disarmsData'],
             [`/api/sunder-data/${id}`, 'sunderData'],
@@ -346,6 +351,7 @@ class GoldPotManager {
             });
         };
         addFrom(this.datasets.abilitiesData);
+        addFrom(this.datasets.windfuryData);
         addFrom(this.datasets.rocketHelmetData);
         addFrom(this.datasets.manaPotionsData);
         addFrom(this.datasets.runesData);
@@ -962,8 +968,9 @@ class GoldPotManager {
 
         // Dataset-based panels
         push('Abilities', sumFrom(this.datasets.abilitiesData));
+        push('Totems', sumFrom(this.datasets.windfuryData));
         push('RocketHelm', sumFrom(this.datasets.rocketHelmetData));
-        push('Mana Potions', sumFrom(this.datasets.manaPotionsData));
+        push('Major Mana Potions', sumFrom(this.datasets.manaPotionsData));
         push('Runes', sumFrom(this.datasets.runesData));
         push('Interrupts', sumFrom(this.datasets.interruptsData));
         push('Disarms', sumFrom(this.datasets.disarmsData));

@@ -14,6 +14,7 @@ const fs = require('fs');
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const WebSocket = require('ws');
+const zlib = require('zlib');
 
 // --- Warcraft Logs API (v2 GraphQL) Configuration ---
 const WCL_TOKEN_URL = 'https://www.warcraftlogs.com/oauth/token';
@@ -2579,6 +2580,7 @@ if (R2_ENABLED) {
     r2Client = new S3Client({
       region: 'auto',
       endpoint: process.env.R2_ENDPOINT,
+      forcePathStyle: true,
       credentials: {
         accessKeyId: process.env.R2_ACCESS_KEY_ID,
         secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
@@ -2586,6 +2588,44 @@ if (R2_ENABLED) {
     });
   } catch (e) {
     console.warn('⚠️ Failed to initialize R2 client:', e && e.message ? e.message : e);
+  }
+}
+
+async function ensureEventFolderMarkers(eventId, reportCode) {
+  if (!R2_ENABLED || !r2Client) return;
+  const payload = JSON.stringify({ eventId, reportCode, createdAt: new Date().toISOString(), note: 'folder visibility marker' });
+  try {
+    await putObjectWithTimeout({ Bucket: process.env.R2_BUCKET, Key: `${eventId}/_marker.json`, ContentType: 'application/json', Body: payload });
+  } catch (_) {}
+  try {
+    await putObjectWithTimeout({ Bucket: process.env.R2_BUCKET, Key: `events/${eventId}/_marker.json`, ContentType: 'application/json', Body: payload });
+  } catch (_) {}
+  try {
+    if (reportCode) {
+      await putObjectWithTimeout({ Bucket: process.env.R2_BUCKET, Key: `events/${eventId}/${reportCode}/_marker.json`, ContentType: 'application/json', Body: payload });
+    }
+  } catch (_) {}
+}
+
+// Utility: PutObject with timeout and one retry
+async function putObjectWithTimeout(params, timeoutMs) {
+  const cmd = new PutObjectCommand(params);
+  const ms = Math.max(5000, Number(timeoutMs || process.env.R2_UPLOAD_TIMEOUT || 60000));
+  async function once() {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    try {
+      return await r2Client.send(cmd, { abortSignal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  try {
+    return await once();
+  } catch (err) {
+    // Retry once after brief delay
+    await new Promise(r => setTimeout(r, 500));
+    return await once();
   }
 }
 
@@ -2598,18 +2638,24 @@ function makeExportKey(eventId, reportCode){ return `${eventId}::${reportCode}`;
 async function exportFullEventsToR2(params) {
   const { eventId, reportCode, apiUrl } = params;
   if (!R2_ENABLED || !r2Client) return { ok: false, error: 'R2 not configured' };
+  try { await ensureEventFolderMarkers(eventId, reportCode); } catch (_) {}
   // Upload each page as its own JSONL object to avoid large memory usage
   let startCursor = 0;
-  try {
-    const earliest = await fetchWclEarliestFightStart({ reportCode, apiUrl });
-    if (earliest > 0) startCursor = Math.max(0, earliest - 5000);
-  } catch {}
-  // Also try to find end via fights
   let reportMaxEnd = null;
   try {
-    const fights = await fetchWclFights({ reportCode, apiUrl });
-    for (const f of fights || []) {
-      if (f && typeof f.endTime === 'number') reportMaxEnd = reportMaxEnd == null ? f.endTime : Math.max(reportMaxEnd, f.endTime);
+    const [earliestRes, fightsRes] = await Promise.allSettled([
+      fetchWclEarliestFightStart({ reportCode, apiUrl }),
+      fetchWclFights({ reportCode, apiUrl })
+    ]);
+    if (earliestRes.status === 'fulfilled') {
+      const earliest = earliestRes.value;
+      if (earliest > 0) startCursor = Math.max(0, earliest - 5000);
+    }
+    if (fightsRes.status === 'fulfilled') {
+      const fights = fightsRes.value || [];
+      for (const f of fights) {
+        if (f && typeof f.endTime === 'number') reportMaxEnd = reportMaxEnd == null ? f.endTime : Math.max(reportMaxEnd, f.endTime);
+      }
     }
   } catch {}
   const windowMs = 30000;
@@ -2628,25 +2674,25 @@ async function exportFullEventsToR2(params) {
     const events = Array.isArray(page.events) ? page.events : [];
     totalEvents += events.length;
     // Serialize this page as JSONL
-    let bodyStr = '';
     if (events.length > 0) {
+      let bodyStr = '';
       try {
-        bodyStr = events.map(e => {
-          try { return JSON.stringify(e); } catch { return ''; }
-        }).filter(Boolean).join('\n');
+        bodyStr = events.map(e => { try { return JSON.stringify(e); } catch { return ''; } }).filter(Boolean).join('\n');
       } catch {}
-    }
-    const key = `events/${eventId}/${reportCode}/page_${lastCursor}_${end}.jsonl`;
-    try {
-      await r2Client.send(new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET,
-        Key: key,
-        ContentType: 'application/jsonl',
-        Body: bodyStr
-      }));
-      uploaded.push({ key, start: lastCursor, end, count: events.length });
-    } catch (err) {
-      return { ok: false, error: `Failed to upload page to R2: ${String(err && err.message ? err.message : err)}` };
+      const key = `events/${eventId}/${reportCode}/page_${lastCursor}_${end}.jsonl`;
+      const gzBody = zlib.gzipSync(Buffer.from(bodyStr));
+      try {
+        await r2Client.send(new PutObjectCommand({
+          Bucket: process.env.R2_BUCKET,
+          Key: key,
+          ContentType: 'application/jsonl',
+          ContentEncoding: 'gzip',
+          Body: gzBody
+        }));
+        uploaded.push({ key, start: lastCursor, end, count: events.length });
+      } catch (err) {
+        return { ok: false, error: `Failed to upload page to R2: ${String(err && err.message ? err.message : err)}` };
+      }
     }
     const nextCursor = page.nextPageTimestamp != null ? page.nextPageTimestamp : end;
     if (nextCursor == null || nextCursor <= lastCursor) break;
@@ -2680,62 +2726,222 @@ async function exportFullEventsToR2(params) {
 // Background export with progress updates
 async function exportFullEventsToR2Background(eventId, reportCode, apiUrl){
   const key = makeExportKey(eventId, reportCode);
-  const state = { startedAt: Date.now(), lastCursor: 0, pages: 0, totalEvents: 0, reportMaxEnd: null, done: false, error: null };
+  const state = { startedAt: Date.now(), lastCursor: 0, pages: 0, totalEvents: 0, reportMaxEnd: null, done: false, error: null, workers: [], processedMs: 0, totalDurationMs: null };
   activeExports.set(key, state);
   try {
-    // Determine start and end
+    try { await ensureEventFolderMarkers(eventId, reportCode); } catch (_) {}
+    // Determine start and end (parallelized)
     let startCursor = 0;
-    try {
-      const earliest = await fetchWclEarliestFightStart({ reportCode, apiUrl });
-      if (earliest > 0) startCursor = Math.max(0, earliest - 5000);
-    } catch {}
     let reportMaxEnd = null;
     try {
-      const fights = await fetchWclFights({ reportCode, apiUrl });
-      for (const f of fights || []) {
-        if (f && typeof f.endTime === 'number') reportMaxEnd = reportMaxEnd == null ? f.endTime : Math.max(reportMaxEnd, f.endTime);
+      const [earliestRes, fightsRes] = await Promise.allSettled([
+        fetchWclEarliestFightStart({ reportCode, apiUrl }),
+        fetchWclFights({ reportCode, apiUrl })
+      ]);
+      if (earliestRes.status === 'fulfilled') {
+        const earliest = earliestRes.value;
+        if (earliest > 0) startCursor = Math.max(0, earliest - 5000);
+      }
+      if (fightsRes.status === 'fulfilled') {
+        const fights = fightsRes.value || [];
+        for (const f of fights) {
+          if (f && typeof f.endTime === 'number') reportMaxEnd = reportMaxEnd == null ? f.endTime : Math.max(reportMaxEnd, f.endTime);
+        }
       }
     } catch {}
     state.reportMaxEnd = reportMaxEnd;
 
-    const windowMs = 30000;
-    let lastCursor = startCursor;
-    let guard = 0;
-    while (guard < 200000) {
-      const end = lastCursor + windowMs;
-      let page;
-      try {
-        page = await fetchWclEventsPage({ reportCode, startTime: lastCursor, endTime: end, apiUrl });
-      } catch (err) {
-        state.error = `Failed to fetch events page: ${String(err && err.message ? err.message : err)}`;
-        break;
+    // If report end unknown, fallback to sequential pipelined export
+    if (reportMaxEnd == null) {
+      const windowMs = 30000;
+      let lastCursor = startCursor;
+      let guard = 0;
+      const inflight = new Set();
+      async function limitUpload(promise) {
+        inflight.add(promise);
+        promise.finally(() => inflight.delete(promise));
+        if (inflight.size >= 3) {
+          await Promise.race(inflight);
+        }
       }
-      const events = Array.isArray(page.events) ? page.events : [];
-      state.totalEvents += events.length;
-      // Serialize and upload page
-      let bodyStr = '';
-      if (events.length > 0) {
-        try { bodyStr = events.map(e => { try { return JSON.stringify(e); } catch { return ''; } }).filter(Boolean).join('\n'); } catch {}
+      while (guard < 200000) {
+        const end = lastCursor + windowMs;
+        let page;
+        try {
+          page = await fetchWclEventsPage({ reportCode, startTime: lastCursor, endTime: end, apiUrl });
+        } catch (err) {
+          state.error = `Failed to fetch events page: ${String(err && err.message ? err.message : err)}`;
+          break;
+        }
+        const events = Array.isArray(page.events) ? page.events : [];
+        state.totalEvents += events.length;
+        if (events.length > 0) {
+          let bodyStr = '';
+          try { bodyStr = events.map(e => { try { return JSON.stringify(e); } catch { return ''; } }).filter(Boolean).join('\n'); } catch {}
+          const objKey = `events/${eventId}/${reportCode}/page_${lastCursor}_${end}.jsonl`;
+          const gzBody = zlib.gzipSync(Buffer.from(bodyStr));
+          const uploadPromise = r2Client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET, Key: objKey, ContentType: 'application/jsonl', ContentEncoding: 'gzip', Body: gzBody }))
+            .then(() => { state.pages += 1; })
+            .catch((err) => { state.error = `Failed to upload page to R2: ${String(err && err.message ? err.message : err)}`; });
+          await limitUpload(uploadPromise);
+        }
+        const nextCursor = page.nextPageTimestamp != null ? page.nextPageTimestamp : end;
+        state.lastCursor = nextCursor;
+        if (nextCursor == null || nextCursor <= lastCursor) break;
+        lastCursor = nextCursor;
+        guard++;
       }
-      const objKey = `events/${eventId}/${reportCode}/page_${lastCursor}_${end}.jsonl`;
-      try {
-        await r2Client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET, Key: objKey, ContentType: 'application/jsonl', Body: bodyStr }));
-        state.pages += 1;
-      } catch (err) {
-        state.error = `Failed to upload page to R2: ${String(err && err.message ? err.message : err)}`;
-        break;
+      // Drain any remaining uploads
+      if (inflight.size > 0) {
+        await Promise.allSettled(Array.from(inflight));
       }
-      const nextCursor = page.nextPageTimestamp != null ? page.nextPageTimestamp : end;
-      state.lastCursor = nextCursor;
-      if (nextCursor == null || nextCursor <= lastCursor) break;
-      lastCursor = nextCursor;
-      if (reportMaxEnd != null && lastCursor >= (reportMaxEnd + 60000)) break;
-      guard++;
+    } else {
+      // Sharded concurrent export
+      const reportStart = startCursor;
+      const reportEnd = reportMaxEnd + 60000;
+      const totalDurationMs = Math.max(0, reportEnd - reportStart);
+      state.totalDurationMs = totalDurationMs;
+
+      const concurrency = Math.max(1, Math.min(12, Number(process.env.R2_EXPORT_CONCURRENCY || 6)));
+      const shardSize = Math.ceil(totalDurationMs / concurrency);
+      const shards = [];
+      for (let i = 0; i < concurrency; i++) {
+        const s = reportStart + i * shardSize;
+        const e = Math.min(reportEnd, s + shardSize);
+        if (s < e) shards.push({ shardId: i, start: s, end: e });
+      }
+
+      const uploadInflight = new Set();
+      async function limitUploadShard(promise) {
+        uploadInflight.add(promise);
+        promise.finally(() => uploadInflight.delete(promise));
+        const limit = Math.max(1, Math.min(8, Number(process.env.R2_UPLOAD_POOL || 4)));
+        if (uploadInflight.size >= limit) {
+          await Promise.race(uploadInflight);
+        }
+      }
+
+      function updateProcessed() {
+        try {
+          let sum = 0;
+          for (const w of state.workers) {
+            const dur = Math.max(0, Math.min(w.cursor, w.end) - w.start);
+            sum += dur;
+          }
+          state.processedMs = sum;
+        } catch {}
+      }
+
+      async function runShard(shard) {
+        const worker = { id: shard.shardId, start: shard.start, end: shard.end, cursor: shard.start, pages: 0, chunks: 0, events: 0 };
+        state.workers.push(worker);
+        let windowMs = 60000;
+        let guard = 0;
+        let chunkBuffer = '';
+        let chunkStart = worker.cursor;
+        const CHUNK_TARGET = Math.max(128 * 1024, Number(process.env.R2_CHUNK_TARGET || (1 * 1024 * 1024)));
+        while (guard < 200000 && worker.cursor < worker.end && !state.error) {
+          const pageEnd = Math.min(worker.end, worker.cursor + windowMs);
+          let page;
+          try {
+            page = await fetchWclEventsPage({ reportCode, startTime: worker.cursor, endTime: pageEnd, apiUrl });
+            if (!page || typeof page !== 'object') throw new Error('Empty page');
+          } catch (err) {
+            // backoff simple and retry once
+            try {
+              await new Promise(r => setTimeout(r, 500));
+              page = await fetchWclEventsPage({ reportCode, startTime: worker.cursor, endTime: pageEnd, apiUrl });
+              if (!page || typeof page !== 'object') throw new Error('Empty page');
+            } catch (e2) {
+              state.error = `Failed to fetch events page (worker ${worker.id}): ${String(e2 && e2.message ? e2.message : e2)}`;
+              break;
+            }
+          }
+          const events = Array.isArray(page.events) ? page.events : [];
+          worker.events += events.length;
+          state.totalEvents += events.length;
+          if (events.length > 0) {
+            try {
+              const jsonl = events.map(e => { try { return JSON.stringify(e); } catch { return ''; } }).filter(Boolean).join('\n');
+              if (jsonl) {
+                if (chunkBuffer) chunkBuffer += '\n' + jsonl; else chunkBuffer = jsonl;
+              }
+            } catch {}
+          }
+
+          // Adaptive windowing
+          if (events.length < 200 && !page.nextPageTimestamp) {
+            windowMs = Math.min(windowMs * 2, 10 * 60 * 1000);
+          } else if (events.length > 3000 || page.nextPageTimestamp) {
+            windowMs = Math.max(Math.floor(windowMs / 2), 10 * 1000);
+          }
+
+          // Advance cursor
+          const nextCursor = page.nextPageTimestamp != null ? page.nextPageTimestamp : pageEnd;
+          if (nextCursor == null || nextCursor <= worker.cursor) break;
+          worker.cursor = nextCursor;
+          worker.pages += 1;
+          updateProcessed();
+
+          // Flush chunk if large or shard ended
+          const needFlush = chunkBuffer && (Buffer.byteLength(chunkBuffer) >= CHUNK_TARGET || worker.cursor >= worker.end);
+          if (needFlush) {
+            const cStart = chunkStart;
+            const cEnd = worker.cursor;
+            const keyName = `events/${eventId}/${reportCode}/chunk_${String(worker.id).padStart(2,'0')}_${cStart}_${cEnd}.jsonl`;
+            const gzBody = zlib.gzipSync(Buffer.from(chunkBuffer));
+            console.log('[R2 Export] Upload start', keyName, 'bytes=', gzBody.length);
+            const uploadPromise = putObjectWithTimeout({ Bucket: process.env.R2_BUCKET, Key: keyName, ContentType: 'application/jsonl', ContentEncoding: 'gzip', Body: gzBody })
+              .then(() => { worker.chunks += 1; state.pages += 1; console.log('[R2 Export] Upload complete', keyName); })
+              .catch((err) => { state.error = `Failed to upload chunk to R2: ${String(err && err.message ? err.message : err)}`; console.warn('[R2 Export] Upload error', keyName, state.error); });
+            await limitUploadShard(uploadPromise);
+            chunkBuffer = '';
+            chunkStart = worker.cursor;
+          }
+
+          guard++;
+        }
+        // Flush any remaining buffered lines for this shard
+        if (!state.error && chunkBuffer) {
+          const cStart = chunkStart;
+          const cEnd = worker.cursor;
+          const keyName = `events/${eventId}/${reportCode}/chunk_${String(worker.id).padStart(2,'0')}_${cStart}_${cEnd}.jsonl`;
+          const gzBody = zlib.gzipSync(Buffer.from(chunkBuffer));
+          console.log('[R2 Export] Final flush upload start', keyName, 'bytes=', gzBody.length);
+          const uploadPromise = putObjectWithTimeout({ Bucket: process.env.R2_BUCKET, Key: keyName, ContentType: 'application/jsonl', ContentEncoding: 'gzip', Body: gzBody })
+            .then(() => { worker.chunks += 1; state.pages += 1; console.log('[R2 Export] Final flush upload complete', keyName); })
+            .catch((err) => { state.error = `Failed to upload chunk to R2: ${String(err && err.message ? err.message : err)}`; console.warn('[R2 Export] Final flush upload error', keyName, state.error); });
+          await limitUploadShard(uploadPromise);
+        }
+      }
+
+      await Promise.allSettled(shards.map(s => runShard(s)));
+      // Drain uploads
+      if (uploadInflight.size > 0) await Promise.allSettled(Array.from(uploadInflight));
     }
     // Write manifest
     try {
       const manifestKey = `events/${eventId}/${reportCode}/manifest.json`;
-      await r2Client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET, Key: manifestKey, ContentType: 'application/json', Body: JSON.stringify({ eventId, reportCode, totalEvents: state.totalEvents, startCursor, lastCursor: state.lastCursor, reportMaxEnd, windowMs, uploadedPages: state.pages }) }));
+      const manifest = {
+        eventId,
+        reportCode,
+        totalEvents: state.totalEvents,
+        startCursor,
+        lastCursor: state.lastCursor,
+        reportMaxEnd,
+        uploadedPages: state.pages,
+        totalDurationMs: state.totalDurationMs,
+        processedMs: state.processedMs,
+        sharded: !!state.totalDurationMs,
+        workers: Array.isArray(state.workers) ? state.workers.map(w => ({ id: w.id, start: w.start, end: w.end, cursor: w.cursor, pages: w.pages, chunks: w.chunks, events: w.events })) : [],
+        r2: {
+          endpoint: process.env.R2_ENDPOINT,
+          bucket: process.env.R2_BUCKET
+        }
+      };
+      console.log('[R2 Export] Writing manifest', manifestKey);
+      await putObjectWithTimeout({ Bucket: process.env.R2_BUCKET, Key: manifestKey, ContentType: 'application/json', Body: JSON.stringify(manifest) });
+      console.log('[R2 Export] Manifest written');
     } catch {}
     state.done = !state.error;
   } catch (err) {
@@ -2899,6 +3105,7 @@ app.post('/api/wcl/events/export-r2/start', express.json({ limit: '1mb' }), asyn
     // If running, return existing
     const existing = activeExports.get(jobKey);
     if (!existing || existing.done || existing.error) {
+      try { await ensureEventFolderMarkers(eventId, reportCode); } catch (_) {}
       // Fire and forget
       exportFullEventsToR2Background(eventId, reportCode, apiUrl).catch(()=>{});
     }
@@ -2927,9 +3134,14 @@ app.get('/api/wcl/events/export-r2/status', async (req, res) => {
       manifest = { key: manifestKey };
     } catch (_) {}
     let percent = null;
-    if (st && st.reportMaxEnd != null && st.lastCursor != null) {
-      const range = Math.max(1, st.reportMaxEnd);
-      percent = Math.min(100, Math.max(0, Math.round((st.lastCursor / range) * 100)));
+    if (st) {
+      if (st.totalDurationMs && st.processedMs != null) {
+        const denom = Math.max(1, st.totalDurationMs);
+        percent = Math.min(100, Math.max(0, Math.round((st.processedMs / denom) * 100)));
+      } else if (st.reportMaxEnd != null && st.lastCursor != null) {
+        const range = Math.max(1, st.reportMaxEnd);
+        percent = Math.min(100, Math.max(0, Math.round((st.lastCursor / range) * 100)));
+      }
     }
     return res.json({ ok: true, jobKey, state: st, manifest, percent });
   } catch (err) {
@@ -9695,10 +9907,11 @@ app.get('/api/mana-potions-data/:eventId', async (req, res) => {
         });
         
         const threshold = settings.threshold || 10;
-        const pointsPerPotion = settings.points_per_potion || 3;
+        // New rule: 1 point per 3 potions above threshold, max 10
+        const potionsPerPoint = 3;
         const maxPoints = settings.max_points || 10;
         
-        console.log(`🧪 [MANA POTIONS] Using dynamic settings: threshold=${threshold}, points_per_potion=${pointsPerPotion}, max_points=${maxPoints}`);
+        console.log(`🧪 [MANA POTIONS] Using dynamic settings: threshold=${threshold}, potions_per_point=${potionsPerPoint}, max_points=${maxPoints}`);
         
         // Query for Major Mana Potion usage
         const result = await client.query(`
@@ -9721,9 +9934,9 @@ app.get('/api/mana-potions-data/:eventId', async (req, res) => {
             const potionMatch = row.ability_value.toString().match(/(\d+)/);
             const potionsUsed = potionMatch ? parseInt(potionMatch[1]) : 0;
             
-            // Calculate points: potions above threshold * points per potion, capped at max
+            // Calculate points: 1 point per 3 potions above threshold (floor), capped at max
             const extraPotions = Math.max(0, potionsUsed - threshold);
-            const points = Math.min(maxPoints, extraPotions * pointsPerPotion);
+            const points = Math.min(maxPoints, Math.floor(extraPotions / potionsPerPoint));
             
             return {
                 character_name: row.character_name,
@@ -9744,7 +9957,8 @@ app.get('/api/mana-potions-data/:eventId', async (req, res) => {
             eventId: eventId,
             settings: {
                 threshold: threshold,
-                points_per_potion: pointsPerPotion,
+                potions_per_point: potionsPerPoint,
+                points_per_potion: potionsPerPoint,
                 max_points: maxPoints
             }
         });
@@ -10083,6 +10297,206 @@ app.get('/api/disarms-data/:eventId', async (req, res) => {
         res.status(500).json({ 
             success: false, 
             message: 'Error retrieving disarms data',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get Windfury Totem data for raid logs
+app.get('/api/windfury-data/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🌀 [WINDFURY] Retrieving Windfury Totem data for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if table exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sheet_player_abilities'
+            );
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+            console.log('⚠️ [WINDFURY] Table does not exist, returning empty data');
+            return res.json({ success: true, data: [] });
+        }
+        
+        // Get dynamic settings for Windfury calculation
+        // Defaults: threshold 10, 1 point per totem above threshold, max 10 points
+        const settingsResult = await client.query(`
+            SELECT setting_name, setting_value
+            FROM reward_settings 
+            WHERE setting_type = 'windfury'
+        `);
+        
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            settings[row.setting_name] = parseFloat(row.setting_value);
+        });
+        
+        const threshold = Number.isFinite(settings.threshold) ? settings.threshold : 10;
+        const pointsPerTotem = Number.isFinite(settings.points_per_totem) ? settings.points_per_totem : 1;
+        const maxPoints = Number.isFinite(settings.max_points) ? settings.max_points : 10;
+        
+        console.log(`🌀 [WINDFURY] Using settings: threshold=${threshold}, points_per_totem=${pointsPerTotem}, max_points=${maxPoints}`);
+        
+        // Query for Windfury, Tranquil Air, and Grace of Air Totem usage (per-type rows)
+        const result = await client.query(`
+            SELECT 
+                character_name,
+                character_class,
+                ability_name,
+                ability_value
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
+            AND ability_name IN ('Windfury Totem', 'Tranquil Air Totem', 'Grace of Air Totem')
+            ORDER BY character_name, ability_name
+        `, [eventId]);
+        
+        console.log(`🌀 [WINDFURY] Found ${result.rows.length} Totem records for event: ${eventId}`);
+        console.log(`🌀 [WINDFURY] Raw data sample:`, result.rows.slice(0, 3));
+        
+        // Map rows to per-type entries
+        const finalData = result.rows.map(row => {
+            const m = row.ability_value != null ? row.ability_value.toString().match(/(\d+)/) : null;
+            const totemsUsed = m ? parseInt(m[1]) : 0;
+            const extra = Math.max(0, totemsUsed - threshold);
+            const points = Math.min(maxPoints, extra * pointsPerTotem);
+            return {
+                character_name: row.character_name,
+                character_class: row.character_class || 'Shaman',
+                totem_type: row.ability_name,
+                totems_used: totemsUsed,
+                extra_totems: extra,
+                points: points
+            };
+        })
+        .filter(char => char.totems_used > threshold)
+        .sort((a, b) => (b.points - a.points) || (b.totems_used - a.totems_used) || String(a.totem_type||'').localeCompare(String(b.totem_type||'')));
+        
+        console.log(`🌀 [WINDFURY] Processed ${finalData.length} characters with Windfury Totem usage above threshold`);
+        console.log(`🌀 [WINDFURY] Final data sample:`, finalData.slice(0, 2));
+
+        // --- Augment with group average of "# of extra Windfury Attacks" ---
+        // Build roster name->party map for event
+        const rosterRes = await client.query(`
+            SELECT assigned_char_name, party_id
+            FROM roster_overrides
+            WHERE event_id = $1 AND assigned_char_name IS NOT NULL
+        `, [eventId]);
+        const nameToParty = new Map();
+        const partyToMembers = new Map();
+        for (const r of rosterRes.rows) {
+            const key = String(r.assigned_char_name || '').toLowerCase();
+            const partyId = r.party_id == null ? null : Number(r.party_id);
+            if (!key) continue;
+            nameToParty.set(key, partyId);
+            if (!partyToMembers.has(partyId)) partyToMembers.set(partyId, []);
+            partyToMembers.get(partyId).push(r.assigned_char_name);
+        }
+
+        // Fetch extra Windfury attacks per player (>10 only)
+        const extraRes = await client.query(`
+            SELECT character_name, ability_value
+            FROM sheet_player_abilities
+            WHERE event_id = $1
+              AND ability_name = '# of extra Windfury Attacks'
+        `, [eventId]);
+        const extraMap = new Map(); // lowerName -> numeric value
+        for (const row of extraRes.rows) {
+            const key = String(row.character_name || '').toLowerCase();
+            if (!key) continue;
+            let val = 0;
+            if (row.ability_value != null) {
+                const mm = row.ability_value.toString().match(/(\d+)/);
+                val = mm ? parseInt(mm[1]) : 0;
+            }
+            if (val > 10) extraMap.set(key, val);
+        }
+
+        // Attach group averages and member breakdown to each shaman entry
+        for (const entry of finalData) {
+            const shamKey = String(entry.character_name || '').toLowerCase();
+            const partyId = nameToParty.get(shamKey);
+            if (partyId == null) continue;
+            const members = partyToMembers.get(partyId) || [];
+            const considered = [];
+            for (const name of members) {
+                const key = String(name || '').toLowerCase();
+                if (extraMap.has(key)) considered.push({ character_name: name, extra_attacks: extraMap.get(key) });
+            }
+            if (considered.length > 0) {
+                const sum = considered.reduce((s, m) => s + (Number(m.extra_attacks) || 0), 0);
+                const avg = Math.round(sum / considered.length);
+                entry.group_attacks_avg = avg;
+                entry.group_attacks_members = considered.sort((a,b)=> (b.extra_attacks - a.extra_attacks) || String(a.character_name).localeCompare(String(b.character_name)));
+            } else {
+                entry.group_attacks_avg = null;
+                entry.group_attacks_members = [];
+            }
+        }
+
+        // Compute baseline: average of each character's average extra attacks (use Windfury Totem entries with a valid group avg)
+        const wfAverages = finalData
+            .filter(e => String(e.totem_type).toLowerCase().includes('windfury') && Number.isFinite(e.group_attacks_avg))
+            .map(e => Number(e.group_attacks_avg));
+        const baseline = wfAverages.length > 0 ? (wfAverages.reduce((s, v) => s + v, 0) / wfAverages.length) : 0;
+        console.log(`🌀 [WINDFURY] Baseline average extra attacks: ${baseline}`);
+
+        // Recalculate points based on baseline tiers
+        // Windfury Totem:
+        //   < 75% baseline => 0
+        //   75% .. 99% baseline (inclusive) => 10
+        //   100% .. 125% baseline (inclusive) => 15
+        //   > 125% baseline => 20
+        // Grace of Air Totem:
+        //   Eligible only if totems_used >= 10 AND group_avg >= 75% baseline
+        //   Points = floor(totems_used / 10), capped at 20
+        for (const entry of finalData) {
+            const avg = Number(entry.group_attacks_avg || 0);
+            const typeLower = String(entry.totem_type || '').toLowerCase();
+            if (typeLower.includes('windfury')) {
+                if (!baseline || avg <= 0) { entry.points = 0; continue; }
+                const pct = avg / baseline;
+                if (pct < 0.75) entry.points = 0;
+                else if (pct <= 0.99) entry.points = 10;
+                else if (pct <= 1.25) entry.points = 15;
+                else entry.points = 20;
+            } else if (typeLower.includes('grace of air')) {
+                if (!baseline || avg < baseline * 0.75 || Number(entry.totems_used || 0) < 10) { entry.points = 0; continue; }
+                const pts = Math.min(20, Math.floor(Number(entry.totems_used) / 10));
+                entry.points = pts;
+            } else if (typeLower.includes('tranquil air')) {
+                // Tranquil Air: 1 point per 10 totems, max 5; independent of baseline/avg
+                const pts = Math.min(5, Math.floor(Number(entry.totems_used || 0) / 10));
+                entry.points = pts;
+            } else {
+                entry.points = Number(entry.points) || 0;
+            }
+        }
+        
+        res.json({ 
+            success: true, 
+            data: finalData,
+            eventId: eventId,
+            settings: {
+                threshold,
+                points_per_totem: pointsPerTotem,
+                max_points: maxPoints
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [WINDFURY] Error retrieving Windfury Totem data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving Windfury Totem data',
             error: error.message 
         });
     } finally {

@@ -55,6 +55,8 @@ class RaidLogsManager {
         this.decursesSettings = { points_per_division: 1, decurses_needed: 3, max_points: 10, min_points: -10, average_decurses: 0 };
         this.voidDamageData = [];
         this.voidDamageSettings = { void_blast_penalty: -10, void_zone_penalty: -5 };
+        this.windfuryData = [];
+        this.windfurySettings = { threshold: 10, points_per_totem: 1, max_points: 10 };
         this.playerStreaksData = [];
         this.guildMembersData = [];
         this.rewardSettings = {};
@@ -100,17 +102,22 @@ class RaidLogsManager {
             'warlock': '579532029851336716',
             'druid': '579532029675438081'
         };
+        this._loadingRaid = false;
+        this._storageDebounce = null;
         this.initializeEventListeners();
         this.loadSpecData();
         this.loadRaidLogsData();
     }
 
     initializeEventListeners() {
-        // Listen for storage changes to reload data when event changes
+        // Listen for storage changes to reload data when event changes (debounced, ignore same value)
         window.addEventListener('storage', (e) => {
-            if (e.key === 'activeEventSession') {
-                this.loadRaidLogsData();
-            }
+            if (e.key !== 'activeEventSession') return;
+            if (String(e.newValue || '') === String(this.activeEventId || '')) return;
+            if (this._storageDebounce) clearTimeout(this._storageDebounce);
+            this._storageDebounce = setTimeout(() => {
+                if (!this._loadingRaid) this.loadRaidLogsData();
+            }, 150);
         });
 
         // Add click handlers for page navigation buttons
@@ -456,6 +463,8 @@ class RaidLogsManager {
     }
 
     async loadRaidLogsData() {
+        if (this._loadingRaid) return;
+        this._loadingRaid = true;
         // Prefer URL param /event/:eventId/raidlogs; fallback to localStorage
         let eventIdFromUrl = null;
         try {
@@ -468,18 +477,26 @@ class RaidLogsManager {
 
         this.activeEventId = eventIdFromUrl || localStorage.getItem('activeEventSession');
 
-        // Normalize URL without hard reload if possible
+        // Normalize URL without hard reload; add guard to avoid redirect loops
         try {
             const parts = window.location.pathname.split('/').filter(Boolean);
             const isEventScoped = parts.includes('event') && parts[parts.indexOf('event') + 1];
             const isRaidLogsPage = parts.includes('raidlogs');
+            const currentPath = window.location.pathname;
+            const triedKey = `rl_norm_${this.activeEventId}`;
             if (!isEventScoped && isRaidLogsPage && this.activeEventId) {
-                try {
-                    history.replaceState({}, '', `/event/${this.activeEventId}/raidlogs`);
-                    if (typeof updateRaidBar === 'function') setTimeout(() => updateRaidBar(), 0);
-                } catch (_) {
-                    window.location.replace(`/event/${this.activeEventId}/raidlogs`);
-                    return;
+                if (!sessionStorage.getItem(triedKey)) {
+                    sessionStorage.setItem(triedKey, '1');
+                    try {
+                        history.replaceState({}, '', `/event/${this.activeEventId}/raidlogs`);
+                        if (typeof updateRaidBar === 'function') setTimeout(() => updateRaidBar(), 0);
+                    } catch (_) {
+                        // As a last resort, only hard redirect once from the unscoped page
+                        if (currentPath === '/raidlogs') {
+                            window.location.replace(`/event/${this.activeEventId}/raidlogs`);
+                            return;
+                        }
+                    }
                 }
             }
         } catch {}
@@ -531,7 +548,8 @@ class RaidLogsManager {
                 this.fetchPolymorphData(),
                 this.fetchPowerInfusionData(),
                 this.fetchDecursesData(),
-                this.fetchVoidDamageData()
+                this.fetchVoidDamageData(),
+                this.fetchWindfuryData()
             ]);
 
             // Batch 3: auxiliary datasets and archives
@@ -566,6 +584,8 @@ class RaidLogsManager {
         } catch (error) {
             console.error('Error loading raid logs data:', error);
             this.showError('Failed to load raid logs data');
+        } finally {
+            this._loadingRaid = false;
         }
     }
 
@@ -887,7 +907,7 @@ class RaidLogsManager {
             }
             
             this.manaPotionsData = result.data || [];
-            this.manaPotionsSettings = result.settings || { threshold: 10, points_per_potion: 3, max_points: 10 };
+            this.manaPotionsSettings = result.settings || { threshold: 10, potions_per_point: 3, max_points: 10 };
             console.log(`🧪 Loaded mana potions data:`, this.manaPotionsData);
             console.log(`🧪 Loaded mana potions settings:`, this.manaPotionsSettings);
             
@@ -895,7 +915,7 @@ class RaidLogsManager {
             console.error('Error fetching mana potions data:', error);
             // Don't fail the whole page if mana potions fail - just show empty data
             this.manaPotionsData = [];
-            this.manaPotionsSettings = { threshold: 10, points_per_potion: 3, max_points: 10 }; // fallback
+            this.manaPotionsSettings = { threshold: 10, potions_per_point: 3, max_points: 10 }; // fallback
         }
     }
 
@@ -1382,6 +1402,23 @@ class RaidLogsManager {
         }
     }
 
+    async fetchWindfuryData() {
+        console.log(`🌀 Fetching Windfury Totem data for event: ${this.activeEventId}`);
+        try {
+            const response = await fetch(`/api/windfury-data/${this.activeEventId}`);
+            if (!response.ok) throw new Error(`Failed to fetch windfury data: ${response.status}`);
+            const result = await response.json();
+            if (!result.success) throw new Error(result.error || 'Failed to fetch windfury data');
+            this.windfuryData = result.data || [];
+            this.windfurySettings = result.settings || { threshold: 10, points_per_totem: 1, max_points: 10 };
+            console.log(`🌀 Loaded windfury data:`, this.windfuryData);
+        } catch (error) {
+            console.error('Error fetching windfury data:', error);
+            this.windfuryData = [];
+            this.windfurySettings = { threshold: 10, points_per_totem: 1, max_points: 10 };
+        }
+    }
+
     async fetchBigBuyerData() {
         if (!this.activeEventId) return;
         try {
@@ -1661,6 +1698,16 @@ class RaidLogsManager {
                     const nm = String(player.character_name || '').toLowerCase();
                     if (!confirmedNameSet.has(nm)) return;
                     if (player.points > 0) positivePoints += player.points;
+                });
+            }
+
+            // Add points from Windfury Totems
+            if (this.windfuryData && Array.isArray(this.windfuryData)) {
+                this.windfuryData.forEach(player => {
+                    const nm = String(player.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
+                    const pts = Number(player.points) || 0;
+                    if (pts > 0) positivePoints += pts; else if (pts < 0) negativePoints += Math.abs(pts);
                 });
             }
 
@@ -2460,8 +2507,9 @@ class RaidLogsManager {
         this.displayDemoShoutRankings(this.demoShoutData);
         this.displayPolymorphRankings(this.polymorphData);
         this.displayPowerInfusionRankings(this.powerInfusionData);
-                    this.displayDecursesRankings(this.decursesData);
-            this.displayVoidDamageRankings(this.voidDamageData);
+        this.displayDecursesRankings(this.decursesData);
+        this.displayVoidDamageRankings(this.voidDamageData);
+        this.displayWindfuryRankings(this.windfuryData);
         this.displayBigBuyerRankings(this.bigBuyerData);
         this.updateAbilitiesHeader();
         this.updateManaPotionsHeader();
@@ -2477,8 +2525,9 @@ class RaidLogsManager {
         this.updateDemoShoutHeader();
         this.updatePolymorphHeader();
         this.updatePowerInfusionHeader();
-                    this.updateDecursesHeader();
-            this.updateVoidDamageHeader();
+        this.updateDecursesHeader();
+        this.updateVoidDamageHeader();
+        this.updateWindfuryHeader();
         this.updateBigBuyerHeader();
         this.updateArchiveButtons();
         this.displayWallOfShame();
@@ -2503,6 +2552,7 @@ class RaidLogsManager {
             { key: 'abilities', name: 'Engineering & Holywater', containerId: 'abilities-list' },
             { key: 'mana_potions', name: 'Major Mana Potions', containerId: 'mana-potions-list' },
             { key: 'runes', name: 'Dark or Demonic runes', containerId: 'runes-list' },
+            { key: 'windfury_totems', name: 'Windfury Totems', containerId: 'windfury-list' },
             { key: 'interrupts', name: 'Interrupted spells', containerId: 'interrupts-list' },
             { key: 'disarms', name: 'Disarmed enemies', containerId: 'disarms-list' },
             { key: 'sunder', name: 'Sunder Armor', containerId: 'sunder-list' },
@@ -3738,6 +3788,24 @@ class RaidLogsManager {
             
             const abilitiesText = abilities.join(', ') || 'No abilities used';
 
+            // Build calculation tooltip
+            const divisor = Number(this.abilitiesSettings?.calculation_divisor || 10);
+            const maxPts = Number(this.abilitiesSettings?.max_points || 20);
+            const rawCalc = Math.floor((Number(player.total_used||0) * Number(player.avg_targets_hit||0)) / divisor);
+            const finalPts = Math.min(maxPts, rawCalc);
+            const dd = Number(player.dense_dynamite||0), ddt = Number(player.dense_dynamite_targets||0);
+            const gs = Number(player.goblin_sapper_charge||0), gst = Number(player.goblin_sapper_targets||0);
+            const hw = Number(player.stratholme_holy_water||0), hwt = Number(player.stratholme_targets||0);
+            const calcTooltip = [
+                `Dense Dynamite: ${dd} (avg ${ddt})`,
+                `Goblin Sapper: ${gs} (avg ${gst})`,
+                `Holy Water: ${hw} (avg ${hwt})`,
+                `Total used: ${player.total_used}`,
+                `Weighted avg targets: ${Number(player.avg_targets_hit||0).toFixed(1)}`,
+                `Formula: floor((Total × Avg) ÷ ${divisor}) = ${rawCalc}`,
+                maxPts !== finalPts ? `Capped at max ${maxPts} → ${finalPts}` : `Points: ${finalPts}`
+            ].join('\n');
+
             return `
                 <div class="ranking-item">
                     <div class="ranking-position">
@@ -3747,7 +3815,7 @@ class RaidLogsManager {
                         <div class="character-name">
                             ${this.getClassIconHtml(player.character_class)}${player.character_name}
                         </div>
-                        <div class="character-details" title="${abilitiesText}">
+                        <div class="character-details" title="${calcTooltip}">
                             ${this.truncateWithTooltip(abilitiesText).displayText}
                         </div>
                     </div>
@@ -4038,9 +4106,10 @@ class RaidLogsManager {
         const section = container.closest('.rankings-section');
         section.classList.add('mana-potions');
 
-        // Filter out players with 0 potions used and sort by potions_used (highest first)
-        const playersWithPotions = players.filter(player => player.potions_used > 0)
-            .sort((a, b) => b.potions_used - a.potions_used);
+        // Show only players who earned points, ranked by points (then potions used)
+        const playersWithPotions = players
+            .filter(player => (Number(player.points) || 0) > 0)
+            .sort((a, b) => (Number(b.points) - Number(a.points)) || (Number(b.potions_used) - Number(a.potions_used)));
 
         if (playersWithPotions.length === 0) {
             container.innerHTML = `
@@ -4131,8 +4200,9 @@ class RaidLogsManager {
     updateManaPotionsHeader() {
         const headerElement = document.querySelector('.mana-potions-section .section-header p');
         if (headerElement && this.manaPotionsSettings) {
-            const { threshold, points_per_potion, max_points } = this.manaPotionsSettings;
-            headerElement.textContent = `Ranked by points (${points_per_potion} pts per potion above ${threshold}, max ${max_points})`;
+            const { threshold, potions_per_point, points_per_potion, max_points } = this.manaPotionsSettings;
+            const ppp = Number(potions_per_point || 0) || Number(points_per_potion || 0) || 3;
+            headerElement.textContent = `Ranked by points (1 pt per ${ppp} potions above ${threshold}, max ${max_points})`;
         }
     }
 
@@ -4205,6 +4275,198 @@ class RaidLogsManager {
                 headerElement.textContent = `Ranked by points (${points_per_division} ${pointsText} per ${usage_divisor} ${runesText})`;
             }
         }
+    }
+
+    displayWindfuryRankings(players) {
+        const container = document.getElementById('windfury-list');
+        if (!container) return;
+        const section = container.closest('.rankings-section');
+        if (section) section.classList.add('windfury-section');
+
+        const rows = (players || []).slice();
+        if (!rows.length) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-wind"></i>
+                    <p>No shamans with 10+ Totems</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Precompute max average across all for safety (group-specific max used below)
+        const maxAvgAll = Math.max(...rows.map(r => Number(r.group_attacks_avg) || 0)) || 1;
+        this.ensureTotemInfoTooltipSetup();
+
+        // Group rows by totem type
+        const grouped = { windfury: [], grace: [], tranquil: [] };
+        rows.forEach(r => {
+            const t = String(r.totem_type || '').toLowerCase();
+            if (t.includes('windfury')) grouped.windfury.push(r);
+            else if (t.includes('grace of air')) grouped.grace.push(r);
+            else if (t.includes('tranquil air') || t.includes('tranq')) grouped.tranquil.push(r);
+            else grouped.windfury.push(r);
+        });
+
+        const renderGroup = (title, iconUrl, groupRows, startIndex, typeKey) => {
+            if (!groupRows.length) return { html: '', count: 0 };
+            const header = `
+                <div class="totem-subheader">
+                    <div class="left"><img src="${iconUrl}" alt="${title}" width="20" height="20"> <span>${title}</span></div>
+                    <div class="right"><span class="totem-info-icon" data-info-key="${typeKey}" aria-label="Info" role="button" tabindex="0">?</span></div>
+                </div>
+            `;
+            const keyLower = String(typeKey||'').toLowerCase();
+            const isByTotems = (keyLower === 'grace') || (keyLower === 'tranquil');
+            // Sort: Windfury by avg attacks; Grace/Tranquil by totems
+            const sorted = groupRows.slice().sort((a,b)=> {
+                if (isByTotems) {
+                    return (Number(b.totems_used||0) - Number(a.totems_used||0)) || String(a.character_name||'').localeCompare(String(b.character_name||''));
+                }
+                return (Number(b.group_attacks_avg||0) - Number(a.group_attacks_avg||0)) || (Number(b.totems_used||0) - Number(a.totems_used||0)) || String(a.character_name||'').localeCompare(String(b.character_name||''));
+            });
+            const groupMaxAvg = Math.max(...groupRows.map(r=>Number(r.group_attacks_avg)||0), maxAvgAll) || 1;
+            const groupMaxTotems = Math.max(...groupRows.map(r=>Number(r.totems_used)||0), 1) || 1;
+            const html = sorted.map((player, idx) => {
+                const position = startIndex + idx + 1;
+                const resolvedClass = 'Shaman';
+                const characterClass = this.normalizeClassName(resolvedClass);
+                const fillBase = isByTotems ? (Number(player.totems_used||0) / groupMaxTotems) : (Number(player.group_attacks_avg||0) / groupMaxAvg);
+                const fillPercentage = Math.max(5, fillBase * 100);
+                const typeText = player.totem_type || 'Totems';
+                const details = isByTotems
+                    ? `${player.totems_used} totems`
+                    : `${Number(player.group_attacks_avg||0)} Attacks. ${player.totems_used} totems`;
+                const totemIcon = this.getTotemIconHtml(typeText) || this.getClassIconHtml(resolvedClass);
+                return `
+                    <div class="ranking-item">
+                        <div class="ranking-position">
+                            <span class="ranking-number">#${position}</span>
+                        </div>
+                        <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                            <div class="character-name">
+                                ${totemIcon}${player.character_name}
+                            </div>
+                            <div class="character-details" title="${isByTotems ? details : this.buildWindfuryTooltip(player)}">
+                                ${this.truncateWithTooltip(details).displayText}
+                            </div>
+                        </div>
+                        <div class="performance-amount" title="${details}">
+                            <div class="amount-value">${player.points}</div>
+                            <div class="points-label">points</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            return { html: header + html, count: groupRows.length };
+        };
+
+        let fragments = [];
+        let offset = 0;
+        const grp1 = renderGroup('Windfury Totem', 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_windfury.jpg', grouped.windfury, offset, 'windfury');
+        if (grp1.count) { fragments.push(grp1.html); offset += grp1.count; }
+        const grp2 = renderGroup('Grace of Air Totem', 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_invisibilitytotem.jpg', grouped.grace, offset, 'grace');
+        if (grp2.count) { if (fragments.length) fragments.push('<div class="totem-separator"></div>'); fragments.push(grp2.html); offset += grp2.count; }
+        const grp3 = renderGroup('Tranquil Air Totem', 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_brilliance.jpg', grouped.tranquil, offset, 'tranquil');
+        if (grp3.count) { if (fragments.length) fragments.push('<div class="totem-separator"></div>'); fragments.push(grp3.html); offset += grp3.count; }
+
+        container.innerHTML = fragments.join('');
+    }
+
+    updateWindfuryHeader() {
+        const headerElement = document.querySelector('.windfury-section .section-header p');
+        if (headerElement) {
+            headerElement.textContent = `It's complicated. Mouse over the question mark icons`;
+        }
+    }
+
+    ensureTotemInfoTooltipSetup() {
+        if (this._totemInfoSetup) return;
+        this._totemInfoSetup = true;
+        const tip = document.createElement('div');
+        tip.id = 'totem-info-tooltip';
+        tip.className = 'totem-info-tooltip';
+        tip.style.display = 'none';
+        document.body.appendChild(tip);
+
+        const getText = (key) => {
+            const k = String(key||'').toLowerCase();
+            if (k === 'windfury') {
+                return (
+`Windfury Totem – how to earn points\n\n` +
+`We compare how many “extra Windfury attacks” your party gets on average to the overall baseline for the raid.\n` +
+`Your points depend on how your party’s average stacks up against that baseline:\n` +
+`- Less than 75% of the baseline: 0 points\n` +
+`- 75% to 99% of the baseline: 10 points\n` +
+`- 100% to 125% of the baseline: 15 points\n` +
+`- Above 125% of the baseline: 20 points\n\n` +
+`In plain terms: keep Windfury up where your party can use it and make sure your melee are close enough to benefit. The better your party’s extra attacks compared to everyone else, the more points you earn.`
+                );
+            }
+            if (k === 'grace') {
+                return (
+`Grace of Air Totem – how to earn points\n\n` +
+`First, you must meet BOTH conditions:\n` +
+`- Use at least 10 Grace of Air totems in the raid.\n` +
+`- Your party’s average extra Windfury attacks is at least 75% of the Windfury baseline (same baseline used above).\n\n` +
+`If you meet those two, you earn points based on how many Grace of Air totems you placed:\n` +
+`- Every 10 totems = 1 point\n` +
+`- Capped at 20 points (so 200+ totems = 20 points)\n\n` +
+`In plain terms: make sure your Windfury performance is solid (at least the 75% minimum), then drop lots of Grace of Air to climb the point ladder.`
+                );
+            }
+            if (k === 'tranquil') {
+                return (
+`Tranquil Air Totem – how to earn points\n\n` +
+`Points here are purely about how many Tranquil Air totems you use.\n` +
+`- Every 10 totems = 1 point, up to a maximum of 5 points (so 50+ totems = 5 points).\n` +
+`- No Windfury performance check applies to Tranquil Air.`
+                );
+            }
+            return '';
+        };
+
+        let active = null;
+        const show = (el, e) => {
+            const key = el.getAttribute('data-info-key');
+            tip.innerHTML = `<pre>${getText(key)}</pre>`;
+            tip.style.display = 'block';
+            move(e);
+        };
+        const hide = () => { tip.style.display = 'none'; };
+        const move = (e) => {
+            const x = (e.pageX || (e.clientX + window.scrollX)) + 14;
+            const y = (e.pageY || (e.clientY + window.scrollY)) + 14;
+            tip.style.left = x + 'px';
+            tip.style.top = y + 'px';
+        };
+
+        document.addEventListener('mouseover', (e) => {
+            const t = e.target.closest('.totem-info-icon');
+            if (!t) return;
+            active = t;
+            show(t, e);
+        });
+        document.addEventListener('mousemove', (e) => { if (active) move(e); });
+        document.addEventListener('mouseout', (e) => {
+            if (e.target.closest('.totem-info-icon') !== active) return;
+            active = null;
+            hide();
+        });
+        document.addEventListener('focusin', (e) => {
+            const t = e.target.closest('.totem-info-icon');
+            if (!t) return;
+            active = t;
+            const rect = t.getBoundingClientRect();
+            show(t, { pageX: rect.right + window.scrollX, pageY: rect.bottom + window.scrollY });
+        });
+        document.addEventListener('focusout', (e) => {
+            if (!active) return;
+            const related = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.totem-info-icon');
+            if (related === active) return;
+            active = null;
+            hide();
+        });
     }
 
     displayBigBuyerRankings(players) {
@@ -5241,6 +5503,7 @@ class RaidLogsManager {
             { key:'polymorph', label:'Polymorph' },
             { key:'powerInfusion', label:'Power Infusion' },
             { key:'decurses', label:'Decurses' },
+            { key:'windfury', label:'Windfury Totems' },
             { key:'worldBuffs', label:'World Buffs' },
             { key:'frostRes', label:'Frost Resistance' },
             { key:'void', label:'Avoidable Void Damage' },
@@ -5308,6 +5571,7 @@ class RaidLogsManager {
         let worldBuffsMap = collectMap(this.worldBuffsData);
         let frostResMap = collectMap(this.frostResistanceData);
         let voidMap = collectMap(this.voidDamageData);
+        let windfuryMap = collectMap(this.windfuryData);
         let bigBuyerMap = collectMap(this.bigBuyerData);
 
         // Decide whether to use snapshot maps or computed
@@ -5352,6 +5616,7 @@ class RaidLogsManager {
             worldBuffsMap = mapFromPanel('world_buffs_copy');
             frostResMap = mapFromPanel('frost_resistance');
             voidMap = mapFromPanel('void_damage');
+            windfuryMap = mapFromPanel('windfury_totems');
             bigBuyerMap = mapFromPanel('big_buyer');
         } else {
             // Computed mode: gate Frost Resistance to DPS only (require primaryRoles)
@@ -5493,6 +5758,7 @@ class RaidLogsManager {
                     case 'polymorph': return polymorphMap.get(key)||0;
                     case 'powerInfusion': return powerInfusionMap.get(key)||0;
                     case 'decurses': return decursesMap.get(key)||0;
+                    case 'windfury': return windfuryMap.get(key)||0;
                     case 'worldBuffs': return worldBuffsMap.get(key)||0;
                     case 'frostRes': return frostResMap.get(key)||0;
                     case 'void': return voidMap.get(key)||0;
@@ -5732,6 +5998,32 @@ class RaidLogsManager {
 
         // Priority 3: fall back to class icon so every player has an icon
         return this.getClassIconHtml(characterClass);
+    }
+
+    buildWindfuryTooltip(player) {
+        try {
+            const members = Array.isArray(player.group_attacks_members) ? player.group_attacks_members : [];
+            if (!members.length) return `No group member attack data`;
+            const lines = members.map(m => `${m.character_name}: ${m.extra_attacks}`);
+            return `Group extra attacks (avg ${Number(player.group_attacks_avg||0)}):\n` + lines.join('\n');
+        } catch (_) {
+            return '';
+        }
+    }
+
+    getTotemIconHtml(totemType) {
+        if (!totemType) return null;
+        const t = String(totemType).toLowerCase();
+        if (t.includes('tranquil air')) {
+            return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_brilliance.jpg" class="spec-icon" alt="Tranquil Air Totem" width="50" height="50" loading="lazy" decoding="async">`;
+        }
+        if (t.includes('windfury')) {
+            return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_windfury.jpg" class="spec-icon" alt="Windfury Totem" width="50" height="50" loading="lazy" decoding="async">`;
+        }
+        if (t.includes('grace of air')) {
+            return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_invisibilitytotem.jpg" class="spec-icon" alt="Grace of Air Totem" width="50" height="50" loading="lazy" decoding="async">`;
+        }
+        return null;
     }
 
     displayWallOfShame() {

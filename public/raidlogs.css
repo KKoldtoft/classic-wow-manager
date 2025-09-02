@@ -537,6 +537,48 @@ body.stats .rankings-container .rankings-section {
     font-size: 1.4em;
 }
 
+/* Windfury Totems specific styling */
+.rankings-section.windfury-section { --panel-accent: #0070DE; }
+.rankings-section.windfury-section .section-header {
+    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+}
+/* intentionally left without overrides to inherit default character-info styling */
+.rankings-section.windfury-section .character-name {
+    color: #0070DE; /* shaman color */
+}
+
+/* Totem sub-sections within Totems panel */
+.totem-subheader {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0 6px 0;
+    padding: 4px 6px;
+    border-left: 3px solid var(--panel-accent, #0070DE);
+    background: rgba(0,0,0,0.25);
+    border-radius: 4px;
+    font-weight: 600;
+    color: #e5e7eb;
+}
+.totem-subheader .left { display:flex; align-items:center; gap:8px; }
+.totem-subheader .right { margin-left:auto; display:flex; align-items:center; }
+.totem-info-icon {
+    display:inline-flex; align-items:center; justify-content:center;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #1f2937; color:#e5e7eb; font-weight: 700;
+    border: 1px solid #374151; cursor: help; font-size: 12px;
+}
+.totem-info-icon:hover { background:#374151; }
+.totem-info-tooltip {
+    position: absolute; z-index: 9999; max-width: 320px;
+    background: #0b1220; color: #e5e7eb; border: 1px solid #1f2937;
+    padding: 8px 10px; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+    pointer-events: none; white-space: pre-wrap; font-size: 12px; line-height: 1.35;
+}
+.totem-info-tooltip pre { margin:0; font-family: inherit; white-space: pre-wrap; }
+.totem-subheader img { border-radius: 3px; }
+.totem-separator { height: 10px; }
+
 /* Disarms specific styling */
 .rankings-section.disarms { --panel-accent: #dc3545; }
 .rankings-section.disarms-section { --panel-accent: #dc3545; }
