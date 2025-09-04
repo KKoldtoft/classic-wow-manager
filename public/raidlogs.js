@@ -4359,7 +4359,11 @@ class RaidLogsManager {
                 const typeText = player.totem_type || 'Totems';
                 const details = isByTotems
                     ? `${player.totems_used} totems`
-                    : `${Number(player.group_attacks_avg||0)} Attacks. ${player.totems_used} totems`;
+                    : (() => {
+                        const avg = Number(player.group_attacks_avg||0);
+                        const total = Number(player.group_attacks_total||0) || (Array.isArray(player.group_attacks_members) ? player.group_attacks_members.reduce((s,m)=> s + (Number(m.extra_attacks)||0), 0) : 0);
+                        return `${avg} avg extra attacks (${total} total). ${player.totems_used} totems`;
+                    })();
                 const totemIcon = this.getTotemIconHtml(typeText) || this.getClassIconHtml(resolvedClass);
                 return `
                     <div class="ranking-item">

@@ -152,14 +152,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const map = new Map();
         const push = (p) => {
             if (!p) return;
-            const display = p.mainCharacterName || p.assigned_char_name || p.character_name || p.name;
-            if (!display) return;
-            let cls = String(p.class_name || p.class || '').toLowerCase();
-            try {
-                const role = deriveRole(p.class, p.spec);
-                if (String(role).toLowerCase() === 'tank') cls = 'warrior';
-            } catch {}
-            map.set(String(display).trim().toLowerCase(), getCanonicalClass(cls));
+            const display = p && p.assigned_char_name;
+            const clsRaw = p && p.class_name;
+            if (!display || !clsRaw) return; // Only use saved roster fields
+            const canonicalClass = getCanonicalClass(String(clsRaw));
+            map.set(String(display).trim().toLowerCase(), canonicalClass);
         };
         (currentRosterData.raidDrop || []).forEach(push);
         (currentRosterData.bench || []).forEach(push);

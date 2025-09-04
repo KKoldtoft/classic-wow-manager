@@ -10363,9 +10363,38 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
         console.log(`🌀 [WINDFURY] Raw data sample:`, result.rows.slice(0, 3));
         
         // Map rows to per-type entries
+        const parseTotemsUsed = (abilityName, abilityValue) => {
+            const raw = abilityValue != null ? abilityValue.toString() : '';
+            const type = String(abilityName || '').toLowerCase();
+            const tryLabels = (labels) => {
+                for (const lbl of labels) {
+                    // Match the first number following the label, allowing any separators
+                    const re = new RegExp(`${lbl}[^0-9]*([0-9]+)`, 'i');
+                    const m = raw.match(re);
+                    if (m) return parseInt(m[1], 10);
+                }
+                return null;
+            };
+            if (type.includes('windfury')) {
+                const v = tryLabels(['windfury', 'wf']);
+                if (v != null) return v;
+            } else if (type.includes('grace of air')) {
+                const v = tryLabels(['grace of air', 'grace', 'goa']);
+                if (v != null) return v;
+            } else if (type.includes('strength of earth')) {
+                const v = tryLabels(['strength of earth', 'strength', 'soe']);
+                if (v != null) return v;
+            } else if (type.includes('tranquil air')) {
+                const v = tryLabels(['tranquil air', 'tranq', 'tranquil']);
+                if (v != null) return v;
+            }
+            // Fallback: first number anywhere
+            const m = raw.match(/(\d+)/);
+            return m ? parseInt(m[1], 10) : 0;
+        };
+
         const finalData = result.rows.map(row => {
-            const m = row.ability_value != null ? row.ability_value.toString().match(/(\d+)/) : null;
-            const totemsUsed = m ? parseInt(m[1]) : 0;
+            const totemsUsed = parseTotemsUsed(row.ability_name, row.ability_value);
             const extra = Math.max(0, totemsUsed - threshold);
             const points = Math.min(maxPoints, extra * pointsPerTotem);
             return {
@@ -10421,7 +10450,7 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
             if (val > 10) extraMap.set(key, val);
         }
 
-        // Attach group averages and member breakdown to each shaman entry
+        // Attach group averages, totals, and member breakdown to each shaman entry
         for (const entry of finalData) {
             const shamKey = String(entry.character_name || '').toLowerCase();
             const partyId = nameToParty.get(shamKey);
@@ -10436,9 +10465,11 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
                 const sum = considered.reduce((s, m) => s + (Number(m.extra_attacks) || 0), 0);
                 const avg = Math.round(sum / considered.length);
                 entry.group_attacks_avg = avg;
+                entry.group_attacks_total = sum;
                 entry.group_attacks_members = considered.sort((a,b)=> (b.extra_attacks - a.extra_attacks) || String(a.character_name).localeCompare(String(b.character_name)));
             } else {
                 entry.group_attacks_avg = null;
+                entry.group_attacks_total = null;
                 entry.group_attacks_members = [];
             }
         }
