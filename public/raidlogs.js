@@ -1748,16 +1748,38 @@ class RaidLogsManager {
                 });
             }
             
-            // Add points from sunder armor (exclude tanks when primaryRoles available)
-            if (this.sunderData && this.sunderSettings && this.sunderSettings.point_ranges) {
-                this.sunderData.forEach(player => {
-                    const nm = String(player.character_name || '').toLowerCase();
+            // Add points from sunder armor (exclude tanks when primaryRoles available), computed vs average
+            if (Array.isArray(this.sunderData)) {
+                const eligible = this.sunderData.filter(row => {
+                    const nm = String(row.character_name || '').toLowerCase();
+                    if (this.primaryRoles) {
+                        const role = String(this.primaryRoles[nm] || '').toLowerCase();
+                        if (role === 'tank') return false;
+                    }
+                    return true;
+                });
+                const sum = eligible.reduce((acc, r) => acc + (Number(r.sunder_count) || 0), 0);
+                const avg = eligible.length ? (sum / eligible.length) : 0;
+                const computePts = (count) => {
+                    if (!(avg > 0)) return 0;
+                    const pct = (Number(count) || 0) / avg * 100;
+                    if (pct < 25) return -20;
+                    if (pct < 50) return -15;
+                    if (pct < 75) return -10;
+                    if (pct < 90) return -5;
+                    if (pct <= 109) return 0;
+                    if (pct <= 124) return 5;
+                    return 10;
+                };
+                this.sunderData.forEach(row => {
+                    const nm = String(row.character_name || '').toLowerCase();
                     if (!confirmedNameSet.has(nm)) return;
                     if (this.primaryRoles) {
                         const role = String(this.primaryRoles[nm] || '').toLowerCase();
-                        if (role === 'tank') return; // exclude tanks entirely
+                        if (role === 'tank') return;
                     }
-                    if (player.points > 0) positivePoints += player.points; else if (player.points < 0) negativePoints += Math.abs(player.points);
+                    const pts = computePts(row.sunder_count);
+                    if (pts > 0) positivePoints += pts; else if (pts < 0) negativePoints += Math.abs(pts);
                 });
             }
             
@@ -4664,10 +4686,8 @@ class RaidLogsManager {
             console.log(`✅ [SUNDER] Players after filtering: ${eligiblePlayers.length}`);
         }
 
-        // Filter out players with 0 or negative points for display, but show all non-zero
-        const playersWithPoints = eligiblePlayers.filter(player => player.points !== 0);
-
-        if (playersWithPoints.length === 0) {
+        // Compute average sunders among eligible and include zero-point rows
+        if (!eligiblePlayers.length) {
             container.innerHTML = `
                 <div class="rankings-empty">
                     <i class="fas fa-shield-virus"></i>
@@ -4677,22 +4697,36 @@ class RaidLogsManager {
             return;
         }
 
-        // Get max sunder count for percentage calculation
-        const maxSunderCount = Math.max(...playersWithPoints.map(p => p.sunder_count)) || 1;
+        // Compute average and max for visuals
+        const counts = eligiblePlayers.map(p => Number(p.sunder_count) || 0);
+        const sumCounts = counts.reduce((a,b)=>a+b,0);
+        const avgCount = eligiblePlayers.length ? (sumCounts / eligiblePlayers.length) : 0;
+        const maxSunderCount = Math.max(...counts) || 1;
+        const computePts = (count) => {
+            if (!(avgCount > 0)) return 0;
+            const pct = (Number(count)||0) / avgCount * 100;
+            if (pct < 25) return -20;
+            if (pct < 50) return -15;
+            if (pct < 75) return -10;
+            if (pct < 90) return -5;
+            if (pct <= 109) return 0;
+            if (pct <= 124) return 5;
+            return 10;
+        };
 
-        container.innerHTML = playersWithPoints.map((player, index) => {
+        container.innerHTML = eligiblePlayers.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
             const fillPercentage = Math.max(5, (player.sunder_count / maxSunderCount) * 100); // Minimum 5% for visibility
 
-            const sunderText = `${player.sunder_count} sunders (${player.raw_value})`;
+            const pctOfAvg = (avgCount > 0) ? Math.round(((Number(player.sunder_count)||0) / avgCount) * 100) : 0;
+            const sunderText = `${player.sunder_count} sunders (${pctOfAvg}% of avg.)`;
+            const pts = computePts(player.sunder_count);
             
-            // Determine point color based on the range color
-            let pointColor = '#ff6b35'; // default
-            if (player.color === 'red') pointColor = '#dc3545';
-            else if (player.color === 'gray') pointColor = '#6c757d';
-            else if (player.color === 'green') pointColor = '#28a745';
-            else if (player.color === 'blue') pointColor = '#007bff';
+            // Color by points: negative red, zero gray, positive green
+            let pointColor = '#6c757d';
+            if (pts > 0) pointColor = '#28a745';
+            else if (pts < 0) pointColor = '#dc3545';
 
             return `
                 <div class="ranking-item">
@@ -4707,8 +4741,8 @@ class RaidLogsManager {
                             ${this.truncateWithTooltip(sunderText).displayText}
                         </div>
                     </div>
-                    <div class="performance-amount" title="${player.sunder_count} sunders applied">
-                        <div class="amount-value" style="color: ${pointColor}">${player.points}</div>
+                    <div class="performance-amount" title="${player.sunder_count} sunders (${pctOfAvg}% of avg.)">
+                        <div class="amount-value" style="color: ${pointColor}">${pts}</div>
                         <div class="points-label">points</div>
                     </div>
                 </div>
@@ -4718,18 +4752,285 @@ class RaidLogsManager {
 
     updateSunderHeader() {
         const headerElement = document.querySelector('.sunder-section .section-header p');
-        if (headerElement && this.sunderSettings && this.sunderSettings.point_ranges) {
-            const ranges = this.sunderSettings.point_ranges;
-            if (ranges.length > 0) {
-                // Create a summary of ranges
-                const rangeTexts = ranges.map(r => {
-                    if (r.min === 0 && r.max < 50) return `<${r.max + 1}: ${r.points}pts`;
-                    if (r.max >= 999) return `${r.min}+: ${r.points}pts`;
-                    return `${r.min}-${r.max}: ${r.points}pts`;
-                });
-                headerElement.textContent = `Ranked by points (${rangeTexts.join(', ')})`;
-            }
+        if (headerElement) {
+            headerElement.textContent = 'Points are distribured based on your effective sunders compared to the player average.';
         }
+        // Ensure the info icon and overlay exist for Sunder panel
+        this.ensureSunderInfoOverlay();
+        // Also ensure generic overlays for other panels
+        this.initializeGenericInfoOverlays();
+    }
+
+    // Generic overlay for all other panels
+    initializeGenericInfoOverlays() {
+        const sections = Array.from(document.querySelectorAll('.rankings-section'));
+        sections.forEach(section => {
+            if (section.classList.contains('sunder')) return; // handled by custom sunder overlay
+            this.ensureGenericInfoOverlayForSection(section);
+        });
+    }
+
+    ensureGenericInfoOverlayForSection(section) {
+        if (!section || section.__panelInfoAttached) return;
+        section.__panelInfoAttached = true;
+        try { section.style.position = section.style.position || 'relative'; } catch {}
+
+        const overlay = document.createElement('div');
+        overlay.className = 'panel-info-overlay';
+        // Determine custom content per panel
+        let infoTitle = 'Panel Details';
+        let infoSubtitle = '';
+        let infoBody = 'Detailed explanation is missing for this panel';
+        let infoList = null;
+
+        // Identify Frost Resistance vs World Buffs by inner list IDs to avoid cross-contamination
+        const isFrostResistance = !!section.querySelector('#world-buffs-list');
+        const isWorldBuffs = !!section.querySelector('#world-buffs-copy-list');
+
+        if (isFrostResistance) {
+            // Frost Resistance panel (uses world-buffs-list container ID)
+            infoTitle = 'Frost Resistance';
+            infoSubtitle = 'This rule applies to Sapphiron and affects DPS players only. Insufficient frost resistance results in penalties:';
+            infoBody = '';
+            infoList = [
+                '<strong>Warriors, Rogues, Hunters</strong>',
+                '30 frost resistance',
+                '-10 points if below 80 frost resistance',
+                '',
+                '<strong>Mages, Warlocks</strong>',
+                '-5 points if below 150 frost resistance',
+                '-10 points if below 80 frost resistance',
+                '',
+                'Only frost resistance from items and enchants is counted. Class abilities, racial abilities, buffs, and consumables are not included — you are expected to use those in addition to the required gear.'
+            ];
+        } else if (isWorldBuffs) {
+            // Keep default or provide brief generic text for World Buffs panel
+            infoTitle = 'World Buffs';
+            infoSubtitle = '';
+            infoBody = 'Detailed explanation is missing for this panel';
+            infoList = null;
+        } else if (section.classList.contains('rocket-helmet-section')) {
+            infoTitle = 'Goblin Rocket Helmet';
+            infoSubtitle = '';
+            infoBody = 'On Kel’Thuzad in Naxxramas, you can earn 5 bonus points by using a Goblin Rocket Helmet to stun an add during Phase 3.';
+        } else if (section.classList.contains('god-gamer-dps') || section.classList.contains('god-gamer-dps-section')) {
+            infoTitle = 'God Gamer DPS';
+            infoSubtitle = 'Exceptional damage performance is rewarded as follows:';
+            infoBody = '';
+            infoList = [
+                '30 points if you are #1 on damage and exceed #2 by at least 250,000 damage.',
+                '20 points if you are #1 on damage and exceed #2 by at least 150,000 damage.'
+            ];
+        } else if (section.classList.contains('god-gamer-healer') || section.classList.contains('god-gamer-healer-section')) {
+            infoTitle = 'God Gamer HPS';
+            infoSubtitle = 'Exceptional healing performance is rewarded as follows:';
+            infoBody = '';
+            infoList = [
+                '20 points if you are #1 on healing and exceed #2 by at least 250,000 healing.',
+                '15 points if you are #1 on healing and exceed #2 by at least 150,000 healing.'
+            ];
+        } else if (section.classList.contains('damage') || section.classList.contains('damage-dealers-section')) {
+            infoTitle = 'Damage Dealers';
+            infoSubtitle = 'Total damage points are awarded by rank:';
+            infoBody = '';
+            infoList = [
+                'Ranks 1–15 receive between 80 and 3 points, decreasing by rank position.',
+                'Players outside the top 15 receive 0 points.'
+            ];
+        } else if (section.classList.contains('healing') || section.classList.contains('healers-section')) {
+            infoTitle = 'Healers';
+            infoSubtitle = 'Total healing points are awarded by rank:';
+            infoBody = '';
+            infoList = [
+                'Ranks 1–10 receive between 80 and 10 points, decreasing by rank position.',
+                'Players outside the top 10 receive 0 points.'
+            ];
+        } else if (section.classList.contains('priest-healers') || section.classList.contains('priest-healers-section')) {
+            infoTitle = 'Top Priest Healers';
+            infoSubtitle = 'The top 2 Priest healers earn additional points:';
+            infoBody = '';
+            infoList = [
+                '1st place: 20 points',
+                '2nd place: 15 points'
+            ];
+        } else if (section.classList.contains('druid-healers') || section.classList.contains('druid-healers-section')) {
+            infoTitle = 'Top Druid Healer';
+            infoSubtitle = 'The top Druid healer earns additional points:';
+            infoList = [
+                '1st place: 15 points'
+            ];
+            infoBody = 'Yes, we know there’s probably only one Druid in the raid, and their healing output might not be impressive, but hey, give the cows a little break!';
+        } else if (section.classList.contains('too-low-damage') || section.classList.contains('too-low-damage-section')) {
+            infoTitle = 'Too Low Damage';
+            infoSubtitle = '';
+            infoBody = 'If you are a naked buyer or otherwise not contributing, you will receive a significant deduction in your gold cut.<br><br>Reductions may be discounted if you had a supportive role such as tanking on the Twin Emperors, pulling, looting, resurrecting, or another dedicated assignment that limited your DPS.';
+        } else if (section.classList.contains('too-low-healing') || section.classList.contains('too-low-healing-section')) {
+            infoTitle = 'Too Low Healing';
+            infoSubtitle = '';
+            infoBody = 'If you are a naked buyer or otherwise not contributing, you will receive a significant deduction in your gold cut.<br><br>Reductions may be discounted if you had a supportive role such as tanking on the Twin Emperors, pulling, looting, resurrecting, or another dedicated assignment that limited your HPS.';
+        }
+        {
+            const parts = [];
+            parts.push('<div class="panel-info-overlay-content">');
+            parts.push(`<h4 class="panel-info-title">${infoTitle}</h4>`);
+            if (infoSubtitle) parts.push(`<p class="panel-info-subtitle">${infoSubtitle}</p>`);
+            if (Array.isArray(infoList) && infoList.length) {
+                parts.push('<ul class="panel-info-list">');
+                infoList.forEach(item => parts.push(`<li>${item}</li>`));
+                parts.push('</ul>');
+            }
+            if (infoBody) parts.push(`<p class="panel-info-body">${infoBody}</p>`);
+            parts.push('</div>');
+            overlay.innerHTML = parts.join('');
+        }
+        section.appendChild(overlay);
+
+        const closeX = document.createElement('div');
+        closeX.className = 'panel-info-close-x';
+        closeX.innerHTML = '<i class="fas fa-times-circle" aria-hidden="true"></i>';
+        try { closeX.setAttribute('title', 'Close'); } catch {}
+        overlay.appendChild(closeX);
+
+        const header = section.querySelector('.section-header');
+        if (!header) return;
+        header.style.position = header.style.position || 'relative';
+        const icon = document.createElement('div');
+        icon.className = 'panel-info-icon';
+        icon.textContent = '?';
+        header.appendChild(icon);
+
+        let timerId = null;
+        let lastX = 0, lastY = 0;
+        let isLocked = false;
+        const threshold = 3;
+        const delayMs = 1000;
+
+        const clearTimer = () => { if (timerId) { clearTimeout(timerId); timerId = null; } };
+        const showOverlayLocked = (locked) => {
+            if (locked) overlay.classList.add('locked'); else overlay.classList.remove('locked');
+            overlay.classList.add('show');
+        };
+        const startTimer = () => {
+            clearTimer();
+            timerId = setTimeout(() => { showOverlayLocked(false); }, delayMs);
+        };
+        const onEnter = (e) => {
+            if (isLocked) return;
+            lastX = e.clientX; lastY = e.clientY;
+            startTimer();
+        };
+        const onMove = (e) => {
+            if (isLocked) return;
+            const dx = Math.abs(e.clientX - lastX);
+            const dy = Math.abs(e.clientY - lastY);
+            if (dx > threshold || dy > threshold) {
+                lastX = e.clientX; lastY = e.clientY;
+                startTimer();
+            }
+        };
+        const hideOverlay = () => { overlay.classList.remove('show'); overlay.classList.remove('locked'); };
+
+        icon.addEventListener('mouseenter', onEnter);
+        icon.addEventListener('mousemove', onMove);
+        icon.addEventListener('mouseleave', () => { clearTimer(); if (!isLocked) hideOverlay(); });
+        icon.addEventListener('click', () => { clearTimer(); isLocked = true; showOverlayLocked(true); });
+        overlay.addEventListener('mouseleave', () => { if (!isLocked) hideOverlay(); });
+        overlay.addEventListener('click', () => { if (!isLocked) hideOverlay(); });
+        closeX.addEventListener('click', (e) => { e.stopPropagation(); isLocked = false; hideOverlay(); });
+    }
+
+    ensureSunderInfoOverlay() {
+        const container = document.getElementById('sunder-list');
+        if (!container) return;
+        const section = container.closest('.rankings-section');
+        if (!section) return;
+        // Add a guard so we only attach once
+        if (section.__sunderInfoAttached) return;
+        section.__sunderInfoAttached = true;
+
+        // Make section relative for overlay positioning
+        try { section.style.position = section.style.position || 'relative'; } catch {}
+
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'panel-info-overlay';
+        overlay.innerHTML = `
+            <div class="panel-info-overlay-content">
+                <h4 class="panel-info-title">Sunder Armor Points</h4>
+                <p class="panel-info-subtitle">Points are awarded based on each DPS warrior’s use of Sunder Armor compared to the raid average.</p>
+                <p class="panel-info-body">The average number of effective Sunder Armors used by all DPS warriors is calculated.</p>
+                <p class="panel-info-body">Each warrior’s count is compared to this average.</p>
+                <p class="panel-info-body">Points are then assigned according to the following scale:</p>
+                <ul class="panel-info-list">
+                    <li><strong>Less than 25% of the average</strong>: -20 points</li>
+                    <li><strong>25–49% of the average</strong>: -15 points</li>
+                    <li><strong>50–74% of the average</strong>: -10 points</li>
+                    <li><strong>75–89% of the average</strong>: -5 points</li>
+                    <li><strong>90–109% of the average</strong>: 0 points</li>
+                    <li><strong>110–124% of the average</strong>: +5 points</li>
+                    <li><strong>125% or more of the average</strong>: +10 points</li>
+                </ul>
+                <div class="panel-info-close">Click the X to close (or move mouse away if opened by hover)</div>
+            </div>
+        `;
+        section.appendChild(overlay);
+
+        // Close X aligned to the ? icon location (only shown when click-locked)
+        const closeX = document.createElement('div');
+        closeX.className = 'panel-info-close-x';
+        closeX.innerHTML = '<i class="fas fa-times-circle" aria-hidden="true"></i>';
+        try { closeX.setAttribute('title', 'Close'); } catch {}
+        overlay.appendChild(closeX);
+
+        // Create small info icon in top-right of header
+        const header = section.querySelector('.section-header');
+        if (!header) return;
+        header.style.position = header.style.position || 'relative';
+        const icon = document.createElement('div');
+        icon.className = 'panel-info-icon';
+        icon.textContent = '?';
+        header.appendChild(icon);
+
+        // Hover-hold behavior: show overlay after 1s of stillness
+        let timerId = null;
+        let lastX = 0, lastY = 0;
+        let isLocked = false; // click-locked state keeps overlay open
+        const threshold = 3; // px movement allowed
+        const delayMs = 1000;
+
+        const clearTimer = () => { if (timerId) { clearTimeout(timerId); timerId = null; } };
+        const showOverlayLocked = (locked) => {
+            if (locked) overlay.classList.add('locked'); else overlay.classList.remove('locked');
+            overlay.classList.add('show');
+        };
+        const startTimer = () => {
+            clearTimer();
+            timerId = setTimeout(() => { showOverlayLocked(false); }, delayMs);
+        };
+
+        const onEnter = (e) => {
+            if (isLocked) return;
+            lastX = e.clientX; lastY = e.clientY;
+            startTimer();
+        };
+        const onMove = (e) => {
+            if (isLocked) return;
+            const dx = Math.abs(e.clientX - lastX);
+            const dy = Math.abs(e.clientY - lastY);
+            if (dx > threshold || dy > threshold) {
+                lastX = e.clientX; lastY = e.clientY;
+                startTimer();
+            }
+        };
+        const hideOverlay = () => { overlay.classList.remove('show'); overlay.classList.remove('locked'); };
+
+        icon.addEventListener('mouseenter', onEnter);
+        icon.addEventListener('mousemove', onMove);
+        icon.addEventListener('mouseleave', () => { clearTimer(); if (!isLocked) hideOverlay(); });
+        icon.addEventListener('click', () => { clearTimer(); isLocked = true; showOverlayLocked(true); });
+        overlay.addEventListener('mouseleave', () => { if (!isLocked) hideOverlay(); });
+        overlay.addEventListener('click', () => { if (!isLocked) hideOverlay(); });
+        closeX.addEventListener('click', (e) => { e.stopPropagation(); isLocked = false; hideOverlay(); });
     }
 
     displayCurseRankings(players) {
@@ -5545,16 +5846,33 @@ class RaidLogsManager {
         let runesMap = collectMap(this.runesData);
         let interruptsMap = collectMap(this.interruptsData);
         let disarmsMap = collectMap(this.disarmsData);
-        // Build sunder map excluding tanks when primaryRoles available
+        // Build sunder map excluding tanks when primaryRoles available, computed vs average
         let sunderMap = new Map();
         if (Array.isArray(this.sunderData)) {
-            this.sunderData.forEach(row => {
+            const eligibleRows = this.sunderData.filter(row => {
                 const nm = String(row.character_name || '').toLowerCase();
                 if (this.primaryRoles) {
                     const role = String(this.primaryRoles[nm] || '').toLowerCase();
-                    if (role === 'tank') return; // exclude tanks
+                    if (role === 'tank') return false; // exclude tanks
                 }
-                const pts = Number(row.points) || 0;
+                return true;
+            });
+            const sum = eligibleRows.reduce((acc, r) => acc + (Number(r.sunder_count) || 0), 0);
+            const avg = eligibleRows.length ? (sum / eligibleRows.length) : 0;
+            const computePts = (count) => {
+                if (!(avg > 0)) return 0;
+                const pct = (Number(count)||0) / avg * 100;
+                if (pct < 25) return -20;
+                if (pct < 50) return -15;
+                if (pct < 75) return -10;
+                if (pct < 90) return -5;
+                if (pct <= 109) return 0;
+                if (pct <= 124) return 5;
+                return 10;
+            };
+            eligibleRows.forEach(row => {
+                const nm = String(row.character_name || '').toLowerCase();
+                const pts = computePts(row.sunder_count);
                 if (!pts) return;
                 sunderMap.set(nm, (sunderMap.get(nm) || 0) + pts);
             });

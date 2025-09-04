@@ -605,6 +605,168 @@ body.stats .rankings-container .rankings-section {
     font-size: 1.4em;
 }
 
+/* Panel info icon (top-right) */
+.rankings-section.sunder .section-header .panel-info-icon {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #fff;
+    font-size: 12px;
+    line-height: 18px;
+    text-align: center;
+    cursor: help;
+    transition: all .2s ease;
+    z-index: 3;
+}
+.rankings-section .section-header .panel-info-icon {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #fff;
+    font-size: 12px;
+    line-height: 18px;
+    text-align: center;
+    cursor: help;
+    transition: all .2s ease;
+    z-index: 3;
+}
+.rankings-section.sunder .section-header .panel-info-icon:hover {
+    background: rgba(0,0,0,0.5);
+    transform: translateY(-1px);
+}
+.rankings-section .section-header .panel-info-icon:hover {
+    background: rgba(0,0,0,0.5);
+    transform: translateY(-1px);
+}
+
+/* Panel dark overlay */
+.rankings-section.sunder .panel-info-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(11, 18, 32, 0.95);
+    color: #f8fafc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .35s ease;
+    z-index: 50;
+    padding: 20px;
+}
+.rankings-section .panel-info-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(11, 18, 32, 0.95);
+    color: #f8fafc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .35s ease;
+    z-index: 50;
+    padding: 20px;
+}
+.rankings-section.sunder .panel-info-overlay.show {
+    opacity: 1;
+    pointer-events: auto;
+}
+.rankings-section .panel-info-overlay.show {
+    opacity: 1;
+    pointer-events: auto;
+}
+.rankings-section.sunder .panel-info-overlay.locked .panel-info-close-x { display: block; }
+.rankings-section .panel-info-overlay.locked .panel-info-close-x { display: block; }
+.rankings-section.sunder .panel-info-overlay .panel-info-close-x {
+    display: none;
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    color: #f8fafc;
+    font-size: 16px;
+    cursor: pointer;
+    z-index: 60;
+    opacity: .85;
+    background: transparent;
+    border: none;
+}
+.rankings-section .panel-info-overlay .panel-info-close-x {
+    display: none;
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    color: #f8fafc;
+    font-size: 16px;
+    cursor: pointer;
+    z-index: 60;
+    opacity: .85;
+    background: transparent;
+    border: none;
+}
+.rankings-section.sunder .panel-info-overlay .panel-info-close-x:hover {
+    opacity: 1;
+}
+.rankings-section .panel-info-overlay .panel-info-close-x:hover {
+    opacity: 1;
+}
+.rankings-section.sunder .panel-info-overlay-content {
+    max-width: 720px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    padding: 18px 20px;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+}
+.rankings-section .panel-info-overlay-content {
+    max-width: 720px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    padding: 18px 20px;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+}
+.rankings-section.sunder .panel-info-title {
+    margin: 0 0 6px 0;
+    font-size: 18px;
+}
+.rankings-section .panel-info-title {
+    margin: 0 0 6px 0;
+    font-size: 18px;
+}
+.rankings-section.sunder .panel-info-subtitle {
+    margin: 0 0 10px 0;
+    color: #cbd5e1;
+}
+.rankings-section .panel-info-subtitle { margin: 0 0 10px 0; color: #cbd5e1; }
+.rankings-section.sunder .panel-info-body {
+    margin: 0 0 12px 0;
+    color: #e5e7eb;
+}
+.rankings-section .panel-info-body { margin: 0 0 12px 0; color: #e5e7eb; }
+.rankings-section.sunder .panel-info-list {
+    margin: 0 0 12px 18px;
+}
+.rankings-section .panel-info-list { margin: 0 0 12px 18px; }
+.rankings-section.sunder .panel-info-list li { margin: 4px 0; }
+.rankings-section .panel-info-list li { margin: 4px 0; }
+.rankings-section.sunder .panel-info-close {
+    font-size: 12px;
+    color: #cbd5e1;
+    opacity: .8;
+}
+.rankings-section .panel-info-close { font-size: 12px; color: #cbd5e1; opacity: .8; }
+
 /* Sunder container specific styling */
 .sunder-container {
     margin-top: 30px;
