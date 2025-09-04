@@ -4321,11 +4321,12 @@ class RaidLogsManager {
         this.ensureTotemInfoTooltipSetup();
 
         // Group rows by totem type
-        const grouped = { windfury: [], grace: [], tranquil: [] };
+        const grouped = { windfury: [], grace: [], strength: [], tranquil: [] };
         rows.forEach(r => {
             const t = String(r.totem_type || '').toLowerCase();
             if (t.includes('windfury')) grouped.windfury.push(r);
             else if (t.includes('grace of air')) grouped.grace.push(r);
+            else if (t.includes('strength of earth')) grouped.strength.push(r);
             else if (t.includes('tranquil air') || t.includes('tranq')) grouped.tranquil.push(r);
             else grouped.windfury.push(r);
         });
@@ -4339,7 +4340,7 @@ class RaidLogsManager {
                 </div>
             `;
             const keyLower = String(typeKey||'').toLowerCase();
-            const isByTotems = (keyLower === 'grace') || (keyLower === 'tranquil');
+            const isByTotems = (keyLower === 'grace') || (keyLower === 'strength') || (keyLower === 'tranquil');
             // Sort: Windfury by avg attacks; Grace/Tranquil by totems
             const sorted = groupRows.slice().sort((a,b)=> {
                 if (isByTotems) {
@@ -4389,6 +4390,8 @@ class RaidLogsManager {
         if (grp1.count) { fragments.push(grp1.html); offset += grp1.count; }
         const grp2 = renderGroup('Grace of Air Totem', 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_invisibilitytotem.jpg', grouped.grace, offset, 'grace');
         if (grp2.count) { if (fragments.length) fragments.push('<div class="totem-separator"></div>'); fragments.push(grp2.html); offset += grp2.count; }
+        const grpStrength = renderGroup('Strength of Earth Totem', 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_earthbindtotem.jpg', grouped.strength, offset, 'strength');
+        if (grpStrength.count) { if (fragments.length) fragments.push('<div class="totem-separator"></div>'); fragments.push(grpStrength.html); offset += grpStrength.count; }
         const grp3 = renderGroup('Tranquil Air Totem', 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_brilliance.jpg', grouped.tranquil, offset, 'tranquil');
         if (grp3.count) { if (fragments.length) fragments.push('<div class="totem-separator"></div>'); fragments.push(grp3.html); offset += grp3.count; }
 
@@ -4435,6 +4438,18 @@ class RaidLogsManager {
 `- Every 10 totems = 1 point\n` +
 `- Capped at 20 points (so 200+ totems = 20 points)\n\n` +
 `In plain terms: make sure your Windfury performance is solid (at least the 75% minimum), then drop lots of Grace of Air to climb the point ladder.`
+                );
+            }
+            if (k === 'strength') {
+                return (
+`Strength of Earth Totem – how to earn points\n\n` +
+`First, you must meet BOTH conditions:\n` +
+`- Use at least 10 Strength of Earth totems in the raid.\n` +
+`- Your party’s average extra Windfury attacks is at least 75% of the Windfury baseline (same baseline used above).\n\n` +
+`If you meet those two, you earn points based on how many Strength of Earth totems you placed:\n` +
+`- Every 10 totems = 1 point\n` +
+`- Capped at 10 points (so 100+ totems = 10 points)\n\n` +
+`In plain terms: qualify via Windfury baseline, then drop Strength of Earth consistently to rack up points.`
                 );
             }
             if (k === 'tranquil') {
@@ -6340,6 +6355,9 @@ class RaidLogsManager {
         }
         if (t.includes('grace of air')) {
             return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_invisibilitytotem.jpg" class="spec-icon" alt="Grace of Air Totem" width="50" height="50" loading="lazy" decoding="async">`;
+        }
+        if (t.includes('strength of earth')) {
+            return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_earthbindtotem.jpg" class="spec-icon" alt="Strength of Earth Totem" width="50" height="50" loading="lazy" decoding="async">`;
         }
         return null;
     }

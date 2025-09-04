@@ -10346,7 +10346,7 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
         
         console.log(`🌀 [WINDFURY] Using settings: threshold=${threshold}, points_per_totem=${pointsPerTotem}, max_points=${maxPoints}`);
         
-        // Query for Windfury, Tranquil Air, and Grace of Air Totem usage (per-type rows)
+        // Query for Windfury, Tranquil Air, Grace of Air, and Strength of Earth Totem usage (per-type rows)
         const result = await client.query(`
             SELECT 
                 character_name,
@@ -10355,7 +10355,7 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
                 ability_value
             FROM sheet_player_abilities 
             WHERE event_id = $1 
-            AND ability_name IN ('Windfury Totem', 'Tranquil Air Totem', 'Grace of Air Totem')
+            AND ability_name IN ('Windfury Totem', 'Tranquil Air Totem', 'Grace of Air Totem', 'Strength of Earth Totem')
             ORDER BY character_name, ability_name
         `, [eventId]);
         
@@ -10377,7 +10377,8 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
                 points: points
             };
         })
-        .filter(char => char.totems_used > threshold)
+        // Qualify at >= threshold (10+) so exactly 10 is included
+        .filter(char => char.totems_used >= threshold)
         .sort((a, b) => (b.points - a.points) || (b.totems_used - a.totems_used) || String(a.totem_type||'').localeCompare(String(b.totem_type||'')));
         
         console.log(`🌀 [WINDFURY] Processed ${finalData.length} characters with Windfury Totem usage above threshold`);
@@ -10458,6 +10459,9 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
         // Grace of Air Totem:
         //   Eligible only if totems_used >= 10 AND group_avg >= 75% baseline
         //   Points = floor(totems_used / 10), capped at 20
+        // Strength of Earth Totem:
+        //   Eligible only if totems_used >= 10 AND group_avg >= 75% baseline
+        //   Points = floor(totems_used / 10), capped at 10
         for (const entry of finalData) {
             const avg = Number(entry.group_attacks_avg || 0);
             const typeLower = String(entry.totem_type || '').toLowerCase();
@@ -10471,6 +10475,10 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
             } else if (typeLower.includes('grace of air')) {
                 if (!baseline || avg < baseline * 0.75 || Number(entry.totems_used || 0) < 10) { entry.points = 0; continue; }
                 const pts = Math.min(20, Math.floor(Number(entry.totems_used) / 10));
+                entry.points = pts;
+            } else if (typeLower.includes('strength of earth')) {
+                if (!baseline || avg < baseline * 0.75 || Number(entry.totems_used || 0) < 10) { entry.points = 0; continue; }
+                const pts = Math.min(10, Math.floor(Number(entry.totems_used) / 10));
                 entry.points = pts;
             } else if (typeLower.includes('tranquil air')) {
                 // Tranquil Air: 1 point per 10 totems, max 5; independent of baseline/avg
