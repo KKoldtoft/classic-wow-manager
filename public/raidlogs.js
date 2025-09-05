@@ -4319,6 +4319,7 @@ class RaidLogsManager {
         // Precompute max average across all for safety (group-specific max used below)
         const maxAvgAll = Math.max(...rows.map(r => Number(r.group_attacks_avg) || 0)) || 1;
         this.ensureTotemInfoTooltipSetup();
+        this.ensureWindfuryMemberTooltipSetup();
 
         // Group rows by totem type
         const grouped = { windfury: [], grace: [], strength: [], tranquil: [] };
@@ -4331,7 +4332,7 @@ class RaidLogsManager {
             else grouped.windfury.push(r);
         });
 
-        const renderGroup = (title, iconUrl, groupRows, startIndex, typeKey) => {
+        const renderGroup = (title, iconUrl, groupRows, typeKey) => {
             if (!groupRows.length) return { html: '', count: 0 };
             const header = `
                 <div class="totem-subheader">
@@ -4341,8 +4342,10 @@ class RaidLogsManager {
             `;
             const keyLower = String(typeKey||'').toLowerCase();
             const isByTotems = (keyLower === 'grace') || (keyLower === 'strength') || (keyLower === 'tranquil');
-            // Sort: Windfury by avg attacks; Grace/Tranquil by totems
+            // Sort all groups by points (desc). Tie-breakers vary per type.
             const sorted = groupRows.slice().sort((a,b)=> {
+                const byPts = (Number(b.points||0) - Number(a.points||0));
+                if (byPts !== 0) return byPts;
                 if (isByTotems) {
                     return (Number(b.totems_used||0) - Number(a.totems_used||0)) || String(a.character_name||'').localeCompare(String(b.character_name||''));
                 }
@@ -4351,7 +4354,7 @@ class RaidLogsManager {
             const groupMaxAvg = Math.max(...groupRows.map(r=>Number(r.group_attacks_avg)||0), maxAvgAll) || 1;
             const groupMaxTotems = Math.max(...groupRows.map(r=>Number(r.totems_used)||0), 1) || 1;
             const html = sorted.map((player, idx) => {
-                const position = startIndex + idx + 1;
+                const position = idx + 1;
                 const resolvedClass = 'Shaman';
                 const characterClass = this.normalizeClassName(resolvedClass);
                 const fillBase = isByTotems ? (Number(player.totems_used||0) / groupMaxTotems) : (Number(player.group_attacks_avg||0) / groupMaxAvg);
@@ -4365,6 +4368,10 @@ class RaidLogsManager {
                         return `${avg} avg extra attacks (${total} total). ${player.totems_used} totems`;
                     })();
                 const totemIcon = this.getTotemIconHtml(typeText) || this.getClassIconHtml(resolvedClass);
+                const groupText = (player.party_id === 1 || String(player.party_id) === '1') ? 'Tank group' : `Group ${Number(player.party_id)}`;
+                const groupLabel = (player.party_id != null && player.party_id !== undefined) ? ` <span class="group-label">(${groupText})</span>` : '';
+                // For Windfury rows, use custom tooltip; for others, no legacy title tooltip
+                const detailsAttr = isByTotems ? '' : ` data-wf-tooltip="${this._escapeAttr(this.buildWindfuryTooltipHtml(player))}"`;
                 return `
                     <div class="ranking-item">
                         <div class="ranking-position">
@@ -4372,9 +4379,9 @@ class RaidLogsManager {
                         </div>
                         <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
                             <div class="character-name">
-                                ${totemIcon}${player.character_name}
+                                ${totemIcon}${player.character_name}${groupLabel}
                             </div>
-                            <div class="character-details" title="${isByTotems ? details : this.buildWindfuryTooltip(player)}">
+                            <div class="character-details"${detailsAttr}>
                                 ${this.truncateWithTooltip(details).displayText}
                             </div>
                         </div>
@@ -4389,15 +4396,14 @@ class RaidLogsManager {
         };
 
         let fragments = [];
-        let offset = 0;
-        const grp1 = renderGroup('Windfury Totem', 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_windfury.jpg', grouped.windfury, offset, 'windfury');
-        if (grp1.count) { fragments.push(grp1.html); offset += grp1.count; }
-        const grp2 = renderGroup('Grace of Air Totem', 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_invisibilitytotem.jpg', grouped.grace, offset, 'grace');
-        if (grp2.count) { if (fragments.length) fragments.push('<div class="totem-separator"></div>'); fragments.push(grp2.html); offset += grp2.count; }
-        const grpStrength = renderGroup('Strength of Earth Totem', 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_earthbindtotem.jpg', grouped.strength, offset, 'strength');
-        if (grpStrength.count) { if (fragments.length) fragments.push('<div class="totem-separator"></div>'); fragments.push(grpStrength.html); offset += grpStrength.count; }
-        const grp3 = renderGroup('Tranquil Air Totem', 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_brilliance.jpg', grouped.tranquil, offset, 'tranquil');
-        if (grp3.count) { if (fragments.length) fragments.push('<div class="totem-separator"></div>'); fragments.push(grp3.html); offset += grp3.count; }
+        const grp1 = renderGroup('Windfury Totem', 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_windfury.jpg', grouped.windfury, 'windfury');
+        if (grp1.count) { fragments.push(grp1.html); }
+        const grp2 = renderGroup('Grace of Air Totem', 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_invisibilitytotem.jpg', grouped.grace, 'grace');
+        if (grp2.count) { if (fragments.length) fragments.push('<div class="totem-separator"></div>'); fragments.push(grp2.html); }
+        const grpStrength = renderGroup('Strength of Earth Totem', 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_earthbindtotem.jpg', grouped.strength, 'strength');
+        if (grpStrength.count) { if (fragments.length) fragments.push('<div class="totem-separator"></div>'); fragments.push(grpStrength.html); }
+        const grp3 = renderGroup('Tranquil Air Totem', 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_brilliance.jpg', grouped.tranquil, 'tranquil');
+        if (grp3.count) { if (fragments.length) fragments.push('<div class="totem-separator"></div>'); fragments.push(grp3.html); }
 
         container.innerHTML = fragments.join('');
     }
@@ -4628,9 +4634,9 @@ class RaidLogsManager {
         const section = container.closest('.rankings-section');
         section.classList.add('disarms');
 
-        // Filter out players with 0 disarms and sort by disarms_used (highest first)
+        // Filter out players with 0 disarms and sort by points (highest first), then disarms_used
         const playersWithDisarms = players.filter(player => player.disarms_used > 0)
-            .sort((a, b) => b.disarms_used - a.disarms_used);
+            .sort((a, b) => (b.points - a.points) || (b.disarms_used - a.disarms_used));
 
         if (playersWithDisarms.length === 0) {
             container.innerHTML = `
@@ -4665,7 +4671,7 @@ class RaidLogsManager {
                             ${this.truncateWithTooltip(disarmsText).displayText}
                         </div>
                     </div>
-                    <div class="performance-amount" title="${player.disarms_used} disarms (max ${this.disarmsSettings.max_points} points)">
+                    <div class="performance-amount" title="${player.disarms_used} disarms (1 pt per ${this.disarmsSettings.disarms_needed} disarms, max ${this.disarmsSettings.max_points} points)">
                         <div class="amount-value">${player.points}</div>
                         <div class="points-label">points</div>
                     </div>
@@ -4828,10 +4834,48 @@ class RaidLogsManager {
             infoSubtitle = '';
             infoBody = 'Detailed explanation is missing for this panel';
             infoList = null;
+        } else if (section.classList.contains('windfury-section')) {
+            infoTitle = 'Totems Points — How this panel works';
+            infoSubtitle = 'We know this is complicated, but the short version is: keep Windfury up, weave in Grace of Air, and cast Strength of Earth when it helps — do that and you’ll earn lots of points.' + '<br><br>' + 'Below is a quick overview of how each totem earns points. For details per player, hover the text under a name to see who contributed to the average, who was excluded, and the exact numbers.';
+            infoBody = '<strong>Party average</strong>: Warriors only; anyone below 50% of the top Warrior in your party is excluded from the average and shown in red in the hover list. The Tank group is labeled “(Tank group)”.';
+            infoList = [
+                '<strong>Windfury Totem (WF)</strong>: Your party\'s average “extra WF attacks” (Warriors only) is compared to the raid baseline. Tiers: <em><75%</em>=0 pts, <em>75–99%</em>=10 pts, <em>100–125%</em>=15 pts, <em>>125%</em>=20 pts. Tank group has half the normal requirement; very low Warriors (below 50% of the party\'s top Warrior) are excluded from the average (still shown in red).',
+                '<strong>Grace of Air Totem</strong>: To qualify, drop ≥10 totems and have party WF average ≥75% of baseline (Tank group: half requirement). Points = +1 per 10 totems, up to 20.',
+                '<strong>Strength of Earth Totem</strong>: To qualify, drop ≥10 totems and have party WF average ≥75% of baseline (Tank group: half requirement). Points = +1 per 10 totems, up to 10.',
+                '<strong>Tranquil Air Totem</strong>: No WF requirement. Points = +1 per 10 totems, up to 5.'
+            ];
         } else if (section.classList.contains('rocket-helmet-section')) {
             infoTitle = 'Goblin Rocket Helmet';
             infoSubtitle = '';
             infoBody = 'On Kel’Thuzad in Naxxramas, you can earn 5 bonus points by using a Goblin Rocket Helmet to stun an add during Phase 3.';
+        } else if (section.classList.contains('interrupts-section')) {
+            infoTitle = 'Interrupted spells';
+            infoSubtitle = 'Ranked by points (1 pt per 2 interrupts, max 5)';
+            infoBody = 'We count how many enemy casts you interrupted. Every 2 interrupts = 1 point, capped at 5 points. Tooltip shows your total interrupts.';
+        } else if (section.classList.contains('disarms-section')) {
+            infoTitle = 'Disarmed enemies';
+            infoSubtitle = 'Ranked by points (1 pt per 3 disarms, max 5)';
+            infoBody = 'We count how many Disarms you used. Every 3 disarms = 1 point, capped at 5 points. Tooltip shows your total disarms.';
+        } else if (section.classList.contains('abilities-section')) {
+            infoTitle = 'Engineering & Holywater';
+            infoSubtitle = 'Ranked by calculated points (abilities used × average targets ÷ 10, max 20)';
+            infoBody = 'We track Dense Dynamite, Goblin Sapper Charges and Stratholme Holy Water. Your points are floor((Total used × Avg targets) ÷ 10), capped at 20. Use these on packs to hit more targets and score higher. Hover a name to see your exact breakdown and calculation.';
+        } else if (section.classList.contains('runes-section')) {
+            infoTitle = 'Dark or Demonic runes';
+            infoSubtitle = '';
+            infoBody = 'Points are awarded by usage: you gain points for every set of runes used based on the division in the header (e.g., 1 point per 2 runes), up to the panel’s maximum. Hover a name to see your total Dark/Demonic runes and divisions.';
+        } else if (section.classList.contains('mana-potions-section')) {
+            infoTitle = 'Major Mana Potions';
+            infoSubtitle = '';
+            infoBody = 'Points are awarded for potions used above the threshold shown in the header. Every N potions above the threshold = 1 point (see header for N), capped at the maximum. Hover a name to see your total potions and how many counted for points.';
+        } else if (section.classList.contains('streak-section')) {
+            infoTitle = 'Attendance Streak Champions';
+            infoSubtitle = '';
+            infoBody = 'Points are awarded for consistent weekly attendance: 4 weeks = 3 pts, 5 = 6 pts, 6 = 9 pts, 7 = 12 pts, and 8+ weeks = 15 pts.';
+        } else if (section.classList.contains('guild-section')) {
+            infoTitle = 'Guild Members';
+            infoSubtitle = '';
+            infoBody = 'Every confirmed guild member present in the raid earns a flat +10 points.';
         } else if (section.classList.contains('god-gamer-dps') || section.classList.contains('god-gamer-dps-section')) {
             infoTitle = 'God Gamer DPS';
             infoSubtitle = 'Exceptional damage performance is rewarded as follows:';
@@ -4848,6 +4892,50 @@ class RaidLogsManager {
                 '20 points if you are #1 on healing and exceed #2 by at least 250,000 healing.',
                 '15 points if you are #1 on healing and exceed #2 by at least 150,000 healing.'
             ];
+        } else if (section.classList.contains('curse-recklessness-section')) {
+            infoTitle = 'Curse of Recklessness';
+            infoSubtitle = 'Ranked by points (>70% uptime earns points)';
+            infoBody = 'We measure how long your Curse of Recklessness was active when it mattered. Maintain high uptime to earn points; below the threshold earns 0.';
+        } else if (section.classList.contains('curse-shadow-section')) {
+            infoTitle = 'Curse of Shadow';
+            infoSubtitle = 'Ranked by points (>70% uptime earns points)';
+            infoBody = 'Warlocks are credited when Curse of Shadow is maintained. Keep it up for most of the fight to earn points; low uptime earns 0.';
+        } else if (section.classList.contains('curse-elements-section')) {
+            infoTitle = 'Curse of the Elements';
+            infoSubtitle = 'Ranked by points (>70% uptime earns points)';
+            infoBody = 'We credit uptime for Curse of the Elements. Aim for strong, consistent uptime across encounters to earn points.';
+        } else if (section.classList.contains('faerie-fire-section')) {
+            infoTitle = 'Faerie Fire';
+            infoSubtitle = 'Ranked by points (>70% uptime earns points)';
+            infoBody = 'Druids (or other valid sources) earn points for keeping Faerie Fire up. The higher the uptime, the better.';
+        } else if (section.classList.contains('scorch-section')) {
+            infoTitle = 'Scorch';
+            infoSubtitle = 'Ranked by tiers (0–99: 0 pts, 100–199: 5 pts, 200+: 10 pts)';
+            infoBody = 'We count total Scorches applied. Hitting 100 grants points; 200+ grants the maximum.';
+        } else if (section.classList.contains('demo-shout-section')) {
+            infoTitle = 'Demoralizing Shout';
+            infoSubtitle = 'Ranked by tiers (0–99: 0 pts, 100–199: 5 pts, 200+: 10 pts)';
+            infoBody = 'We count the number of Demo Shouts used. Reach the thresholds to earn 5 or 10 points.';
+        } else if (section.classList.contains('polymorph-section')) {
+            infoTitle = 'Polymorph';
+            infoSubtitle = 'Ranked by points (1 pt per 2 polymorphs, max 5)';
+            infoBody = 'Polymorphs help crowd control. Every two successful casts award a point, up to five points total.';
+        } else if (section.classList.contains('power-infusion-section')) {
+            infoTitle = 'Power Infusion';
+            infoSubtitle = 'Ranked by points (1 pt per 2 infusions, max 10, excludes self-casts)';
+            infoBody = 'Priests earn points for buffing teammates with Power Infusion. Self-casts do not count.';
+        } else if (section.classList.contains('decurses-section')) {
+            infoTitle = 'Decurses';
+            infoSubtitle = 'Ranked by average-based points (vs raid average, -10 to +10)';
+            infoBody = 'We compare your decurse count against the raid average: every 3 above average adds points, every 3 below average deducts, within the -10 to +10 range.';
+        } else if (section.classList.contains('void-damage-section')) {
+            infoTitle = 'Avoidable Void Damage';
+            infoSubtitle = 'Penalties for standing in bad';
+            infoBody = 'Taking damage from Void Blast or Void Zone costs points. Avoid the effects to keep your score clean. The panel shows totals and a breakdown by source.';
+        } else if (section.classList.contains('big-buyer-section')) {
+            infoTitle = 'Big Buyer Bonus';
+            infoSubtitle = 'Top 3 spenders (≥25,000 gold) earn bonus points';
+            infoBody = 'The highest spenders receive extra points, up to 20, based on gold spent thresholds. Only purchases ≥ 25,000 gold qualify.';
         } else if (section.classList.contains('damage') || section.classList.contains('damage-dealers-section')) {
             infoTitle = 'Damage Dealers';
             infoSubtitle = 'Total damage points are awarded by rank:';
@@ -6346,6 +6434,93 @@ class RaidLogsManager {
         } catch (_) {
             return '';
         }
+    }
+
+    _escapeAttr(html) {
+        try {
+            return String(html || '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        } catch (_) { return ''; }
+    }
+
+    buildWindfuryTooltipHtml(player) {
+        try {
+            const members = Array.isArray(player.group_attacks_members) ? player.group_attacks_members : [];
+            if (!members.length) return `<div class="wf-tip"><div class="wf-tip-title">Group extra attacks</div><div>No group member attack data</div></div>`;
+            const avg = Number(player.group_attacks_avg||0);
+            const rows = members.map(m => {
+                const cls = String(m.character_class||'').toLowerCase();
+                const isIncluded = !!m.included_in_avg;
+                const nameHtml = isIncluded ? `<span class="wf-inc">${m.character_name}</span>` : `<span class="wf-exc">${m.character_name}</span>`;
+                return `<div class="wf-row">${nameHtml}: <span class="wf-val">${Number(m.extra_attacks||0)}</span></div>`;
+            }).join('');
+            const tankNote = (player.party_id === 1 || String(player.party_id) === '1')
+                ? `<div class=\"wf-note\">* For tank group, requirements for extra attacks is 50% of dps groups.</div>`
+                : '';
+            return `<div class="wf-tip"><div class="wf-tip-title">Group extra attacks (avg ${avg})</div>${rows}${tankNote}</div>`;
+        } catch (_) {
+            return '';
+        }
+    }
+
+    ensureWindfuryMemberTooltipSetup() {
+        if (this._wfMembersTipSetup) return;
+        this._wfMembersTipSetup = true;
+        const tip = document.createElement('div');
+        tip.id = 'wf-members-tooltip';
+        tip.className = 'wf-members-tooltip';
+        tip.style.display = 'none';
+        document.body.appendChild(tip);
+
+        let active = null;
+        const show = (el, e) => {
+            const raw = el.getAttribute('data-wf-tooltip') || '';
+            // raw stored escaped; decode entities for innerHTML
+            tip.innerHTML = raw
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&quot;/g, '"')
+                .replace(/&amp;/g, '&');
+            tip.style.display = 'block';
+            move(e);
+        };
+        const hide = () => { tip.style.display = 'none'; };
+        const move = (e) => {
+            const x = (e.pageX || (e.clientX + window.scrollX)) + 14;
+            const y = (e.pageY || (e.clientY + window.scrollY)) + 14;
+            tip.style.left = x + 'px';
+            tip.style.top = y + 'px';
+        };
+
+        document.addEventListener('mouseover', (e) => {
+            const t = e.target.closest('.character-details[data-wf-tooltip]');
+            if (!t) return;
+            active = t;
+            show(t, e);
+        });
+        document.addEventListener('mousemove', (e) => { if (active) move(e); });
+        document.addEventListener('mouseout', (e) => {
+            if (e.target.closest('.character-details[data-wf-tooltip]') !== active) return;
+            active = null;
+            hide();
+        });
+        document.addEventListener('focusin', (e) => {
+            const t = e.target.closest('.character-details[data-wf-tooltip]');
+            if (!t) return;
+            active = t;
+            const rect = t.getBoundingClientRect();
+            show(t, { pageX: rect.right + window.scrollX, pageY: rect.bottom + window.scrollY });
+        });
+        document.addEventListener('focusout', (e) => {
+            if (!active) return;
+            const related = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.character-details[data-wf-tooltip]');
+            if (related === active) return;
+            active = null;
+            hide();
+        });
     }
 
     getTotemIconHtml(totemType) {

@@ -546,6 +546,7 @@ body.stats .rankings-container .rankings-section {
 .rankings-section.windfury-section .character-name {
     color: #0070DE; /* shaman color */
 }
+.rankings-section.windfury-section .character-name .group-label { color: inherit; font-weight: 600; opacity: 0.9; }
 
 /* Totem sub-sections within Totems panel */
 .totem-subheader {
@@ -578,6 +579,21 @@ body.stats .rankings-container .rankings-section {
 .totem-info-tooltip pre { margin:0; font-family: inherit; white-space: pre-wrap; }
 .totem-subheader img { border-radius: 3px; }
 .totem-separator { height: 10px; }
+
+/* Windfury member tooltip (per-character-details hover) */
+.wf-members-tooltip {
+    position: absolute; z-index: 9999; max-width: 360px;
+    background: #0b1220; color: #e5e7eb; border: 1px solid #1f2937;
+    padding: 8px 10px; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+    pointer-events: none; white-space: normal; font-size: 12px; line-height: 1.35;
+}
+.wf-tip-title { font-weight: 700; margin-bottom: 6px; }
+.wf-row { display: flex; align-items: baseline; gap: 6px; }
+.wf-inc { color: #e5e7eb; }
+.wf-exc { color: #ef4444; font-weight: 600; }
+.wf-val { color: #93c5fd; margin-left: auto; }
+.wf-exc + .wf-val, .wf-row .wf-exc ~ .wf-val { color: #ef4444; font-weight: 700; }
+.wf-note { margin-top: 6px; color: #cbd5e1; font-size: 11px; opacity: 0.85; }
 
 /* Disarms specific styling */
 .rankings-section.disarms { --panel-accent: #dc3545; }
@@ -656,13 +672,14 @@ body.stats .rankings-container .rankings-section {
     background: rgba(11, 18, 32, 0.95);
     color: #f8fafc;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     opacity: 0;
     pointer-events: none;
     transition: opacity .35s ease;
     z-index: 50;
     padding: 20px;
+    overflow: auto;
 }
 .rankings-section .panel-info-overlay {
     position: absolute;
@@ -670,13 +687,14 @@ body.stats .rankings-container .rankings-section {
     background: rgba(11, 18, 32, 0.95);
     color: #f8fafc;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     opacity: 0;
     pointer-events: none;
     transition: opacity .35s ease;
     z-index: 50;
     padding: 20px;
+    overflow: auto;
 }
 .rankings-section.sunder .panel-info-overlay.show {
     opacity: 1;

@@ -152,11 +152,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         const map = new Map();
         const push = (p) => {
             if (!p) return;
-            const display = p && p.assigned_char_name;
-            const clsRaw = p && p.class_name;
-            if (!display || !clsRaw) return; // Only use saved roster fields
-            const canonicalClass = getCanonicalClass(String(clsRaw));
-            map.set(String(display).trim().toLowerCase(), canonicalClass);
+            // Prefer the same display name the UI shows, then fall back to server-side fields
+            const display = (p.mainCharacterName || p.assigned_char_name || p.character_name || p.name || '').trim();
+            // Use the roster class if present; fall back to API variants. Normalize "Tank" -> Warrior
+            const clsRaw = (p.class || p.class_name || '').trim();
+            if (!display || !clsRaw) return;
+            const canonicalClass = canonicalizeClassForDbMatch(String(clsRaw));
+            map.set(display.toLowerCase(), canonicalClass);
         };
         (currentRosterData.raidDrop || []).forEach(push);
         (currentRosterData.bench || []).forEach(push);

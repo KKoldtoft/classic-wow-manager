@@ -10139,8 +10139,8 @@ app.get('/api/interrupts-data/:eventId', async (req, res) => {
             settings[row.setting_name] = parseFloat(row.setting_value);
         });
         
-        const pointsPerInterrupt = settings.points_per_interrupt || 1;
-        const interruptsNeeded = settings.interrupts_needed || 1;
+        const pointsPerInterrupt = 1; // fixed per new rule
+        const interruptsNeeded = 2;   // 1 pt per 2 interrupts
         const maxPoints = settings.max_points || 5;
         
         console.log(`⚡ [INTERRUPTS] Using dynamic settings: points_per_interrupt=${pointsPerInterrupt}, interrupts_needed=${interruptsNeeded}, max_points=${maxPoints}`);
@@ -10239,8 +10239,8 @@ app.get('/api/disarms-data/:eventId', async (req, res) => {
             settings[row.setting_name] = parseFloat(row.setting_value);
         });
         
-        const pointsPerDisarm = settings.points_per_disarm || 1;
-        const disarmsNeeded = settings.disarms_needed || 1;
+        const pointsPerDisarm = 1; // fixed per new rule
+        const disarmsNeeded = 3;   // 1 pt per 3 disarms
         const maxPoints = settings.max_points || 5;
         
         console.log(`🛡️ [DISARMS] Using dynamic settings: points_per_disarm=${pointsPerDisarm}, disarms_needed=${disarmsNeeded}, max_points=${maxPoints}`);
@@ -10433,12 +10433,12 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
 
         // Fetch extra Windfury attacks per player (>10 only)
         const extraRes = await client.query(`
-            SELECT character_name, ability_value
+            SELECT character_name, character_class, ability_value
             FROM sheet_player_abilities
             WHERE event_id = $1
               AND ability_name = '# of extra Windfury Attacks'
         `, [eventId]);
-        const extraMap = new Map(); // lowerName -> numeric value
+        const extraMap = new Map(); // lowerName -> { value, classLower }
         for (const row of extraRes.rows) {
             const key = String(row.character_name || '').toLowerCase();
             if (!key) continue;
@@ -10447,23 +10447,45 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
                 const mm = row.ability_value.toString().match(/(\d+)/);
                 val = mm ? parseInt(mm[1]) : 0;
             }
-            if (val > 10) extraMap.set(key, val);
+            if (val > 10) {
+                const classLower = String(row.character_class || '').toLowerCase();
+                extraMap.set(key, { value: val, classLower });
+            }
         }
 
         // Attach group averages, totals, and member breakdown to each shaman entry
         for (const entry of finalData) {
             const shamKey = String(entry.character_name || '').toLowerCase();
             const partyId = nameToParty.get(shamKey);
+            entry.party_id = partyId == null ? null : partyId;
             if (partyId == null) continue;
             const members = partyToMembers.get(partyId) || [];
             const considered = [];
             for (const name of members) {
                 const key = String(name || '').toLowerCase();
-                if (extraMap.has(key)) considered.push({ character_name: name, extra_attacks: extraMap.get(key) });
+                if (extraMap.has(key)) {
+                    const rec = extraMap.get(key);
+                    considered.push({ character_name: name, extra_attacks: rec.value, character_class: rec.classLower, included_in_avg: false });
+                }
             }
-            if (considered.length > 0) {
-                const sum = considered.reduce((s, m) => s + (Number(m.extra_attacks) || 0), 0);
-                const avg = Math.round(sum / considered.length);
+            // Determine warrior max extra attacks within party
+            const warriors = considered.filter(m => String(m.character_class||'').includes('warrior'));
+            const maxWarrior = warriors.length > 0 ? Math.max(...warriors.map(m => Number(m.extra_attacks)||0)) : null;
+            // Include only warriors with >= 50% of max warrior
+            if (maxWarrior != null && Number.isFinite(maxWarrior)) {
+                const cutoff = Math.ceil(maxWarrior * 0.5);
+                for (const m of considered) {
+                    const isWarrior = String(m.character_class||'').includes('warrior');
+                    m.included_in_avg = !!(isWarrior && (Number(m.extra_attacks)||0) >= cutoff);
+                }
+            } else {
+                // No warriors with data => no one included
+                for (const m of considered) { m.included_in_avg = false; }
+            }
+            const included = considered.filter(m => m.included_in_avg);
+            if (included.length > 0) {
+                const sum = included.reduce((s, m) => s + (Number(m.extra_attacks) || 0), 0);
+                const avg = Math.round(sum / included.length);
                 entry.group_attacks_avg = avg;
                 entry.group_attacks_total = sum;
                 entry.group_attacks_members = considered.sort((a,b)=> (b.extra_attacks - a.extra_attacks) || String(a.character_name).localeCompare(String(b.character_name)));
@@ -10498,17 +10520,21 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
             const typeLower = String(entry.totem_type || '').toLowerCase();
             if (typeLower.includes('windfury')) {
                 if (!baseline || avg <= 0) { entry.points = 0; continue; }
-                const pct = avg / baseline;
+                // Group 1 has halved requirements: use doubled avg for bracket comparison
+                const effAvg = (entry.party_id === 1 || String(entry.party_id) === '1') ? (avg * 2) : avg;
+                const pct = effAvg / baseline;
                 if (pct < 0.75) entry.points = 0;
                 else if (pct <= 0.99) entry.points = 10;
                 else if (pct <= 1.25) entry.points = 15;
                 else entry.points = 20;
             } else if (typeLower.includes('grace of air')) {
-                if (!baseline || avg < baseline * 0.75 || Number(entry.totems_used || 0) < 10) { entry.points = 0; continue; }
+                const effAvg = (entry.party_id === 1 || String(entry.party_id) === '1') ? (avg * 2) : avg;
+                if (!baseline || effAvg < baseline * 0.75 || Number(entry.totems_used || 0) < 10) { entry.points = 0; continue; }
                 const pts = Math.min(20, Math.floor(Number(entry.totems_used) / 10));
                 entry.points = pts;
             } else if (typeLower.includes('strength of earth')) {
-                if (!baseline || avg < baseline * 0.75 || Number(entry.totems_used || 0) < 10) { entry.points = 0; continue; }
+                const effAvg = (entry.party_id === 1 || String(entry.party_id) === '1') ? (avg * 2) : avg;
+                if (!baseline || effAvg < baseline * 0.75 || Number(entry.totems_used || 0) < 10) { entry.points = 0; continue; }
                 const pts = Math.min(10, Math.floor(Number(entry.totems_used) / 10));
                 entry.points = pts;
             } else if (typeLower.includes('tranquil air')) {
