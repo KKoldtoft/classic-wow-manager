@@ -147,15 +147,15 @@
                     </p>
                     <!-- Hero numbers -->
                     <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
-                        <div id="guild-hero-card-total" style="background:#0b1220; border:1px solid #1f2937; border-radius:12px; padding:14px; text-align:center;">
+                        <div id="guild-hero-card-total" style="background:#0b1220; border:1px solid #1f2937; border-radius:12px; padding:14px; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:space-between; gap:6px;">
                             <div style="font-size:12px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.06em;">LEVEL 60 MEMBERS</div>
-                            <div id="guild-hero-total" style="font-size:28px; font-weight:700; color:#9ca3af;">-</div>
+                            <div id="guild-hero-total" style="font-size:28px; font-weight:700; color:#ffffff;">-</div>
                         </div>
-                        <div id="guild-hero-card-today" style="background:#0b1220; border:1px solid #1f2937; border-radius:12px; padding:14px; text-align:center; cursor:pointer;">
+                        <div id="guild-hero-card-today" style="background:#0b1220; border:1px solid #1f2937; border-radius:12px; padding:14px; text-align:center; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:space-between; gap:6px;">
                             <div style="font-size:12px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.06em;">Members online today</div>
                             <div id="guild-hero-today" style="font-size:28px; font-weight:700; color:#60a5fa;">-</div>
                         </div>
-                        <div id="guild-hero-card-week" style="background:#0b1220; border:1px solid #1f2937; border-radius:12px; padding:14px; text-align:center; cursor:pointer;">
+                        <div id="guild-hero-card-week" style="background:#0b1220; border:1px solid #1f2937; border-radius:12px; padding:14px; text-align:center; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:space-between; gap:6px;">
                             <div style="font-size:12px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.06em;">Members online last 7 days</div>
                             <div id="guild-hero-week" style="font-size:28px; font-weight:700; color:#34d399;">-</div>
                         </div>
@@ -292,9 +292,38 @@
                     const elTotal = document.getElementById('guild-hero-total');
                     const elToday = document.getElementById('guild-hero-today');
                     const elWeek = document.getElementById('guild-hero-week');
-                    if (elTotal) elTotal.textContent = String(level60Count);
-                    if (elToday) elToday.textContent = String(todayCount);
-                    if (elWeek) elWeek.textContent = String(weekCount);
+                    // Start at ~95% then animate up to 100% with fast-start slow-end
+                    const animateCounter = (el, finalValue, durationMs = 3600) => {
+                        if (!el) return;
+                        const target = Math.max(0, Number(finalValue) || 0);
+                        let start = Math.floor(target * 0.95);
+                        if (start === target && target > 0) start = target - 1;
+                        if (target === 0) { el.textContent = '0'; return; }
+                        el.textContent = String(start);
+                        const startTime = performance.now();
+                        const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3); // fast then slow
+                        let lastShown = start;
+                        const tick = (now) => {
+                            const elapsed = now - startTime;
+                            const t = Math.min(1, elapsed / durationMs);
+                            const eased = easeOutCubic(t);
+                            const value = Math.round(start + (target - start) * eased);
+                            if (value !== lastShown) {
+                                el.textContent = String(value);
+                                lastShown = value;
+                            }
+                            if (t < 1) {
+                                requestAnimationFrame(tick);
+                            } else {
+                                el.textContent = String(target);
+                            }
+                        };
+                        requestAnimationFrame(tick);
+                    };
+
+                    animateCounter(elTotal, level60Count);
+                    animateCounter(elToday, todayCount);
+                    animateCounter(elWeek, weekCount);
 
                     // Buckets for pie chart
                     const buckets = {
