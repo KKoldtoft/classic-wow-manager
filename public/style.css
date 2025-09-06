@@ -1024,7 +1024,7 @@ body.raidlogs .loading-indicator,
 body.raidlogs .no-data-message,
 body.raidlogs .error-display { background: #1a191e; border: 1px solid #555555; }
 body.raidlogs .no-data-content, body.raidlogs .error-content { color: #e8e8e8; }
-body.raidlogs .floating-nav { background: rgba(26,25,30,0.95); border: 1px solid rgba(255,255,255,0.08); }
+body.raidlogs .floating-nav { background: #00233e; border: 1px solid rgba(255,255,255,0.08); }
 body.raidlogs .nav-buttons { border-color: rgba(255,255,255,0.12); }
 body.raidlogs .section-header { background: #232229; color: #e8e8e8; }
 body.raidlogs .ranking-item { border-bottom: 1px solid #333; }

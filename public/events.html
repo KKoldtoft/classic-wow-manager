@@ -138,6 +138,41 @@
                 </div>
             </div>
 
+            <!-- Column 3: 1Principles Guild (NEW, above My Characters) -->
+            <div class="panel" id="guild-overview-panel">
+                <h1 class="panel-title">1Principles Guild</h1>
+                <div style="display:flex; flex-direction: column; gap: 14px;">
+                    <p style="margin: 0; color: #cbd5e1;">
+                        We’re always recruiting new members. As a member, you’ll earn 10 bonus points from any of our raids and become part of our guild community. Whisper any current member in-game for an invite.
+                    </p>
+                    <!-- Hero numbers -->
+                    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                        <div id="guild-hero-card-total" style="background:#0b1220; border:1px solid #1f2937; border-radius:12px; padding:14px; text-align:center;">
+                            <div style="font-size:12px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.06em;">LEVEL 60 MEMBERS</div>
+                            <div id="guild-hero-total" style="font-size:28px; font-weight:700; color:#9ca3af;">-</div>
+                        </div>
+                        <div id="guild-hero-card-today" style="background:#0b1220; border:1px solid #1f2937; border-radius:12px; padding:14px; text-align:center; cursor:pointer;">
+                            <div style="font-size:12px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.06em;">Members online today</div>
+                            <div id="guild-hero-today" style="font-size:28px; font-weight:700; color:#60a5fa;">-</div>
+                        </div>
+                        <div id="guild-hero-card-week" style="background:#0b1220; border:1px solid #1f2937; border-radius:12px; padding:14px; text-align:center; cursor:pointer;">
+                            <div style="font-size:12px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.06em;">Members online last 7 days</div>
+                            <div id="guild-hero-week" style="font-size:28px; font-weight:700; color:#34d399;">-</div>
+                        </div>
+                    </div>
+                    <!-- Chart container -->
+                    <div style="background:#0b1220; border:1px solid #1f2937; border-radius:12px; padding:12px;">
+                        <canvas id="guild-activity-chart" style="width:100%; height:240px;"></canvas>
+                    </div>
+                    <div style="margin-top: 12px;">
+                        <a class="refresh-button" href="/guild-members" style="display: flex; box-sizing: border-box; width: 100%; justify-content: center; text-decoration: none;">
+                            <i class="fas fa-users"></i>
+                            See all guild members
+                        </a>
+                    </div>
+                </div>
+            </div>
+
             <!-- Column 3: My Characters -->
             <div class="panel">
                 <h1 class="panel-title">My Characters</h1>
@@ -213,6 +248,7 @@
 
     <script src="/script.js"></script>
     <script src="/top-bar.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
     document.addEventListener('DOMContentLoaded', async () => {
         try {
@@ -228,6 +264,148 @@
                 }
             }
         } catch {}
+
+        // Guild overview panel logic
+        try {
+            const guildPanel = document.getElementById('guild-overview-panel');
+            if (guildPanel) {
+                const resp = await fetch('/api/guild-members');
+                const data = await resp.json();
+                if (data && data.success && Array.isArray(data.members)) {
+                    const members = data.members;
+                    const total = members.length;
+                    const level60Count = members.filter(m => Number(m.level) === 60).length;
+                    const toNumber = (v) => {
+                        const n = Number(v);
+                        return Number.isFinite(n) ? n : null;
+                    };
+                    const todayCount = members.filter(m => {
+                        const d = toNumber(m.last_online_days);
+                        return d !== null && d < 1;
+                    }).length;
+                    const weekCount = members.filter(m => {
+                        const d = toNumber(m.last_online_days);
+                        return d !== null && d < 7;
+                    }).length;
+
+                    // Update hero numbers
+                    const elTotal = document.getElementById('guild-hero-total');
+                    const elToday = document.getElementById('guild-hero-today');
+                    const elWeek = document.getElementById('guild-hero-week');
+                    if (elTotal) elTotal.textContent = String(level60Count);
+                    if (elToday) elToday.textContent = String(todayCount);
+                    if (elWeek) elWeek.textContent = String(weekCount);
+
+                    // Buckets for pie chart
+                    const buckets = {
+                        Today: 0,
+                        '1-6 days': 0,
+                        '7-30 days': 0,
+                        '31-90 days': 0,
+                        '91+ days': 0,
+                        Unknown: 0
+                    };
+
+                    for (const m of members) {
+                        const d = toNumber(m.last_online_days);
+                        if (d == null) {
+                            buckets.Unknown += 1;
+                        } else if (d < 1) {
+                            buckets.Today += 1;
+                        } else if (d < 7) {
+                            buckets['1-6 days'] += 1;
+                        } else if (d < 31) {
+                            buckets['7-30 days'] += 1;
+                        } else if (d < 91) {
+                            buckets['31-90 days'] += 1;
+                        } else {
+                            buckets['91+ days'] += 1;
+                        }
+                    }
+
+                    const ctx = document.getElementById('guild-activity-chart');
+                    if (ctx && 'getContext' in ctx) {
+                        const labels = Object.keys(buckets);
+                        const values = labels.map(k => buckets[k]);
+                        const colors = [
+                            '#60a5fa', // Today
+                            '#34d399', // 1-6
+                            '#fbbf24', // 7-30
+                            '#f87171', // 31-90
+                            '#a78bfa', // 91+
+                            '#9ca3af'  // Unknown
+                        ];
+
+                        const chart = new Chart(ctx.getContext('2d'), {
+                            type: 'pie',
+                            data: {
+                                labels,
+                                datasets: [{
+                                    data: values,
+                                    backgroundColor: colors,
+                                    borderWidth: 1,
+                                    borderColor: '#111827'
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                resizeDelay: 200,
+                                plugins: {
+                                    legend: {
+                                        position: 'bottom',
+                                        labels: {
+                                            color: '#e5e7eb'
+                                        }
+                                    },
+                                    tooltip: {
+                                        callbacks: {
+                                            label: function(context) {
+                                                const label = context.label || '';
+                                                const v = context.raw || 0;
+                                                const pct = total ? ((v/total)*100).toFixed(1) : '0.0';
+                                                return `${label}: ${v} (${pct}%)`;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
+                        // Match hero number colors to slices and add hover interactions
+                        const elTodayCard = document.getElementById('guild-hero-card-today');
+                        const elWeekCard = document.getElementById('guild-hero-card-week');
+                        const elToday = document.getElementById('guild-hero-today');
+                        const elWeek = document.getElementById('guild-hero-week');
+                        if (elToday) elToday.style.color = colors[0];
+                        if (elWeek) elWeek.style.color = colors[1];
+
+                        const setActive = (sliceIndex) => {
+                            if (!chart) return;
+                            chart.setActiveElements([{ datasetIndex: 0, index: sliceIndex }]);
+                            chart.update();
+                        };
+                        const clearActive = () => {
+                            if (!chart) return;
+                            chart.setActiveElements([]);
+                            chart.update();
+                        };
+
+                        if (elTodayCard) {
+                            elTodayCard.addEventListener('mouseenter', () => setActive(0));
+                            elTodayCard.addEventListener('mouseleave', clearActive);
+                        }
+                        if (elWeekCard) {
+                            elWeekCard.addEventListener('mouseenter', () => setActive(1));
+                            elWeekCard.addEventListener('mouseleave', clearActive);
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            // best-effort: ignore errors on home panel
+            console.warn('Guild overview panel failed:', e);
+        }
     });
     </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">

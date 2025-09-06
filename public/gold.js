@@ -967,10 +967,10 @@ class GoldPotManager {
         const sumFrom = (arr)=> (arr||[]).reduce((acc,row)=> acc + (lower(row.character_name||row.player_name||'')===nameKey ? (Number(row.points)||0) : 0), 0);
 
         // Dataset-based panels
-        push('Abilities', sumFrom(this.datasets.abilitiesData));
+        push('Sappers', sumFrom(this.datasets.abilitiesData));
         push('Totems', sumFrom(this.datasets.windfuryData));
         push('RocketHelm', sumFrom(this.datasets.rocketHelmetData));
-        push('Major Mana Potions', sumFrom(this.datasets.manaPotionsData));
+        push('Mana pots', sumFrom(this.datasets.manaPotionsData));
         push('Runes', sumFrom(this.datasets.runesData));
         push('Interrupts', sumFrom(this.datasets.interruptsData));
         push('Disarms', sumFrom(this.datasets.disarmsData));
@@ -1139,9 +1139,11 @@ class GoldPotManager {
             </div>
         `;
         const totalGold = computedTotalGold;
+        const totalPoints = Math.round(Number(this.playerTotals?.get(nameKey)?.points || 0));
         const footer = `
-            <div style="position:absolute; left:0; right:0; bottom:0; height:50px; background:rgba(0,0,0,0.5); border-bottom-left-radius:12px; border-bottom-right-radius:12px; display:flex; align-items:center; justify-content:center;">
-                <div style=\"font-weight:900; font-size:20px; color:#f5c542;\">${totalGold.toLocaleString()} gold</div>
+            <div class="player-footer-overlay" style="position:absolute; left:0; right:0; bottom:0; height:50px; background:rgba(0,0,0,0.5); border-bottom-left-radius:12px; border-bottom-right-radius:12px; display:flex; align-items:center; justify-content:center;">
+                <div class="gold-total-display" style=\"font-weight:900; font-size:20px; color:#f5c542; transition: opacity .25s ease;\">${totalGold.toLocaleString()} gold</div>
+                <div class="points-total-display" style=\"position:absolute; font-weight:900; font-size:20px; color:#e5e7eb; opacity:0; transition: opacity .25s ease;\">${totalPoints.toLocaleString()} points</div>
             </div>
         `;
         const body = items.length ? items
@@ -1193,8 +1195,8 @@ class GoldPotManager {
             });
         };
         // From rankings arrays
-        add('Abilities', this.datasets.abilitiesData);
-        add('Mana Potions', this.datasets.manaPotionsData);
+        add('Sappers', this.datasets.abilitiesData);
+        add('Mana pots', this.datasets.manaPotionsData);
         add('Runes', this.datasets.runesData);
         add('Interrupts', this.datasets.interruptsData);
         add('Disarms', this.datasets.disarmsData);

@@ -2574,7 +2574,7 @@ class RaidLogsManager {
             { key: 'abilities', name: 'Engineering & Holywater', containerId: 'abilities-list' },
             { key: 'mana_potions', name: 'Major Mana Potions', containerId: 'mana-potions-list' },
             { key: 'runes', name: 'Dark or Demonic runes', containerId: 'runes-list' },
-            { key: 'windfury_totems', name: 'Windfury Totems', containerId: 'windfury-list' },
+            { key: 'windfury_totems', name: 'Totems', containerId: 'windfury-list' },
             { key: 'interrupts', name: 'Interrupted spells', containerId: 'interrupts-list' },
             { key: 'disarms', name: 'Disarmed enemies', containerId: 'disarms-list' },
             { key: 'sunder', name: 'Sunder Armor', containerId: 'sunder-list' },
@@ -4310,7 +4310,7 @@ class RaidLogsManager {
             container.innerHTML = `
                 <div class="rankings-empty">
                     <i class="fas fa-wind"></i>
-                    <p>No shamans with 10+ Totems</p>
+                    <p>No Windfury data available</p>
                 </div>
             `;
             return;
@@ -4365,7 +4365,7 @@ class RaidLogsManager {
                     : (() => {
                         const avg = Number(player.group_attacks_avg||0);
                         const total = Number(player.group_attacks_total||0) || (Array.isArray(player.group_attacks_members) ? player.group_attacks_members.reduce((s,m)=> s + (Number(m.extra_attacks)||0), 0) : 0);
-                        return `${avg} avg extra attacks (${total} total). ${player.totems_used} totems`;
+                        return `${avg} avg extra attacks (${total} total)`;
                     })();
                 const totemIcon = this.getTotemIconHtml(typeText) || this.getClassIconHtml(resolvedClass);
                 const groupText = (player.party_id === 1 || String(player.party_id) === '1') ? 'Tank group' : `Group ${Number(player.party_id)}`;
@@ -5911,7 +5911,7 @@ class RaidLogsManager {
             { key:'polymorph', label:'Polymorph' },
             { key:'powerInfusion', label:'Power Infusion' },
             { key:'decurses', label:'Decurses' },
-            { key:'windfury', label:'Windfury Totems' },
+            { key:'windfury', label:'Totems' },
             { key:'worldBuffs', label:'World Buffs' },
             { key:'frostRes', label:'Frost Resistance' },
             { key:'void', label:'Avoidable Void Damage' },
@@ -6042,6 +6042,13 @@ class RaidLogsManager {
             frostResMap = mapFromPanel('frost_resistance');
             voidMap = mapFromPanel('void_damage');
             windfuryMap = mapFromPanel('windfury_totems');
+            // Fallback: if snapshot lacks Windfury/Totems data, use computed dataset
+            if (!windfuryMap || windfuryMap.size === 0) {
+                const computedWindfury = collectMap(this.windfuryData);
+                if (computedWindfury && computedWindfury.size > 0) {
+                    windfuryMap = computedWindfury;
+                }
+            }
             bigBuyerMap = mapFromPanel('big_buyer');
         } else {
             // Computed mode: gate Frost Resistance to DPS only (require primaryRoles)

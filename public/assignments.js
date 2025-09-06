@@ -410,6 +410,10 @@
       const isGothik = panelKeyLower.includes('goth');
       const isAnub = panelKeyLower.includes('anub');
       const isMaex = panelKeyLower.includes('maex');
+      const isFaerlina = panelKeyLower.includes('faerlina');
+      const isPatch = panelKeyLower.includes('patch');
+      const isThadd = panelKeyLower.includes('thadd');
+      const isHeigan = panelKeyLower.includes('heig');
       const isHorse = panelKeyLower.includes('horse');
       const isNoth = panelKeyLower.includes('noth');
       const isLoatheb = panelKeyLower.includes('loatheb');
@@ -419,12 +423,16 @@
       const isViscidus = panelKeyLower.includes('viscidus');
       const isTwins = (panelKeyLower.includes('twin') && (panelKeyLower.includes('emperor') || panelKeyLower.includes('emperors'))) && !panelKeyLower.includes('trash');
       const isOuro = panelKeyLower.includes('ouro');
-      if (isSapphiron || isKelthuzad || isGothik || isAnub || isMaex || isHorse || isNoth || isLoatheb || isRazu || isSkeram || isFankriss || isViscidus || isTwins || isOuro) {
+      if (isSapphiron || isKelthuzad || isGothik || isAnub || isMaex || isFaerlina || isPatch || isThadd || isHeigan || isHorse || isNoth || isLoatheb || isRazu || isSkeram || isFankriss || isViscidus || isTwins || isOuro) {
         const previewUrl =
-          isSapphiron ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756330270/Raz_siov1r.mp4' :
-          isKelthuzad ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756330583/KT_fakfgq.mp4' :
+          isSapphiron ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1757148684/Sapphiron01_suteut.mp4' :
+          isKelthuzad ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1757148683/KT01_qywxls.mp4' :
           isGothik ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756022062/Gothik-human-side_znqy6h.mp4' :
           isAnub ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756024672/anub_xgkjtx.mp4' :
+          isFaerlina ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1757148685/Faerlina_g88kol.mp4' :
+          isPatch ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1757148685/patchwerk_ui_q0yzyt.mp4' :
+          isThadd ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1757148683/Thaddius1_ubs5h0.mp4' :
+          isHeigan ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1757148687/Heigan01_t8ysme.mp4' :
           isHorse ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756148431/ForuHorseman_dipmqk.mp4' :
           isNoth ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756149354/NothThePlaguebringer_qree64.mp4' :
           isLoatheb ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756333046/Loatheb_r8mbox.mp4' :
@@ -437,7 +445,7 @@
           'https://res.cloudinary.com/duthjs0c3/video/upload/v1756025139/Spider_l0hqmr.mp4';
         imgWrapper.style.position = 'relative';
         // Keep the tighter preview width for Sapphiron/Kel; let Gothik/Anub/Maex/Horsemen/Noth/Loatheb/Razuvious/AQ40 use full image width to match sizes exactly
-        if (!(isGothik || isAnub || isMaex || isHorse || isNoth || isLoatheb || isRazu || isSkeram || isFankriss || isViscidus || isTwins || isOuro)) { try { imgWrapper.style.maxWidth = '720px'; } catch {} }
+        if (!(isGothik || isAnub || isMaex || isFaerlina || isPatch || isThadd || isHeigan || isHorse || isNoth || isLoatheb || isRazu || isSkeram || isFankriss || isViscidus || isTwins || isOuro)) { try { imgWrapper.style.maxWidth = '720px'; } catch {} }
         try { imgWrapper.style.overflow = 'hidden'; } catch {}
         let played = false;
 
@@ -3804,6 +3812,13 @@
         const WING_ORDER_CANON = isNonNaxEvent
           ? ['main','aq40','bwl','mc']
           : ['main','military','spider','abomination','plague','frostwyrm_lair'];
+        const WING_SYNONYMS = {
+          'military wing': 'military',
+          'spider wing': 'spider',
+          'abomination wing': 'abomination',
+          'plague wing': 'plague',
+          'frostwyrm lair': 'frostwyrm_lair'
+        };
         const BOSS_ORDER = isNonNaxEvent ? {
           main: ['tanking','healing','buffs','decurse and dispel','curses and soul stones','power infusion'],
           aq40: ['skeram','bug','sartura','fank','visc','huhu','twin','twins trash','ouro',"c'thun",'cthun'],
@@ -3818,13 +3833,17 @@
           frostwyrm_lair: ['sapph','kel']
         };
         function wingIndex(w) {
-          const lower = String(w||'').trim().toLowerCase() || 'main';
-          const idxLower = WING_ORDER_CANON.indexOf(lower);
+          const raw = String(w||'').trim().toLowerCase();
+          const norm = raw || 'main';
+          const mapped = WING_SYNONYMS[norm] || norm.replace(/\s+/g, '_');
+          const canon = mapped;
+          const idxLower = WING_ORDER_CANON.indexOf(canon);
           return idxLower === -1 ? 999 : idxLower;
         }
         function bossIndex(wing, boss) {
-          const key = String(wing||'').toLowerCase();
-          const arr = BOSS_ORDER[key] || [];
+          const raw = String(wing||'').trim().toLowerCase();
+          const mapped = WING_SYNONYMS[raw] || raw.replace(/\s+/g, '_');
+          const arr = BOSS_ORDER[mapped] || [];
           const bk = String(boss||'').toLowerCase();
           const i = arr.findIndex(k => bk.includes(k));
           return i === -1 ? 999 : i;

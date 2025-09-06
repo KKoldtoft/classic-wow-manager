@@ -3272,10 +3272,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const id2 = findByMarker('cross');
                 const id3 = findByMarker('square');
                 const id4 = findByMarker('moon');
-                if (id1) toAdd.push(makeEntry(id1, icons.skull, 'Tank Stalagg (Right Side)'));
-                if (id3) toAdd.push(makeEntry(id3, icons.skull, 'Tank Stalagg (Right Side)'));
-                if (id2) toAdd.push(makeEntry(id2, icons.cross, 'Tank Feugen (Left Side)'));
-                if (id4) toAdd.push(makeEntry(id4, icons.cross, 'Tank Feugen (Left Side)'));
+                if (id1) toAdd.push(makeEntry(id1, icons.skull, 'Tank Stalagg (Left Side)'));
+                if (id3) toAdd.push(makeEntry(id3, icons.skull, 'Tank Stalagg (Left Side)'));
+                if (id2) toAdd.push(makeEntry(id2, icons.cross, 'Tank Feugen (Right Side)'));
+                if (id4) toAdd.push(makeEntry(id4, icons.cross, 'Tank Feugen (Right Side)'));
                 if (id1) toAdd.push(makeEntry(id1, icons.skull, 'Tank Boss'));
 
                 const healerClasses = new Set(['shaman','priest','druid']);

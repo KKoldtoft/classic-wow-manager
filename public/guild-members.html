@@ -473,21 +473,34 @@
             }
 
             filteredMembers.sort((a, b) => {
-                let aVal = a[column];
-                let bVal = b[column];
-                
-                // Handle null/undefined values
-                if (aVal == null) aVal = '';
-                if (bVal == null) bVal = '';
-                
-                // Convert to string for comparison
-                aVal = aVal.toString().toLowerCase();
-                bVal = bVal.toString().toLowerCase();
+                const aVal = a[column];
+                const bVal = b[column];
 
+                // Always push null/undefined to the bottom
+                const aIsNull = aVal == null;
+                const bIsNull = bVal == null;
+                if (aIsNull && !bIsNull) return 1;
+                if (!aIsNull && bIsNull) return -1;
+                if (aIsNull && bIsNull) return 0;
+
+                // Numeric sort for specific columns
+                if (column === 'last_online_days' || column === 'level') {
+                    const aNum = Number(aVal);
+                    const bNum = Number(bVal);
+                    if (currentSort.direction === 'asc') {
+                        return aNum - bNum;
+                    } else {
+                        return bNum - aNum;
+                    }
+                }
+
+                // Default: case-insensitive string compare
+                const aStr = aVal.toString().toLowerCase();
+                const bStr = bVal.toString().toLowerCase();
                 if (currentSort.direction === 'asc') {
-                    return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+                    return aStr < bStr ? -1 : aStr > bStr ? 1 : 0;
                 } else {
-                    return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+                    return aStr > bStr ? -1 : aStr < bStr ? 1 : 0;
                 }
             });
 

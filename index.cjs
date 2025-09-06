@@ -10405,10 +10405,7 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
                 extra_totems: extra,
                 points: points
             };
-        })
-        // Qualify at >= threshold (10+) so exactly 10 is included
-        .filter(char => char.totems_used >= threshold)
-        .sort((a, b) => (b.points - a.points) || (b.totems_used - a.totems_used) || String(a.totem_type||'').localeCompare(String(b.totem_type||'')));
+        });
         
         console.log(`🌀 [WINDFURY] Processed ${finalData.length} characters with Windfury Totem usage above threshold`);
         console.log(`🌀 [WINDFURY] Final data sample:`, finalData.slice(0, 2));
@@ -10546,9 +10543,37 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
             }
         }
         
+        // Apply visibility filters and sort AFTER recalculation
+        const filteredData = finalData.filter(entry => {
+            const typeLower = String(entry.totem_type || '').toLowerCase();
+            if (typeLower.includes('windfury')) {
+                // Show Windfury rows when we have usable extra-attack data
+                return Number.isFinite(entry.group_attacks_avg) && Number(entry.group_attacks_avg) > 0;
+            }
+            if (typeLower.includes('grace of air') || typeLower.includes('strength of earth') || typeLower.includes('tranquil air')) {
+                // Keep standard threshold for non-Windfury types
+                return Number(entry.totems_used || 0) >= 10 && Number(entry.points || 0) > 0;
+            }
+            return Number(entry.points || 0) !== 0;
+        }).sort((a, b) => {
+            const byPts = (Number(b.points || 0) - Number(a.points || 0));
+            if (byPts !== 0) return byPts;
+            const aType = String(a.totem_type || '').toLowerCase();
+            const bType = String(b.totem_type || '').toLowerCase();
+            const aIsWf = aType.includes('windfury');
+            const bIsWf = bType.includes('windfury');
+            if (aIsWf && bIsWf) {
+                const byAvg = (Number(b.group_attacks_avg || 0) - Number(a.group_attacks_avg || 0));
+                if (byAvg !== 0) return byAvg;
+            }
+            const byTot = (Number(b.totems_used || 0) - Number(a.totems_used || 0));
+            if (byTot !== 0) return byTot;
+            return String(a.character_name || '').localeCompare(String(b.character_name || ''));
+        });
+        
         res.json({ 
             success: true, 
-            data: finalData,
+            data: filteredData,
             eventId: eventId,
             settings: {
                 threshold,
@@ -11143,101 +11168,66 @@ app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, express.json(
         await client.query(
             `INSERT INTO rewards_snapshot_events (event_id, locked_by_id, locked_by_name)
              VALUES ($1, $2, $3)
-             ON CONFLICT (event_id) DO UPDATE SET locked_by_id = EXCLUDED.locked_by_id, locked_by_name = EXCLUDED.locked_by_name`,
+             ON CONFLICT (event_id) DO UPDATE SET locked_by_id = EXCLUDED.locked_by_id, locked_by_name = EXCLUDED.locked_by_name, locked_at = NOW()`,
             [eventId, lockedById, lockedByName]
         );
 
+        // Always replace snapshot rows for the event to avoid resurrecting stale data
+        await client.query('DELETE FROM rewards_and_deductions_points WHERE event_id = $1', [eventId]);
+
         if (entries.length > 0) {
-            // If snapshot was just created, we can bulk insert; otherwise, insert missing rows one-by-one
-            // Insert missing rows one-by-one when already locked
-            const hasAny = (await client.query('SELECT 1 FROM rewards_and_deductions_points WHERE event_id = $1 LIMIT 1', [eventId])).rows.length > 0;
-            if (hasAny) {
-                for (const e of entries) {
-                    await client.query(
-                        `INSERT INTO rewards_and_deductions_points (
-                            event_id, panel_key, panel_name, discord_user_id, character_name, character_class,
-                            ranking_number_original, point_value_original, character_details_original,
-                            primary_numeric_original, aux_json
-                        )
-                        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
-                        WHERE NOT EXISTS (
-                            SELECT 1 FROM rewards_and_deductions_points r
-                            WHERE r.event_id = $1 AND r.panel_key = $2
-                              AND (
-                                   (r.discord_user_id IS NOT NULL AND r.discord_user_id = $4)
-                                OR (r.discord_user_id IS NULL AND r.character_name = $5)
-                              )
-                              AND (r.ranking_number_original IS NOT DISTINCT FROM $7)
-                        )`,
-                        [
-                            eventId,
-                            e.panel_key || null,
-                            e.panel_name || null,
-                            e.discord_user_id || null,
-                            e.character_name || null,
-                            e.character_class || null,
-                            Number.isFinite(e.ranking_number_original) ? e.ranking_number_original : null,
-                            e.point_value_original ?? 0,
-                            e.character_details_original || null,
-                            e.primary_numeric_original ?? null,
-                            e.aux_json ? JSON.stringify(e.aux_json) : null
-                        ]
-                    );
-                }
-            } else {
-                // Bulk insert entries using UNNEST columns
-                const cols = {
-                    panel_key: [], panel_name: [], discord_user_id: [], character_name: [], character_class: [],
-                    ranking_number_original: [], point_value_original: [], character_details_original: [],
-                    primary_numeric_original: [], aux_json: []
-                };
-                for (const e of entries) {
-                    cols.panel_key.push(e.panel_key || null);
-                    cols.panel_name.push(e.panel_name || null);
-                    cols.discord_user_id.push(e.discord_user_id || null);
-                    cols.character_name.push(e.character_name || null);
-                    cols.character_class.push(e.character_class || null);
-                    cols.ranking_number_original.push(Number.isFinite(e.ranking_number_original) ? e.ranking_number_original : null);
-                    cols.point_value_original.push(e.point_value_original ?? 0);
-                    cols.character_details_original.push(e.character_details_original || null);
-                    cols.primary_numeric_original.push(e.primary_numeric_original ?? null);
-                    cols.aux_json.push(e.aux_json ? JSON.stringify(e.aux_json) : null);
-                }
-
-                const query = `
-                    INSERT INTO rewards_and_deductions_points (
-                        event_id, panel_key, panel_name, discord_user_id, character_name, character_class,
-                        ranking_number_original, point_value_original, character_details_original,
-                        primary_numeric_original, aux_json
-                    )
-                    SELECT
-                        $1::varchar,
-                        unnest($2::varchar[]),
-                        unnest($3::varchar[]),
-                        unnest($4::varchar[]),
-                        unnest($5::varchar[]),
-                        unnest($6::varchar[]),
-                        unnest($7::int[]),
-                        unnest($8::numeric[]),
-                        unnest($9::text[]),
-                        unnest($10::numeric[]),
-                        unnest($11::jsonb[])
-                `;
-
-                await client.query(query, [
-                    eventId,
-                    cols.panel_key,
-                    cols.panel_name,
-                    cols.discord_user_id,
-                    cols.character_name,
-                    cols.character_class,
-                    cols.ranking_number_original,
-                    cols.point_value_original,
-                    cols.character_details_original,
-                    cols.primary_numeric_original,
-                    cols.aux_json
-                ]);
+            // Bulk insert entries using UNNEST columns
+            const cols = {
+                panel_key: [], panel_name: [], discord_user_id: [], character_name: [], character_class: [],
+                ranking_number_original: [], point_value_original: [], character_details_original: [],
+                primary_numeric_original: [], aux_json: []
+            };
+            for (const e of entries) {
+                cols.panel_key.push(e.panel_key || null);
+                cols.panel_name.push(e.panel_name || null);
+                cols.discord_user_id.push(e.discord_user_id || null);
+                cols.character_name.push(e.character_name || null);
+                cols.character_class.push(e.character_class || null);
+                cols.ranking_number_original.push(Number.isFinite(e.ranking_number_original) ? e.ranking_number_original : null);
+                cols.point_value_original.push(e.point_value_original ?? 0);
+                cols.character_details_original.push(e.character_details_original || null);
+                cols.primary_numeric_original.push(e.primary_numeric_original ?? null);
+                cols.aux_json.push(e.aux_json ? JSON.stringify(e.aux_json) : null);
             }
+
+            const query = `
+                INSERT INTO rewards_and_deductions_points (
+                    event_id, panel_key, panel_name, discord_user_id, character_name, character_class,
+                    ranking_number_original, point_value_original, character_details_original,
+                    primary_numeric_original, aux_json
+                )
+                SELECT
+                    $1::varchar,
+                    unnest($2::varchar[]),
+                    unnest($3::varchar[]),
+                    unnest($4::varchar[]),
+                    unnest($5::varchar[]),
+                    unnest($6::varchar[]),
+                    unnest($7::int[]),
+                    unnest($8::numeric[]),
+                    unnest($9::text[]),
+                    unnest($10::numeric[]),
+                    unnest($11::jsonb[])
+            `;
+
+            await client.query(query, [
+                eventId,
+                cols.panel_key,
+                cols.panel_name,
+                cols.discord_user_id,
+                cols.character_name,
+                cols.character_class,
+                cols.ranking_number_original,
+                cols.point_value_original,
+                cols.character_details_original,
+                cols.primary_numeric_original,
+                cols.aux_json
+            ]);
         }
 
         await client.query('COMMIT');

@@ -51,7 +51,7 @@ body.gold .player-breakdown span { color: #111 !important; }
     border-radius: 0;
     overflow: visible;
     box-shadow: none;
-    max-width: 1200px;
+    max-width: 1400px;
     margin: 0 auto; /* center container */
 }
 
@@ -207,7 +207,7 @@ body.gold .player-breakdown span { color: #111 !important; }
     position: relative;
     overflow: hidden;
     box-sizing: border-box;
-    width: 275px; /* ensure exact visual width */
+    width: 324.64px; /* ensure exact visual width */
 }
 
 .player-card:hover {
@@ -232,7 +232,7 @@ body.gold .player-breakdown span { color: #111 !important; }
     border-bottom-left-radius: 12px;
     border-bottom-right-radius: 12px;
     box-sizing: border-box;
-    width: 275px; /* exact same width as top */
+    width: 324.64px; /* exact same width as top */
 }
 
 /* Make the whole stack hover as one */
@@ -244,6 +244,8 @@ body.gold .player-breakdown span { color: #111 !important; }
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
+.player-stack:hover .gold-total-display { opacity: 0 !important; }
+.player-stack:hover .points-total-display { opacity: 1 !important; }
 .player-card:hover {
     transform: none !important;
     box-shadow: none !important;
@@ -252,7 +254,7 @@ body.gold .player-breakdown span { color: #111 !important; }
 /* Grid column fixed width to match cards */
 .players-grid-cards {
     display: grid !important;
-    grid-template-columns: repeat(4, 275px) !important;
+    grid-template-columns: repeat(4, 324.64px) !important;
     grid-auto-flow: row !important;
     grid-auto-rows: auto;
     gap: 12px;
