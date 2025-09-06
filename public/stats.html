@@ -76,6 +76,19 @@
                     </div>
                 </section>
 
+                <!-- Average gold pot size by class -->
+                <section class="rankings-section healing" id="avg-goldpot-by-class-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-sack-dollar"></i> Average gold pot size by class</h2>
+                        <p>Average gold per player from each raid, grouped by class</p>
+                    </div>
+                    <div class="rankings-list" style="gap:0;">
+                        <div class="stats-stack">
+                            <div id="avg-goldpot-by-class-chart" class="stats-item-chart"></div>
+                        </div>
+                    </div>
+                </section>
+
                 <!-- Tier 3 token prices by group -->
                 <section class="rankings-section healing" id="t3-averages-section">
                     <div class="section-header">
@@ -84,6 +97,34 @@
                     </div>
                     <div class="rankings-list" id="t3-averages-container" style="display:grid; grid-template-columns: 1fr; gap:16px; align-items:start;">
                         <!-- Filled dynamically with 3 group sections -->
+                    </div>
+                </section>
+
+                <!-- Raid members by class & race -->
+                <section class="rankings-section healing" id="raid-class-race-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-users"></i> Raid members by class & race</h2>
+                        <p>All players who have participated in raids</p>
+                    </div>
+                    <div class="rankings-list" style="gap:16px;">
+                        <div class="stats-stack" style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+                            <div id="raid-class-pie" class="stats-item-chart" style="min-height:360px;"></div>
+                            <div id="raid-race-pie" class="stats-item-chart" style="min-height:360px;"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Guild members by class & race -->
+                <section class="rankings-section healing" id="guild-class-race-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-user-friends"></i> Guild members by class & race</h2>
+                        <p>All current guild members in the database</p>
+                    </div>
+                    <div class="rankings-list" style="gap:16px;">
+                        <div class="stats-stack" style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+                            <div id="guild-class-pie" class="stats-item-chart" style="min-height:360px;"></div>
+                            <div id="guild-race-pie" class="stats-item-chart" style="min-height:360px;"></div>
+                        </div>
                     </div>
                 </section>
             </div>

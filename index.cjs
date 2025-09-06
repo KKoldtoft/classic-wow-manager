@@ -15657,6 +15657,68 @@ app.get('/api/stats/goldpot-history', async (req, res) => {
     }
 });
 
+// Average per-player gold pot share by class across raids
+app.get('/api/stats/avg-goldpot-by-class', async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
+    }
+
+    let client;
+    try {
+        client = await pool.connect();
+
+        // Ensure required tables exist
+        const [lootExists, logExists] = await Promise.all([
+            client.query(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema='public' AND table_name='loot_items') AS exists;`),
+            client.query(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema='public' AND table_name='log_data') AS exists;`)
+        ]);
+        if (!lootExists.rows[0].exists || !logExists.rows[0].exists) {
+            return res.json({ success: true, averages: {} });
+        }
+
+        const q = await client.query(`
+            WITH pots AS (
+                SELECT li.event_id, SUM(COALESCE(li.gold_amount,0))::bigint AS total_gold
+                FROM loot_items li
+                GROUP BY li.event_id
+            ), participants AS (
+                SELECT ld.event_id, LOWER(ld.character_class) AS class_lower, COUNT(DISTINCT ld.discord_id) AS class_players
+                FROM log_data ld
+                WHERE ld.discord_id IS NOT NULL AND ld.character_class IS NOT NULL AND ld.character_class <> ''
+                GROUP BY ld.event_id, LOWER(ld.character_class)
+            ), totals AS (
+                SELECT event_id, SUM(class_players) AS total_players
+                FROM participants
+                GROUP BY event_id
+            ), per_event AS (
+                SELECT p.event_id, p.class_lower, pots.total_gold, t.total_players
+                FROM participants p
+                JOIN pots ON pots.event_id = p.event_id
+                JOIN totals t ON t.event_id = p.event_id
+                WHERE t.total_players > 0 AND pots.total_gold > 0
+            ), shares AS (
+                SELECT class_lower, (total_gold::numeric / total_players) AS per_player_share
+                FROM per_event
+            )
+            SELECT class_lower, ROUND(AVG(per_player_share))::bigint AS avg_share
+            FROM shares
+            GROUP BY class_lower
+        `);
+
+        const averages = {};
+        for (const row of q.rows) {
+            averages[row.class_lower] = Number(row.avg_share) || 0;
+        }
+
+        return res.json({ success: true, averages });
+    } catch (e) {
+        console.error('❌ [/api/stats/avg-goldpot-by-class] Error:', e);
+        return res.status(500).json({ success: false, message: 'Internal server error' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // Tier 3 token average prices per class, with per-token sales
 app.get('/api/stats/t3-token-averages', async (req, res) => {
     if (!req.isAuthenticated()) {
@@ -15792,6 +15854,75 @@ app.get('/api/stats/t3-token-averages', async (req, res) => {
         return res.json({ success: true, classes: result, tokens });
     } catch (e) {
         console.error('❌ [/api/stats/t3-token-averages] Error:', e);
+        return res.status(500).json({ success: false, message: 'Internal server error' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Class & race distribution for all raid participants (distinct players across all raids)
+app.get('/api/stats/raid-class-race', async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'Unauthorized. Please sign in with Discord.' });
+    }
+
+    let client;
+    try {
+        client = await pool.connect();
+
+        // Ensure log_data exists
+        const logExists = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'log_data'
+            ) AS exists;
+        `);
+        if (!logExists.rows[0].exists) {
+            return res.json({ success: true, classCounts: {}, raceCounts: {}, total: 0 });
+        }
+
+        // Build distinct participant identities and join to guildies to retrieve race when available
+        const result = await client.query(`
+            WITH idents AS (
+                SELECT DISTINCT
+                    COALESCE(NULLIF(ld.discord_id, ''), 'name|' || LOWER(ld.character_name) || '|' || LOWER(ld.character_class)) AS ident_key,
+                    LOWER(ld.character_class) AS class_lower,
+                    NULLIF(ld.discord_id, '') AS discord_id,
+                    LOWER(ld.character_name) AS name_lower
+                FROM log_data ld
+                WHERE (ld.character_name IS NOT NULL AND ld.character_name <> '')
+            ), joined AS (
+                SELECT 
+                    i.ident_key,
+                    i.class_lower,
+                    COALESCE(NULLIF(LOWER(g1.race), ''), NULLIF(LOWER(g2.race), ''), 'unknown') AS race_lower
+                FROM idents i
+                LEFT JOIN guildies g1 ON g1.discord_id = i.discord_id
+                LEFT JOIN guildies g2 ON (
+                    (i.discord_id IS NULL OR i.discord_id = '')
+                    AND LOWER(g2.character_name) = i.name_lower
+                    AND LOWER(g2.class) = i.class_lower
+                )
+            )
+            SELECT 
+                (SELECT json_object_agg(class_lower, cnt) FROM (
+                    SELECT class_lower, COUNT(*) AS cnt FROM joined GROUP BY class_lower
+                ) s1) AS class_counts,
+                (SELECT json_object_agg(race_lower, cnt) FROM (
+                    SELECT race_lower, COUNT(*) AS cnt FROM joined GROUP BY race_lower
+                ) s2) AS race_counts,
+                (SELECT COUNT(*) FROM joined) AS total
+        `);
+
+        const row = result.rows[0] || {};
+        const classes = row.class_counts || {};
+        const races = row.race_counts || {};
+        const total = Number(row.total) || 0;
+
+        return res.json({ success: true, classCounts: classes, raceCounts: races, total });
+    } catch (e) {
+        console.error('❌ [/api/stats/raid-class-race] Error:', e);
         return res.status(500).json({ success: false, message: 'Internal server error' });
     } finally {
         if (client) client.release();
