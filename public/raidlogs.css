@@ -1360,6 +1360,24 @@ body.stats .rankings-container .rankings-section {
     margin-bottom: 2px;
 }
 
+/* Player panel custom layout */
+.stats-dashboard.player-panel {
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-auto-rows: 1fr;
+}
+.stats-dashboard.player-panel .player-left {
+    grid-column: 1 / 2;
+    grid-row: 1 / span 2; /* two rows tall */
+}
+.stats-dashboard.player-panel .player-middle {
+    grid-column: 2 / 3;
+    grid-row: 1 / span 2; /* two rows tall */
+}
+.stats-dashboard.player-panel .my-points { grid-column: 3 / 4; grid-row: 1 / 2; }
+.stats-dashboard.player-panel .my-gold { grid-column: 3 / 4; grid-row: 2 / 3; }
+
+.stats-panel-toggle .stats-toggle-btn img { vertical-align: middle; }
+
 .stat-card {
     background: linear-gradient(135deg, #1a1a1a, #252525);
     border: 1px solid #444;

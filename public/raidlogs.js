@@ -102,10 +102,24 @@ class RaidLogsManager {
             'warlock': '579532029851336716',
             'druid': '579532029675438081'
         };
+        this.classColors = {
+            'warrior': '#C79C6E',
+            'paladin': '#F58CBA',
+            'hunter': '#ABD473',
+            'rogue': '#FFF569',
+            'priest': '#FFFFFF',
+            'shaman': '#0070DE',
+            'mage': '#69CCF0',
+            'warlock': '#9482C9',
+            'druid': '#FF7D0A',
+            'unknown': '#e5e7eb'
+        };
         this._loadingRaid = false;
         this._storageDebounce = null;
         this.initializeEventListeners();
         this.loadSpecData();
+        this.playerPanels = new Map(); // key: panelId, value: { slug, name, className }
+        this._myGoldTooltipCards = new WeakSet();
         this.loadRaidLogsData();
     }
 
@@ -237,6 +251,8 @@ class RaidLogsManager {
                 if (dashboardPanel) dashboardPanel.style.display = 'none';
                 if (shamePanel) shamePanel.style.display = 'none';
                 if (goldPanel) goldPanel.style.display = 'none';
+                // Hide dynamic player panels
+                document.querySelectorAll('.stats-dashboard.player-panel').forEach(p => p.style.display = 'none');
                 
                 // Show the selected panel
                 if (targetPanel === 'dashboard' && dashboardPanel) {
@@ -247,6 +263,14 @@ class RaidLogsManager {
                     goldPanel.style.display = 'grid';
                     // Refresh gold cards when opening the tab
                     this.updateGoldCards();
+                } else if (targetPanel && targetPanel.startsWith('player:')) {
+                    const id = targetPanel.split(':')[1];
+                    const panel = document.getElementById(`player-panel-${id}`);
+                    if (panel) {
+                        panel.style.display = 'grid';
+                        // Ensure My Points / My Gold reflect latest values
+                        this.updateGoldCards();
+                    }
                 }
             });
         });
@@ -618,9 +642,12 @@ class RaidLogsManager {
                 this.fetchGoldPot(),
                 this.fetchBigBuyerData()
             ]);
+            // Build dynamic player tabs/panels for current user before render
+            this.buildPlayerPanels();
             // Remove non-player entities across datasets
             this.sanitizeDatasets();
             this.displayRaidLogs();
+            this.renderPlayerPanelsContent();
             this.displayManualRewards();
             // Recompute totals with all data loaded
             this.updateTotalPointsCard();
@@ -2200,8 +2227,12 @@ class RaidLogsManager {
         }
         // My Points and My Gold
         this.computeMyPointsAndGold();
-        // Ensure tooltips are wired
-        this.setupMyGoldTooltip();
+        // Ensure tooltips are wired for all my-gold cards (gold tab + player panels)
+        document.querySelectorAll('.stat-card.my-gold').forEach(card => {
+            if (this._myGoldTooltipCards && this._myGoldTooltipCards.has(card)) return;
+            this.setupMyGoldTooltip(card);
+            if (this._myGoldTooltipCards) this._myGoldTooltipCards.add(card);
+        });
     }
 
     setupManagementTooltip(cuts) {
@@ -2281,9 +2312,8 @@ class RaidLogsManager {
         this._mgmtTooltipSetup = true;
     }
 
-    setupMyGoldTooltip() {
-        if (this._myGoldTooltipSetup) return;
-        const card = document.querySelector('.stat-card.my-gold');
+    setupMyGoldTooltip(card = null) {
+        if (!card) card = document.querySelector('.stat-card.my-gold');
         if (!card) return;
 
         let hoverTimer = null;
@@ -2396,24 +2426,22 @@ class RaidLogsManager {
         card.addEventListener('mouseenter', onMouseEnter);
         card.addEventListener('mousemove', onMouseMove);
         card.addEventListener('mouseleave', onMouseLeave);
-
-        this._myGoldTooltipSetup = true;
     }
 
     computeMyPointsAndGold() {
-        const myPointsEl = document.getElementById('my-points-value');
-        const myPointsDetailEl = document.getElementById('my-points-detail');
-        const myGoldEl = document.getElementById('my-gold-value');
-        const myGoldDetailEl = document.getElementById('my-gold-detail');
+        const pointsEls = document.querySelectorAll('#gold-panel #my-points-value, .player-panel #my-points-value');
+        const pointsDetailEls = document.querySelectorAll('#gold-panel #my-points-detail, .player-panel #my-points-detail');
+        const goldEls = document.querySelectorAll('#gold-panel #my-gold-value, .player-panel #my-gold-value');
+        const goldDetailEls = document.querySelectorAll('#gold-panel #my-gold-detail, .player-panel #my-gold-detail');
 
-        if (!myPointsEl || !myGoldEl) return;
+        if (goldEls.length === 0 || pointsEls.length === 0) return;
 
         const userId = this.currentUser?.id;
         if (!userId) {
-            myPointsEl.textContent = '--';
-            if (myPointsDetailEl) myPointsDetailEl.textContent = 'Sign in to see your share';
-            myGoldEl.textContent = '--';
-            if (myGoldDetailEl) myGoldDetailEl.textContent = 'Each point = -- gold';
+            pointsEls.forEach(el=> el.textContent = '--');
+            pointsDetailEls.forEach(el=> el && (el.textContent = 'Sign in to see your share'));
+            goldEls.forEach(el=> el.textContent = '--');
+            goldDetailEls.forEach(el=> el && (el.textContent = 'Each point = -- gold'));
             return;
         }
 
@@ -2458,15 +2486,16 @@ class RaidLogsManager {
 
         const myPoints = basePoints + sumVisible;
         this.myPoints = myPoints;
-        myPointsEl.textContent = this.formatNumber(Math.round(myPoints));
-        if (myPointsDetailEl) {
+        pointsEls.forEach(el=> el.textContent = this.formatNumber(Math.round(myPoints)));
+        pointsDetailEls.forEach(el=>{
+            if (!el) return;
             const list = Array.from(myNames).filter(Boolean);
             const parts = [];
             if (list.length > 0) parts.push(`Chars: ${list.join(', ')}`);
             parts.push(`Base ${basePoints}`);
             if (Array.isArray(components) && components.length > 0) parts.push(components.join(', '));
-            myPointsDetailEl.textContent = parts.length > 0 ? parts.join(', ') : 'Character not matched yet';
-        }
+            el.textContent = parts.length > 0 ? parts.join(', ') : 'Character not matched yet';
+        });
 
         // Compute gold per point and my gold (plus direct gold payouts)
         const totalPts = Math.max(0, Number(this.totalPointsComputed) || 0);
@@ -2493,16 +2522,17 @@ class RaidLogsManager {
             } catch {}
             const myGoldTotal = myGoldFromPoints + myGoldPayout;
             this.myGold = myGoldTotal;
-            myGoldEl.textContent = myGoldTotal.toLocaleString();
-            if (myGoldDetailEl) {
+            goldEls.forEach(el=> el.textContent = myGoldTotal.toLocaleString());
+            goldDetailEls.forEach(el=>{
+                if (!el) return;
                 const gppInt = Math.round(goldPerPoint);
-                myGoldDetailEl.textContent = myGoldPayout>0 ? `Each point = ${gppInt} gold ( +${myGoldPayout.toLocaleString()} gold )` : `Each point = ${gppInt} gold`;
-            }
+                el.textContent = myGoldPayout>0 ? `Each point = ${gppInt} gold ( +${myGoldPayout.toLocaleString()} gold )` : `Each point = ${gppInt} gold`;
+            });
         } else {
             this.goldPerPoint = null;
             this.myGold = null;
-            myGoldEl.textContent = '--';
-            if (myGoldDetailEl) myGoldDetailEl.textContent = 'Each point = -- gold';
+            goldEls.forEach(el=> el.textContent = '--');
+            goldDetailEls.forEach(el=> el && (el.textContent = 'Each point = -- gold'));
         }
     }
 
@@ -2585,6 +2615,8 @@ class RaidLogsManager {
         this.displayVoidDamageRankings(this.voidDamageData);
         this.displayWindfuryRankings(this.windfuryData);
         this.displayBigBuyerRankings(this.bigBuyerData);
+        // Ensure player tabs exists/updated after core render
+        this.buildPlayerPanels();
         this.updateAbilitiesHeader();
         this.updateManaPotionsHeader();
         this.updateRunesHeader();
@@ -6439,6 +6471,252 @@ class RaidLogsManager {
         return 'unknown';
     }
 
+    // Build player tabs and panels dynamically based on current user and raid data
+    buildPlayerPanels() {
+        try {
+            const userId = this.currentUser?.id;
+            if (!userId || !Array.isArray(this.logData) || this.logData.length === 0) return;
+            // Collect names linked to user from multiple sources (logData, playersData, manualRewards)
+            const unique = [];
+            const seen = new Set();
+            const addName = (name, className) => {
+                if (!name) return;
+                const key = String(name).trim().toLowerCase();
+                if (!key || seen.has(key)) return;
+                seen.add(key);
+                unique.push({ name: String(name).trim(), className: className || this.resolveClassForName(name) || 'unknown' });
+            };
+            // From logData
+            (this.logData||[]).forEach(r => { if (String(r.discord_id||'')===String(userId)) addName(r.character_name, r.character_class); });
+            // From playersData (dropdown players), often has discord_id
+            (this.playersData||[]).forEach(p => { if (String(p.discord_id||'')===String(userId)) addName(p.player_name, p.player_class); });
+            // From manual rewards entries (if any rows recorded for this user)
+            (this.manualRewardsData||[]).forEach(e => { if (String(e.discord_id||'')===String(userId)) addName(e.player_name, e.player_class); });
+            // Fallback (tighter): manual rewards with no discord_id, but players table confirms (name+class) belongs to my discord
+            try {
+                const isVerifiedAlt = (nm, cls) => {
+                    if (!nm) return false;
+                    const clsResolved = cls || this.resolveClassForName(nm) || '';
+                    const want = this.getCanonicalClass(clsResolved);
+                    const lowerNm = String(nm).trim().toLowerCase();
+                    return (this.playersData || []).some(p =>
+                        String(p.player_name || '').trim().toLowerCase() === lowerNm &&
+                        this.getCanonicalClass(p.player_class || '') === want &&
+                        String(p.discord_id || '') === String(userId)
+                    );
+                };
+                (this.manualRewardsData||[]).forEach(e => {
+                    const did = String(e && e.discord_id || '');
+                    const nm = String(e && e.player_name || '').trim();
+                    const cls = e && e.player_class;
+                    if (did || !nm) return;
+                    if (isVerifiedAlt(nm, cls)) addName(nm, cls);
+                });
+            } catch {}
+            // From snapshot entries (manual mode) — they include discord_user_id and character_name
+            (this.snapshotEntries||[]).forEach(r => { if (String(r.discord_user_id||'')===String(userId)) addName(r.character_name, r.class_name || null); });
+            // If nothing collected yet, fall back to names seen anywhere in datasets matching this user id
+            if (unique.length === 0) {
+                try {
+                    const datasets = [this.abilitiesData,this.manaPotionsData,this.runesData,this.interruptsData,this.disarmsData,this.sunderData,this.curseData,this.curseShadowData,this.curseElementsData,this.faerieFireData,this.scorchData,this.demoShoutData,this.polymorphData,this.powerInfusionData,this.decursesData,this.frostResistanceData,this.worldBuffsData,this.voidDamageData,this.bigBuyerData];
+                    datasets.forEach(arr => (arr||[]).forEach(row => { if (String(row.discord_id||'')===String(userId)) addName(row.character_name||row.player_name, row.character_class||row.player_class); }));
+                } catch {}
+            }
+            // Debug
+            try { console.log('[PLAYER TABS] Names for user', userId, unique.map(u=>u.name)); } catch {}
+            // Insert toggle buttons next to Gold
+            const toggleBar = document.querySelector('.stats-panel-toggle');
+            if (!toggleBar) return;
+            const goldBtn = toggleBar.querySelector('button[data-panel="gold"]');
+            unique.forEach(({ name, className }) => {
+                const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                if (this.playerPanels.has(id)) return; // already built
+                // Button
+                const btn = document.createElement('button');
+                btn.className = 'stats-toggle-btn';
+                btn.setAttribute('data-panel', `player:${id}`);
+                const canonical = this.getCanonicalClass(className);
+                const iconUrl = this.getClassIconUrl(canonical);
+                const color = this.classColors[canonical] || '#e5e7eb';
+                const img = iconUrl ? `<img src="${iconUrl}" alt="${canonical}" width="18" height="18" style="vertical-align:middle; margin-right:6px; border-radius:3px;">` : `<i class="fas fa-user" style="margin-right:6px;"></i>`;
+                btn.innerHTML = `${img}<span class="player-name" style="color:${color};">${name}</span>`;
+                if (goldBtn && goldBtn.nextSibling) toggleBar.insertBefore(btn, goldBtn.nextSibling); else toggleBar.appendChild(btn);
+                // Panel
+                const statsSection = document.getElementById('stats-dashboard');
+                if (statsSection) {
+                    const panel = document.createElement('div');
+                    panel.className = 'stats-dashboard player-panel';
+                    panel.id = `player-panel-${id}`;
+                    panel.style.display = 'none';
+                    panel.innerHTML = `
+                        <div class="stat-card player-left" id="player-left-${id}">
+                            <div class="stat-label">Rewards</div>
+                            <div class="rankings-list" id="player-rewards-list-${id}"></div>
+                        </div>
+                        <div class="stat-card player-middle" id="player-middle-${id}">
+                            <div class="stat-label">Deductions</div>
+                            <div class="rankings-list" id="player-deductions-list-${id}"></div>
+                        </div>
+                        <div class="stat-card my-points">
+                            <i class="fas fa-star stat-icon"></i>
+                            <div class="stat-label">My Points</div>
+                            <div class="stat-value" id="my-points-value">--</div>
+                            <div class="stat-detail" id="my-points-detail">Based on your character in this raid</div>
+                        </div>
+                        <div class="stat-card my-gold">
+                            <i class="fas fa-coins stat-icon"></i>
+                            <div class="stat-label">My Gold</div>
+                            <div class="stat-value" id="my-gold-value">--</div>
+                            <div class="stat-detail" id="my-gold-detail">Each point = -- gold</div>
+                        </div>
+                    `;
+                    statsSection.appendChild(panel);
+                }
+                this.playerPanels.set(id, { slug: id, name, className });
+                // Rebind toggle listeners for new button
+                btn.addEventListener('click', () => {
+                    const allBtns = document.querySelectorAll('.stats-toggle-btn');
+                    allBtns.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    const panels = document.querySelectorAll('#dashboard-panel,#shame-panel,#gold-panel,.player-panel');
+                    panels.forEach(p => p && (p.style.display = 'none'));
+                    const target = document.getElementById(`player-panel-${id}`);
+                    if (target) {
+                        target.style.display = 'grid';
+                        this.updateGoldCards();
+                        this.renderPlayerPanelsContent();
+                    }
+                });
+            });
+        } catch (e) {
+            console.warn('⚠️ buildPlayerPanels failed', e);
+        }
+    }
+
+    // Build rows like /gold player-card and render split lists (Rewards/Deductions)
+    renderPlayerPanelsContent() {
+        try {
+            if (!this.currentUser?.id) return;
+            const gpp = Math.max(0, Number(this.goldPerPoint) || 0);
+            const lower = s => String(s||'').toLowerCase();
+            const sumFrom = (arr, nameKey)=> (arr||[]).reduce((acc,row)=> acc + (lower(row.character_name||row.player_name||'')===nameKey ? (Number(row.points)||0) : 0), 0);
+            const getItems = (nameKey) => {
+                const role = String(this.primaryRoles?.[nameKey] || '').toLowerCase();
+                const items = [];
+                const push = (title, pts)=>{ if(!pts) return; const goldVal = Math.floor(pts * gpp); items.push({ title, pts, gold: goldVal }); };
+                // Base
+                push('Base', 100);
+                // Datasets
+                push('Sappers', sumFrom(this.abilitiesData, nameKey));
+                push('Totems', sumFrom(this.windfuryData, nameKey));
+                push('RocketHelm', sumFrom(this.rocketHelmetData, nameKey));
+                push('Mana pots', sumFrom(this.manaPotionsData, nameKey));
+                push('Runes', sumFrom(this.runesData, nameKey));
+                push('Interrupts', sumFrom(this.interruptsData, nameKey));
+                push('Disarms', sumFrom(this.disarmsData, nameKey));
+                if (role !== 'tank') push('Sunder', sumFrom(this.sunderData, nameKey));
+                push('Curse Reck', sumFrom(this.curseData, nameKey));
+                push('Curse Shad', sumFrom(this.curseShadowData, nameKey));
+                push('Curse Elem', sumFrom(this.curseElementsData, nameKey));
+                push('Faerie Fir', sumFrom(this.faerieFireData, nameKey));
+                push('Scorch', sumFrom(this.scorchData, nameKey));
+                push('Demo Shout', sumFrom(this.demoShoutData, nameKey));
+                push('Polymorph', sumFrom(this.polymorphData, nameKey));
+                push('Power Inf', sumFrom(this.powerInfusionData, nameKey));
+                push('Decurses', sumFrom(this.decursesData, nameKey));
+                // Frost Res only DPS
+                if (role === 'dps') push('Frost Res', sumFrom(this.frostResistanceData, nameKey));
+                push('WorldBuffs', sumFrom(this.worldBuffsData, nameKey));
+                push('Void Dmg', sumFrom(this.voidDamageData, nameKey));
+                // Awards based on ranking or snapshot
+                if (this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) {
+                    const sumSnap = (panelKey) => (this.snapshotEntries||[]).reduce((acc, r) => {
+                        if (String(r.panel_key) === panelKey && lower(r.character_name) === nameKey) {
+                            const pts = Number(r.point_value_edited != null ? r.point_value_edited : r.point_value_original) || 0; return acc + pts;
+                        }
+                        return acc;
+                    }, 0);
+                    push('Dmg Rank', sumSnap('damage'));
+                    push('Heal Rank', sumSnap('healing'));
+                    push('God Gamer DPS', sumSnap('god_gamer_dps'));
+                    push('God Gamer Heal', sumSnap('god_gamer_healer'));
+                    push('Shaman Healer', sumSnap('shaman_healers'));
+                    push('Priest Healer', sumSnap('priest_healers'));
+                    push('Druid Healer', sumSnap('druid_healers'));
+                    push('Too Low Dmg', sumSnap('too_low_damage'));
+                    push('Too Low Heal', sumSnap('too_low_healing'));
+                } else {
+                    try {
+                        const damagePoints = this.rewardSettings?.damage?.points_array || [];
+                        const damageSorted = (this.logData || [])
+                            .filter(p => !this.shouldIgnorePlayer(p.character_name))
+                            .filter(p => ((p.role_detected||'').toLowerCase()==='dps' || (p.role_detected||'').toLowerCase()==='tank') && (parseInt(p.damage_amount)||0) > 0)
+                            .sort((a,b)=>(parseInt(b.damage_amount)||0)-(parseInt(a.damage_amount)||0));
+                        const healers = (this.logData || [])
+                            .filter(p => !this.shouldIgnorePlayer(p.character_name))
+                            .filter(p => (p.role_detected||'').toLowerCase()==='healer' && (parseInt(p.healing_amount)||0) > 0)
+                            .sort((a,b)=>(parseInt(b.healing_amount)||0)-(parseInt(a.healing_amount)||0));
+                        const idxDamage = damageSorted.findIndex(p => lower(p.character_name) === nameKey);
+                        if (idxDamage >= 0 && idxDamage < damagePoints.length) push('Dmg Rank', damagePoints[idxDamage] || 0);
+                        const healingPoints = this.rewardSettings?.healing?.points_array || [];
+                        const idxHeal = healers.findIndex(p => lower(p.character_name) === nameKey);
+                        if (idxHeal >= 0 && idxHeal < healingPoints.length) push('Heal Rank', healingPoints[idxHeal] || 0);
+                        if (damageSorted.length >= 2) {
+                            const first = parseInt(damageSorted[0].damage_amount)||0; const second = parseInt(damageSorted[1].damage_amount)||0;
+                            const diff = first-second; let pts=0; if(diff>=250000) pts=30; else if(diff>=150000) pts=20; if (pts && lower(damageSorted[0].character_name)===nameKey) push('God Gamer DPS', pts);
+                        }
+                        if (healers.length >= 2) {
+                            const first = parseInt(healers[0].healing_amount)||0; const second = parseInt(healers[1].healing_amount)||0;
+                            const diff = first-second; let pts=0; if(diff>=250000) pts=20; else if(diff>=150000) pts=15; if (pts && lower(healers[0].character_name)===nameKey) push('God Gamer Heal', pts);
+                        }
+                        const byClass=(arr,cls)=>arr.filter(p=>String(p.character_class||'').toLowerCase().includes(cls));
+                        const h=healers; const shamans=byClass(h,'shaman').slice(0,3); const priests=byClass(h,'priest').slice(0,2); const druids=byClass(h,'druid').slice(0,1);
+                        const addAward=(label,arr,ptsArr)=>{ const i=arr.findIndex(p=>lower(p.character_name)===nameKey); if(i>=0 && i<ptsArr.length){ const pts=ptsArr[i]||0; if(pts) push(label, pts); } };
+                        addAward('Shaman Healer', shamans, [25,20,15]); addAward('Priest Healer', priests, [20,15]); addAward('Druid Healer', druids, [15]);
+                        // Too Low DPS/HPS
+                        const aftMin = this.raidStats?.stats?.activeFightTime; if (aftMin) { const sec=aftMin*60; const row=(this.logData||[]).find(p=>lower(p.character_name)===nameKey); if(row){ if(role==='dps'||role==='tank'){ const dps=(parseFloat(row.damage_amount)||0)/sec; let pts=0; if(dps<150)pts=-100; else if(dps<200)pts=-50; else if(dps<250)pts=-25; if(pts) push('Too Low Dmg', pts);} else if(role==='healer'){ const hps=(parseFloat(row.healing_amount)||0)/sec; let pts=0; if(hps<85)pts=-100; else if(hps<100)pts=-50; else if(hps<125)pts=-25; if(pts) push('Too Low Heal', pts);} } }
+                    } catch {}
+                }
+                // Streaks/Guild
+                try { const row=(this.playerStreaksData||[]).find(r=> lower(r.character_name)===nameKey); if(row){ const s=Number(row.player_streak)||0; let pts=0; if(s>=8)pts=15; else if(s===7)pts=12; else if(s===6)pts=9; else if(s===5)pts=6; else if(s===4)pts=3; push('Streak', pts);} } catch {}
+                try { const hit=(this.guildMembersData||[]).some(r=> lower(r.character_name)===nameKey); if(hit) push('Guild Mem', 10); } catch {}
+                // Big Buyer
+                push('Big Buyer', sumFrom(this.bigBuyerData, nameKey));
+                // Manual rewards split
+                const manualGold=(this.manualRewardsData||[]).reduce((acc,e)=>{ if(lower(e.player_name||'')!==nameKey) return acc; const isGold=!!(e&&(e.is_gold||/\[GOLD\]/i.test(String(e.description||'')))); return isGold? acc + (Number(e.points)||0) : acc; },0);
+                const manualPts=(this.manualRewardsData||[]).reduce((acc,e)=>{ if(lower(e.player_name||'')!==nameKey) return acc; const isGold=!!(e&&(e.is_gold||/\[GOLD\]/i.test(String(e.description||'')))); return isGold? acc : acc + (Number(e.points)||0); },0);
+                if (manualPts) push('Manual', manualPts);
+                if (manualGold) items.push({ title:'Manual', pts:0, gold:manualGold, isGoldRow:true });
+                return items;
+            };
+
+            const headerHtml = `
+                <div style="display:grid; grid-template-columns: 1.6fr 60px 85px; gap:8px; font-size:14px; line-height:1.3; color:#e5e7eb; font-weight:700; border-bottom:1px solid rgba(255,255,255,.12); padding-bottom:6px; margin-bottom:8px;">
+                    <div style="text-align:left;">Label</div>
+                    <div style="text-align:right;">Points</div>
+                    <div style="text-align:right;">Gold</div>
+                </div>`;
+            const rowHtml = (it)=> `
+                <div style="display:grid; grid-template-columns: 1.6fr 60px 85px; gap:8px; font-size:15px; line-height:1.45; color:#e5e7eb;">
+                    <div style="text-align:left;">${this._escapeAttr(it.title)}</div>
+                    <div style="text-align:right;">${it.pts>0?`+${Math.round(it.pts)}`:Math.round(it.pts)}</div>
+                    <div style="text-align:right;">${it.isGoldRow?`<i class=\"fas fa-coins\" style=\"margin-right:6px; color:#f59e0b;\"></i>`:''}${it.gold>0?`+${Math.round(it.gold)}`:Math.round(it.gold)}</div>
+                </div>`;
+
+            this.playerPanels.forEach(({ slug, name }) => {
+                const rewardsEl = document.getElementById(`player-rewards-list-${slug}`);
+                const dedsEl = document.getElementById(`player-deductions-list-${slug}`);
+                if (!rewardsEl || !dedsEl) return;
+                const key = name.toLowerCase();
+                const items = getItems(key);
+                const positives = items.filter(it => (Number(it.pts)||0) > 0 || it.isGoldRow);
+                const negatives = items.filter(it => (Number(it.pts)||0) < 0);
+                rewardsEl.innerHTML = headerHtml + (positives.length ? positives.map(rowHtml).join('') : '<div style="opacity:.8;">No rewards</div>');
+                dedsEl.innerHTML = headerHtml + (negatives.length ? negatives.map(rowHtml).join('') : '<div style="opacity:.8;">No deductions</div>');
+            });
+        } catch (e) { console.warn('⚠️ renderPlayerPanelsContent failed', e); }
+    }
+
     // Helpers to filter out non-player entities and resolve missing class
     shouldIgnorePlayer(name) {
         if (!name) return false;
@@ -6488,6 +6766,12 @@ class RaidLogsManager {
             return `<img src="https://cdn.discordapp.com/emojis/${emoteId}.png" class="spec-icon" alt="${canonicalClass}" width="50" height="50" loading="lazy" decoding="async">`;
         }
         return `<i class="fas fa-user-circle spec-icon unknown-spec" style="color: #aaa;" title="${canonicalClass}"></i>`;
+    }
+
+    getClassIconUrl(characterClass) {
+        const canonicalClass = this.getCanonicalClass(characterClass);
+        const emoteId = this.classIconEmotes[canonicalClass];
+        return emoteId ? `https://cdn.discordapp.com/emojis/${emoteId}.png` : null;
     }
 
     getSpecIconHtml(specName, characterClass) {
