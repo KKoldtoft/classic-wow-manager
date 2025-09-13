@@ -2500,7 +2500,7 @@ body.raid-active .scroll-target {
 
 .player-dropdown-item:hover,
 .player-dropdown-item.selected {
-    background: rgba(255, 255, 255, 1) !important;
+    filter: brightness(1.05);
 }
 
 .player-dropdown-item:last-child {
@@ -2508,44 +2508,31 @@ body.raid-active .scroll-target {
 }
 
 /* Class-specific background colors for dropdown items */
-.player-dropdown-item.class-warrior {
-    background: rgba(199, 156, 110, 1);
-}
+.player-dropdown-item.class-warrior { background: rgba(199, 156, 110, 1) !important; color: #000 !important; }
 
-.player-dropdown-item.class-paladin {
-    background: rgba(245, 140, 186, 1);
-}
+.player-dropdown-item.class-paladin { background: rgba(245, 140, 186, 1) !important; color: #000 !important; }
 
-.player-dropdown-item.class-hunter {
-    background: rgba(171, 212, 115, 1);
-}
+.player-dropdown-item.class-hunter { background: rgba(171, 212, 115, 1) !important; color: #000 !important; }
 
-.player-dropdown-item.class-rogue {
-    background: rgba(255, 245, 105, 1);
-}
+.player-dropdown-item.class-rogue { background: rgba(255, 245, 105, 1) !important; color: #000 !important; }
 
-.player-dropdown-item.class-priest {
-    background: rgba(255, 255, 255, 1);
-}
+.player-dropdown-item.class-priest { background: rgba(255, 255, 255, 1) !important; color: #000 !important; }
 
-.player-dropdown-item.class-shaman {
-    background: rgba(0, 112, 222, 1);
-}
+.player-dropdown-item.class-shaman { background: rgba(0, 112, 222, 1) !important; color: #000 !important; }
 
-.player-dropdown-item.class-mage {
-    background: rgba(105, 204, 240, 1);
-}
+.player-dropdown-item.class-mage { background: rgba(105, 204, 240, 1) !important; color: #000 !important; }
 
-.player-dropdown-item.class-warlock {
-    background: rgba(148, 130, 201, 1);
-}
+.player-dropdown-item.class-warlock { background: rgba(148, 130, 201, 1) !important; color: #000 !important; }
 
-.player-dropdown-item.class-druid {
-    background: rgba(255, 125, 10, 1);
-}
+.player-dropdown-item.class-druid { background: rgba(255, 125, 10, 1) !important; color: #000 !important; }
 
-.player-dropdown-item.class-unknown {
-    background: rgba(156, 163, 175, 1);
+.player-dropdown-item.class-unknown { background: rgba(156, 163, 175, 1) !important; color: #000 !important; }
+
+/* Ensure inner text/icons stay readable on colored backgrounds */
+.player-dropdown-item *,
+.player-dropdown-item .player-name,
+.player-dropdown-item .player-class {
+    color: #000 !important;
 }
 
 .player-class {
@@ -2632,6 +2619,53 @@ body.raid-active .scroll-target {
     background-color: var(--secondary-bg, #2a2a2a);
 }
 
+/* Two-column layout for manual rewards list */
+.manual-rewards-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 16px;
+    position: relative;
+}
+.manual-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 15px }
+.manual-rewards-columns > .manual-col { min-width: 0; }
+
+/* Vertical separator between columns */
+.manual-rewards-columns::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    border-left: 1px solid #9ca3af; /* light grey */
+    transform: translateX(-0.5px);
+    pointer-events: none;
+}
+@media (max-width: 768px) { .manual-rewards-columns { grid-template-columns: 1fr; } }
+@media (max-width: 768px) { .manual-rewards-columns::before { content: none; } }
+
+/* Refresh toast */
+.refresh-toast {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    transform: translateY(-12px);
+    z-index: 99999;
+    background: #0f172a;
+    color: #ffffff;
+    border: 2px solid #ef4444; /* red border */
+    border-radius: 8px;
+    padding: 16px 20px; /* more padding */
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.6);
+    transition: opacity 300ms ease, transform 300ms ease; /* soft glide-in */
+    will-change: opacity, transform;
+}
+.refresh-toast .msg { font-size: 14px; letter-spacing: .2px; max-width: 420px; }
+.refresh-toast .btn { background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-weight: 600; }
+.refresh-toast .btn:hover { background: #1d4ed8; }
+
 .manual-rewards-section .ranking-item:last-child {
     border-bottom: none;
 }
@@ -2656,6 +2690,26 @@ body.raid-active .scroll-target {
     border-radius: 6px;
     position: relative;
 }
+
+/* Inline actions placed in the top-right inside character-info */
+.manual-rewards-section .entry-actions { position: absolute; top: 6px; right: 6px; display: inline-flex; gap: 6px; }
+.manual-rewards-section .entry-action {
+    background: rgba(0,0,0,0.35);
+    color: #000;
+    border: 1px solid rgba(0,0,0,0.25);
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+}
+.manual-rewards-section .entry-action i { color: #fff; font-size: 12px; line-height: 1; }
+.manual-rewards-section .entry-action:hover { background: rgba(0,0,0,0.5); }
+.manual-rewards-section .entry-action-delete:hover i { color: #ef4444; }
+.manual-rewards-section .entry-action-edit:hover i { color: #60a5fa; }
 
 /* Class-specific background colors for manual rewards */
 .manual-rewards-section .character-info.class-warrior {
@@ -2718,7 +2772,7 @@ body.raid-active .scroll-target {
 .manual-rewards-section .performance-amount {
     text-align: right;
     flex-shrink: 0;
-    min-width: 120px;
+    min-width: 80px;
     cursor: help;
     display: flex;
     flex-direction: column;
@@ -2801,12 +2855,7 @@ body.raid-active .scroll-target {
 }
 
 /* Action buttons for manual rewards */
-.manual-rewards-actions {
-    display: flex;
-    gap: 5px;
-    margin-left: 15px;
-    flex-shrink: 0;
-}
+.manual-rewards-actions { display: none; }
 
 /* Messages */
 .no-entries-message, .access-denied-message, .loading-state {

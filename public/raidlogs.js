@@ -128,6 +128,7 @@ class RaidLogsManager {
         
         // Initialize floating navigation
         this.initializeFloatingNavigation();
+        this.initializeLiveUpdates();
         
         // Initialize manual rewards functionality
         this.initializeManualRewards();
@@ -153,6 +154,47 @@ class RaidLogsManager {
             // If data is already present, render immediately; else wait a tick
             setTimeout(ready, 0);
         }, 0);
+    }
+    initializeLiveUpdates(){
+        try {
+            const scope = 'raidlogs';
+            const eventId = this.activeEventId || '';
+            if (!eventId) return;
+            const url = `/api/updates/stream?scope=${encodeURIComponent(scope)}&eventId=${encodeURIComponent(eventId)}`;
+            const es = new EventSource(url, { withCredentials: true });
+            this._es = es;
+            const showToast = () => {
+                if (this._refreshToastShown) return;
+                this._refreshToastShown = true;
+                const t = document.createElement('div');
+                t.className = 'refresh-toast';
+                t.innerHTML = `<span class="msg">There has been updates to this page, refresh the page to see the latest version</span><button class="btn" id="refresh-now-btn">Refresh</button>`;
+                t.style.opacity = '0';
+                t.style.transform = 'translateY(-12px)';
+                document.body.appendChild(t);
+                const btn = t.querySelector('#refresh-now-btn');
+                if (btn) btn.onclick = ()=>{ try { location.reload(); } catch {} };
+                // Slide-in (soft appear)
+                requestAnimationFrame(()=>{
+                    t.style.transition = 'opacity 300ms ease, transform 300ms ease';
+                    t.style.opacity = '1';
+                    t.style.transform = 'translateY(0)';
+                });
+            };
+            es.onmessage = (e)=>{
+                try {
+                    const msg = JSON.parse(e.data||'{}');
+                    if (!msg || msg.type === 'connected') return;
+                    // Ignore updates we originated (evaluate at message time)
+                    const myUserIdNow = this.currentUser && this.currentUser.id ? String(this.currentUser.id) : null;
+                    const byUserId = msg && msg.data && msg.data.byUserId ? String(msg.data.byUserId) : null;
+                    if (myUserIdNow && byUserId && byUserId === myUserIdNow) return;
+                    // Show toast for any raidlogs-scoped update
+                    showToast();
+                } catch {}
+            };
+            es.onerror = ()=>{};
+        } catch (e) { console.warn('SSE init failed', e); }
     }
 
     setupPageNavigationButtons() {
@@ -475,6 +517,7 @@ class RaidLogsManager {
             }
         } catch {}
 
+        const prevEventId = this.activeEventId;
         this.activeEventId = eventIdFromUrl || localStorage.getItem('activeEventSession');
 
         // Normalize URL without hard reload; add guard to avoid redirect loops
@@ -508,6 +551,15 @@ class RaidLogsManager {
             }
         }
         
+        // Ensure live updates stream is connected once eventId is known; resubscribe if changed
+        try {
+            if (this.activeEventId && this._esEventId !== this.activeEventId) {
+                if (this._es) { try { this._es.close(); } catch {} }
+                this._esEventId = this.activeEventId;
+                this.initializeLiveUpdates();
+            }
+        } catch {}
+
         if (!this.activeEventId) {
             this.showNoData('No active raid session found');
             return;
@@ -2725,13 +2777,22 @@ class RaidLogsManager {
             const nameEl = item.querySelector('.character-name');
             const playerName = nameEl ? nameEl.textContent.trim() : null;
             if (!playerName) return;
+            const itemKey = (cfg.key === 'windfury_totems') ? (item.getAttribute('data-item-key') || null) : null;
             const pointsInp = item.querySelector('.performance-amount .amount-value input');
             const detailsInp = item.querySelector('.character-details input');
             const pointsVal = pointsInp ? pointsInp.value : null;
             const detailsVal = detailsInp ? detailsInp.value : null;
 
             // Lookup existing snapshot row to compare
-            const snap = (this.snapshotEntries || []).find(r => r.panel_key === cfg.key && r.character_name === playerName);
+            const snap = (this.snapshotEntries || []).find(r => {
+                if (r.panel_key !== cfg.key) return false;
+                if (r.character_name !== playerName) return false;
+                if (cfg.key === 'windfury_totems') {
+                    const rk = r.aux_json && (r.aux_json.item_key || r.aux_json['item_key']);
+                    return String(rk || '') === String(itemKey || '');
+                }
+                return true;
+            });
             const currentEdited = snap ? snap.point_value_edited : null;
             const currentDetailsEdited = snap ? snap.character_details_edited : null;
 
@@ -2749,6 +2810,7 @@ class RaidLogsManager {
                 ranking_number_original: snap ? snap.ranking_number_original : (idx + 1),
                 point_value_edited: numericVal,
                 character_details_edited: detailsOut
+                , aux_json: (cfg.key === 'windfury_totems' && itemKey) ? { item_key: itemKey } : undefined
             });
         });
 
@@ -2943,6 +3005,13 @@ class RaidLogsManager {
                 // discord id when available
                 const discordId = damageRow?.discord_id || null;
 
+                // Auxiliary key for panels that render multiple rows per character (e.g., Totems types)
+                let auxJson = null;
+                if (cfg.key === 'windfury_totems') {
+                    const itemKey = item.getAttribute('data-item-key') || null;
+                    if (itemKey) auxJson = { item_key: itemKey };
+                }
+
                 entries.push({
                     panel_key: cfg.key,
                     panel_name: cfg.name,
@@ -2953,7 +3022,7 @@ class RaidLogsManager {
                     point_value_original: points,
                     character_details_original: details,
                     primary_numeric_original: primaryNumeric,
-                    aux_json: null
+                    aux_json: auxJson
                 });
             });
         });
@@ -2993,23 +3062,35 @@ class RaidLogsManager {
         const items = Array.from(list.querySelectorAll('.ranking-item'));
         const entries = rows || (this.snapshotEntries || []).filter(r => r.panel_key === panelKey);
 
-        // Map by character name for simple matching
-        // Prefer matching by discord_user_id when present to avoid name collisions
-        const byDiscord = new Map(entries.filter(r => r.discord_user_id).map(r => [String(r.discord_user_id), r]));
-        const byName = new Map(entries.map(r => [String(r.character_name), r]));
+        // Map by character name (and item_key for multi-row panels like Totems) for matching
+        // Prefer matching by discord_user_id when present to avoid name collisions (still include item_key when available)
+        const isTotems = (panelKey === 'windfury_totems');
+        const byDiscord = new Map(entries.filter(r => r.discord_user_id).map(r => {
+            const itemKey = isTotems ? String((r.aux_json && (r.aux_json.item_key || (r.aux_json['item_key']))) || '') : '';
+            const k = itemKey ? `${String(r.discord_user_id)}::${itemKey}` : String(r.discord_user_id);
+            return [k, r];
+        }));
+        const byName = new Map(entries.map(r => {
+            const itemKey = isTotems ? String((r.aux_json && (r.aux_json.item_key || (r.aux_json['item_key']))) || '') : '';
+            const k = itemKey ? `${String(r.character_name)}::${itemKey}` : String(r.character_name);
+            return [k, r];
+        }));
         items.forEach((item, idx) => {
             const nameEl = item.querySelector('.character-name');
             const pointsEl = item.querySelector('.performance-amount .amount-value');
             const detailsEl = item.querySelector('.character-details');
             const rankEl = item.querySelector('.ranking-number');
             const playerName = nameEl ? nameEl.textContent.trim() : null;
-            let snap = playerName ? byName.get(playerName) : null;
+            const rowItemKey = isTotems ? (item.getAttribute('data-item-key') || '') : '';
+            let snap = playerName ? byName.get(rowItemKey ? `${playerName}::${rowItemKey}` : playerName) : null;
             if (!snap) {
                 // Try to resolve via logData (has discord_id) and then map to snapshot by discord_user_id
                 const lower = (playerName || '').toLowerCase();
                 const row = (this.logData || []).find(p => String(p.character_name).toLowerCase() === lower);
-                if (row && row.discord_id && byDiscord.has(String(row.discord_id))) {
-                    snap = byDiscord.get(String(row.discord_id));
+                if (row && row.discord_id) {
+                    const k1 = String(row.discord_id);
+                    const k2 = rowItemKey ? `${k1}::${rowItemKey}` : k1;
+                    snap = byDiscord.get(k2) || byDiscord.get(k1) || null;
                 }
             }
             if (!snap) return;
@@ -4373,7 +4454,7 @@ class RaidLogsManager {
                 // For Windfury rows, use custom tooltip; for others, no legacy title tooltip
                 const detailsAttr = isByTotems ? '' : ` data-wf-tooltip="${this._escapeAttr(this.buildWindfuryTooltipHtml(player))}"`;
                 return `
-                    <div class="ranking-item">
+                    <div class="ranking-item" data-item-key="${keyLower}" data-character-name="${player.character_name}">
                         <div class="ranking-position">
                             <span class="ranking-number">#${position}</span>
                         </div>
@@ -7285,23 +7366,49 @@ class RaidLogsManager {
         const listContainer = document.getElementById('manual-rewards-list');
         const noEntriesMessage = document.getElementById('no-entries-message');
         const hasManagementRole = this.currentUser?.hasManagementRole || false;
-        
+
         if (!listContainer) return;
-        
+
         // Clear existing items
         listContainer.innerHTML = '';
-        
-        if (this.manualRewardsData.length === 0) {
+
+        const entries = Array.isArray(this.manualRewardsData) ? this.manualRewardsData : [];
+        if (entries.length === 0) {
             if (noEntriesMessage) noEntriesMessage.style.display = 'block';
             return;
         }
-        
         if (noEntriesMessage) noEntriesMessage.style.display = 'none';
-        
-        this.manualRewardsData.forEach((entry, index) => {
-            const rankingItem = this.createManualRewardItem(entry, index + 1, hasManagementRole);
-            listContainer.appendChild(rankingItem);
+
+        // Create two-column layout: left = rewards (positive or gold), right = deductions (negative)
+        const columnsWrap = document.createElement('div');
+        columnsWrap.className = 'manual-rewards-columns';
+        const colPos = document.createElement('div');
+        colPos.className = 'manual-col manual-col-positive';
+        const colNeg = document.createElement('div');
+        colNeg.className = 'manual-col manual-col-negative';
+
+        // Partition entries
+        const positives = [];
+        const negatives = [];
+        entries.forEach((entry) => {
+            const isGold = !!(entry.is_gold) || /\[GOLD\]/i.test(String(entry.description||''));
+            const pts = Number(entry.points) || 0;
+            if (isGold || pts > 0) positives.push(entry); else if (pts < 0) negatives.push(entry);
         });
+
+        // Render each column
+        positives.forEach((entry, idx) => {
+            const item = this.createManualRewardItem(entry, idx + 1, hasManagementRole);
+            colPos.appendChild(item);
+        });
+        negatives.forEach((entry, idx) => {
+            const item = this.createManualRewardItem(entry, idx + 1, hasManagementRole);
+            colNeg.appendChild(item);
+        });
+
+        columnsWrap.appendChild(colPos);
+        columnsWrap.appendChild(colNeg);
+        listContainer.appendChild(columnsWrap);
     }
     
     createManualRewardItem(entry, position, hasManagementRole) {
@@ -7388,10 +7495,21 @@ class RaidLogsManager {
         const amountValue = document.createElement('div');
         amountValue.className = 'amount-value';
         const points = parseFloat(entry.points);
+        // Default formatting for non-gold
         amountValue.textContent = points > 0 ? `+${points}` : points.toString();
+        // Gold-specific compact formatting (e.g., 3000 -> 3K, 3500 -> 3.5K), no plus sign, no icon
         if (isGold && points > 0) {
             amountValue.classList.add('gold-amount');
-            amountValue.innerHTML = `<i class="fas fa-coins" style="color:#f59e0b; margin-right:6px;"></i>${amountValue.textContent}`;
+            const abs = Math.abs(points);
+            let txt;
+            if (abs >= 1000) {
+                const k = abs / 1000;
+                const hasFraction = (abs % 1000) !== 0;
+                txt = hasFraction ? `${k.toFixed(1)}K` : `${k.toFixed(0)}K`;
+            } else {
+                txt = String(abs);
+            }
+            amountValue.textContent = txt;
         }
         
         if (points > 0) {
@@ -7402,23 +7520,28 @@ class RaidLogsManager {
         
         performanceAmount.appendChild(amountValue);
         
-        // Actions (only for management users)
-        const actionsDiv = document.createElement('div');
-        actionsDiv.className = 'manual-rewards-actions';
-        
+        // Inline actions inside character-info (only for management users)
         if (hasManagementRole) {
+            const inlineActions = document.createElement('div');
+            inlineActions.className = 'entry-actions';
+
             const editBtn = document.createElement('button');
-            editBtn.className = 'btn-edit';
-            editBtn.innerHTML = '<i class="fas fa-edit"></i> Edit';
+            editBtn.className = 'entry-action entry-action-edit';
+            editBtn.type = 'button';
+            editBtn.title = 'Edit';
+            editBtn.innerHTML = '<i class="fas fa-pencil-alt" aria-hidden="true"></i>';
             editBtn.onclick = () => this.editEntry(entry);
-            
+
             const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'btn-delete';
-            deleteBtn.innerHTML = '<i class="fas fa-trash"></i> Delete';
+            deleteBtn.className = 'entry-action entry-action-delete';
+            deleteBtn.type = 'button';
+            deleteBtn.title = 'Delete';
+            deleteBtn.innerHTML = '<i class="fas fa-times" aria-hidden="true"></i>';
             deleteBtn.onclick = () => this.deleteEntry(entry);
-            
-            actionsDiv.appendChild(editBtn);
-            actionsDiv.appendChild(deleteBtn);
+
+            inlineActions.appendChild(editBtn);
+            inlineActions.appendChild(deleteBtn);
+            characterInfo.appendChild(inlineActions);
         }
         
         // Mark entries whose names are not in WoW logs (only if logs are present)
@@ -7437,9 +7560,7 @@ class RaidLogsManager {
         rankingItem.appendChild(positionDiv);
         rankingItem.appendChild(characterInfo);
         rankingItem.appendChild(performanceAmount);
-        if (hasManagementRole) {
-            rankingItem.appendChild(actionsDiv);
-        }
+        // Actions are inline inside character-info; nothing appended here
         
         return rankingItem;
     }

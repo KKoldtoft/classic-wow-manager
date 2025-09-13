@@ -440,7 +440,7 @@
           isHorse ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756148431/ForuHorseman_dipmqk.mp4' :
           isNoth ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756149354/NothThePlaguebringer_qree64.mp4' :
           isLoatheb ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756333046/Loatheb_r8mbox.mp4' :
-          isRazu ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756329842/Razuvious_dpitqe.mp4' :
+          isRazu ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1757769485/Raz2_ihmjr6.mp4' :
           isSkeram ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756152423/prophet_skarem_nuv5hs.mp4' :
           isFankriss ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756152422/Fankriss_t6rtpo.mp4' :
           isViscidus ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756152421/Viscidus_qpezj6.mp4' :
@@ -3430,7 +3430,9 @@
           const toAdd = [];
           const bossLower = String(boss).toLowerCase();
           if (bossLower === 'tanking') {
-            const warriors = filterAssignable(rosterData.filter(r => String(r.class_name||'').toLowerCase()==='warrior')).sort(sortByGS);
+            const warriors = filterAssignable(
+              rosterData.filter(r => String(canonicalizeClass(String(r.class_name||''))).toLowerCase() === 'warrior')
+            ).sort(sortByGS);
             const icons = [
               'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/1_skull_faqei8.png',
               'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/2_cross_kj9wuf.png',

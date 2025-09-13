@@ -66,6 +66,9 @@ class LootManager {
         // Check user permissions and load data
         await this.loadUserPermissions();
         await this.loadLootData();
+
+        // Live updates via SSE
+        this.initializeLiveUpdates();
     }
 
     setupEventListeners() {
@@ -86,6 +89,42 @@ class LootManager {
         if (gargulInput) {
             gargulInput.addEventListener('input', () => this.validateInput());
         }
+    }
+
+    initializeLiveUpdates() {
+        try {
+            if (!this.activeEventId) return;
+            const url = `/api/updates/stream?scope=${encodeURIComponent('loot')}&eventId=${encodeURIComponent(this.activeEventId)}`;
+            const es = new EventSource(url, { withCredentials: true });
+            this._es = es;
+            const showToast = () => {
+                if (this._refreshToastShown) return;
+                this._refreshToastShown = true;
+                const t = document.createElement('div');
+                t.className = 'refresh-toast';
+                t.style.opacity = '0';
+                t.style.transform = 'translateY(-12px)';
+                t.innerHTML = `<span class="msg">There has been updates to this page, refresh the page to see the latest version</span><button class="btn" id="refresh-now-btn">Refresh</button>`;
+                document.body.appendChild(t);
+                const btn = t.querySelector('#refresh-now-btn');
+                if (btn) btn.onclick = ()=>{ try { location.reload(); } catch {} };
+                requestAnimationFrame(()=>{
+                    t.style.transition = 'opacity 300ms ease, transform 300ms ease';
+                    t.style.opacity = '1';
+                    t.style.transform = 'translateY(0)';
+                });
+            };
+            es.onmessage = (e) => {
+                try {
+                    const msg = JSON.parse(e.data||'{}');
+                    if (!msg || msg.type === 'connected') return;
+                    const myUserId = (window.__currentUser && window.__currentUser.id) ? String(window.__currentUser.id) : null;
+                    const byUserId = msg && msg.data && msg.data.byUserId ? String(msg.data.byUserId) : null;
+                    if (myUserId && byUserId && myUserId === byUserId) return;
+                    showToast();
+                } catch {}
+            };
+        } catch (e) { console.warn('[LOOT] SSE init failed', e); }
     }
 
     async loadUserPermissions() {

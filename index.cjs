@@ -219,6 +219,65 @@ async function fetchWclFights(params) {
 }
 
 const app = express();
+
+// --- Simple in-memory SSE broadcaster ---
+const sseTopics = new Map(); // topic -> Set(res)
+
+function getTopic(scope, eventId) {
+  const s = String(scope || 'global');
+  const e = String(eventId || 'all');
+  return `${s}:${e}`;
+}
+
+function broadcastUpdate(scope, eventId, data) {
+  try {
+    const topic = getTopic(scope, eventId);
+    const set = sseTopics.get(topic);
+    if (!set || set.size === 0) return;
+    const payload = JSON.stringify({
+      scope,
+      eventId,
+      type: data && data.type || 'update',
+      data: data || {},
+      ts: Date.now()
+    });
+    for (const res of Array.from(set)) {
+      try { res.write(`data: ${payload}\n\n`); } catch { set.delete(res); }
+    }
+  } catch (e) { console.warn('SSE broadcast error', e); }
+}
+
+app.get('/api/updates/stream', (req, res) => {
+  if (!req.isAuthenticated || !req.isAuthenticated()) {
+    // Allow anonymous read if desired; else enforce auth similar to other pages
+    // return res.status(401).end();
+  }
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders && res.flushHeaders();
+
+  const scope = String(req.query.scope || 'global');
+  const eventId = String(req.query.eventId || 'all');
+  const topic = getTopic(scope, eventId);
+
+  let set = sseTopics.get(topic);
+  if (!set) { set = new Set(); sseTopics.set(topic, set); }
+  set.add(res);
+
+  // Initial ping
+  try { res.write(`data: ${JSON.stringify({ scope, eventId, type: 'connected', ts: Date.now() })}\n\n`); } catch {}
+
+  const heartbeat = setInterval(() => {
+    try { res.write(': heartbeat\n\n'); } catch { clearInterval(heartbeat); }
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    const s = sseTopics.get(topic);
+    if (s) s.delete(res);
+  });
+});
 const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', 1);
@@ -6095,6 +6154,7 @@ app.put('/api/roster/:eventId/player/:discordUserId', requireRosterManager, asyn
         }
 
         await client.query('COMMIT');
+        try { broadcastUpdate('roster', eventId, { type: 'roster_changed', byUserId: req.user?.id || null }); } catch {}
         res.json({ message: 'Player character updated successfully.' });
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -6158,6 +6218,7 @@ app.put('/api/roster/:eventId/player/:discordUserId/spec', requireRosterManager,
         }
 
         await client.query('COMMIT');
+        try { broadcastUpdate('roster', eventId, { type: 'roster_changed', byUserId: req.user?.id || null }); } catch {}
         res.json({ message: 'Player spec updated successfully.' });
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -6194,6 +6255,7 @@ app.put('/api/roster/:eventId/player/:discordUserId/in-raid', requireRosterManag
         );
 
         await client.query('COMMIT');
+        try { broadcastUpdate('roster', eventId, { type: 'roster_changed', byUserId: req.user?.id || null }); } catch {}
         res.json({ message: 'Player in-raid status updated successfully.', inRaid });
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -10892,6 +10954,7 @@ app.post('/api/manual-rewards/:eventId', requireManagement, async (req, res) => 
         const newEntry = result.rows[0];
         console.log(`✅ [MANUAL REWARDS] Created entry with ID: ${newEntry.id}`);
         
+        try { broadcastUpdate('raidlogs', eventId, { type: 'manual_rewards_changed', id: newEntry.id, byUserId: createdBy }); } catch {}
         res.json({ 
             success: true, 
             data: newEntry,
@@ -10962,6 +11025,7 @@ app.put('/api/manual-rewards/:eventId/:entryId', requireManagement, async (req, 
         const updatedEntry = result.rows[0];
         console.log(`✅ [MANUAL REWARDS] Updated entry ID: ${updatedEntry.id}`);
         
+        try { broadcastUpdate('raidlogs', eventId, { type: 'manual_rewards_changed', id: updatedEntry.id, byUserId: req.user?.id || null }); } catch {}
         res.json({ 
             success: true, 
             data: updatedEntry,
@@ -11023,6 +11087,7 @@ app.delete('/api/manual-rewards/:eventId/:entryId', requireManagement, async (re
         const deletedEntry = result.rows[0];
         console.log(`✅ [MANUAL REWARDS] Deleted entry ID: ${deletedEntry.id}`);
         
+        try { broadcastUpdate('raidlogs', eventId, { type: 'manual_rewards_changed', id: deletedEntry.id, op: 'delete', byUserId: req.user?.id || null }); } catch {}
         res.json({ 
             success: true, 
             data: deletedEntry,
@@ -11231,6 +11296,7 @@ app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, express.json(
         }
 
         await client.query('COMMIT');
+        try { broadcastUpdate('raidlogs', eventId, { type: 'snapshot_locked', count: entries.length }); } catch {}
         return res.json({ success: true, locked: true, inserted: entries.length });
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -11270,7 +11336,8 @@ app.put('/api/rewards-snapshot/:eventId/entry', requireManagement, express.json(
         ranking_number_original,
         point_value_edited,
         character_details_edited,
-        primary_numeric_edited
+        primary_numeric_edited,
+        aux_json
     } = req.body || {};
     const editedById = req.user?.id || null;
     const editedByName = req.user?.username || req.user?.global_name || req.user?.display_name || 'unknown';
@@ -11282,8 +11349,10 @@ app.put('/api/rewards-snapshot/:eventId/entry', requireManagement, express.json(
     let client;
     try {
         client = await pool.connect();
-        const result = await client.query(
-            `UPDATE rewards_and_deductions_points
+        // Optional item_key matching for panels with multiple rows per character (e.g., windfury_totems)
+        const itemKey = aux_json && (aux_json.item_key || aux_json['item_key']) ? String(aux_json.item_key || aux_json['item_key']) : '';
+        const useItemKey = !!itemKey;
+        const sql = `UPDATE rewards_and_deductions_points
              SET point_value_edited = COALESCE($1, point_value_edited),
                  character_details_edited = COALESCE($2, character_details_edited),
                  primary_numeric_edited = COALESCE($3, primary_numeric_edited),
@@ -11295,10 +11364,12 @@ app.put('/api/rewards-snapshot/:eventId/entry', requireManagement, express.json(
                     (discord_user_id IS NOT NULL AND discord_user_id = $9)
                  OR (discord_user_id IS NULL AND character_name = $8)
                )
-               -- Relax ranking match to allow updates when panel rows are backfilled later
-               -- AND (ranking_number_original IS NOT DISTINCT FROM $10)
-             RETURNING *`,
-            [
+               AND (
+                    $10::text IS NULL
+                 OR (aux_json IS NOT NULL AND aux_json->>'item_key' = $10)
+               )
+             RETURNING *`;
+        const params = [
                 point_value_edited,
                 character_details_edited,
                 primary_numeric_edited,
@@ -11308,12 +11379,13 @@ app.put('/api/rewards-snapshot/:eventId/entry', requireManagement, express.json(
                 panel_key,
                 character_name,
                 discord_user_id || null,
-                Number.isFinite(ranking_number_original) ? ranking_number_original : null
-            ]
-        );
+            useItemKey ? itemKey : null
+        ];
+        const result = await client.query(sql, params);
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Snapshot entry not found' });
         }
+        try { broadcastUpdate('raidlogs', eventId, { type: 'snapshot_entry_updated', key: panel_key }); } catch {}
         return res.json({ success: true, entry: result.rows[0] });
     } catch (error) {
         console.error('❌ [SNAPSHOT] Update error:', error);
@@ -11333,6 +11405,7 @@ app.post('/api/rewards-snapshot/:eventId/unlock', requireManagement, async (req,
         await client.query('DELETE FROM rewards_and_deductions_points WHERE event_id = $1', [eventId]);
         await client.query('DELETE FROM rewards_snapshot_events WHERE event_id = $1', [eventId]);
         await client.query('COMMIT');
+        try { broadcastUpdate('raidlogs', eventId, { type: 'snapshot_unlocked' }); } catch {}
         return res.json({ success: true, reverted: true });
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -14954,6 +15027,7 @@ app.post('/api/loot/import', async (req, res) => {
 
     console.log(`[LOOT] Successfully imported ${insertedCount} items for event ${eventId}`);
 
+    try { broadcastUpdate('loot', eventId, { type: 'loot_changed', byUserId: req.user?.id || null, count: insertedCount }); } catch {}
     res.json({
       success: true,
       message: `Successfully imported ${insertedCount} items`,

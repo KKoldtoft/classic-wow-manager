@@ -1,3 +1,25 @@
+/* Refresh toast (shared styling) */
+.refresh-toast {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    transform: translateY(-12px);
+    z-index: 99999;
+    background: #0f172a;
+    color: #ffffff;
+    border: 2px solid #ef4444;
+    border-radius: 8px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.6);
+    transition: opacity 300ms ease, transform 300ms ease;
+    will-change: opacity, transform;
+}
+.refresh-toast .msg { font-size: 14px; letter-spacing: .2px; max-width: 420px; }
+.refresh-toast .btn { background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-weight: 600; }
+.refresh-toast .btn:hover { background: #1d4ed8; }
 /* ====================================
    LOOT PAGE STYLES
    ==================================== */
