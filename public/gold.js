@@ -555,15 +555,41 @@ class GoldPotManager {
             addFrom(this.datasets.runesData);
             addFrom(this.datasets.interruptsData);
             addFrom(this.datasets.disarmsData);
-            // Sunder: exclude tanks using detected role when possible (fallback to primary role)
-            (this.datasets.sunderData || []).forEach(row => {
-                const nm = String(row.character_name || row.player_name || '').toLowerCase();
-                const v = nameToPlayer.get(nm);
-                if (!v) return;
-                if (this.isTankForEvent(nm)) return;
-                const pts = Number(row.points) || 0;
-                v.points += pts;
-            });
+            // Sunder: compute points from sunder_count, excluding only assigned tanks; mirror raidlogs thresholds
+            (function computeSunder(self){
+                const rows = Array.isArray(self.datasets.sunderData) ? self.datasets.sunderData : [];
+                if (!rows.length) return;
+                const lower = s=>String(s||'').toLowerCase();
+                const eligible = rows.filter(r => {
+                    const nm = lower(r.character_name || r.player_name || '');
+                    if (!confirmedNames.has(nm)) return false;
+                    if (self.isTankForEvent(nm)) return false;
+                    return true;
+                });
+                if (!eligible.length) return;
+                const counts = eligible.map(r => Number(r.sunder_count)||0);
+                const avg = counts.reduce((a,b)=>a+b,0) / eligible.length;
+                if (!(avg > 0)) return;
+                const computePts = (count) => {
+                    const pct = (Number(count)||0) / avg * 100;
+                    if (pct < 25) return -20;
+                    if (pct < 50) return -15;
+                    if (pct < 75) return -10;
+                    if (pct < 90) return -5;
+                    if (pct <= 109) return 0;
+                    if (pct <= 124) return 5;
+                    return 10;
+                };
+                rows.forEach(r => {
+                    const nm = lower(r.character_name || r.player_name || '');
+                    if (!confirmedNames.has(nm)) return;
+                    if (self.isTankForEvent(nm)) return;
+                    const v = nameToPlayer.get(nm);
+                    if (!v) return;
+                    const pts = computePts(r.sunder_count);
+                    if (pts) v.points += pts; // include negatives
+                });
+            })(this);
             addFrom(this.datasets.curseData);
             addFrom(this.datasets.curseShadowData);
             addFrom(this.datasets.curseElementsData);
@@ -1000,9 +1026,40 @@ class GoldPotManager {
         push('Runes', sumFrom(this.datasets.runesData));
         push('Interrupts', sumFrom(this.datasets.interruptsData));
         push('Disarms', sumFrom(this.datasets.disarmsData));
-        // Sunder breakdown row: hide for tanks
+        // Sunder breakdown row: hide for tanks based on assignments; use snapshot when locked
         if (!this.isTankForEvent(nameKey)) {
-            push('Sunder', sumFrom(this.datasets.sunderData));
+            if (this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) {
+                const sumSnap = (panelKey) => (this.snapshotEntries||[]).reduce((acc, r) => {
+                    if (String(r.panel_key) === panelKey && lower(r.character_name) === nameKey) {
+                        const pts = Number(r.point_value_edited != null ? r.point_value_edited : r.point_value_original) || 0;
+                        return acc + pts;
+                    }
+                    return acc;
+                }, 0);
+                const pts = sumSnap('sunder');
+                if (pts) push('Sunder', pts);
+            } else {
+                // Compute Sunder points for this name to mirror raidlogs thresholds and assigned-tank filtering
+                const rows = Array.isArray(this.datasets.sunderData) ? this.datasets.sunderData : [];
+                const lower = s=>String(s||'').toLowerCase();
+                const elig = rows.filter(r => !this.isTankForEvent(lower(r.character_name||r.player_name||'')));
+                const counts = elig.map(r => Number(r.sunder_count)||0);
+                const avg = elig.length ? (counts.reduce((a,b)=>a+b,0)/elig.length) : 0;
+                const computePts = (count) => {
+                    if (!(avg>0)) return 0;
+                    const pct = (Number(count)||0)/avg*100;
+                    if (pct < 25) return -20;
+                    if (pct < 50) return -15;
+                    if (pct < 75) return -10;
+                    if (pct < 90) return -5;
+                    if (pct <= 109) return 0;
+                    if (pct <= 124) return 5;
+                    return 10;
+                };
+                const row = rows.find(r => lower(r.character_name||r.player_name||'')===nameKey);
+                const pts = row ? computePts(row.sunder_count) : 0;
+                if (pts) push('Sunder', pts);
+            }
         }
         push('Curse Reck', sumFrom(this.datasets.curseData));
         push('Curse Shad', sumFrom(this.datasets.curseShadowData));
