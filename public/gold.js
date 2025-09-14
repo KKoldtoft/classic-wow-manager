@@ -470,6 +470,7 @@ class GoldPotManager {
             addMap(mapFromPanel('abilities'));
             addMap(mapFromPanel('mana_potions'));
             addMap(mapFromPanel('runes'));
+            addMap(mapFromPanel('windfury_totems'));
             addMap(mapFromPanel('interrupts'));
             addMap(mapFromPanel('disarms'));
             // Snapshot mode: respect snapshot values as-is (they already reflect any manual edits)
@@ -527,6 +528,7 @@ class GoldPotManager {
 
             const addFrom = (arr) => { (arr||[]).forEach(row => { const nm=String(row.character_name||row.player_name||'').toLowerCase(); const v=nameToPlayer.get(nm); if(!v) return; const pts=Number(row.points)||0; v.points+=pts; }); };
             addFrom(this.datasets.abilitiesData);
+            addFrom(this.datasets.windfuryData);
             addFrom(this.datasets.manaPotionsData);
             addFrom(this.datasets.runesData);
             addFrom(this.datasets.interruptsData);
