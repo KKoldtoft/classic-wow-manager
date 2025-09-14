@@ -640,7 +640,7 @@ class GoldPotManager {
                     const key = String(p.character_name || '').trim().toLowerCase();
                     const role = String(this.primaryRoles[key] || '').toLowerCase();
                     const v = nameToPlayer.get(key); if (!v) return;
-                    if (role === 'dps' || role === 'tank') {
+                    if (role === 'dps') {
                         const dps = (parseFloat(p.damage_amount) || 0) / sec; let pts = 0;
                         if (dps < 150) pts = -100; else if (dps < 200) pts = -50; else if (dps < 250) pts = -25;
                         v.points += pts;
@@ -1165,7 +1165,7 @@ class GoldPotManager {
                 const row = (this.logData||[]).find(p => lower(p.character_name)===nameKey);
                 if (row) {
                     const role = String(this.primaryRoles[nameKey]||'').toLowerCase();
-                    if (role==='dps' || role==='tank') {
+                    if (role==='dps') {
                         const dps = (parseFloat(row.damage_amount)||0) / sec;
                         let pts = 0; if (dps < 150) pts = -100; else if (dps < 200) pts = -50; else if (dps < 250) pts = -25;
                         if (pts) push('Too Low Dmg', pts);
