@@ -18,6 +18,8 @@ class GoldPotManager {
         // Snapshot/manual mode support
         this.snapshotLocked = false;
         this.snapshotEntries = [];
+        // Assigned tanks (from /assignments Tanking panel markers)
+        this.assignedTanks = new Set();
         
         this.initializeEventListeners();
         this.loadData();
@@ -129,6 +131,8 @@ class GoldPotManager {
             }
             // Fetch primary roles mapping to mirror raidlogs computed logic
             await this.fetchPrimaryRoles();
+            // Fetch assigned tanks (from assignments Tanking panel)
+            await this.fetchAssignedTanks();
             // Reconcile players strictly to confirmed logData roster and dedupe
             this.reconcilePlayersWithLogData(playersData || []);
             // Compute totals per player
@@ -194,6 +198,30 @@ class GoldPotManager {
             if (data && data.success && data.primaryRoles) {
                 this.primaryRoles = data.primaryRoles; // map of lowercased name -> 'dps' | 'healer' | 'tank'
             }
+        } catch {}
+    }
+
+    // Populate assignedTanks from the main Tanking panel (skull, cross, square, moon)
+    async fetchAssignedTanks() {
+        this.assignedTanks = new Set();
+        if (!this.currentEventId) return;
+        try {
+            const res = await fetch(`/api/assignments/${this.currentEventId}`);
+            const data = await res.json();
+            if (!data || !data.success) return;
+            const panels = Array.isArray(data.panels) ? data.panels : [];
+            const tankingPanel = panels.find(p => String(p.boss || '').toLowerCase() === 'tanking' && (!p.wing || String(p.wing).trim() === '' || String(p.wing).toLowerCase() === 'main'))
+                                || panels.find(p => String(p.boss || '').toLowerCase() === 'tanking');
+            if (!tankingPanel || !Array.isArray(tankingPanel.entries)) return;
+            const pickByMarker = (marker) => {
+                const e = tankingPanel.entries.find(en => String(en.marker_icon_url || '').toLowerCase().includes(marker));
+                const nm = (e && e.character_name) ? String(e.character_name).trim() : '';
+                return nm ? nm.toLowerCase() : '';
+            };
+            ['skull','cross','square','moon'].forEach(m => {
+                const nameKey = pickByMarker(m);
+                if (nameKey) this.assignedTanks.add(nameKey);
+            });
         } catch {}
     }
 
@@ -357,20 +385,15 @@ class GoldPotManager {
         addFrom(this.datasets.runesData);
         addFrom(this.datasets.interruptsData);
         addFrom(this.datasets.disarmsData);
-        // Sunder: exclude tanks when primaryRoles available
-        if (this.primaryRoles) {
-            (this.datasets.sunderData || []).forEach(row => {
-                const nm = String(row.character_name || row.player_name || '').toLowerCase();
-                const v = nameToPlayer.get(nm);
-                if (!v) return;
-                const role = String(this.primaryRoles[nm] || '').toLowerCase();
-                if (role === 'tank') return; // tanks do not get sunder adjustments
-                const pts = Number(row.points) || 0;
-                v.points += pts;
-            });
-        } else {
-            addFrom(this.datasets.sunderData);
-        }
+        // Sunder: exclude tanks using detected role when possible (fallback to primary role)
+        (this.datasets.sunderData || []).forEach(row => {
+            const nm = String(row.character_name || row.player_name || '').toLowerCase();
+            const v = nameToPlayer.get(nm);
+            if (!v) return;
+            if (this.isTankForEvent(nm)) return;
+            const pts = Number(row.points) || 0;
+            v.points += pts;
+        });
         addFrom(this.datasets.curseData);
         addFrom(this.datasets.curseShadowData);
         addFrom(this.datasets.curseElementsData);
@@ -474,7 +497,6 @@ class GoldPotManager {
             addMap(mapFromPanel('interrupts'));
             addMap(mapFromPanel('disarms'));
             // Snapshot mode: respect snapshot values as-is (they already reflect any manual edits)
-            addMap(mapFromPanel('sunder'));
             addMap(mapFromPanel('curse_recklessness'));
             addMap(mapFromPanel('curse_shadow'));
             addMap(mapFromPanel('curse_elements'));
@@ -533,20 +555,15 @@ class GoldPotManager {
             addFrom(this.datasets.runesData);
             addFrom(this.datasets.interruptsData);
             addFrom(this.datasets.disarmsData);
-            // Sunder: exclude tanks when primaryRoles available
-            if (this.primaryRoles) {
-                (this.datasets.sunderData || []).forEach(row => {
-                    const nm = String(row.character_name || row.player_name || '').toLowerCase();
-                    const v = nameToPlayer.get(nm);
-                    if (!v) return;
-                    const role = String(this.primaryRoles[nm] || '').toLowerCase();
-                    if (role === 'tank') return;
-                    const pts = Number(row.points) || 0;
-                    v.points += pts;
-                });
-            } else {
-                addFrom(this.datasets.sunderData);
-            }
+            // Sunder: exclude tanks using detected role when possible (fallback to primary role)
+            (this.datasets.sunderData || []).forEach(row => {
+                const nm = String(row.character_name || row.player_name || '').toLowerCase();
+                const v = nameToPlayer.get(nm);
+                if (!v) return;
+                if (this.isTankForEvent(nm)) return;
+                const pts = Number(row.points) || 0;
+                v.points += pts;
+            });
             addFrom(this.datasets.curseData);
             addFrom(this.datasets.curseShadowData);
             addFrom(this.datasets.curseElementsData);
@@ -944,6 +961,13 @@ class GoldPotManager {
         if (maxBreak > 0) breakdowns.forEach(el => { el.style.minHeight = maxBreak + 'px'; });
     }
 
+    // Determine if a player should be treated as a tank for this event
+    isTankForEvent(nameKey) {
+        try {
+            return this.assignedTanks.has(String(nameKey||'').toLowerCase());
+        } catch { return false; }
+    }
+    
     buildPlayerBreakdownRows(nameKey) {
         const lower = s=>String(s||'').toLowerCase();
         const fmtTitle = (t)=>{
@@ -977,7 +1001,7 @@ class GoldPotManager {
         push('Interrupts', sumFrom(this.datasets.interruptsData));
         push('Disarms', sumFrom(this.datasets.disarmsData));
         // Sunder breakdown row: hide for tanks
-        if (role !== 'tank') {
+        if (!this.isTankForEvent(nameKey)) {
             push('Sunder', sumFrom(this.datasets.sunderData));
         }
         push('Curse Reck', sumFrom(this.datasets.curseData));
@@ -1052,7 +1076,7 @@ class GoldPotManager {
 
             // Class-specific healer awards
             const byClass = (arr, cls) => arr.filter(p => String(p.character_class||'').toLowerCase().includes(cls));
-            const shamans = byClass(healers, 'shaman').slice(0,3);
+            const shamans = byClass(healers,'shaman').slice(0,3);
             const priests = byClass(healers, 'priest').slice(0,2);
             const druids  = byClass(healers, 'druid').slice(0,1);
             const addAward = (label, arr, ptsArr) => {
