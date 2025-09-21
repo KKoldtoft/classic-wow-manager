@@ -15,6 +15,9 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const WebSocket = require('ws');
 const zlib = require('zlib');
+// Rewards engine module (registers canonical endpoints)
+let registerRewardsEngine;
+try { registerRewardsEngine = require('./rewardsEngine.cjs'); } catch (_) { registerRewardsEngine = null; }
 
 // --- Warcraft Logs API (v2 GraphQL) Configuration ---
 const WCL_TOKEN_URL = 'https://www.warcraftlogs.com/oauth/token';
@@ -1851,6 +1854,126 @@ app.post('/api/discord/announce-invites', requireRosterManager, async (req, res)
     return res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
   } finally {
     if (client) client.release();
+  }
+});
+
+// Send gold cut confirmation DM (embed) to a specific user
+// Frontend composes rewards/deductions from the Gold page and sends here.
+app.post('/api/discord/prompt-goldcuts', requireRosterManager, async (req, res) => {
+  try {
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    if (!botToken) {
+      return res.status(500).json({ ok: false, error: 'DISCORD_BOT_TOKEN not set' });
+    }
+
+    const body = req.body || {};
+    const userId = body.userId ? String(body.userId) : '';
+    const playerName = body.playerName ? String(body.playerName) : '';
+    const eventId = body.eventId ? String(body.eventId) : '';
+    const rewards = Array.isArray(body.rewards) ? body.rewards : [];
+    const deductions = Array.isArray(body.deductions) ? body.deductions : [];
+    const totalPoints = Number(body.totalPoints) || 0;
+    const totalGold = Number(body.totalGold) || 0;
+    if (!userId) {
+      return res.status(400).json({ ok: false, error: 'userId is required' });
+    }
+
+    // 1) Ensure DM channel exists
+    const dmResponse = await fetch('https://discord.com/api/v10/users/@me/channels', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bot ${botToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ recipient_id: userId })
+    });
+    if (!dmResponse.ok) {
+      const errText = await dmResponse.text();
+      return res.status(dmResponse.status).json({ ok: false, step: 'create_dm', error: errText });
+    }
+    const dmJson = await dmResponse.json();
+    const dmChannelId = dmJson && dmJson.id;
+    if (!dmChannelId) {
+      return res.status(500).json({ ok: false, error: 'Failed to create DM channel' });
+    }
+
+    const title = 'Confirm your gold cut';
+    const description = 'Please check that all your rewards and deductions are correct. If you find any errors, let us know on Discord immediately. We will start paying out gold in 5 minutes. Any issues reported after payouts begin will not be compensated.';
+
+    const fmt = (n) => `${n > 0 ? '' : ''}${Math.trunc(n)}`;
+    const iconFor = (pts, gld) => {
+      const p = Number(pts) || 0; const g = Number(gld) || 0;
+      if (p < 0 || g < 0) return '🔴';
+      if (p > 0 || g > 0) return '🟢';
+      return '⚪';
+    };
+    const mkField = (label, pts, gld, forceSign) => {
+      const icon = forceSign === 'pos' ? '🟢' : (forceSign === 'neg' ? '🔴' : iconFor(pts, gld));
+      return {
+        name: `${String(label || '')} ${icon}`,
+        value: `${fmt(pts)} pts / ${fmt(gld)} gold`,
+        inline: true
+      };
+    };
+
+    const fields = [];
+    // Player will be shown as author (above title/description) instead of a field
+    if (rewards.length) {
+      rewards.forEach(it => {
+        const label = it && (it.label || it.title) || '';
+        const pts = Number(it && (it.points != null ? it.points : it.pts)) || 0;
+        const gld = Number(it && it.gold) || 0;
+        fields.push(mkField(label, pts, gld, 'pos'));
+      });
+    }
+    if (deductions.length) {
+      deductions.forEach(it => {
+        const label = it && (it.label || it.title) || '';
+        const pts = Number(it && (it.points != null ? it.points : it.pts)) || 0;
+        const gld = Number(it && it.gold) || 0;
+        fields.push(mkField(label, pts, gld, 'neg'));
+      });
+    }
+    // Totals block: compact single field
+    const totalsPts = Math.trunc(totalPoints);
+    const totalsGold = Math.trunc(totalGold).toLocaleString();
+    fields.push({ name: 'Your totals', value: `🧮 ${totalsPts} pts • 🪙 ${totalsGold} gold`, inline: false });
+
+    if (eventId) {
+      const encodedEventId = encodeURIComponent(eventId);
+      const goldUrl = `https://www.1principles.net/event/${encodedEventId}/gold`;
+      const logsUrl = `https://www.1principles.net/event/${encodedEventId}/raidlogs`;
+      fields.push({ name: 'Links', value: `[Go to Gold page](${goldUrl})\n[Go to Raidlogs page](${logsUrl})`, inline: false });
+    }
+
+    const embed = {
+      title,
+      description,
+      color: 0xF59E0B,
+      fields,
+      thumbnail: { url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758109057/gready_orc_zvosup.jpg' },
+      timestamp: new Date().toISOString()
+    };
+    if (playerName) {
+      embed.author = { name: `Player: ${playerName}` };
+    }
+    const payload = { embeds: [embed] };
+
+    const msgResponse = await fetch(`https://discord.com/api/v10/channels/${dmChannelId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bot ${botToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!msgResponse.ok) {
+      const errText = await msgResponse.text();
+      return res.status(msgResponse.status).json({ ok: false, step: 'send_message', error: errText });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
   }
 });
 
@@ -8871,22 +8994,16 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
     }
     const allowedWeekKeys = new Set(weeks.map(w => `${w.weekYear}-${w.weekNumber}`));
 
-    // Players in this event (with discord_id) and their displayed character info for the panel
-    const inEvent = await client.query(`
-      SELECT DISTINCT ON (discord_id)
-        discord_id,
-        character_name,
-        character_class
+    // Players in this event (resolve discord_id if missing by name/class)
+    const eventRows = await client.query(`
+      SELECT character_name, character_class, discord_id
       FROM log_data
-      WHERE event_id = $1 AND discord_id IS NOT NULL
-      ORDER BY discord_id, damage_amount DESC, healing_amount DESC
+      WHERE event_id = $1
     `, [eventId]);
 
-    if (inEvent.rows.length === 0) {
+    if (eventRows.rows.length === 0) {
       return res.json({ success: true, data: [] });
     }
-
-    const eventDiscordIds = new Set(inEvent.rows.map(r => String(r.discord_id)));
 
     // Build resolvers (same approach as /api/attendance)
     const ldResolver = await client.query(`
@@ -8911,6 +9028,38 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
       const did = String(r.discord_id);
       if (!playersNameClassToDiscord.has(key)) playersNameClassToDiscord.set(key, did);
       else if (playersNameClassToDiscord.get(key) !== did) playersNameClassToDiscord.set(key, '__MULTI__');
+    });
+
+    // Roster mapping for this event (strongest signal)
+    const rosterRes = await client.query(`
+      SELECT LOWER(assigned_char_name) AS name_lower, discord_user_id
+      FROM roster_overrides
+      WHERE event_id = $1 AND discord_user_id IS NOT NULL AND assigned_char_name IS NOT NULL
+    `, [eventId]);
+    const rosterNameToDiscord = new Map(rosterRes.rows.map(r => [String(r.name_lower), String(r.discord_user_id)]));
+
+    // Name-only unique resolvers (fallback when class mapping ambiguous/missing)
+    const ldNameOnlyRes = await client.query(`
+      SELECT LOWER(character_name) AS name_lower,
+             ARRAY_AGG(DISTINCT discord_id) FILTER (WHERE discord_id IS NOT NULL) AS dids
+      FROM log_data
+      GROUP BY LOWER(character_name)
+    `);
+    const ldNameOnly = new Map();
+    ldNameOnlyRes.rows.forEach(r => {
+      const arr = Array.isArray(r.dids) ? r.dids.map(String).filter(Boolean) : [];
+      if (arr.length === 1) ldNameOnly.set(String(r.name_lower), arr[0]);
+    });
+    const playersNameOnlyRes = await client.query(`
+      SELECT LOWER(character_name) AS name_lower,
+             ARRAY_AGG(DISTINCT discord_id) FILTER (WHERE discord_id IS NOT NULL) AS dids
+      FROM players
+      GROUP BY LOWER(character_name)
+    `);
+    const playersNameOnly = new Map();
+    playersNameOnlyRes.rows.forEach(r => {
+      const arr = Array.isArray(r.dids) ? r.dids.map(String).filter(Boolean) : [];
+      if (arr.length === 1) playersNameOnly.set(String(r.name_lower), arr[0]);
     });
 
     // Pull all local log rows with cached event dates to compute attendance across window
@@ -8957,8 +9106,21 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
     }
 
     const computeStreak = (did) => {
+      // Only allow skipping the current week; otherwise streak must be continuous
+      const last = weeks.length - 1;
+      const curKey = `${weeks[last].weekYear}-${weeks[last].weekNumber}`;
+      const hasCur = !!(attendanceByPlayer[did] && attendanceByPlayer[did].has(curKey));
+      let start = last;
+      if (!hasCur) {
+        // Allow skipping current week only; require attendance in previous week
+        start = last - 1;
+        if (start < 0) return 0;
+        const prevKey = `${weeks[start].weekYear}-${weeks[start].weekNumber}`;
+        const hasPrev = !!(attendanceByPlayer[did] && attendanceByPlayer[did].has(prevKey));
+        if (!hasPrev) return 0;
+      }
       let streak = 0;
-      for (let i = weeks.length - 1; i >= 0; i--) {
+      for (let i = start; i >= 0; i--) {
         const wkKey = `${weeks[i].weekYear}-${weeks[i].weekNumber}`;
         const has = attendanceByPlayer[did] && attendanceByPlayer[did].has(wkKey);
         if (has) streak++; else break;
@@ -8966,28 +9128,56 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
       return streak;
     };
 
-    // Build response for players in the event with streak >= 4
-    const playersWithStreaks = inEvent.rows.map(r => {
-      const did = String(r.discord_id);
+    // Resolve participants for this event with a discord_id (direct or via name/class mapping)
+    const participantsMap = new Map(); // did -> { character_name, character_class }
+    for (const r of eventRows.rows) {
+      let did = r.discord_id ? String(r.discord_id) : null;
+      if (!did) {
+        const nm = String(r.character_name||'').toLowerCase();
+        const cls = String(r.character_class||'').toLowerCase();
+        // 1) roster exact name
+        did = rosterNameToDiscord.get(nm) || null;
+        if (!did) {
+          // 2) name+class from log_data
+          const key = `${nm}|${cls}`;
+          did = nameClassToDiscord.get(key) || null;
+        }
+        if (!did) {
+          // 3) name+class from players
+          const key = `${nm}|${cls}`;
+          const pDid = playersNameClassToDiscord.get(key);
+          if (pDid && pDid !== '__MULTI__') did = pDid;
+        }
+        if (!did) {
+          // 4) name-only unique resolvers
+          did = ldNameOnly.get(nm) || playersNameOnly.get(nm) || null;
+        }
+      }
+      if (!did) continue;
+      if (!participantsMap.has(did)) {
+        participantsMap.set(did, { character_name: r.character_name, character_class: r.character_class });
+      }
+    }
+
+    if (participantsMap.size === 0) {
+      return res.json({ success: true, data: [], eventId, minStreak: 4, totalCount: 0 });
+    }
+
+    // Build response for resolved participants with streak >= 4
+    const participants = Array.from(participantsMap.entries()).map(([did, info]) => {
       const s = computeStreak(did);
-      return {
-        character_name: r.character_name,
-        character_class: r.character_class,
-        discord_id: did,
-        discord_username: `user-${did.slice(-4)}`,
-        player_streak: s
-      };
+      return { character_name: info.character_name, character_class: info.character_class, discord_id: did, discord_username: `user-${did.slice(-4)}`, player_streak: s };
     }).filter(p => p.player_streak >= 4)
       .sort((a, b) => b.player_streak - a.player_streak || a.character_name.localeCompare(b.character_name));
 
-    console.log(`🔥 [PLAYER STREAKS] Found ${playersWithStreaks.length} players (streak >= 4) for event ${eventId}`);
+    console.log(`🔥 [PLAYER STREAKS] Found ${participants.length} players (streak >= 4) for event ${eventId}`);
 
     return res.json({
       success: true,
-      data: playersWithStreaks,
+      data: participants,
       eventId: eventId,
       minStreak: 4,
-      totalCount: playersWithStreaks.length
+      totalCount: participants.length
     });
   } catch (error) {
     console.error('❌ [PLAYER STREAKS] Error (local):', error);
@@ -9007,62 +9197,129 @@ app.get('/api/guild-members/:eventId', async (req, res) => {
     try {
         client = await pool.connect();
         
-        // Check if log_data table exists
-        const logTableCheck = await client.query(`
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_name = 'log_data'
-            );
+        // Ensure tables exist
+        const tablesCheck = await client.query(`
+            SELECT table_name FROM information_schema.tables WHERE table_name IN ('log_data','guildies')
         `);
-        
-        if (!logTableCheck.rows[0].exists) {
-            console.log('⚠️ [GUILD MEMBERS] log_data table does not exist, returning empty data');
+        const have = new Set(tablesCheck.rows.map(r => r.table_name));
+        if (!have.has('log_data') || !have.has('guildies')) {
+            console.log('⚠️ [GUILD MEMBERS] required tables missing');
             return res.json({ success: true, data: [] });
         }
         
-        // Check if guildies table exists
-        const guildiesTableCheck = await client.query(`
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_name = 'guildies'
-            );
-        `);
-        
-        if (!guildiesTableCheck.rows[0].exists) {
-            console.log('⚠️ [GUILD MEMBERS] guildies table does not exist, returning empty data');
-            return res.json({ success: true, data: [] });
-        }
-        
-        // Get players from the raid log and check their guild membership
-        // Use DISTINCT ON to only show each Discord user once
-        const result = await client.query(`
-            SELECT DISTINCT ON (ld.discord_id)
-                ld.character_name,
-                ld.character_class,
-                ld.discord_id,
-                g.discord_id as guild_member_id,
-                g.character_name as guild_character_name
-            FROM log_data ld
-            LEFT JOIN guildies g ON ld.discord_id = g.discord_id
-            WHERE ld.event_id = $1
-            AND g.discord_id IS NOT NULL
-            ORDER BY ld.discord_id, ld.character_name ASC
+        // 1) All rows for this event (may lack discord_id)
+        const eventRows = await client.query(`
+            SELECT character_name, character_class, discord_id
+            FROM log_data
+            WHERE event_id = $1
         `, [eventId]);
-        
-        console.log(`🏰 [GUILD MEMBERS] Found ${result.rows.length} guild members in raid for event: ${eventId}`);
-        
-        const guildMembers = result.rows.map(row => ({
-            character_name: row.character_name,
-            character_class: row.character_class,
-            discord_id: row.discord_id,
-            guild_character_name: row.guild_character_name || row.character_name,
-            points: 10 // Fixed 10 points for guild members
-        }));
+        if (eventRows.rows.length === 0) {
+            return res.json({ success: true, data: [], eventId, pointsPerMember: 10, totalCount: 0 });
+        }
+
+        // 2) Build resolvers similar to streaks
+        const ldResolver = await client.query(`
+            SELECT DISTINCT LOWER(character_name) AS name_lower,
+                            LOWER(character_class) AS class_lower,
+                            discord_id
+            FROM log_data
+            WHERE discord_id IS NOT NULL
+        `);
+        const nameClassToDiscord = new Map(ldResolver.rows.map(r => [`${r.name_lower}|${r.class_lower}`, String(r.discord_id)]));
+
+        const playersResolver = await client.query(`
+            SELECT LOWER(character_name) AS name_lower,
+                   LOWER(class) AS class_lower,
+                   discord_id
+            FROM players
+            WHERE discord_id IS NOT NULL
+        `);
+        const playersNameClassToDiscord = new Map();
+        playersResolver.rows.forEach(r => {
+            const key = `${r.name_lower}|${r.class_lower}`;
+            const did = String(r.discord_id);
+            if (!playersNameClassToDiscord.has(key)) playersNameClassToDiscord.set(key, did);
+            else if (playersNameClassToDiscord.get(key) !== did) playersNameClassToDiscord.set(key, '__MULTI__');
+        });
+
+        const rosterRes = await client.query(`
+            SELECT LOWER(assigned_char_name) AS name_lower, discord_user_id
+            FROM roster_overrides
+            WHERE event_id = $1 AND discord_user_id IS NOT NULL AND assigned_char_name IS NOT NULL
+        `, [eventId]);
+        const rosterNameToDiscord = new Map(rosterRes.rows.map(r => [String(r.name_lower), String(r.discord_user_id)]));
+
+        const ldNameOnlyRes = await client.query(`
+            SELECT LOWER(character_name) AS name_lower,
+                   ARRAY_AGG(DISTINCT discord_id) FILTER (WHERE discord_id IS NOT NULL) AS dids
+            FROM log_data
+            GROUP BY LOWER(character_name)
+        `);
+        const ldNameOnly = new Map();
+        ldNameOnlyRes.rows.forEach(r => {
+            const arr = Array.isArray(r.dids) ? r.dids.map(String).filter(Boolean) : [];
+            if (arr.length === 1) ldNameOnly.set(String(r.name_lower), arr[0]);
+        });
+        const playersNameOnlyRes = await client.query(`
+            SELECT LOWER(character_name) AS name_lower,
+                   ARRAY_AGG(DISTINCT discord_id) FILTER (WHERE discord_id IS NOT NULL) AS dids
+            FROM players
+            GROUP BY LOWER(character_name)
+        `);
+        const playersNameOnly = new Map();
+        playersNameOnlyRes.rows.forEach(r => {
+            const arr = Array.isArray(r.dids) ? r.dids.map(String).filter(Boolean) : [];
+            if (arr.length === 1) playersNameOnly.set(String(r.name_lower), arr[0]);
+        });
+
+        // 3) Resolve participants to discord IDs
+        const participantsMap = new Map(); // did -> { character_name, character_class }
+        for (const r of eventRows.rows) {
+            let did = r.discord_id ? String(r.discord_id) : null;
+            if (!did) {
+                const nm = String(r.character_name||'').toLowerCase();
+                const cls = String(r.character_class||'').toLowerCase();
+                did = rosterNameToDiscord.get(nm) || nameClassToDiscord.get(`${nm}|${cls}`) || null;
+                if (!did) {
+                    const pDid = playersNameClassToDiscord.get(`${nm}|${cls}`);
+                    if (pDid && pDid !== '__MULTI__') did = pDid;
+                }
+                if (!did) did = ldNameOnly.get(nm) || playersNameOnly.get(nm) || null;
+            }
+            if (!did) continue;
+            if (!participantsMap.has(did)) participantsMap.set(did, { character_name: r.character_name, character_class: r.character_class });
+        }
+
+        if (participantsMap.size === 0) {
+            return res.json({ success: true, data: [], eventId, pointsPerMember: 10, totalCount: 0 });
+        }
+
+        // 4) Intersect with guildies by discord_id
+        const dids = Array.from(participantsMap.keys());
+        const guildRes = await client.query(`
+            SELECT discord_id, character_name FROM guildies WHERE discord_id = ANY($1)
+        `, [dids]);
+        const guildSet = new Map(guildRes.rows.map(r => [String(r.discord_id), r.character_name]));
+
+        const guildMembers = dids
+            .filter(did => guildSet.has(did))
+            .map(did => {
+                const info = participantsMap.get(did);
+                return {
+                    character_name: info.character_name,
+                    character_class: info.character_class,
+                    discord_id: did,
+                    guild_character_name: guildSet.get(did) || info.character_name,
+                    points: 10
+                };
+            });
+
+        console.log(`🏰 [GUILD MEMBERS] Found ${guildMembers.length} guild members in raid for event: ${eventId}`);
         
         res.json({ 
             success: true, 
             data: guildMembers,
-            eventId: eventId,
+            eventId,
             pointsPerMember: 10,
             totalCount: guildMembers.length
         });
@@ -11220,7 +11477,8 @@ app.get('/api/rewards-snapshot/:eventId/status', async (req, res) => {
 // Body: { entries: [ { panel_key, panel_name, discord_user_id, character_name, character_class, ranking_number_original, point_value_original, character_details_original, primary_numeric_original, aux_json } ] }
 app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, express.json(), async (req, res) => {
     const { eventId } = req.params;
-    const entries = Array.isArray(req.body?.entries) ? req.body.entries : [];
+    const useEngine = !!(req.body && (req.body.useEngine === true));
+    let entries = Array.isArray(req.body?.entries) ? req.body.entries : [];
     const lockedById = req.user?.id || null;
     const lockedByName = req.user?.username || req.user?.global_name || req.user?.display_name || 'unknown';
     let client;
@@ -11239,6 +11497,113 @@ app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, express.json(
 
         // Always replace snapshot rows for the event to avoid resurrecting stale data
         await client.query('DELETE FROM rewards_and_deductions_points WHERE event_id = $1', [eventId]);
+
+        // If requested, lock directly from canonical engine panels (auto mode)
+        if (useEngine || entries.length === 0) {
+            try {
+                // Build from engine auto output to guarantee parity with auto view
+                const baseUrl = req.protocol + '://' + req.get('host');
+                const appReq = { protocol: req.protocol, get: req.get.bind(req), headers: req.headers, cookies: req.cookies, user: req.user, isAuthenticated: ()=>true };
+                const engine = await (async()=>{
+                    // Inline require of rewardsEngine helpers is complex; call our own endpoint instead
+                    const resp = await fetch(`${baseUrl}/api/rewards/${eventId}/effective`, { headers: { cookie: req.headers.cookie||'' } });
+                    if (!resp.ok) throw new Error('engine fetch failed');
+                    return resp.json();
+                })();
+                const panels = Array.isArray(engine.panels) ? engine.panels : [];
+                const nameMap = {
+                    base: 'Base',
+                    damage: 'Damage Dealers',
+                    healing: 'Healers',
+                    god_gamer_dps: 'God Gamer DPS',
+                    god_gamer_healer: 'God Gamer Healer',
+                    abilities: 'Engineering & Holywater',
+                    mana_potions: 'Major Mana Potions',
+                    runes: 'Dark or Demonic runes',
+                    windfury_totems: 'Totems',
+                    interrupts: 'Interrupted spells',
+                    disarms: 'Disarmed enemies',
+                    sunder: 'Sunder Armor',
+                    curse_recklessness: 'Curse of Recklessness',
+                    curse_shadow: 'Curse of Shadow',
+                    curse_elements: 'Curse of the Elements',
+                    faerie_fire: 'Faerie Fire',
+                    scorch: 'Scorch',
+                    demo_shout: 'Demoralizing Shout',
+                    polymorph: 'Polymorph',
+                    power_infusion: 'Power Infusion',
+                    decurses: 'Decurses',
+                    frost_resistance: 'Frost Resistance',
+                    world_buffs_copy: 'World Buffs',
+                    void_damage: 'Avoidable Void Damage',
+                    shaman_healers: 'Top Shaman Healers',
+                    priest_healers: 'Top Priest Healers',
+                    druid_healers: 'Top Druid Healer',
+                    too_low_damage: 'Too Low Damage',
+                    too_low_healing: 'Too Low Healing',
+                    attendance_streaks: 'Attendance Streak Champions',
+                    guild_members: 'Guild Members',
+                    big_buyer: 'Big Buyer Bonus',
+                    manual_points: 'Manual'
+                };
+                const built = [];
+                for (const p of panels) {
+                    const panelKey = String(p.panel_key||'');
+                    const panelName = nameMap[panelKey] || panelKey;
+                    const rows = Array.isArray(p.rows) ? p.rows : [];
+                    // Special handling: expand Totems into per-type rows so manual mode preserves sections
+                    if (panelKey === 'windfury_totems') {
+                        try {
+                            const wfResp = await fetch(`${baseUrl}/api/windfury-data/${eventId}`, { headers: { cookie: req.headers.cookie||'' } });
+                            if (wfResp && wfResp.ok) {
+                                const wf = await wfResp.json();
+                                const wfRows = Array.isArray(wf?.data) ? wf.data : [];
+                                wfRows.forEach((row, idx) => {
+                                    const type = String(row.totem_type||'').toLowerCase();
+                                    let itemKey = 'windfury';
+                                    if (type.includes('grace')) itemKey = 'grace_of_air';
+                                    else if (type.includes('strength')) itemKey = 'strength_of_earth';
+                                    else if (type.includes('tranq')) itemKey = 'tranquil_air';
+                                    built.push({
+                                        panel_key: panelKey,
+                                        panel_name: panelName,
+                                        discord_user_id: null,
+                                        character_name: row.character_name || null,
+                                        character_class: row.character_class || null,
+                                        ranking_number_original: Number.isFinite(idx+1) ? (idx+1) : null,
+                                        point_value_original: Number(row.points)||0,
+                                        character_details_original: null,
+                                        primary_numeric_original: null,
+                                        aux_json: { item_key: itemKey }
+                                    });
+                                });
+                                continue; // skip generic add for this panel
+                            }
+                        } catch (e) {
+                            console.warn('⚠️ [SNAPSHOT] Windfury per-type expand failed, falling back to engine rows');
+                        }
+                    }
+                    // Generic add for other panels (or fallback)
+                    rows.forEach((r, idx) => {
+                        built.push({
+                            panel_key: panelKey,
+                            panel_name: panelName,
+                            discord_user_id: null,
+                            character_name: r.name || null,
+                            character_class: null,
+                            ranking_number_original: Number.isFinite(idx+1) ? (idx+1) : null,
+                            point_value_original: Number(r.points)||0,
+                            character_details_original: null,
+                            primary_numeric_original: null,
+                            aux_json: null
+                        });
+                    });
+                }
+                entries = built;
+            } catch (e) {
+                console.error('❌ [SNAPSHOT] Engine materialization failed, falling back to provided entries:', e?.message||e);
+            }
+        }
 
         if (entries.length > 0) {
             // Bulk insert entries using UNNEST columns
@@ -11350,8 +11715,7 @@ app.put('/api/rewards-snapshot/:eventId/entry', requireManagement, express.json(
     try {
         client = await pool.connect();
         // Optional item_key matching for panels with multiple rows per character (e.g., windfury_totems)
-        const itemKey = aux_json && (aux_json.item_key || aux_json['item_key']) ? String(aux_json.item_key || aux_json['item_key']) : '';
-        const useItemKey = !!itemKey;
+        const itemKey = aux_json && (aux_json.item_key || aux_json['item_key']) ? String(aux_json.item_key || aux_json['item_key']) : null;
         const sql = `UPDATE rewards_and_deductions_points
              SET point_value_edited = COALESCE($1, point_value_edited),
                  character_details_edited = COALESCE($2, character_details_edited),
@@ -11361,12 +11725,16 @@ app.put('/api/rewards-snapshot/:eventId/entry', requireManagement, express.json(
                  updated_at = CURRENT_TIMESTAMP
              WHERE event_id = $6 AND panel_key = $7
                AND (
-                    (discord_user_id IS NOT NULL AND discord_user_id = $9)
-                 OR (discord_user_id IS NULL AND character_name = $8)
+                    ($9::varchar IS NOT NULL AND discord_user_id = $9)
+                 OR (LOWER(character_name) = LOWER($8))
                )
                AND (
                     $10::text IS NULL
                  OR (aux_json IS NOT NULL AND aux_json->>'item_key' = $10)
+               )
+               AND (
+                    $11::int IS NULL
+                 OR ranking_number_original = $11
                )
              RETURNING *`;
         const params = [
@@ -11379,7 +11747,8 @@ app.put('/api/rewards-snapshot/:eventId/entry', requireManagement, express.json(
                 panel_key,
                 character_name,
                 discord_user_id || null,
-            useItemKey ? itemKey : null
+                itemKey,
+                Number.isFinite(ranking_number_original) ? ranking_number_original : null
         ];
         const result = await client.query(sql, params);
         if (result.rows.length === 0) {
@@ -17724,6 +18093,18 @@ app.post('/api/discord/voice-monitor/config', async (req, res) => {
         res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
     }
 });
+
+// Register rewards engine endpoints BEFORE catch-all
+try {
+  if (typeof registerRewardsEngine === 'function') {
+    registerRewardsEngine(app, pool);
+    console.log('✅ Rewards engine endpoints registered');
+  } else {
+    console.log('⚠️ Rewards engine module not available, skipping registration');
+  }
+} catch (err) {
+  console.error('❌ Failed to register rewards engine endpoints:', err && (err.message || String(err)));
+}
 
 // This route will handle both the root path ('/') AND any other unmatched paths,
 // serving events.html. It MUST be the LAST route definition in your application.

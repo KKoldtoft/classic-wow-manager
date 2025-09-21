@@ -120,6 +120,7 @@ class RaidLogsManager {
         this.loadSpecData();
         this.playerPanels = new Map(); // key: panelId, value: { slug, name, className }
         this._myGoldTooltipCards = new WeakSet();
+        this.engineResult = null;
         this.loadRaidLogsData();
     }
 
@@ -150,6 +151,15 @@ class RaidLogsManager {
         // Initialize panel editing (after DOM ready)
         this.initializePanelEditing();
 
+        // Standardize point value colors and keep them updated as DOM changes
+        this._normalizePointValuesColors();
+        const container = document.getElementById('raid-logs-container');
+        if (container) {
+            const mo = new MutationObserver(()=> this._normalizePointValuesColors());
+            mo.observe(container, { childList: true, subtree: true });
+            this._pointsColorObserver = mo;
+        }
+
         // Debug panel
         setTimeout(()=>{
             const btn = document.getElementById('rl-debug-toggle');
@@ -161,6 +171,37 @@ class RaidLogsManager {
                     if (show) this.renderRaidlogsDebugPanel();
                 });
             }
+            // Temporary parity button for engine vs legacy
+            try {
+                let pbtn = document.getElementById('rl-parity-btn');
+                if (!pbtn) {
+                    pbtn = document.createElement('button');
+                    pbtn.id = 'rl-parity-btn';
+                    pbtn.className = 'btn-templates btn-mini';
+                    pbtn.style.marginLeft = '8px';
+                    pbtn.textContent = 'Check vs engine';
+                    const hdr = document.querySelector('.page-header h1');
+                    if (hdr && hdr.parentElement) hdr.parentElement.appendChild(pbtn);
+                }
+                pbtn.onclick = async () => {
+                    try {
+                        const resp = await fetch(`/api/rewards/${this.activeEventId}/effective`).catch(()=>null);
+                        if (!resp || !resp.ok) { console.warn('[Parity] Engine unavailable'); return; }
+                        const eff = await resp.json(); if (!eff || !eff.success) { console.warn('[Parity] Engine error'); return; }
+                        const engTotals = new Map(Object.entries(eff.totals||{}).map(([k,v])=>[k, Math.round(Number(v.points)||0)]));
+                        const legacyTotals = new Map();
+                        (this.logData||[]).filter(p=>!this.shouldIgnorePlayer(p.character_name)).forEach(p=>{
+                            const k=String(p.character_name||'').trim().toLowerCase();
+                            const row = (this.pointsBreakdownRowsCache && this.pointsBreakdownRowsCache.get) ? this.pointsBreakdownRowsCache.get(k) : null;
+                            // Fallback: recompute from breakdown table provider if present
+                            let pts=null; try { pts = this.totalPointsComputedPerName ? this.totalPointsComputedPerName.get(k) : null; } catch {}
+                            if (pts==null) return; legacyTotals.set(k, Math.round(Number(pts)||0));
+                        });
+                        const mismatches=[]; legacyTotals.forEach((v,k)=>{ const e=engTotals.get(k); if (typeof e==='number' && e!==v) mismatches.push({name:k, legacy:v, engine:e}); });
+                        console.warn('[Raidlogs Parity] Mismatches', mismatches);
+                    } catch {}
+                };
+            } catch {}
             // Render points table after data load
             const ready = () => {
                 try { this.renderPointsBreakdownTable(); } catch(e) { console.warn('Points table render skipped', e); }
@@ -168,6 +209,27 @@ class RaidLogsManager {
             // If data is already present, render immediately; else wait a tick
             setTimeout(ready, 0);
         }, 0);
+    }
+
+    _normalizePointValuesColors() {
+        try {
+            const nodes = document.querySelectorAll('.performance-amount .amount-value');
+            nodes.forEach((el)=>{
+                // Remove inline color styles
+                if (el.style && el.style.color) el.style.removeProperty('color');
+                // If element contains input (manual edit mode), use input value
+                let valText = el.textContent;
+                const inp = el.querySelector('input');
+                if (inp && typeof inp.value !== 'undefined') valText = inp.value;
+                const num = Number(String(valText||'').replace(/[^0-9+\-\.]/g, ''));
+                el.classList.remove('positive','negative','zero');
+                if (!isNaN(num)) {
+                    if (num > 0) el.classList.add('positive');
+                    else if (num < 0) el.classList.add('negative');
+                    else el.classList.add('zero');
+                }
+            });
+        } catch (e) { /* noop */ }
     }
     initializeLiveUpdates(){
         try {
@@ -527,7 +589,6 @@ class RaidLogsManager {
         
         console.log('Stored nav original position:', this.navOriginalTop);
     }
-
     async loadRaidLogsData() {
         if (this._loadingRaid) return;
         this._loadingRaid = true;
@@ -596,6 +657,21 @@ class RaidLogsManager {
         try {
             // First, check snapshot/lock status
             await this.fetchSnapshotStatus();
+            // Try canonical rewards engine
+            try {
+                const resp = await fetch(`/api/rewards/${this.activeEventId}/effective`).catch(()=>null);
+                if (resp && resp.ok) {
+                    const eff = await resp.json();
+                    if (eff && eff.success) {
+                        this.engineResult = eff;
+                        if (eff.mode === 'manual') {
+                            // Sync UI to manual if engine reports snapshot materialized
+                            this.snapshotLocked = true;
+                        }
+                        this.updateModeBadge();
+                    }
+                }
+            } catch {}
 
             // To avoid exhausting browser/Heroku resources, fetch in small batches instead of all-at-once
             // Batch 1: core datasets and light endpoints
@@ -653,8 +729,7 @@ class RaidLogsManager {
             this.updateTotalPointsCard();
             // Update gold cards after primary render
             this.updateGoldCards();
-            // Render the full points breakdown table now that all datasets are loaded
-            this.renderPointsBreakdownTable();
+            // Points breakdown debug table removed
             
             // Update the original position now that content is loaded
             setTimeout(() => {
@@ -790,6 +865,11 @@ class RaidLogsManager {
                 this.updateModeBadge();
                 if (this.snapshotLocked) {
                     await this.fetchSnapshotData();
+                    // Fix: if marked locked but no entries exist, treat as not locked to force full lock on first save
+                    if (!this.snapshotEntries || this.snapshotEntries.length === 0) {
+                        console.warn('[SNAPSHOT] Locked status with zero entries; treating as computed until full lock');
+                        this.snapshotLocked = false;
+                    }
                 }
             }
         } catch (e) {
@@ -845,9 +925,25 @@ class RaidLogsManager {
                 };
                 badge.parentElement.insertBefore(revertBtn, badge.nextSibling);
             }
+            // Top banner for manual (engine manual)
+            try {
+                const top = document.getElementById('engineBannerTop');
+                if (top) {
+                    top.innerHTML = `<span class="pill manual">Engine manual</span> Using canonical rewards engine — <a href="/api/rewards/${this.activeEventId}/debug" target="_blank" rel="noopener noreferrer">debug</a>`;
+                    top.style.display = 'flex';
+                }
+            } catch {}
+        } else {
+            if (this.engineResult && this.engineResult.mode === 'auto') {
+                const dbg = `<a href="/api/rewards/${this.activeEventId}/debug" target="_blank" rel="noopener noreferrer" style="margin-left:8px; text-decoration:underline;">debug</a>`;
+                badge.innerHTML = '<i class="fas fa-microchip" style="margin-right:6px"></i> Engine auto ' + dbg;
+                badge.title = 'Using canonical rewards engine (auto mode)';
+                try { const top=document.getElementById('engineBannerTop'); if(top){ top.innerHTML = `<span class="pill auto">Engine auto</span> Using canonical rewards engine — <a href="/api/rewards/${this.activeEventId}/debug" target="_blank" rel="noopener noreferrer">debug</a>`; top.style.display='flex'; } } catch {}
         } else {
             badge.innerHTML = '<i class="fas fa-microchip" style="margin-right:6px"></i> Computed mode';
             badge.title = 'Live computed from logs and data sources';
+                try { const top=document.getElementById('engineBannerTop'); if(top){ top.innerHTML = `<span class=\"pill auto\">Legacy compute</span> Engine not in use`; top.style.display='flex'; } } catch {}
+            }
             badge.classList.add('computed');
             badge.classList.remove('manual');
             const revertBtn = document.getElementById('mode-revert-btn');
@@ -1155,7 +1251,6 @@ class RaidLogsManager {
             this.sunderSettings = { point_ranges: [] }; // fallback
         }
     }
-
     async fetchCurseData() {
         console.log(`🔮 Fetching curse of recklessness data for event: ${this.activeEventId}`);
         
@@ -1702,11 +1797,18 @@ class RaidLogsManager {
             detail.textContent = 'No logs available';
         }
     }
-
     updateTotalPointsCard() {
         const valueElement = document.getElementById('total-points-value');
         
         if (!valueElement) return;
+        
+        // Prefer canonical engine totals when available
+        try {
+            if (this.engineResult && this.engineResult.meta && typeof this.engineResult.meta.totalPointsAll === 'number') {
+                valueElement.textContent = Number(this.engineResult.meta.totalPointsAll).toLocaleString();
+                return;
+            }
+        } catch {}
         
         // If we already computed a per-player capped total elsewhere (e.g., breakdown table), prefer it
         if (typeof this.totalPointsComputed === 'number') {
@@ -2311,7 +2413,6 @@ class RaidLogsManager {
 
         this._mgmtTooltipSetup = true;
     }
-
     setupMyGoldTooltip(card = null) {
         if (!card) card = document.querySelector('.stat-card.my-gold');
         if (!card) return;
@@ -2445,95 +2546,71 @@ class RaidLogsManager {
             return;
         }
 
-        // Character names in this raid for the logged-in user
         const myNames = new Set((this.logData || [])
             .filter(p => String(p.discord_id || '') === String(userId))
             .map(p => String(p.character_name || '').toLowerCase())
         );
 
-        // Base points: 100 per matched character present in logData
-        const basePoints = myNames.size * 100;
+        let myPoints = 0;
+        let myGold = 0;
+        let gpp = this.goldPerPoint || 0;
 
-        // Sum all points currently visible on the page for my names (all panels), skipping gold payouts
-        let sumVisible = 0;
-        try {
-            const lists = document.querySelectorAll('#raid-logs-container .rankings-list');
-            const myNamesArr = Array.from(myNames);
-            var components = [];
-            lists.forEach(list => {
-                const items = list.querySelectorAll('.ranking-item');
-                items.forEach(item => {
-                    if (item && item.dataset && item.dataset.isGold === 'true') return;
-                    const nameEl = item.querySelector('.character-name');
-                    const pointsEl = item.querySelector('.performance-amount .amount-value');
-                    if (!nameEl || !pointsEl) return;
-                    const rawNameText = String(nameEl.textContent || '').trim();
-                    if (this.shouldIgnorePlayer(rawNameText)) return;
-                    const nameText = rawNameText.toLowerCase().replace(/\s+/g, ' ');
-                    // Match when the character name appears at the end (after any icon alt text)
-                    const isMine = myNamesArr.some(nm => nameText.endsWith(nm));
-                    if (!isMine) return;
-                    const raw = String(pointsEl.textContent || '').replace('+','').trim();
-                    const val = Number(raw);
-                    if (!isNaN(val)) sumVisible += val;
-                    const signed = isNaN(val) ? null : (val > 0 ? `+${Math.round(val)}` : `${Math.round(val)}`);
-                    if (signed) components.push(signed);
-                });
+        if (this.engineResult && this.engineResult.success) {
+            const totals = this.engineResult.totals || {};
+            const manualGold = Array.isArray(this.engineResult.manual_gold) ? this.engineResult.manual_gold : [];
+            const manualGoldByName = new Map(manualGold.map(e => [String(e.name||'').toLowerCase(), Number(e.gold)||0]));
+            gpp = Number(this.engineResult.meta?.goldPerPoint || this.goldPerPoint || 0);
+            myNames.forEach(nm => {
+                const row = totals[nm];
+                if (row) {
+                    myPoints += Math.max(0, Number(row.points)||0);
+                    myGold += Math.max(0, Number(row.gold)||0);
+                }
+                const extra = manualGoldByName.get(nm) || 0;
+                if (extra > 0) myGold += extra;
             });
-        } catch (e) {
-            console.warn('⚠️ [MY POINTS] DOM aggregation failed', e);
+        } else {
+            // Legacy fallback using DOM
+            const basePoints = myNames.size * 100;
+            let sumVisible = 0;
+            try {
+                const lists = document.querySelectorAll('#raid-logs-container .rankings-list');
+                const myNamesArr = Array.from(myNames);
+                lists.forEach(list => {
+                    const items = list.querySelectorAll('.ranking-item');
+                    items.forEach(item => {
+                        if (item && item.dataset && item.dataset.isGold === 'true') return;
+                        const nameEl = item.querySelector('.character-name');
+                        const pointsEl = item.querySelector('.performance-amount .amount-value');
+                        if (!nameEl || !pointsEl) return;
+                        const rawNameText = String(nameEl.textContent || '').trim();
+                        if (this.shouldIgnorePlayer(rawNameText)) return;
+                        const nameText = rawNameText.toLowerCase().replace(/\s+/g, ' ');
+                        const isMine = myNamesArr.some(nm => nameText.endsWith(nm));
+                        if (!isMine) return;
+                        const raw = String(pointsEl.textContent || '').replace('+','').trim();
+                        const val = Number(raw);
+                        if (!isNaN(val)) sumVisible += val;
+                    });
+                });
+            } catch {}
+            myPoints = Math.max(0, basePoints + sumVisible);
+            const totalPts = Math.max(0, Number(this.totalPointsComputed) || 0);
+            const shared = Number(this.sharedGoldPotAdjusted != null ? this.sharedGoldPotAdjusted : this.sharedGoldPot) || Math.floor((this.totalGoldPot || 0) * 0.85);
+            gpp = (totalPts > 0 && shared > 0) ? (shared / totalPts) : (this.goldPerPoint || 0);
+            myGold = Math.floor(myPoints * gpp);
         }
 
-        const myPoints = basePoints + sumVisible;
         this.myPoints = myPoints;
         pointsEls.forEach(el=> el.textContent = this.formatNumber(Math.round(myPoints)));
         pointsDetailEls.forEach(el=>{
             if (!el) return;
             const list = Array.from(myNames).filter(Boolean);
-            const parts = [];
-            if (list.length > 0) parts.push(`Chars: ${list.join(', ')}`);
-            parts.push(`Base ${basePoints}`);
-            if (Array.isArray(components) && components.length > 0) parts.push(components.join(', '));
-            el.textContent = parts.length > 0 ? parts.join(', ') : 'Character not matched yet';
+            el.textContent = list.length > 0 ? `Chars: ${list.join(', ')}` : 'Character not matched yet';
         });
-
-        // Compute gold per point and my gold (plus direct gold payouts)
-        const totalPts = Math.max(0, Number(this.totalPointsComputed) || 0);
-        const shared = Number(this.sharedGoldPotAdjusted != null ? this.sharedGoldPotAdjusted : this.sharedGoldPot) || Math.floor((this.totalGoldPot || 0) * 0.85);
-        if (totalPts > 0 && shared > 0) {
-            const goldPerPoint = shared / totalPts;
-            this.goldPerPoint = goldPerPoint;
-            const myGoldFromPoints = Math.floor(myPoints * goldPerPoint);
-            // Direct gold payouts for me
-            let myGoldPayout = 0;
-            try {
-                const userIdStr = String(userId);
-                const myNamesLower = new Set(Array.from(myNames));
-                (this.manualRewardsData || []).forEach(e => {
-                    if (!e) return;
-                    const isGold = !!(e.is_gold) || /\[GOLD\]/i.test(String(e.description||''));
-                    if (!isGold) return;
-                    const val = Number(e.points)||0; if (!(val>0)) return;
-                    const did = String(e.discord_id||'');
-                    const nm = String(e.player_name||'').toLowerCase();
-                    if (did && did === userIdStr) { myGoldPayout += val; return; }
-                    if (myNamesLower.has(nm)) { myGoldPayout += val; }
-                });
-            } catch {}
-            const myGoldTotal = myGoldFromPoints + myGoldPayout;
-            this.myGold = myGoldTotal;
-            goldEls.forEach(el=> el.textContent = myGoldTotal.toLocaleString());
-            goldDetailEls.forEach(el=>{
-                if (!el) return;
-                const gppInt = Math.round(goldPerPoint);
-                el.textContent = myGoldPayout>0 ? `Each point = ${gppInt} gold ( +${myGoldPayout.toLocaleString()} gold )` : `Each point = ${gppInt} gold`;
-            });
-        } else {
-            this.goldPerPoint = null;
-            this.myGold = null;
-            goldEls.forEach(el=> el.textContent = '--');
-            goldDetailEls.forEach(el=> el && (el.textContent = 'Each point = -- gold'));
-        }
+        this.myGold = myGold;
+        goldEls.forEach(el=> el.textContent = Math.round(myGold).toLocaleString());
+        goldDetailEls.forEach(el=> el && (el.textContent = `Each point = ${Math.round(gpp).toLocaleString()} gold`));
     }
 
 
@@ -2555,7 +2632,13 @@ class RaidLogsManager {
         })));
 
         // Filter and sort damage dealers (DPS and Tank roles that do damage)
-        const damageDealer = this.logData
+        // If engine auto available, build damage/healing lists from engine panels
+        let damageDealer;
+        if (!this.snapshotLocked && this.engineResult && Array.isArray(this.engineResult.panels)) {
+            const dmgRows = (this.engineResult.panels.find(p=>p.panel_key==='damage')||{}).rows||[];
+            damageDealer = dmgRows.map((r, idx)=>({ character_name:r.name, character_class:(this.logData.find(p=>String(p.character_name).toLowerCase()===String(r.name).toLowerCase())||{}).character_class||'Unknown', damage_amount: (this.logData.find(p=>String(p.character_name).toLowerCase()===String(r.name).toLowerCase())||{}).damage_amount||0, role_detected:'dps', _enginePos: idx+1 }));
+        } else {
+            damageDealer = this.logData
             .filter(player => {
                 const role = (player.role_detected || '').toLowerCase();
                 const damage = parseInt(player.damage_amount) || 0;
@@ -2563,9 +2646,15 @@ class RaidLogsManager {
                 return (role === 'dps' || role === 'tank') && damage > 0 && !this.shouldIgnorePlayer(name);
             })
             .sort((a, b) => (parseInt(b.damage_amount) || 0) - (parseInt(a.damage_amount) || 0));
+        }
 
         // Filter and sort healers
-        const healers = this.logData
+        let healers;
+        if (!this.snapshotLocked && this.engineResult && Array.isArray(this.engineResult.panels)) {
+            const healRows = (this.engineResult.panels.find(p=>p.panel_key==='healing')||{}).rows||[];
+            healers = healRows.map((r, idx)=>({ character_name:r.name, character_class:(this.logData.find(p=>String(p.character_name).toLowerCase()===String(r.name).toLowerCase())||{}).character_class||'Unknown', healing_amount: (this.logData.find(p=>String(p.character_name).toLowerCase()===String(r.name).toLowerCase())||{}).healing_amount||0, role_detected:'healer', _enginePos: idx+1 }));
+        } else {
+            healers = this.logData
             .filter(player => {
                 const role = (player.role_detected || '').toLowerCase();
                 const healing = parseInt(player.healing_amount) || 0;
@@ -2573,36 +2662,221 @@ class RaidLogsManager {
                 return role === 'healer' && healing > 0 && !this.shouldIgnorePlayer(name);
             })
             .sort((a, b) => (parseInt(b.healing_amount) || 0) - (parseInt(a.healing_amount) || 0));
+        }
 
         console.log(`📊 Found ${damageDealer.length} damage dealers and ${healers.length} healers`);
         console.log('🔍 [DEBUG] Damage dealers:', damageDealer.map(p => `${p.character_name} (${p.role_detected})`));
         console.log('🔍 [DEBUG] Healers:', healers.map(p => `${p.character_name} (${p.role_detected})`));
 
         // Calculate God Gamer awards
-        const godGamerDPS = this.calculateGodGamerDPS(damageDealer);
-        const godGamerHealer = this.calculateGodGamerHealer(healers);
+        const godGamerDPS = (!this.snapshotLocked && this.engineResult) ? null : this.calculateGodGamerDPS(damageDealer);
+        const godGamerHealer = (!this.snapshotLocked && this.engineResult) ? null : this.calculateGodGamerHealer(healers);
 
-        // Display the rankings
+        // Display the rankings (use engine auto result if available and not locked)
+        if (!this.snapshotLocked && this.engineResult) {
+            try {
+                // Build panel maps for quick lookup
+                const panelMap = new Map((this.engineResult.panels||[]).map(p=>[p.panel_key, p.rows||[]]));
+                const get = (k)=> panelMap.get(k) || [];
+                // God Gamer DPS from engine panel + logData for display details
+                try {
+                    const dpsRows = get('god_gamer_dps');
+                    const awardRow = dpsRows.find(r => Number(r.points)||0) || dpsRows[0];
+                    if (awardRow) {
+                        const dmgSorted = (this.logData||[]).filter(p=>!this.shouldIgnorePlayer(p.character_name)).filter(p=>{ const role=(p.role_detected||'').toLowerCase(); return (role==='dps'||role==='tank') && (parseInt(p.damage_amount)||0)>0; }).sort((a,b)=>(parseInt(b.damage_amount)||0)-(parseInt(a.damage_amount)||0));
+                        const top1 = dmgSorted[0]||{}; const top2 = dmgSorted[1]||{};
+                        const winnerName = awardRow.name || top1.character_name;
+                        const winnerLog = dmgSorted.find(p=>String(p.character_name).toLowerCase()===String(winnerName).toLowerCase()) || top1;
+                        const diff = (parseInt(top1.damage_amount)||0) - (parseInt(top2.damage_amount)||0);
+                        const points = Number(awardRow.points)||0;
+                        const ggDps = { character_name: winnerLog.character_name||winnerName, character_class: winnerLog.character_class||'Unknown', damage_amount: winnerLog.damage_amount||0, difference: diff, trophy: points>=30?'gold':'silver', points, spec_name: winnerLog.spec_name||'', title:'God Gamer DPS', secondPlace:{ character_name: top2.character_name||'' } };
+                        this.displayGodGamerDPS(ggDps);
+                    }
+                } catch {}
+                // God Gamer Healer from engine panel + logData
+                try {
+                    const hRows = get('god_gamer_healer');
+                    const awardRow = hRows.find(r => Number(r.points)||0) || hRows[0];
+                    if (awardRow) {
+                        const healSorted = (this.logData||[]).filter(p=>!this.shouldIgnorePlayer(p.character_name)).filter(p=>{ const role=(p.role_detected||'').toLowerCase(); return role==='healer' && (parseInt(p.healing_amount)||0)>0; }).sort((a,b)=>(parseInt(b.healing_amount)||0)-(parseInt(a.healing_amount)||0));
+                        const top1 = healSorted[0]||{}; const top2 = healSorted[1]||{};
+                        const winnerName = awardRow.name || top1.character_name;
+                        const winnerLog = healSorted.find(p=>String(p.character_name).toLowerCase()===String(winnerName).toLowerCase()) || top1;
+                        const diff = (parseInt(top1.healing_amount)||0) - (parseInt(top2.healing_amount)||0);
+                        const points = Number(awardRow.points)||0;
+                        const ggHealer = { character_name: winnerLog.character_name||winnerName, character_class: winnerLog.character_class||'Unknown', healing_amount: winnerLog.healing_amount||0, difference: diff, trophy: points>=20?'gold':'silver', points, spec_name: winnerLog.spec_name||'', title:'God Gamer Healer', secondPlace:{ character_name: top2.character_name||'' } };
+                        this.displayGodGamerHealer(ggHealer);
+                    }
+                } catch {}
+            } catch {}
+        }
+        if (!this.snapshotLocked && this.engineResult) {
+            try {
+                const lower = s=>String(s||'').toLowerCase();
+                const clsFor=n=> (this.logData||[]).find(p=>lower(p.character_name)===lower(n))?.character_class || this.resolveClassForName(n) || 'Unknown';
+                const panel = (this.engineResult.panels||[]).find(p=>p.panel_key==='attendance_streaks');
+                const rows = (panel&&panel.rows)||[];
+                const streakMap = new Map((this.playerStreaksData||[]).map(d=>[lower(d.character_name), Number(d.player_streak)||0]));
+                const enriched = rows.map(r=>({ character_name:r.name, character_class:clsFor(r.name), player_streak: streakMap.get(lower(r.name))||0, points_override: Number(r.points)||0 }));
+                this.displayPlayerStreaksRankings(enriched);
+                const sec=document.querySelector('.streak-section'); if(sec) sec.classList.add('engine-synced');
+            } catch { this.displayPlayerStreaksRankings(this.playerStreaksData); }
+        } else {
         this.displayPlayerStreaksRankings(this.playerStreaksData);
+        }
         this.displayGuildMembersRankings(this.guildMembersData);
+        if (!this.snapshotLocked && this.engineResult) {
+            // Render damage/healing directly from engine rows
+            try { this.displayDamageRankings(damageDealer); } catch {}
+            try { this.displayHealerRankings(healers); } catch {}
+        } else {
         this.displayGodGamerDPS(godGamerDPS);
         this.displayGodGamerHealer(godGamerHealer);
         this.displayDamageRankings(damageDealer);
         this.displayHealerRankings(healers);
-        this.displayTooLowDamageRankings(damageDealer);
-        this.displayTooLowHealingRankings(healers);
+        }
+        // Too Low panels should consider the full roster stats, not just top rankings
+        this.displayTooLowDamageRankings(this.logData || []);
+        this.displayTooLowHealingRankings(this.logData || []);
+        // Mark as engine-synced when using engine auto
+        if (!this.snapshotLocked && this.engineResult) {
+            try { const sec=document.querySelector('.too-low-damage-section'); if(sec) sec.classList.add('engine-synced'); } catch {}
+            try { const sec=document.querySelector('.too-low-healing-section'); if(sec) sec.classList.add('engine-synced'); } catch {}
+        }
         this.displayShamanHealers(healers);
         this.displayPriestHealers(healers);
         this.displayDruidHealers(healers);
         this.displayWorldBuffsRankings(this.frostResistanceData);
         this.displayWorldBuffsCopyRankings(this.worldBuffsData);
+        if (!this.snapshotLocked && this.engineResult) {
+            try {
+                const panel = (this.engineResult.panels||[]).find(p=>p.panel_key==='abilities');
+                const rows = (panel&&panel.rows)||[];
+                const enriched = rows.map((r,idx)=>{
+                    const log = (this.abilitiesData||[]).find(p=>String(p.character_name).toLowerCase()===String(r.name).toLowerCase())||{};
+                    return { character_name:r.name, character_class: log.character_class||'Unknown', total_used: Number(log.total_used||0), avg_targets_hit: Number(log.avg_targets_hit||1), points: Number(r.points)||0, dense_dynamite:Number(log.dense_dynamite||0), goblin_sapper_charge:Number(log.goblin_sapper_charge||0), stratholme_holy_water:Number(log.stratholme_holy_water||0), dense_dynamite_targets:Number(log.dense_dynamite_targets||0), goblin_sapper_targets:Number(log.goblin_sapper_targets||0), stratholme_targets:Number(log.stratholme_targets||0) };
+                });
+                this.displayAbilitiesRankings(enriched);
+                try { const sec=document.querySelector('.abilities-section'); if (sec) sec.classList.add('engine-synced'); } catch {}
+            } catch { this.displayAbilitiesRankings(this.abilitiesData); }
+        } else {
         this.displayAbilitiesRankings(this.abilitiesData);
+        }
+        if (!this.snapshotLocked && this.engineResult) {
+            try {
+                const panel = (this.engineResult.panels||[]).find(p=>p.panel_key==='mana_potions');
+                const rows = (panel&&panel.rows)||[];
+                const enriched = rows.map(r=>{ const log=(this.manaPotionsData||[]).find(p=>String(p.character_name).toLowerCase()===String(r.name).toLowerCase())||{}; return { character_name:r.name, character_class: (this.logData||[]).find(p=>String(p.character_name).toLowerCase()===String(r.name).toLowerCase())?.character_class||log.character_class||'Unknown', points:Number(r.points)||0, potions_used:Number(log.potions_used||0) }; });
+                this.displayManaPotionsRankings(enriched);
+                try { const sec=document.querySelector('.mana-potions-section'); if (sec) sec.classList.add('engine-synced'); } catch {}
+            } catch { this.displayManaPotionsRankings(this.manaPotionsData); }
+        } else {
         this.displayManaPotionsRankings(this.manaPotionsData);
+        }
         this.displayRocketHelmetRankings(this.rocketHelmetData);
+        if (!this.snapshotLocked && this.engineResult) {
+            try {
+                const panel = (this.engineResult.panels||[]).find(p=>p.panel_key==='runes');
+                const rows = (panel&&panel.rows)||[];
+                const enriched = rows.map(r=>{ const log=(this.runesData||[]).find(p=>String(p.character_name).toLowerCase()===String(r.name).toLowerCase())||{}; return { character_name:r.name, character_class: (this.logData||[]).find(p=>String(p.character_name).toLowerCase()===String(r.name).toLowerCase())?.character_class||log.character_class||'Unknown', points:Number(r.points)||0, total_runes:Number(log.total_runes||log.runes_used||0), dark_runes:Number(log.dark_runes||0), demonic_runes:Number(log.demonic_runes||0) }; });
+                this.displayRunesRankings(enriched);
+                try { const sec=document.querySelector('.runes-section'); if (sec) sec.classList.add('engine-synced'); } catch {}
+            } catch { this.displayRunesRankings(this.runesData); }
+        } else {
         this.displayRunesRankings(this.runesData);
+        }
+        if (!this.snapshotLocked && this.engineResult) {
+            try {
+                const panel = (this.engineResult.panels||[]).find(p=>p.panel_key==='interrupts');
+                const rows = (panel&&panel.rows)||[];
+                const enriched = rows.map(r=>{ const log=(this.interruptsData||[]).find(p=>String(p.character_name).toLowerCase()===String(r.name).toLowerCase())||{}; return { character_name:r.name, character_class: (this.logData||[]).find(p=>String(p.character_name).toLowerCase()===String(r.name).toLowerCase())?.character_class||log.character_class||'Unknown', points:Number(r.points)||0, interrupts_used:Number(log.interrupts_used||log.interrupts||0) }; });
+                this.displayInterruptsRankings(enriched);
+                try { const sec=document.querySelector('.interrupts-section'); if (sec) sec.classList.add('engine-synced'); } catch {}
+            } catch { this.displayInterruptsRankings(this.interruptsData); }
+        } else {
         this.displayInterruptsRankings(this.interruptsData);
+        }
+        if (!this.snapshotLocked && this.engineResult) {
+            try {
+                const panel = (this.engineResult.panels||[]).find(p=>p.panel_key==='disarms');
+                const rows = (panel&&panel.rows)||[];
+                const enriched = rows.map(r=>{ const log=(this.disarmsData||[]).find(p=>String(p.character_name).toLowerCase()===String(r.name).toLowerCase())||{}; return { character_name:r.name, character_class: (this.logData||[]).find(p=>String(p.character_name).toLowerCase()===String(r.name).toLowerCase())?.character_class||log.character_class||'Unknown', points:Number(r.points)||0, disarms_used:Number(log.disarms_used||log.disarms||0) }; });
+                this.displayDisarmsRankings(enriched);
+                try { const sec=document.querySelector('.disarms-section'); if (sec) sec.classList.add('engine-synced'); } catch {}
+            } catch { this.displayDisarmsRankings(this.disarmsData); }
+        } else {
         this.displayDisarmsRankings(this.disarmsData);
+        }
+        if (!this.snapshotLocked && this.engineResult) {
+            try {
+                const panel = (this.engineResult.panels||[]).find(p=>p.panel_key==='sunder');
+                const rows = (panel&&panel.rows)||[];
+                const enriched = rows.map(r=>{ const log=(this.sunderData||[]).find(p=>String(p.character_name).toLowerCase()===String(r.name).toLowerCase())||{}; return { character_name:r.name, character_class: (this.logData||[]).find(p=>String(p.character_name).toLowerCase()===String(r.name).toLowerCase())?.character_class||log.character_class||'Unknown', points:Number(r.points)||0, sunder_count:Number(log.sunder_count||0) }; });
+                this.displaySunderRankings(enriched);
+                try { const sec=document.querySelector('.sunder-section'); if (sec) sec.classList.add('engine-synced'); } catch {}
+            } catch { this.displaySunderRankings(this.sunderData); }
+        } else {
         this.displaySunderRankings(this.sunderData);
+        }
+        if (!this.snapshotLocked && this.engineResult) {
+            try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='curse_recklessness'); const rows=(p&&p.rows)||[]; this.displayCurseRankings(rows.map(r=>({character_name:r.name, character_class:this.resolveClassForName(r.name)||'Unknown', uptime:0, points:Number(r.points)||0}))); const sec=document.querySelector('.curse-recklessness-section'); if(sec) sec.classList.add('engine-synced'); } catch { this.displayCurseRankings(this.curseData); }
+            const lower = s=>String(s||'').toLowerCase(); const clsFor=n=> (this.logData||[]).find(p=>lower(p.character_name)===lower(n))?.character_class || this.resolveClassForName(n) || 'Unknown';
+            try {
+                const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='curse_recklessness');
+                const rows=(p&&p.rows)||[]; const pts=new Map(rows.map(r=>[lower(r.name), Number(r.points)||0]));
+                const enriched=(this.curseData||[]).map(d=>({ character_name:d.character_name, character_class:clsFor(d.character_name), uptime_percentage:Number(d.uptime_percentage||d.uptime||0), points: pts.get(lower(d.character_name))||0 }));
+                this.displayCurseRankings(enriched);
+                const sec=document.querySelector('.curse-recklessness-section'); if(sec) sec.classList.add('engine-synced');
+            } catch { this.displayCurseRankings(this.curseData); }
+            try {
+                const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='curse_shadow');
+                const rows=(p&&p.rows)||[]; const pts=new Map(rows.map(r=>[lower(r.name), Number(r.points)||0]));
+                const enriched=(this.curseShadowData||[]).map(d=>({ character_name:d.character_name, character_class:clsFor(d.character_name), uptime_percentage:Number(d.uptime_percentage||d.uptime||0), points: pts.get(lower(d.character_name))||0 }));
+                this.displayCurseShadowRankings(enriched);
+                const sec=document.querySelector('.curse-shadow-section'); if(sec) sec.classList.add('engine-synced');
+            } catch { this.displayCurseShadowRankings(this.curseShadowData); }
+            try {
+                const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='curse_elements');
+                const rows=(p&&p.rows)||[]; const pts=new Map(rows.map(r=>[lower(r.name), Number(r.points)||0]));
+                const enriched=(this.curseElementsData||[]).map(d=>({ character_name:d.character_name, character_class:clsFor(d.character_name), uptime_percentage:Number(d.uptime_percentage||d.uptime||0), points: pts.get(lower(d.character_name))||0 }));
+                this.displayCurseElementsRankings(enriched);
+                const sec=document.querySelector('.curse-elements-section'); if(sec) sec.classList.add('engine-synced');
+            } catch { this.displayCurseElementsRankings(this.curseElementsData); }
+            try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='faerie_fire'); const rows=(p&&p.rows)||[]; const map=new Map((this.faerieFireData||[]).map(d=>[lower(d.character_name), d])); const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0};}); this.displayFaerieFireRankings(enriched); const sec=document.querySelector('.faerie-fire-section'); if(sec) sec.classList.add('engine-synced'); } catch { this.displayFaerieFireRankings(this.faerieFireData); }
+            try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='scorch'); const rows=(p&&p.rows)||[]; const map=new Map((this.scorchData||[]).map(d=>[lower(d.character_name), d])); const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0};}); this.displayScorchRankings(enriched); const sec=document.querySelector('.scorch-section'); if(sec) sec.classList.add('engine-synced'); } catch { this.displayScorchRankings(this.scorchData); }
+            try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='demo_shout'); const rows=(p&&p.rows)||[]; const map=new Map((this.demoShoutData||[]).map(d=>[lower(d.character_name), d])); const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0};}); this.displayDemoShoutRankings(enriched); const sec=document.querySelector('.demo-shout-section'); if(sec) sec.classList.add('engine-synced'); } catch { this.displayDemoShoutRankings(this.demoShoutData); }
+            try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='polymorph'); const rows=(p&&p.rows)||[]; const map=new Map((this.polymorphData||[]).map(d=>[lower(d.character_name), d])); const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0};}); this.displayPolymorphRankings(enriched); const sec=document.querySelector('.polymorph-section'); if(sec) sec.classList.add('engine-synced'); } catch { this.displayPolymorphRankings(this.polymorphData); }
+            try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='power_infusion'); const rows=(p&&p.rows)||[]; const map=new Map((this.powerInfusionData||[]).map(d=>[lower(d.character_name), d])); const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0};}); this.displayPowerInfusionRankings(enriched); const sec=document.querySelector('.power-infusion-section'); if(sec) sec.classList.add('engine-synced'); } catch { this.displayPowerInfusionRankings(this.powerInfusionData); }
+            try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='decurses'); const rows=(p&&p.rows)||[]; const map=new Map((this.decursesData||[]).map(d=>[lower(d.character_name), d])); const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0};}); this.displayDecursesRankings(enriched); const sec=document.querySelector('.decurses-section'); if(sec) sec.classList.add('engine-synced'); } catch { this.displayDecursesRankings(this.decursesData); }
+            try {
+                const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='void_damage');
+                const rows=(p&&p.rows)||[]; const pts=new Map(rows.map(r=>[lower(r.name), Number(r.points)||0]));
+                const enriched=(this.voidDamageData||[]).map(d=>({ character_name:d.character_name, character_class:clsFor(d.character_name), void_zone:Number(d.void_zone||d.void_zone_hits||0), void_blast:Number(d.void_blast||d.void_blast_hits||0), points: pts.get(lower(d.character_name))||0 }));
+                this.displayVoidDamageRankings(enriched);
+                const sec=document.querySelector('.void-damage-section'); if(sec) sec.classList.add('engine-synced');
+            } catch { this.displayVoidDamageRankings(this.voidDamageData); }
+            try {
+                const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='windfury_totems');
+                const rows=(p&&p.rows)||[];
+                // Build full display from dataset so all four sections render, and use per-type points from dataset caps
+                const enriched=(this.windfuryData||[]).map(d=>({
+                    character_name: d.character_name,
+                    character_class: 'Shaman',
+                    totem_type: d.totem_type || 'Windfury Totem',
+                    group_attacks_avg: Number(d.group_attacks_avg||0),
+                    group_attacks_total: Number(d.group_attacks_total||0),
+                    group_attacks_members: d.group_attacks_members||[],
+                    totems_used: Number(d.totems_used||0),
+                    party_id: d.party_id,
+                    points: Number(d.points||0)
+                }));
+                this.displayWindfuryRankings(enriched);
+                const sec=document.querySelector('.windfury-section'); if(sec) sec.classList.add('engine-synced');
+            } catch { this.displayWindfuryRankings(this.windfuryData); }
+            try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='frost_resistance'); const rows=(p&&p.rows)||[]; const map=new Map((this.frostResistanceData||[]).map(d=>[lower(d.character_name||d.player_name), d])); const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0};}); this.displayWorldBuffsRankings(enriched); const sec=document.querySelector('.frost-resistance-section'); if(sec) sec.classList.add('engine-synced'); } catch {}
+            try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='world_buffs_copy'); const rows=(p&&p.rows)||[]; const map=new Map((this.worldBuffsData||[]).map(d=>[lower(d.character_name), d])); const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0};}); this.displayWorldBuffsCopyRankings(enriched); const sec=document.querySelectorAll('.world-buffs-section'); if(sec&&sec[1]) sec[1].classList.add('engine-synced'); } catch { this.displayWorldBuffsCopyRankings(this.worldBuffsData); }
+            try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='big_buyer'); const rows=(p&&p.rows)||[]; const map=new Map((this.bigBuyerData||[]).map(d=>[lower(d.character_name||d.player_name), d])); const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; return { character_name:r.name, character_class:clsFor(r.name), spent_gold:Number(d.spent_gold||d.gold_spent||0), points:Number(r.points)||0 };}); this.displayBigBuyerRankings(enriched); const sec=document.querySelector('.big-buyer-section'); if(sec) sec.classList.add('engine-synced'); } catch { this.displayBigBuyerRankings(this.bigBuyerData); }
+        } else {
         this.displayCurseRankings(this.curseData);
         this.displayCurseShadowRankings(this.curseShadowData);
         this.displayCurseElementsRankings(this.curseElementsData);
@@ -2613,8 +2887,66 @@ class RaidLogsManager {
         this.displayPowerInfusionRankings(this.powerInfusionData);
         this.displayDecursesRankings(this.decursesData);
         this.displayVoidDamageRankings(this.voidDamageData);
-        this.displayWindfuryRankings(this.windfuryData);
+            // Totems in manual mode: render from snapshot rows when available, enriched with dataset details
+            (function renderTotemsManual(self){
+                if (!self.snapshotLocked || !Array.isArray(self.snapshotEntries) || self.snapshotEntries.length === 0) {
+                    self.displayWindfuryRankings(self.windfuryData);
+                    return;
+                }
+                const entries = self.snapshotEntries.filter(r => String(r.panel_key) === 'windfury_totems');
+                if (!entries.length) { self.displayWindfuryRankings(self.windfuryData); return; }
+                const lower = s => String(s||'').toLowerCase();
+                // Build lookup by name+type to keep per-type metrics (a shaman can appear in multiple types)
+                const typeKeyOfDatasetRow = (t)=>{
+                    const k = lower(t||'');
+                    if (k.includes('grace')) return 'grace_of_air';
+                    if (k.includes('strength')) return 'strength_of_earth';
+                    if (k.includes('tranq')) return 'tranquil_air';
+                    return 'windfury';
+                };
+                const byNameType = new Map();
+                (self.windfuryData||[]).forEach(d => {
+                    const tk = typeKeyOfDatasetRow(d.totem_type);
+                    byNameType.set(`${lower(d.character_name)}::${tk}`, d);
+                });
+                const resolveType = (itemKey) => {
+                    const k = lower(itemKey||'');
+                    if (k.includes('windfury')) return 'Windfury Totem';
+                    if (k.includes('grace')) return 'Grace of Air Totem';
+                    if (k.includes('strength')) return 'Strength of Earth Totem';
+                    if (k.includes('tranq')) return 'Tranquil Air Totem';
+                    return 'Windfury Totem';
+                };
+                const canonicalKey = (label)=>{
+                    const k = lower(label||'');
+                    if (k.includes('grace')) return 'grace_of_air';
+                    if (k.includes('strength')) return 'strength_of_earth';
+                    if (k.includes('tranq')) return 'tranquil_air';
+                    return 'windfury';
+                };
+                const enriched = entries.map(e => {
+                    const itemKey = (e.aux_json && (e.aux_json.item_key || e.aux_json['item_key'])) || '';
+                    const resolvedType = resolveType(itemKey);
+                    const tk = canonicalKey(resolvedType);
+                    const d = byNameType.get(`${lower(e.character_name)}::${tk}`) || {};
+                    const pts = Number(e.point_value_edited != null ? e.point_value_edited : e.point_value_original) || 0;
+                    return {
+                        character_name: e.character_name,
+                        character_class: 'Shaman',
+                        // Prefer snapshot-declared type to avoid cross-type label pollution from dataset mapping
+                        totem_type: resolvedType || d.totem_type || 'Windfury Totem',
+                        group_attacks_avg: Number(d.group_attacks_avg||0),
+                        group_attacks_total: Number(d.group_attacks_total||0),
+                        group_attacks_members: d.group_attacks_members || [],
+                        totems_used: Number(d.totems_used||0),
+                        party_id: d.party_id,
+                        points: pts
+                    };
+                });
+                self.displayWindfuryRankings(enriched);
+            })(this);
         this.displayBigBuyerRankings(this.bigBuyerData);
+        }
         // Ensure player tabs exists/updated after core render
         this.buildPlayerPanels();
         this.updateAbilitiesHeader();
@@ -2640,6 +2972,8 @@ class RaidLogsManager {
         
         this.hideLoading();
         this.showContent();
+
+        // Debug and parity UI removed
 
         // After rendering, apply snapshot overlay if in manual mode
         if (this.snapshotLocked && this.snapshotEntries && this.snapshotEntries.length > 0) {
@@ -2747,6 +3081,10 @@ class RaidLogsManager {
         if (!hasManagementRole && debugPanel) {
             debugPanel.style.display = 'none';
         }
+
+        // Remove any temporary diagnostic lock button if present
+        const tmpLock = document.getElementById('mode-lock-btn');
+        if (tmpLock && tmpLock.parentElement) tmpLock.parentElement.removeChild(tmpLock);
     }
 
     async onEditPanel(cfg) {
@@ -2790,7 +3128,7 @@ class RaidLogsManager {
 
     async onSavePanel(cfg, saveBtn) {
         // If not yet locked, confirm and lock now
-        if (!this.snapshotLocked) {
+        if (!this.snapshotLocked || !this.snapshotEntries || this.snapshotEntries.length === 0) {
             const confirmed = confirm('Are you sure you want to edit this value? Once you manually edit a value, data is stored and no longer reflects live data.');
             if (!confirmed) return;
             // Collect current edits before locking because snapshot will re-render
@@ -2890,7 +3228,6 @@ class RaidLogsManager {
         });
         return updates;
     }
-
     async persistUpdates(updates) {
         for (const u of updates) {
             try {
@@ -2906,72 +3243,18 @@ class RaidLogsManager {
                     continue;
                 }
 
-                // Fallback for any non-OK result (e.g., 404 not found or 500 server error):
-                // backfill a snapshot row based on the current DOM state for this item, then retry once.
-                {
-                    const cfg = (this.panelConfigs || []).find(c => c.key === u.panel_key);
-                    const list = cfg ? document.getElementById(cfg.containerId) : null;
-                    if (list) {
-                        const items = Array.from(list.querySelectorAll('.ranking-item'));
-                        const match = items.find(item => {
-                            const nameEl = item.querySelector('.character-name');
-                            return nameEl && nameEl.textContent.trim() === u.character_name;
-                        });
-                        if (match) {
-                            // Extract current values from DOM
-                            const pointsEl = match.querySelector('.performance-amount .amount-value');
-                            const detailsEl = match.querySelector('.character-details');
-                            const rankEl = match.querySelector('.ranking-number');
-                            const info = match.querySelector('.character-info');
-                            const pointsInput = pointsEl ? pointsEl.querySelector('input') : null;
-                            const detailsInput = detailsEl ? detailsEl.querySelector('input') : null;
-                            const points = pointsInput
-                                ? Math.round(Number(pointsInput.value || '0'))
-                                : (pointsEl ? Math.round(Number((pointsEl.textContent || '0').replace('+','').trim())) : 0);
-                            const details = detailsInput
-                                ? (detailsInput.value || '').trim()
-                                : (detailsEl ? (detailsEl.textContent || '').trim() : '');
-                            let charClass = null;
-                            if (info && info.className) {
-                                const m = info.className.match(/class-([a-z\-]+)/);
-                                if (m) {
-                                    const map = { 'warrior':'Warrior','paladin':'Paladin','hunter':'Hunter','rogue':'Rogue','priest':'Priest','shaman':'Shaman','mage':'Mage','warlock':'Warlock','druid':'Druid' };
-                                    charClass = map[m[1]] || null;
-                                }
-                            }
-                            const rankingOrig = Number.isFinite(u.ranking_number_original) ? u.ranking_number_original : (rankEl ? Number((rankEl.textContent||'').replace('#',''))||null : null);
-                            const backfill = {
-                                panel_key: u.panel_key,
-                                panel_name: cfg.name,
-                                discord_user_id: null,
-                                character_name: u.character_name,
-                                character_class: charClass,
-                                ranking_number_original: rankingOrig,
-                                point_value_original: points,
-                                character_details_original: details,
-                                primary_numeric_original: null,
-                                aux_json: null
-                            };
-                            await fetch(`/api/rewards-snapshot/${this.activeEventId}/lock`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ entries: [backfill] })
-                            });
-                            // Retry put once
-                            const res2 = await fetch(`/api/rewards-snapshot/${this.activeEventId}/entry`, {
-                                method: 'PUT',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(u)
-                            });
-                            if (res2.ok) {
-                                const data2 = await res2.json();
-                                const ix2 = this.snapshotEntries.findIndex(r => r.panel_key === u.panel_key && r.character_name === u.character_name);
-                                if (ix2 >= 0) this.snapshotEntries[ix2] = data2.entry; else this.snapshotEntries.push(data2.entry);
+                // Fallback for any non-OK result: perform a full relock and retry once; never single-row backfill.
+                try { await fetch(`/api/rewards-snapshot/${this.activeEventId}/unlock`, { method: 'POST' }); } catch {}
+                await this.lockSnapshotFromCurrentView();
+                const resRetry = await fetch(`/api/rewards-snapshot/${this.activeEventId}/entry`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(u) });
+                if (resRetry.ok) {
+                    const dataRetry = await resRetry.json();
+                    const ixRetry = this.snapshotEntries.findIndex(r => r.panel_key === u.panel_key && r.character_name === u.character_name);
+                    if (ixRetry >= 0) this.snapshotEntries[ixRetry] = dataRetry.entry; else this.snapshotEntries.push(dataRetry.entry);
                                 continue;
                             }
-                        }
-                    }
-                }
+                console.warn('[SNAPSHOT] PUT failed after full relock; skipping update for', u.panel_key, u.character_name);
+                continue;
 
                 // As a last resort, rebuild the entire snapshot from the current view.
                 // This path helps when the backend returns 500 for per-entry updates due to row drift.
@@ -2992,78 +3275,12 @@ class RaidLogsManager {
     }
 
     async lockSnapshotFromCurrentView() {
-        // Gather entries across all configured panels
-        const entries = [];
-        this.panelConfigs.forEach(cfg => {
-            const list = document.getElementById(cfg.containerId);
-            if (!list) return;
-            const items = Array.from(list.querySelectorAll('.ranking-item'));
-            items.forEach((item, idx) => {
-                const nameEl = item.querySelector('.character-name');
-                const detailsEl = item.querySelector('.character-details');
-                const pointsEl = item.querySelector('.performance-amount .amount-value');
-                const playerName = nameEl ? nameEl.textContent.trim() : null;
-                if (!playerName) return;
-                // Prefer input values when in edit mode to avoid reading empty textContent
-                const pointsInput = pointsEl ? pointsEl.querySelector('input') : null;
-                const detailsInput = detailsEl ? detailsEl.querySelector('input') : null;
-                const points = pointsInput
-                    ? Math.round(Number(pointsInput.value || '0'))
-                    : (pointsEl ? Math.round(Number((pointsEl.textContent || '0').replace('+','').trim())) : 0);
-                const details = detailsInput
-                    ? (detailsInput.value || '').trim()
-                    : (detailsEl ? (detailsEl.textContent || '').trim() : '');
-
-                // Try to derive class from character-info class-*
-                const info = item.querySelector('.character-info');
-                let charClass = null;
-                if (info && info.className) {
-                    const m = info.className.match(/class-([a-z\-]+)/);
-                    if (m) {
-                        const map = {
-                            'warrior':'Warrior','paladin':'Paladin','hunter':'Hunter','rogue':'Rogue','priest':'Priest','shaman':'Shaman','mage':'Mage','warlock':'Warlock','druid':'Druid'
-                        };
-                        charClass = map[m[1]] || null;
-                    }
-                }
-
-                // Primary numeric from known datasets if easily mapped; fallback null
-                let primaryNumeric = null;
-                const lowerName = playerName.toLowerCase();
-                const damageRow = (this.logData || []).find(p => String(p.character_name).toLowerCase() === lowerName);
-                if (cfg.key === 'damage' && damageRow) primaryNumeric = Number(damageRow.damage_amount) || 0;
-                if (cfg.key === 'healing' && damageRow) primaryNumeric = Number(damageRow.healing_amount) || 0;
-
-                // discord id when available
-                const discordId = damageRow?.discord_id || null;
-
-                // Auxiliary key for panels that render multiple rows per character (e.g., Totems types)
-                let auxJson = null;
-                if (cfg.key === 'windfury_totems') {
-                    const itemKey = item.getAttribute('data-item-key') || null;
-                    if (itemKey) auxJson = { item_key: itemKey };
-                }
-
-                entries.push({
-                    panel_key: cfg.key,
-                    panel_name: cfg.name,
-                    discord_user_id: discordId,
-                    character_name: playerName,
-                    character_class: charClass,
-                    ranking_number_original: idx + 1,
-                    point_value_original: points,
-                    character_details_original: details,
-                    primary_numeric_original: primaryNumeric,
-                    aux_json: auxJson
-                });
-            });
-        });
-
+        // Lock snapshot directly from canonical engine panels for perfect parity
         try {
             const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/lock`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entries })
+                body: JSON.stringify({ useEngine: true })
             });
             if (res.ok) {
                 await this.fetchSnapshotStatus();
@@ -3458,7 +3675,6 @@ class RaidLogsManager {
             `;
         }).join('');
     }
-
     displayHealerRankings(players) {
         const container = document.getElementById('healers-list');
         const section = container.closest('.rankings-section');
@@ -4077,7 +4293,6 @@ class RaidLogsManager {
             headerElement.textContent = `Points for frost resistance (Physical: -5 <130, -10 <80 | Caster: -5 <150, -10 <80)`;
         }
     }
-
     displayWorldBuffsCopyRankings(players) {
         const container = document.getElementById('world-buffs-copy-list');
         const section = container.closest('.rankings-section');
@@ -4542,13 +4757,13 @@ class RaidLogsManager {
             if (k === 'windfury') {
                 return (
 `Windfury Totem – how to earn points\n\n` +
-`We compare how many “extra Windfury attacks” your party gets on average to the overall baseline for the raid.\n` +
-`Your points depend on how your party’s average stacks up against that baseline:\n` +
+`We compare how many "extra Windfury attacks" your party gets on average to the overall baseline for the raid.\n` +
+`Your points depend on how your party's average stacks up against that baseline:\n` +
 `- Less than 75% of the baseline: 0 points\n` +
 `- 75% to 99% of the baseline: 10 points\n` +
 `- 100% to 125% of the baseline: 15 points\n` +
 `- Above 125% of the baseline: 20 points\n\n` +
-`In plain terms: keep Windfury up where your party can use it and make sure your melee are close enough to benefit. The better your party’s extra attacks compared to everyone else, the more points you earn.`
+`In plain terms: keep Windfury up where your party can use it and make sure your melee are close enough to benefit. The better your party's extra attacks compared to everyone else, the more points you earn.`
                 );
             }
             if (k === 'grace') {
@@ -4556,7 +4771,7 @@ class RaidLogsManager {
 `Grace of Air Totem – how to earn points\n\n` +
 `First, you must meet BOTH conditions:\n` +
 `- Use at least 10 Grace of Air totems in the raid.\n` +
-`- Your party’s average extra Windfury attacks is at least 75% of the Windfury baseline (same baseline used above).\n\n` +
+`- Your party's average extra Windfury attacks is at least 75% of the Windfury baseline (same baseline used above).\n\n` +
 `If you meet those two, you earn points based on how many Grace of Air totems you placed:\n` +
 `- Every 10 totems = 1 point\n` +
 `- Capped at 20 points (so 200+ totems = 20 points)\n\n` +
@@ -4568,7 +4783,7 @@ class RaidLogsManager {
 `Strength of Earth Totem – how to earn points\n\n` +
 `First, you must meet BOTH conditions:\n` +
 `- Use at least 10 Strength of Earth totems in the raid.\n` +
-`- Your party’s average extra Windfury attacks is at least 75% of the Windfury baseline (same baseline used above).\n\n` +
+`- Your party's average extra Windfury attacks is at least 75% of the Windfury baseline (same baseline used above).\n\n` +
 `If you meet those two, you earn points based on how many Strength of Earth totems you placed:\n` +
 `- Every 10 totems = 1 point\n` +
 `- Capped at 10 points (so 100+ totems = 10 points)\n\n` +
@@ -4949,10 +5164,10 @@ class RaidLogsManager {
             infoList = null;
         } else if (section.classList.contains('windfury-section')) {
             infoTitle = 'Totems Points — How this panel works';
-            infoSubtitle = 'We know this is complicated, but the short version is: keep Windfury up, weave in Grace of Air, and cast Strength of Earth when it helps — do that and you’ll earn lots of points.' + '<br><br>' + 'Below is a quick overview of how each totem earns points. For details per player, hover the text under a name to see who contributed to the average, who was excluded, and the exact numbers.';
-            infoBody = '<strong>Party average</strong>: Warriors only; anyone below 50% of the top Warrior in your party is excluded from the average and shown in red in the hover list. The Tank group is labeled “(Tank group)”.';
+            infoSubtitle = 'We know this is complicated, but the short version is: keep Windfury up, weave in Grace of Air, and cast Strength of Earth when it helps — do that and you\'ll earn lots of points.' + '<br><br>' + 'Below is a quick overview of how each totem earns points. For details per player, hover the text under a name to see who contributed to the average, who was excluded, and the exact numbers.';
+            infoBody = '<strong>Party average</strong>: Warriors only; anyone below 50% of the top Warrior in your party is excluded from the average and shown in red in the hover list. The Tank group is labeled "(Tank group)".';
             infoList = [
-                '<strong>Windfury Totem (WF)</strong>: Your party\'s average “extra WF attacks” (Warriors only) is compared to the raid baseline. Tiers: <em><75%</em>=0 pts, <em>75–99%</em>=10 pts, <em>100–125%</em>=15 pts, <em>>125%</em>=20 pts. Tank group has half the normal requirement; very low Warriors (below 50% of the party\'s top Warrior) are excluded from the average (still shown in red).',
+                '<strong>Windfury Totem (WF)</strong>: Your party\'s average "extra WF attacks" (Warriors only) is compared to the raid baseline. Tiers: <em><75%</em>=0 pts, <em>75–99%</em>=10 pts, <em>100–125%</em>=15 pts, <em>>125%</em>=20 pts. Tank group has half the normal requirement; very low Warriors (below 50% of the party\'s top Warrior) are excluded from the average (still shown in red).',
                 '<strong>Grace of Air Totem</strong>: To qualify, drop ≥10 totems and have party WF average ≥75% of baseline (Tank group: half requirement). Points = +1 per 10 totems, up to 20.',
                 '<strong>Strength of Earth Totem</strong>: To qualify, drop ≥10 totems and have party WF average ≥75% of baseline (Tank group: half requirement). Points = +1 per 10 totems, up to 10.',
                 '<strong>Tranquil Air Totem</strong>: No WF requirement. Points = +1 per 10 totems, up to 5.'
@@ -4960,7 +5175,7 @@ class RaidLogsManager {
         } else if (section.classList.contains('rocket-helmet-section')) {
             infoTitle = 'Goblin Rocket Helmet';
             infoSubtitle = '';
-            infoBody = 'On Kel’Thuzad in Naxxramas, you can earn 5 bonus points by using a Goblin Rocket Helmet to stun an add during Phase 3.';
+            infoBody = 'On Kel\'Thuzad in Naxxramas, you can earn 5 bonus points by using a Goblin Rocket Helmet to stun an add during Phase 3.';
         } else if (section.classList.contains('interrupts-section')) {
             infoTitle = 'Interrupted spells';
             infoSubtitle = 'Ranked by points (1 pt per 2 interrupts, max 5)';
@@ -4976,7 +5191,7 @@ class RaidLogsManager {
         } else if (section.classList.contains('runes-section')) {
             infoTitle = 'Dark or Demonic runes';
             infoSubtitle = '';
-            infoBody = 'Points are awarded by usage: you gain points for every set of runes used based on the division in the header (e.g., 1 point per 2 runes), up to the panel’s maximum. Hover a name to see your total Dark/Demonic runes and divisions.';
+            infoBody = 'Points are awarded by usage: you gain points for every set of runes used based on the division in the header (e.g., 1 point per 2 runes), up to the panel\'s maximum. Hover a name to see your total Dark/Demonic runes and divisions.';
         } else if (section.classList.contains('mana-potions-section')) {
             infoTitle = 'Major Mana Potions';
             infoSubtitle = '';
@@ -5079,7 +5294,7 @@ class RaidLogsManager {
             infoList = [
                 '1st place: 15 points'
             ];
-            infoBody = 'Yes, we know there’s probably only one Druid in the raid, and their healing output might not be impressive, but hey, give the cows a little break!';
+            infoBody = 'Yes, we know there\'s probably only one Druid in the raid, and their healing output might not be impressive, but hey, give the cows a little break!';
         } else if (section.classList.contains('too-low-damage') || section.classList.contains('too-low-damage-section')) {
             infoTitle = 'Too Low Damage';
             infoSubtitle = '';
@@ -5158,7 +5373,6 @@ class RaidLogsManager {
         overlay.addEventListener('click', () => { if (!isLocked) hideOverlay(); });
         closeX.addEventListener('click', (e) => { e.stopPropagation(); isLocked = false; hideOverlay(); });
     }
-
     ensureSunderInfoOverlay() {
         const container = document.getElementById('sunder-list');
         if (!container) return;
@@ -5177,9 +5391,9 @@ class RaidLogsManager {
         overlay.innerHTML = `
             <div class="panel-info-overlay-content">
                 <h4 class="panel-info-title">Sunder Armor Points</h4>
-                <p class="panel-info-subtitle">Points are awarded based on each DPS warrior’s use of Sunder Armor compared to the raid average.</p>
+                <p class="panel-info-subtitle">Points are awarded based on each DPS warrior's use of Sunder Armor compared to the raid average.</p>
                 <p class="panel-info-body">The average number of effective Sunder Armors used by all DPS warriors is calculated.</p>
-                <p class="panel-info-body">Each warrior’s count is compared to this average.</p>
+                <p class="panel-info-body">Each warrior's count is compared to this average.</p>
                 <p class="panel-info-body">Points are then assigned according to the following scale:</p>
                 <ul class="panel-info-list">
                     <li><strong>Less than 25% of the average</strong>: -20 points</li>
@@ -5770,7 +5984,6 @@ class RaidLogsManager {
             headerElement.textContent = `Ranked by points (${points_per_division} ${pointsText} per ${infusions_needed} ${infusionsText}, max ${max_points}, excludes self-casts)`;
         }
     }
-
     displayDecursesRankings(players) {
         const container = document.getElementById('decurses-list');
         const section = container.closest('.rankings-section');
@@ -5990,7 +6203,7 @@ class RaidLogsManager {
     }
 
     renderPointsBreakdownTable() {
-        const container = document.getElementById('points-breakdown-table-container');
+        const pbContainer = document.getElementById('points-breakdown-table-container');
         if (!container) return;
         const lower = s=>String(s||'').toLowerCase();
         const confirmedPlayers = (this.logData||[]).filter(p=>!this.shouldIgnorePlayer(p.character_name));
@@ -6252,7 +6465,8 @@ class RaidLogsManager {
             guildMap=new Map(); (this.guildMembersData||[]).forEach(r=>{ guildMap.set(nameKey(r),10); });
         }
 
-        // Render table (rebuild on demand so edits reflect immediately)
+        // Debug table removed; keep totals computation for internal consistency if container exists
+        const container = document.getElementById('points-breakdown-table-container');
         const header = ['#', 'Name', ...columns.map(c=>c.label)];
         const rows = [];
         const totals = new Map(); columns.forEach(c=>totals.set(c.key,0));
@@ -6323,6 +6537,12 @@ class RaidLogsManager {
             rows.push(playerRow);
         });
 
+        if (!pbContainer) {
+            const newRaidTotal = rows.reduce((acc, r) => acc + (Number(r.total) || 0), 0);
+            this.totalPointsComputed = this.engineResult?.meta?.totalPointsAll ?? newRaidTotal;
+            this.updateTotalPointsCard();
+            return;
+        }
         const table = document.createElement('table');
         table.className = 'points-breakdown-table';
         const thead = document.createElement('thead');
@@ -6355,11 +6575,17 @@ class RaidLogsManager {
             }
         } catch {}
         table.appendChild(tbody);
-        container.innerHTML='';
-        container.appendChild(table);
+        pbContainer.innerHTML='';
+        pbContainer.appendChild(table);
 
         // Compute raid total from rows (per-player totals already capped at 0)
-        const newRaidTotal = rows.reduce((acc, r) => acc + (Number(r.total) || 0), 0);
+        let newRaidTotal = rows.reduce((acc, r) => acc + (Number(r.total) || 0), 0);
+        // In engine modes (auto/manual), trust the canonical total from the engine to avoid drift
+        try {
+            if (this.engineResult && this.engineResult.meta && typeof this.engineResult.meta.totalPointsAll === 'number') {
+                newRaidTotal = Number(this.engineResult.meta.totalPointsAll) || newRaidTotal;
+            }
+        } catch {}
         this.totalPointsComputed = newRaidTotal;
         // Also keep the Total Points card in sync after edits or recompute
         this.updateTotalPointsCard();
@@ -6419,7 +6645,6 @@ class RaidLogsManager {
             errorMessage.textContent = message;
         }
     }
-
     async loadSpecData() {
         try {
             const response = await fetch('/api/specs');
@@ -6597,7 +6822,7 @@ class RaidLogsManager {
     renderPlayerPanelsContent() {
         try {
             if (!this.currentUser?.id) return;
-            const gpp = Math.max(0, Number(this.goldPerPoint) || 0);
+            const gpp = Math.max(0, Number(this.engineResult?.meta?.goldPerPoint || this.goldPerPoint) || 0);
             const lower = s => String(s||'').toLowerCase();
             const sumFrom = (arr, nameKey)=> (arr||[]).reduce((acc,row)=> acc + (lower(row.character_name||row.player_name||'')===nameKey ? (Number(row.points)||0) : 0), 0);
             const getItems = (nameKey) => {
@@ -6605,7 +6830,13 @@ class RaidLogsManager {
                 const items = [];
                 const push = (title, pts)=>{ if(!pts) return; const goldVal = Math.floor(pts * gpp); items.push({ title, pts, gold: goldVal }); };
                 // Base
-                push('Base', 100);
+                if (this.engineResult && this.engineResult.success) {
+                    const basePanel = (this.engineResult?.panels || []).find(p => p.panel_key === 'base');
+                    const row = basePanel && Array.isArray(basePanel.rows) ? basePanel.rows.find(r => lower(r.name) === nameKey) : null;
+                    if (row && row.points) push('Base', Number(row.points) || 0);
+                } else {
+                    push('Base', 100);
+                }
                 // Datasets
                 push('Sappers', sumFrom(this.abilitiesData, nameKey));
                 push('Totems', sumFrom(this.windfuryData, nameKey));
@@ -7029,7 +7260,6 @@ class RaidLogsManager {
         // Initialize event listeners for the form
         this.setupManualRewardsEventListeners();
     }
-    
     setupManualRewardsEventListeners() {
         // Player name input and dropdown
         const playerNameInput = document.getElementById('player-name-input');
@@ -7645,7 +7875,6 @@ class RaidLogsManager {
             this.populateManualRewardsTable();
         }
     }
-    
     populateManualRewardsTable() {
         const listContainer = document.getElementById('manual-rewards-list');
         const noEntriesMessage = document.getElementById('no-entries-message');
@@ -8231,7 +8460,6 @@ class RaidLogsManager {
         
         this.validateForm();
     }
-
     async handleAddFromTemplates(templateIds = null) {
         console.log('📋 [TEMPLATES] Adding entries from templates');
         
@@ -8296,6 +8524,79 @@ class RaidLogsManager {
                 addTemplatesBtn.innerHTML = '<i class="fas fa-clipboard-list"></i> Add from templates';
             }
             groupButtons.forEach(btn => { btn.disabled = false; });
+        }
+    }
+
+    // Temporary: diagnostic lock that logs per-panel harvest counts
+    async lockSnapshotDiagnostic() {
+        const entries = [];
+        const counts = [];
+        (this.panelConfigs || []).forEach(cfg => {
+            const list = document.getElementById(cfg.containerId);
+            if (!list) { counts.push({ key: cfg.key, name: cfg.name, items: 0, note: 'no container' }); return; }
+            const items = Array.from(list.querySelectorAll('.ranking-item'));
+            counts.push({ key: cfg.key, name: cfg.name, items: items.length });
+            items.forEach((item, idx) => {
+                const nameEl = item.querySelector('.character-name');
+                const detailsEl = item.querySelector('.character-details');
+                const pointsEl = item.querySelector('.performance-amount .amount-value');
+                const playerName = nameEl ? nameEl.textContent.trim() : null;
+                if (!playerName) return;
+                const pointsInput = pointsEl ? pointsEl.querySelector('input') : null;
+                const detailsInput = detailsEl ? detailsEl.querySelector('input') : null;
+                const points = pointsInput
+                    ? Math.round(Number(pointsInput.value || '0'))
+                    : (pointsEl ? Math.round(Number((pointsEl.textContent || '0').replace('+','').trim())) : 0);
+                const details = detailsInput
+                    ? (detailsInput.value || '').trim()
+                    : (detailsEl ? (detailsEl.textContent || '').trim() : '');
+                let charClass = null;
+                const info = item.querySelector('.character-info');
+                if (info && info.className) {
+                    const m = info.className.match(/class-([a-z\-]+)/);
+                    if (m) {
+                        const map = { 'warrior':'Warrior','paladin':'Paladin','hunter':'Hunter','rogue':'Rogue','priest':'Priest','shaman':'Shaman','mage':'Mage','warlock':'Warlock','druid':'Druid' };
+                        charClass = map[m[1]] || null;
+                    }
+                }
+                const lowerName = playerName.toLowerCase();
+                const damageRow = (this.logData || []).find(p => String(p.character_name).toLowerCase() === lowerName);
+                const discordId = damageRow?.discord_id || null;
+                let auxJson = null;
+                if (cfg.key === 'windfury_totems') {
+                    const itemKey = item.getAttribute('data-item-key') || null;
+                    if (itemKey) auxJson = { item_key: itemKey };
+                }
+                entries.push({
+                    panel_key: cfg.key,
+                    panel_name: cfg.name,
+                    discord_user_id: discordId,
+                    character_name: playerName,
+                    character_class: charClass,
+                    ranking_number_original: idx + 1,
+                    point_value_original: points,
+                    character_details_original: details,
+                    primary_numeric_original: null,
+                    aux_json: auxJson
+                });
+            });
+        });
+        console.log('[SNAPSHOT] Harvest counts by panel:', counts);
+        console.log('[SNAPSHOT] Total harvested entries:', entries.length);
+        try {
+            const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/lock`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entries }) });
+            if (res.ok) {
+                console.log('[SNAPSHOT] Lock succeeded with entries:', entries.length);
+                await this.fetchSnapshotStatus();
+                await this.fetchSnapshotData();
+                this.applySnapshotOverlay();
+                this.updateTotalPointsCard();
+                this.updateGoldCards();
+            } else {
+                console.warn('[SNAPSHOT] Lock failed with status', res.status);
+            }
+        } catch (e) {
+            console.error('[SNAPSHOT] Diagnostic lock error', e);
         }
     }
 }

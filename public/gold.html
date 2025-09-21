@@ -91,6 +91,13 @@
                 </div>
             </div>
             <div class="gold-content" id="goldContent" style="display: none; max-width:1400px; margin:0 auto;">
+                <div id="engineBanner" class="engine-banner" style="display:none;"></div>
+                <div id="computeToggle" class="engine-toggle" style="display:none; margin: 8px 0 12px 0;">
+                    <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input type="checkbox" id="engineToggle" />
+                        <span style="color:#e5e7eb; font-size:13px;">Use engine (auto mode)</span>
+                    </label>
+                </div>
                 <div class="summary">
                     <div class="card" id="cardPlayers">
                         <h3>Players</h3>
@@ -109,6 +116,17 @@
                         <h3>Average Gold Cut</h3>
                         <div class="value" id="averageGold">--</div>
                     </div>
+                    <div class="card" style="align-self:flex-start; display:flex; flex-direction:column; gap:8px;">
+                        <h3>DM Tools</h3>
+                        <button id="sendGoldCutsPromptBtn" class="discord-button" style="padding:8px 12px; font-size:14px; display:inline-flex; align-items:center; gap:8px;">
+                            <i class="fab fa-discord"></i>
+                            Send gold cuts prompt
+                        </button>
+                        <div style="font-size:12px; color:#9ca3af; max-width:280px;">
+                            Sends a test DM to your Discord with a randomly selected player's breakdown.
+                        </div>
+                    </div>
+                    
                 </div>
                 <div id="playersGrid" class="players-grid-cards"></div>
                 <div class="gargul-export" id="gargulExportSection" style="margin-top:24px;">
@@ -124,6 +142,7 @@
     </div>
 
     <script src="/top-bar.js"></script>
+    <script src="/discord_dm_function.js"></script>
     <script src="/gold.js"></script>
 </body>
 </html> 

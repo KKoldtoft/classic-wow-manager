@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Raid Logs - Classic WoW Manager</title>
-    <link rel="stylesheet" href="/style.css?v=frsync-2">
-    <link rel="stylesheet" href="/raidlogs.css?v=frsync-2">
+    <link rel="stylesheet" href="/style.css?v=frsync-3">
+    <link rel="stylesheet" href="/raidlogs.css?v=frsync-3">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -64,6 +64,9 @@
     </div>
 
     <div class="container">
+        <div id="engineBannerTop" class="engine-banner" style="display:none; margin:12px 0;">
+            <!-- Filled by raidlogs.js -->
+        </div>
         <div id="rl-auth-gate" class="auth-gate" style="display:none;">
             <div class="lock"><i class="fas fa-lock"></i></div>
             <h2>Log in to view page</h2>
@@ -124,6 +127,9 @@
                     <button class="stats-toggle-btn" data-panel="gold">
                         <i class="fas fa-coins"></i> Gold
                     </button>
+                    <span style="margin-left:auto; display:inline-flex; gap:8px; align-items:center;">
+                        
+                    </span>
                 </div>
 
                 <!-- Dashboard Panel -->
@@ -384,9 +390,9 @@
 
             <div class="rankings-container">
                 <!-- Damage Dealers Section -->
-                <div class="rankings-section">
+                <div class="rankings-section damage">
                     <div class="section-header">
-                        <h2><img src="https://wow.zamimg.com/images/wow/icons/large/inv_sword_04.jpg" alt="Damage" style="width: 24px; height: 24px; margin-right: 8px;"> Damage Dealers</h2>
+                        <h2><i class="fas fa-fire"></i> Damage Dealers</h2>
                         <p>Ranked by total damage output</p>
                     </div>
                     <div class="rankings-list" id="damage-dealers-list">
@@ -395,7 +401,7 @@
                 </div>
 
                 <!-- Healers Section -->
-                <div class="rankings-section">
+                <div class="rankings-section healing">
                     <div class="section-header">
                         <h2><i class="fas fa-heart"></i> Healers</h2>
                         <p>Ranked by total healing output</p>
@@ -748,25 +754,10 @@
                 </div>
             </div>
 
-            <!-- Points Breakdown Table Section -->
-            <div class="rankings-container">
-                <div class="rankings-section points-breakdown-section">
-                    <div class="section-header">
-                        <h2><i class="fas fa-table"></i> Points Breakdown (All Players)</h2>
-                        <p>Per-panel points for each player; non-players filtered out</p>
-                    </div>
-                    <div class="rankings-list" id="points-breakdown-table-container">
-                        <!-- Points breakdown table will be rendered here -->
-                    </div>
-                </div>
-            </div>
+            
 
             <!-- Moved to bottom: Computed/Manual mode badge and Debug toggle/panel -->
-            <div id="computed-manual-badge" class="mode-badge computed" title="Live computed from logs and data sources">Computed mode</div>
-            <div style="margin:8px 0 12px;">
-                <button id="rl-debug-toggle" class="btn-templates btn-mini"><i class="fas fa-bug"></i> Debug: Toggle breakdown</button>
-            </div>
-            <div id="rl-debug-panel" style="display:none; background:#111827; color:#e5e7eb; padding:12px; border-radius:8px; border:1px solid #1f2937; margin-bottom:16px; max-height:380px; overflow:auto;"></div>
+            
 
         </div>
 
@@ -779,7 +770,7 @@
         </div>
     </div>
 
-    <script src="/top-bar.js?v=frsync-2"></script>
-    <script src="/raidlogs.js?v=frsync-2"></script>
+    <script src="/top-bar.js?v=frsync-3"></script>
+    <script src="/raidlogs.js?v=frsync-3"></script>
 </body>
 </html> 

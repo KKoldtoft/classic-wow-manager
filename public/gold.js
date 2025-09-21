@@ -23,6 +23,8 @@ class GoldPotManager {
         
         this.initializeEventListeners();
         this.loadData();
+        // Keep numeric colors normalized in breakdowns
+        this._normalizeBreakdownColors = this._normalizeBreakdownColors.bind(this);
     }
 
     initializeEventListeners() {
@@ -111,7 +113,62 @@ class GoldPotManager {
             ]);
 
             // Store and display players
-            // Fetch raidlogs datasets needed to compute points
+            // Canonical engine fetch; prefer engine (default) in auto mode; always engine in manual mode
+            const pref = localStorage.getItem('gold_use_engine_auto');
+            const preferEngineAuto = (pref === null || pref === '1');
+            let engineAvailable = false;
+            let eff = null;
+            try {
+                const resp = await fetch(`/api/rewards/${this.currentEventId}/effective`).catch(()=>null);
+                engineAvailable = !!(resp && resp.ok);
+                eff = engineAvailable ? await resp.json() : null;
+            } catch {}
+            if (eff && eff.success) {
+                if (eff.mode === 'manual' || preferEngineAuto) {
+                    // Use engine result
+                    this.engineResult = eff;
+                    this.snapshotLocked = (eff.mode === 'manual');
+                    // Build players list from engine players
+                    this.allPlayers = (eff.players||[]).map(p=>({ character_name:p.name, character_class:p.class||'Unknown' }));
+                    // Build totals map
+                    this.playerTotals = new Map(Object.entries(eff.totals||{}).map(([k,v])=>[k, { name:v.name, class:v.class, points:v.points, gold:v.gold }]));
+                    // Gold meta
+                    this.totalGoldPot = Number(eff.meta?.totalGoldPot||0);
+                    this.sharedGoldPot = Number(eff.meta?.sharedGoldPot||0);
+                    this.sharedGoldPotAdjusted = Number(eff.meta?.sharedGoldPotAdjusted||this.sharedGoldPot);
+                    this.manualGoldPayoutTotal = Number(eff.meta?.manualGoldPayoutTotal||0);
+                    this.totalPointsAll = Number(eff.meta?.totalPointsAll||0);
+                    this.goldPerPoint = Number(eff.meta?.goldPerPoint||0);
+                    // Render directly and show engine banner
+                    this.renderSummaryAndList();
+                    this.showContent();
+                    try {
+                        const banner = document.getElementById('engineBanner');
+                        if (banner) {
+                            const pill = `<span class="pill ${eff.mode==='manual'?'manual':'auto'}">${eff.mode==='manual'?'Engine manual':'Engine auto'}</span>`;
+                            const dbg = `<a href="/api/rewards/${this.currentEventId}/debug" target="_blank" rel="noopener noreferrer">debug</a>`;
+                            banner.innerHTML = `${pill} Using canonical rewards engine — ${dbg}`;
+                            banner.style.display = 'flex';
+                        }
+                        const parityBtn = document.getElementById('parityBtn');
+                        const parityStatus = document.getElementById('parityStatus');
+                        if (parityBtn) parityBtn.disabled = true;
+                        if (parityStatus) parityStatus.textContent = 'N/A (engine in use)';
+                        // Toggle only visible in engine auto mode
+                        const toggleWrap = document.getElementById('computeToggle');
+                        const toggle = document.getElementById('engineToggle');
+                        if (toggleWrap && toggle) {
+                            toggleWrap.style.display = (eff.mode === 'manual') ? 'none' : 'block';
+                            toggle.checked = true;
+                            toggle.onchange = () => { localStorage.setItem('gold_use_engine_auto', toggle.checked ? '1' : '0'); location.reload(); };
+                        }
+                    } catch {}
+                    return;
+                }
+                // Engine available but user prefers legacy in auto mode; fall through to legacy compute
+            }
+
+            // Fetch raidlogs datasets needed to compute points (legacy path)
             await this.fetchRaidlogsDatasets();
             // Fetch realms from stored WCL summary JSON for this event
             await this.fetchNameRealms();
@@ -142,28 +199,11 @@ class GoldPotManager {
             
             // Show content
             this.showContent();
+            // Debug parity UI removed
             
         } catch (error) {
             console.error('Error loading gold pot data:', error);
             this.showError(error.message || 'Failed to load gold pot data');
-        }
-    }
-
-    showAuthGate(){
-        const gate = document.getElementById('goldAuthGate');
-        const content = document.getElementById('goldContent');
-        const loading = document.getElementById('loadingIndicator');
-        const errorDisplay = document.getElementById('errorDisplay');
-        if (gate) gate.style.display = 'block';
-        if (content) content.style.display = 'none';
-        if (loading) loading.style.display = 'none';
-        if (errorDisplay) errorDisplay.style.display = 'none';
-        // Wire login button
-        const btn = document.getElementById('goldAuthLoginBtn');
-        if (btn) {
-            const currentPath = window.location.pathname + window.location.search + window.location.hash;
-            const encodedReturnTo = encodeURIComponent(currentPath);
-            btn.addEventListener('click', ()=>{ window.location.href = `/auth/discord?returnTo=${encodedReturnTo}`; });
         }
     }
 
@@ -327,128 +367,7 @@ class GoldPotManager {
         });
     }
 
-    computeTotals() {
-        // Map of lowercase name to { class, points }
-        const nameToPlayer = new Map();
-        this.allPlayers.forEach(p => {
-            nameToPlayer.set(String(p.character_name).toLowerCase(), { name: p.character_name, class: p.character_class, points: 0 });
-        });
-
-        // Base points (100 per confirmed player)
-        const base = 100;
-        nameToPlayer.forEach(v => { v.points += base; });
-
-        // Damage rankings points by position
-        const damagePoints = this.rewardSettings.damage?.points_array || [];
-        const damageSorted = (this.logData || [])
-            .filter(p => !this.shouldIgnorePlayer(p.character_name))
-            .filter(p => ((p.role_detected || '').toLowerCase() === 'dps' || (p.role_detected || '').toLowerCase() === 'tank') && (parseInt(p.damage_amount) || 0) > 0)
-            .sort((a,b)=>(parseInt(b.damage_amount)||0)-(parseInt(a.damage_amount)||0));
-        damageSorted.forEach((p, idx) => {
-            const pts = idx < damagePoints.length ? (damagePoints[idx] || 0) : 0;
-            const v = nameToPlayer.get(String(p.character_name).toLowerCase());
-            if (v && pts) v.points += pts;
-        });
-
-        // Healer rankings
-        const healingPoints = this.rewardSettings.healing?.points_array || [];
-        const healers = (this.logData || [])
-            .filter(p => !this.shouldIgnorePlayer(p.character_name))
-            .filter(p => {
-                const nameKey = String(p.character_name||'').trim().toLowerCase();
-                const primaryRole = this.primaryRoles ? String(this.primaryRoles[nameKey]||'').toLowerCase() : '';
-                const detected = String(p.role_detected||'').toLowerCase();
-                const isHealer = (primaryRole === 'healer') || (detected === 'healer');
-                return isHealer && (parseInt(p.healing_amount)||0) > 0;
-            })
-            .sort((a,b)=>(parseInt(b.healing_amount)||0)-(parseInt(a.healing_amount)||0));
-        healers.forEach((p, idx) => {
-            const pts = idx < healingPoints.length ? (healingPoints[idx] || 0) : 0;
-            const v = nameToPlayer.get(String(p.character_name).toLowerCase());
-            if (v && pts) v.points += pts;
-        });
-
-        // Helper to sum points from dataset arrays
-        const addFrom = (arr) => {
-            (arr || []).forEach(row => {
-                const nm = String(row.character_name || row.player_name || '').toLowerCase();
-                const v = nameToPlayer.get(nm);
-                if (!v) return;
-                const pts = Number(row.points) || 0;
-                v.points += pts;
-            });
-        };
-        addFrom(this.datasets.abilitiesData);
-        addFrom(this.datasets.windfuryData);
-        addFrom(this.datasets.rocketHelmetData);
-        addFrom(this.datasets.manaPotionsData);
-        addFrom(this.datasets.runesData);
-        addFrom(this.datasets.interruptsData);
-        addFrom(this.datasets.disarmsData);
-        // Sunder: exclude tanks using detected role when possible (fallback to primary role)
-        (this.datasets.sunderData || []).forEach(row => {
-            const nm = String(row.character_name || row.player_name || '').toLowerCase();
-            const v = nameToPlayer.get(nm);
-            if (!v) return;
-            if (this.isTankForEvent(nm)) return;
-            const pts = Number(row.points) || 0;
-            v.points += pts;
-        });
-        addFrom(this.datasets.curseData);
-        addFrom(this.datasets.curseShadowData);
-        addFrom(this.datasets.curseElementsData);
-        addFrom(this.datasets.faerieFireData);
-        addFrom(this.datasets.scorchData);
-        addFrom(this.datasets.demoShoutData);
-        addFrom(this.datasets.polymorphData);
-        addFrom(this.datasets.powerInfusionData);
-        addFrom(this.datasets.decursesData);
-        addFrom(this.datasets.frostResistanceData);
-        addFrom(this.datasets.worldBuffsData);
-        addFrom(this.datasets.voidDamageData);
-        addFrom(this.datasets.bigBuyerData);
-        // Attendance streaks and guild members fixed awards
-        (this.datasets.playerStreaks || []).forEach(row => {
-            const nm = String(row.character_name || '').toLowerCase();
-            const v = nameToPlayer.get(nm);
-            if (!v) return;
-            // Mirror rules from raidlogs: 4: +3, 5:+6, 6:+9, 7:+12, 8+: +15
-            const s = Number(row.player_streak) || 0;
-            let pts = 0; if (s>=8) pts=15; else if (s===7) pts=12; else if (s===6) pts=9; else if (s===5) pts=6; else if (s===4) pts=3;
-            v.points += pts;
-        });
-        (this.datasets.guildMembers || []).forEach(row => {
-            const nm = String(row.character_name || '').toLowerCase();
-            const v = nameToPlayer.get(nm);
-            if (v) v.points += 10;
-        });
-
-        // Manual rewards
-        (this.datasets.manualRewardsData || []).forEach(entry => {
-            const nm = String(entry.player_name || '').toLowerCase();
-            const v = nameToPlayer.get(nm);
-            if (v) v.points += Number(entry.points) || 0;
-        });
-
-        // Compute total points (base + all contributions)
-        let totalPointsAll = 0;
-        nameToPlayer.forEach(v => { totalPointsAll += Math.max(0, v.points); });
-        this.totalPointsAll = totalPointsAll;
-
-        // Adjust shared pot by manual gold payouts if any
-        const baseShared = Number(this.sharedGoldPot) || 0;
-        const payout = Number(this.manualGoldPayoutTotal) || 0;
-        const adjustedShared = Math.max(0, baseShared - payout);
-        this.sharedGoldPotAdjusted = adjustedShared;
-        // Gold per point
-        const gpp = (adjustedShared > 0 && totalPointsAll > 0) ? adjustedShared / totalPointsAll : 0;
-        nameToPlayer.forEach(v => {
-            v.gold = Math.floor(v.points * gpp);
-        });
-
-        // Save into playerTotals map
-        this.playerTotals = nameToPlayer;
-    }
+    // removed duplicate computeTotals (legacy)
 
     // Compute totals consistent with raidlogs (computed vs manual modes)
     computeTotals() {
@@ -551,6 +470,7 @@ class GoldPotManager {
             const addFrom = (arr) => { (arr||[]).forEach(row => { const nm=String(row.character_name||row.player_name||'').toLowerCase(); const v=nameToPlayer.get(nm); if(!v) return; const pts=Number(row.points)||0; v.points+=pts; }); };
             addFrom(this.datasets.abilitiesData);
             addFrom(this.datasets.windfuryData);
+            addFrom(this.datasets.rocketHelmetData);
             addFrom(this.datasets.manaPotionsData);
             addFrom(this.datasets.runesData);
             addFrom(this.datasets.interruptsData);
@@ -800,8 +720,44 @@ class GoldPotManager {
             this._resizeHooked = true;
         }
 
+        // Apply numeric color classes inside breakdowns
+        this._normalizeBreakdownColors();
+        const mo = new MutationObserver(this._normalizeBreakdownColors);
+        mo.observe(grid, { childList: true, subtree: true });
+        this._breakdownObserver = mo;
+
         // Populate Gargul export
         this.populateGargulExport(sorted);
+    }
+
+    _normalizeBreakdownColors(){
+        try{
+            const rows = document.querySelectorAll('.player-breakdown .player-breakdown-row');
+            rows.forEach(row=>{
+                // second and third columns are points and gold
+                const cols = row.querySelectorAll('div');
+                if (cols.length >= 3) {
+                    const ptsEl = cols[1];
+                    const goldEl = cols[2];
+                    // Remove previous flags
+                    [row, ptsEl, goldEl].forEach(el=>{ el.classList && (el.classList.remove('val-positive','val-negative','val-zero','row-positive','row-negative')); });
+                    // Parse signed numbers (text may include + prefix)
+                    const parseSigned = (el)=>{
+                        const s = (el && el.textContent) ? el.textContent : '';
+                        const m = s.match(/[+\-]?\d+/);
+                        return m ? parseInt(m[0],10) : 0;
+                    };
+                    const pts = parseSigned(ptsEl);
+                    const gold = parseSigned(goldEl);
+                    // Text stays white; set row background state by sign precedence: gold, then points
+                    if (gold > 0 || pts > 0) row.classList.add('row-positive');
+                    else if (gold < 0 || pts < 0) row.classList.add('row-negative');
+                    // Keep value classes for potential future use (but text color is white by CSS)
+                    if (pts > 0) ptsEl.classList.add('val-positive'); else if (pts < 0) ptsEl.classList.add('val-negative'); else ptsEl.classList.add('val-zero');
+                    if (gold > 0) goldEl.classList.add('val-positive'); else if (gold < 0) goldEl.classList.add('val-negative'); else goldEl.classList.add('val-zero');
+                }
+            });
+        }catch{}
     }
 
     // Build name -> realm mapping from stored WCL summary JSON for this event
@@ -1003,6 +959,7 @@ class GoldPotManager {
         };
         const gpp = this.goldPerPoint || 0;
         const role = String(this.primaryRoles?.[nameKey] || '').toLowerCase();
+        const usingEngine = !!this.engineResult;
 
         // Collect per-panel contributions similar to raidlogs breakdown order
         const items = [];
@@ -1013,21 +970,47 @@ class GoldPotManager {
         };
 
         // Base
-        push('Base', 100);
+        if (usingEngine) {
+            const basePanel = (this.engineResult?.panels || []).find(p => p.panel_key === 'base');
+            if (basePanel && Array.isArray(basePanel.rows)) {
+                const row = basePanel.rows.find(r => lower(r.name) === nameKey);
+                if (row && row.points) push('Base', Number(row.points) || 0);
+            }
+        } else {
+            push('Base', 100);
+        }
 
         // Helper to sum points for a name from a dataset
         const sumFrom = (arr)=> (arr||[]).reduce((acc,row)=> acc + (lower(row.character_name||row.player_name||'')===nameKey ? (Number(row.points)||0) : 0), 0);
 
-        // Dataset-based panels
-        push('Sappers', sumFrom(this.datasets.abilitiesData));
-        push('Totems', sumFrom(this.datasets.windfuryData));
-        push('RocketHelm', sumFrom(this.datasets.rocketHelmetData));
-        push('Mana pots', sumFrom(this.datasets.manaPotionsData));
-        push('Runes', sumFrom(this.datasets.runesData));
-        push('Interrupts', sumFrom(this.datasets.interruptsData));
-        push('Disarms', sumFrom(this.datasets.disarmsData));
+        // Panels
+        if (usingEngine) {
+            const labelMap = {
+                damage:'Dmg Rank', healing:'Heal Rank', god_gamer_dps:'God Gamer DPS', god_gamer_healer:'God Gamer Heal',
+                abilities:'Sappers', mana_potions:'Mana pots', runes:'Runes', windfury_totems:'Totems', interrupts:'Interrupts', disarms:'Disarms',
+                curse_recklessness:'Curse Reck', curse_shadow:'Curse Shad', curse_elements:'Curse Elem', faerie_fire:'Faerie Fir', scorch:'Scorch', demo_shout:'Demo Shout',
+                polymorph:'Polymorph', power_infusion:'Power Inf', decurses:'Decurses', frost_resistance:'Frost Res', world_buffs_copy:'WorldBuffs',
+                void_damage:'Void Dmg', shaman_healers:'Shaman Healer', priest_healers:'Priest Healer', druid_healers:'Druid Healer',
+                too_low_damage:'Too Low Dmg', too_low_healing:'Too Low Heal', attendance_streaks:'Streak', guild_members:'Guild Mem', big_buyer:'Big Buyer', manual_points:'Manual'
+            };
+            (this.engineResult?.panels || []).forEach(p => {
+                if (p.panel_key === 'base') return;
+                const row = (p.rows || []).find(r => lower(r.name) === nameKey);
+                if (!row || !row.points) return;
+                const title = labelMap[p.panel_key] || p.panel_key;
+                push(title, Number(row.points) || 0);
+            });
+        } else {
+            push('Sappers', sumFrom(this.datasets.abilitiesData));
+            push('Totems', sumFrom(this.datasets.windfuryData));
+            push('RocketHelm', sumFrom(this.datasets.rocketHelmetData));
+            push('Mana pots', sumFrom(this.datasets.manaPotionsData));
+            push('Runes', sumFrom(this.datasets.runesData));
+            push('Interrupts', sumFrom(this.datasets.interruptsData));
+            push('Disarms', sumFrom(this.datasets.disarmsData));
+        }
         // Sunder breakdown row: hide for tanks based on assignments; use snapshot when locked
-        if (!this.isTankForEvent(nameKey)) {
+        if (!usingEngine && !this.isTankForEvent(nameKey)) {
             if (this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) {
                 const sumSnap = (panelKey) => (this.snapshotEntries||[]).reduce((acc, r) => {
                     if (String(r.panel_key) === panelKey && lower(r.character_name) === nameKey) {
@@ -1061,24 +1044,26 @@ class GoldPotManager {
                 if (pts) push('Sunder', pts);
             }
         }
-        push('Curse Reck', sumFrom(this.datasets.curseData));
-        push('Curse Shad', sumFrom(this.datasets.curseShadowData));
-        push('Curse Elem', sumFrom(this.datasets.curseElementsData));
-        push('Faerie Fir', sumFrom(this.datasets.faerieFireData));
-        push('Scorch', sumFrom(this.datasets.scorchData));
-        push('Demo Shout', sumFrom(this.datasets.demoShoutData));
-        push('Polymorph', sumFrom(this.datasets.polymorphData));
-        push('Power Inf', sumFrom(this.datasets.powerInfusionData));
-        push('Decurses', sumFrom(this.datasets.decursesData));
-        push('WorldBuffs', sumFrom(this.datasets.worldBuffsData));
+        if (!usingEngine) {
+            push('Curse Reck', sumFrom(this.datasets.curseData));
+            push('Curse Shad', sumFrom(this.datasets.curseShadowData));
+            push('Curse Elem', sumFrom(this.datasets.curseElementsData));
+            push('Faerie Fir', sumFrom(this.datasets.faerieFireData));
+            push('Scorch', sumFrom(this.datasets.scorchData));
+            push('Demo Shout', sumFrom(this.datasets.demoShoutData));
+            push('Polymorph', sumFrom(this.datasets.polymorphData));
+            push('Power Inf', sumFrom(this.datasets.powerInfusionData));
+            push('Decurses', sumFrom(this.datasets.decursesData));
+            push('WorldBuffs', sumFrom(this.datasets.worldBuffsData));
+        }
         // Only show frost resistance row for DPS to match totals logic
-        if (role === 'dps') {
+        if (!usingEngine && role === 'dps') {
             push('Frost Res', sumFrom(this.datasets.frostResistanceData));
         }
-        push('Void Dmg', sumFrom(this.datasets.voidDamageData));
+        if (!usingEngine) push('Void Dmg', sumFrom(this.datasets.voidDamageData));
 
         // Rankings and awards so the card matches totals
-        if (this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) {
+        if (!usingEngine && this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) {
             const sumSnap = (panelKey) => (this.snapshotEntries||[]).reduce((acc, r) => {
                 if (String(r.panel_key) === panelKey && lower(r.character_name) === nameKey) {
                     const pts = Number(r.point_value_edited != null ? r.point_value_edited : r.point_value_original) || 0;
@@ -1093,7 +1078,7 @@ class GoldPotManager {
             push('Shaman Healer', sumSnap('shaman_healers'));
             push('Priest Healer', sumSnap('priest_healers'));
             push('Druid Healer', sumSnap('druid_healers'));
-        } else {
+        } else if (!usingEngine) {
             const damagePoints = this.rewardSettings?.damage?.points_array || [];
             const damageSorted = (this.logData || [])
                 .filter(p => !this.shouldIgnorePlayer(p.character_name))
@@ -1146,7 +1131,7 @@ class GoldPotManager {
         }
 
         // Too Low Damage / Healing
-        if (this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) {
+        if (!usingEngine && this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) {
             const sumSnap = (panelKey) => (this.snapshotEntries||[]).reduce((acc, r) => {
                 if (String(r.panel_key) === panelKey && lower(r.character_name) === nameKey) {
                     const pts = Number(r.point_value_edited != null ? r.point_value_edited : r.point_value_original) || 0;
@@ -1158,7 +1143,7 @@ class GoldPotManager {
             const tlHeal = sumSnap('too_low_healing');
             if (tlDmg) push('Too Low Dmg', tlDmg);
             if (tlHeal) push('Too Low Heal', tlHeal);
-        } else {
+        } else if (!usingEngine) {
             const aftMin = this.datasets.raidStats?.stats?.activeFightTime;
             if (aftMin && this.primaryRoles) {
                 const sec = aftMin * 60;
@@ -1191,17 +1176,13 @@ class GoldPotManager {
         push('Big Buyer', sumFrom(this.datasets.bigBuyerData));
 
         // Manual rewards: split gold vs points
-        const manualGold = (this.datasets.manualRewardsData||[]).reduce((acc,e)=>{
-            if (lower(e.player_name||'')!==nameKey) return acc;
-            const isGold = !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||''))));
-            return isGold ? acc + (Number(e.points)||0) : acc;
-        }, 0);
-        const manualPts = (this.datasets.manualRewardsData||[]).reduce((acc,e)=>{
-            if (lower(e.player_name||'')!==nameKey) return acc;
-            const isGold = !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||''))));
-            return isGold ? acc : acc + (Number(e.points)||0);
-        }, 0);
-        if (manualPts) push('Manual', manualPts);
+        const manualGold = usingEngine
+            ? ((this.engineResult?.manual_gold || []).reduce((acc, e) => acc + (lower(e.name||'')===nameKey ? (Number(e.gold)||0) : 0), 0))
+            : ((this.datasets.manualRewardsData||[]).reduce((acc,e)=>{ if (lower(e.player_name||'')!==nameKey) return acc; const isGold = !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||'')))); return isGold ? acc + (Number(e.points)||0) : acc; }, 0));
+        const manualPts = usingEngine
+            ? 0 // manual points already included via engine panels mapping
+            : ((this.datasets.manualRewardsData||[]).reduce((acc,e)=>{ if (lower(e.player_name||'')!==nameKey) return acc; const isGold = !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||'')))); return isGold ? acc : acc + (Number(e.points)||0); }, 0));
+        if (!usingEngine && manualPts) push('Manual', manualPts);
         if (manualGold) {
             items.push({ title: 'Manual', pts: 0, gold: manualGold, isGoldRow: true });
         }
@@ -1232,11 +1213,11 @@ class GoldPotManager {
         const body = items.length ? items
                 .filter(it => it.title !== 'Rounding')
                 .map(it => `
-                <div style="display:grid; grid-template-columns: 1.6fr 60px 85px; gap:8px; font-size:16px; line-height:1.45; color:#111;">
+                <div class="player-breakdown-row" style="display:grid; grid-template-columns: 1.6fr 60px 85px; gap:8px; font-size:16px; line-height:1.45;">
                     <div>${fmtTitle(it.title)}</div>
                     <div style="text-align:right;">${it.pts>0?`+${it.pts}`:it.pts}</div>
                     <div style="text-align:right;">${it.isGoldRow?`<i class=\"fas fa-coins\" style=\"margin-right:6px; color:#f59e0b;\"></i>`:''}${it.gold>0?`+${it.gold}`:it.gold}</div>
-                </div>`).join('') : '<div style="font-size:16px; opacity:.8; color:#111;">No breakdown</div>';
+                </div>`).join('') : '<div style="font-size:16px; opacity:.8; color:#fff;">No breakdown</div>';
         return header + body + footer;
     }
     reconcilePlayersWithLogData(playersData) {
@@ -1444,5 +1425,6 @@ class GoldPotManager {
 
 // Initialize the Gold Pot Manager when the page loads
 document.addEventListener('DOMContentLoaded', () => {
-    new GoldPotManager();
+    const mgr = new GoldPotManager();
+    try { window.goldManager = mgr; } catch {}
 }); 
