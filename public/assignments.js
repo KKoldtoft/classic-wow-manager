@@ -425,7 +425,11 @@
       const isViscidus = panelKeyLower.includes('viscidus');
       const isTwins = (panelKeyLower.includes('twin') && (panelKeyLower.includes('emperor') || panelKeyLower.includes('emperors'))) && !panelKeyLower.includes('trash');
       const isOuro = panelKeyLower.includes('ouro');
-      if (isSapphiron || isKelthuzad || isGothik || isAnub || isMaex || isFaerlina || isPatch || isThadd || isHeigan || isGrobb || isGluth || isHorse || isNoth || isLoatheb || isRazu || isSkeram || isFankriss || isViscidus || isTwins || isOuro) {
+      const isBugTrio = panelKeyLower.includes('bug');
+      const isSartura = panelKeyLower.includes('sartura');
+      const isHuhuran = panelKeyLower.includes('huhuran') || panelKeyLower.includes('huhu');
+      const isCthun = panelKeyLower.includes("c'thun") || panelKeyLower.includes('cthun');
+      if (isSapphiron || isKelthuzad || isGothik || isAnub || isMaex || isFaerlina || isPatch || isThadd || isHeigan || isGrobb || isGluth || isHorse || isNoth || isLoatheb || isRazu || isSkeram || isFankriss || isViscidus || isTwins || isOuro || isBugTrio || isSartura || isHuhuran || isCthun) {
         const previewUrl =
           isSapphiron ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1757148684/Sapphiron01_suteut.mp4' :
           isKelthuzad ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1757148683/KT01_qywxls.mp4' :
@@ -446,10 +450,14 @@
           isViscidus ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756152421/Viscidus_qpezj6.mp4' :
           isTwins ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756152422/Twins_fwwulp.mp4' :
           isOuro ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1756152422/Ouro_bo7bxp.mp4' :
+          isBugTrio ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1758574474/bug_trio_ladyiz.mp4' :
+          isSartura ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1758574474/Satura_sgkciv.mp4' :
+          isHuhuran ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1758574476/Huhuran01_vqndh2.mp4' :
+          isCthun ? 'https://res.cloudinary.com/duthjs0c3/video/upload/v1758574474/cthun_cpqbsx.mp4' :
           'https://res.cloudinary.com/duthjs0c3/video/upload/v1756025139/Spider_l0hqmr.mp4';
         imgWrapper.style.position = 'relative';
         // Keep the tighter preview width for Sapphiron/Kel; let Gothik/Anub/Maex/Horsemen/Noth/Loatheb/Razuvious/AQ40 use full image width to match sizes exactly
-        if (!(isGothik || isAnub || isMaex || isFaerlina || isPatch || isThadd || isHeigan || isGrobb || isGluth || isHorse || isNoth || isLoatheb || isRazu || isSkeram || isFankriss || isViscidus || isTwins || isOuro)) { try { imgWrapper.style.maxWidth = '720px'; } catch {} }
+        if (!(isGothik || isAnub || isMaex || isFaerlina || isPatch || isThadd || isHeigan || isGrobb || isGluth || isHorse || isNoth || isLoatheb || isRazu || isSkeram || isFankriss || isViscidus || isTwins || isOuro || isBugTrio || isSartura || isHuhuran || isCthun)) { try { imgWrapper.style.maxWidth = '720px'; } catch {} }
         try { imgWrapper.style.overflow = 'hidden'; } catch {}
         let played = false;
 
@@ -490,7 +498,7 @@
           video.style.maxHeight = '100%';
           video.style.width = '100%';
           // For Gothik, Maexxna, Four Horsemen, Noth, Loatheb, Razuvious & AQ40 panels, ensure the video perfectly overlays the image by filling the overlay box
-          if (isGothik || isMaex || isHorse || isNoth || isLoatheb || isRazu || isSkeram || isFankriss || isViscidus || isTwins || isOuro) {
+          if (isGothik || isMaex || isHorse || isNoth || isLoatheb || isRazu || isSkeram || isFankriss || isViscidus || isTwins || isOuro || isBugTrio || isSartura || isHuhuran || isCthun) {
             video.style.height = '100%';
             video.style.objectFit = 'cover';
           } else {
