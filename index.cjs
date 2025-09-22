@@ -15,6 +15,45 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const WebSocket = require('ws');
 const zlib = require('zlib');
+
+// --- Utility: timeout + retry wrapper for outbound HTTP (Discord/webhooks)
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	try {
+		const opts = { ...options, signal: controller.signal };
+		return await fetch(url, opts);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+async function discordFetch(url, options = {}, retry = { maxRetries: 3, timeoutMs: 10000 }) {
+	const maxRetries = typeof retry.maxRetries === 'number' ? retry.maxRetries : 3;
+	const timeoutMs = typeof retry.timeoutMs === 'number' ? retry.timeoutMs : 10000;
+	let attempt = 0;
+	let backoff = 500;
+	while (true) {
+		try {
+			const res = await fetchWithTimeout(url, options, timeoutMs);
+			if (res.status === 429) {
+				const retryAfter = Number(res.headers.get('retry-after') || '0');
+				const waitMs = retryAfter > 0 ? Math.ceil(retryAfter * 1000) : Math.min(10000, backoff);
+				if (attempt >= maxRetries) return res;
+				await new Promise(r => setTimeout(r, waitMs));
+				attempt += 1;
+				backoff *= 2;
+				continue;
+			}
+			return res;
+		} catch (err) {
+			if (attempt >= maxRetries) throw err;
+			await new Promise(r => setTimeout(r, Math.min(5000, backoff)));
+			attempt += 1;
+			backoff *= 2;
+		}
+	}
+}
 // Rewards engine module (registers canonical endpoints)
 let registerRewardsEngine;
 try { registerRewardsEngine = require('./rewardsEngine.cjs'); } catch (_) { registerRewardsEngine = null; }
@@ -266,6 +305,13 @@ app.get('/api/updates/stream', (req, res) => {
 
   let set = sseTopics.get(topic);
   if (!set) { set = new Set(); sseTopics.set(topic, set); }
+  try {
+    const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString();
+    let found = null;
+    for (const r of set) { if (r._sseIp === ip) { found = r; break; } }
+    if (found) { try { found.end(); } catch {} set.delete(found); }
+    res._sseIp = ip;
+  } catch {}
   set.add(res);
 
   // Initial ping
@@ -274,9 +320,11 @@ app.get('/api/updates/stream', (req, res) => {
   const heartbeat = setInterval(() => {
     try { res.write(': heartbeat\n\n'); } catch { clearInterval(heartbeat); }
   }, 25000);
+  const idleTimer = setTimeout(() => { try { res.write('event: close\ndata: {"reason":"idle-timeout"}\n\n'); res.end(); } catch {} }, 180000);
 
   req.on('close', () => {
     clearInterval(heartbeat);
+    clearTimeout(idleTimer);
     const s = sseTopics.get(topic);
     if (s) s.delete(res);
   });
@@ -1645,14 +1693,14 @@ app.post('/api/discord/test/dm', async (req, res) => {
 
         const targetUserId = '492023474437619732';
         // 1) Create (or fetch) a DM channel with the user
-        const dmResponse = await fetch('https://discord.com/api/v10/users/@me/channels', {
+        const dmResponse = await discordFetch('https://discord.com/api/v10/users/@me/channels', {
             method: 'POST',
             headers: {
                 'Authorization': `Bot ${botToken}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({ recipient_id: targetUserId })
-        });
+        }, { maxRetries: 3, timeoutMs: 10000 });
 
         if (!dmResponse.ok) {
             const errText = await dmResponse.text();
@@ -1663,14 +1711,14 @@ app.post('/api/discord/test/dm', async (req, res) => {
         const channelId = dmChannel.id;
 
         // 2) Send the message
-        const msgResponse = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+        const msgResponse = await discordFetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bot ${botToken}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({ content: 'Hello world' })
-        });
+        }, { maxRetries: 3, timeoutMs: 10000 });
 
         if (!msgResponse.ok) {
             const errText = await msgResponse.text();
@@ -1687,13 +1735,13 @@ app.post('/api/discord/test/dm', async (req, res) => {
 app.post('/api/discord/test/webhook', async (req, res) => {
     try {
         const webhookUrl = 'https://discord.com/api/webhooks/1407621923462189107/mucb9o6-PDBTB3A-m0KNGJ-FBeeCKCpoxPkSqSlhWKpGDpNCGgW8KoEpRNCr569649zX';
-        const response = await fetch(webhookUrl, {
+        const response = await fetchWithTimeout(webhookUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({ content: 'Hello world' })
-        });
+        }, 10000);
 
         if (!response.ok) {
             const errText = await response.text();
@@ -1840,11 +1888,11 @@ app.post('/api/discord/announce-invites', requireRosterManager, async (req, res)
     if (!webhookUrl) {
       return res.status(400).json({ ok: false, error: 'No webhook configured for this channel' });
     }
-    const response = await fetch(webhookUrl, {
+    const response = await fetchWithTimeout(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    });
+    }, 10000);
     if (!response.ok) {
       const errText = await response.text();
       return res.status(response.status).json({ ok: false, error: errText });
@@ -1879,14 +1927,14 @@ app.post('/api/discord/prompt-goldcuts', requireRosterManager, async (req, res) 
     }
 
     // 1) Ensure DM channel exists
-    const dmResponse = await fetch('https://discord.com/api/v10/users/@me/channels', {
+    const dmResponse = await discordFetch('https://discord.com/api/v10/users/@me/channels', {
       method: 'POST',
       headers: {
         'Authorization': `Bot ${botToken}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ recipient_id: userId })
-    });
+    }, { maxRetries: 3, timeoutMs: 10000 });
     if (!dmResponse.ok) {
       const errText = await dmResponse.text();
       return res.status(dmResponse.status).json({ ok: false, step: 'create_dm', error: errText });
@@ -1959,14 +2007,14 @@ app.post('/api/discord/prompt-goldcuts', requireRosterManager, async (req, res) 
     }
     const payload = { embeds: [embed] };
 
-    const msgResponse = await fetch(`https://discord.com/api/v10/channels/${dmChannelId}/messages`, {
+    const msgResponse = await discordFetch(`https://discord.com/api/v10/channels/${dmChannelId}/messages`, {
       method: 'POST',
       headers: {
         'Authorization': `Bot ${botToken}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(payload)
-    });
+    }, { maxRetries: 3, timeoutMs: 10000 });
     if (!msgResponse.ok) {
       const errText = await msgResponse.text();
       return res.status(msgResponse.status).json({ ok: false, step: 'send_message', error: errText });
@@ -1993,14 +2041,14 @@ app.post('/api/discord/prompt-confirmation', requireRosterManager, async (req, r
     }
 
     // 1) Ensure DM channel exists
-    const dmResponse = await fetch('https://discord.com/api/v10/users/@me/channels', {
+    const dmResponse = await discordFetch('https://discord.com/api/v10/users/@me/channels', {
       method: 'POST',
       headers: {
         'Authorization': `Bot ${botToken}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ recipient_id: userId })
-    });
+    }, { maxRetries: 3, timeoutMs: 10000 });
     if (!dmResponse.ok) {
       const errText = await dmResponse.text();
       return res.status(dmResponse.status).json({ ok: false, step: 'create_dm', error: errText });
@@ -2245,14 +2293,14 @@ app.post('/api/discord/prompt-confirmation', requireRosterManager, async (req, r
       payload = { content: finalMessage };
     }
 
-    const msgResponse = await fetch(`https://discord.com/api/v10/channels/${dmChannelId}/messages`, {
+    const msgResponse = await discordFetch(`https://discord.com/api/v10/channels/${dmChannelId}/messages`, {
       method: 'POST',
       headers: {
         'Authorization': `Bot ${botToken}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(payload)
-    });
+    }, { maxRetries: 3, timeoutMs: 10000 });
     if (!msgResponse.ok) {
       const errText = await msgResponse.text();
       return res.status(msgResponse.status).json({ ok: false, step: 'send_message', error: errText });
@@ -17995,45 +18043,42 @@ app.get('/api/discord/channel/:channelId', async (req, res) => {
     }
 });
 
-// Enriched voice endpoint: returns users with cached Discord identities and character links
+// Enriched voice endpoint: returns users with cached Discord identities and character links (5s cache + ETag)
 app.get('/api/discord/voice-enriched/:channelId', async (req, res) => {
     try {
         const { channelId } = req.params;
+        const cacheKey = `voice_enriched:${channelId}`;
+        if (!global.__voiceEnrichedCache) global.__voiceEnrichedCache = new Map();
+        const now = Date.now();
+        const cached = global.__voiceEnrichedCache.get(cacheKey);
+        if (cached && (now - cached.ts) < 5000) {
+            const inm = String(req.headers['if-none-match'] || '');
+            if (inm && inm === cached.etag) { res.status(304).end(); return; }
+            res.setHeader('ETag', cached.etag);
+            res.setHeader('Cache-Control', 'no-cache');
+            res.json(cached.body);
+            return;
+        }
+
         const users = voiceStateMap.get(channelId);
         const raw = users ? Array.from(users) : [];
-        // Normalize into arrays of ids and states
         const ids = [];
         const states = {};
         for (const item of raw) {
-            if (Array.isArray(item)) {
-                const id = String(item[0]);
-                ids.push(id);
-                if (item[1] && typeof item[1] === 'object') states[id] = item[1];
-            } else if (item && typeof item === 'object') {
-                // Should not happen from Map iteration, but keep for safety
-                if (item.id) ids.push(String(item.id));
-            } else if (typeof item === 'string' || typeof item === 'number') {
-                ids.push(String(item));
-            }
+            if (Array.isArray(item)) { const id = String(item[0]); ids.push(id); if (item[1] && typeof item[1] === 'object') states[id] = item[1]; }
+            else if (item && typeof item === 'object') { if (item.id) ids.push(String(item.id)); }
+            else if (typeof item === 'string' || typeof item === 'number') { ids.push(String(item)); }
         }
-
-        // Resolve identities with cache
         const identityMap = {};
         for (const id of ids) identityMap[id] = await getDiscordUserIdentity(id);
-
-        // Resolve characters with cache
         const charsMap = await getCharactersByDiscordIds(ids, pool);
-
-        // Build enriched array
-        const enriched = ids.map(id => ({
-            id,
-            displayName: identityMap[id]?.displayName || null,
-            avatarUrl: identityMap[id]?.avatarUrl || null,
-            chars: Array.isArray(charsMap[id]) ? charsMap[id] : [],
-            state: states[id] || {}
-        }));
-
-        res.json({ ok: true, channelId, users: enriched });
+        const enriched = ids.map(id => ({ id, displayName: identityMap[id]?.displayName || null, avatarUrl: identityMap[id]?.avatarUrl || null, chars: Array.isArray(charsMap[id]) ? charsMap[id] : [], state: states[id] || {} }));
+        const body = { ok: true, channelId, users: enriched };
+        const etag = 'W/"' + Buffer.from(String(enriched.length) + ':' + ids.join(',')).toString('base64') + '"';
+        global.__voiceEnrichedCache.set(cacheKey, { ts: now, etag, body });
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'no-cache');
+        res.json(body);
     } catch (err) {
         res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
     }
@@ -18159,10 +18204,27 @@ process.on('SIGINT', () => {
   });
 });
 
+// --- Global error handlers & health endpoint ---
+process.on('unhandledRejection', (reason) => { try { console.error('Unhandled Rejection:', reason); } catch {} });
+process.on('uncaughtException', (err) => { try { console.error('Uncaught Exception:', err); } catch {} });
+
+app.get('/healthz', async (req, res) => {
+  try {
+    const t0 = Date.now();
+    await pool.query('SELECT 1');
+    const dbMs = Date.now() - t0;
+    const discordConfigured = !!process.env.DISCORD_BOT_TOKEN && !!process.env.DISCORD_GUILD_ID;
+    res.json({ ok: true, dbMs, discordConfigured });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
+  }
+});
+
 // --- Discord Gateway: Minimal Voice State Monitor ---
 const discordGatewayUrl = 'wss://gateway.discord.gg/?v=10&encoding=json';
 const discordBotToken = process.env.DISCORD_BOT_TOKEN;
 const discordGuildId = process.env.DISCORD_GUILD_ID;
+const DISCORD_STATUS = { ready: false, degraded: false, failures: 0, lastChangeAt: 0 };
 
 // voiceChannelId -> Map<userId, state>
 // state = { self_mute, self_deaf, mute, deaf, self_stream, self_video, suppress }
@@ -18273,10 +18335,13 @@ function startDiscordGateway() {
         }
     }
 
+    let consecutiveFailures = 0;
+    const maxFailuresBeforeDisable = 5;
+
     function connect() {
         console.log('🌐 Connecting to Discord Gateway...');
         ws = new WebSocket(discordGatewayUrl);
-        ws.on('open', () => { console.log('🌐 Discord WS open'); });
+        ws.on('open', () => { console.log('🌐 Discord WS open'); DISCORD_STATUS.ready = true; DISCORD_STATUS.degraded = false; DISCORD_STATUS.failures = 0; DISCORD_STATUS.lastChangeAt = Date.now(); consecutiveFailures = 0; });
         ws.on('message', (data) => {
             try {
                 const payload = JSON.parse(data.toString());
@@ -18304,6 +18369,13 @@ function startDiscordGateway() {
         ws.on('close', () => {
             console.log('🔌 Discord WS closed; retrying in 5s');
             if (heartbeatTimer) clearInterval(heartbeatTimer);
+            consecutiveFailures += 1;
+            DISCORD_STATUS.ready = false; DISCORD_STATUS.failures = consecutiveFailures; DISCORD_STATUS.lastChangeAt = Date.now();
+            if (consecutiveFailures >= maxFailuresBeforeDisable) {
+                console.error('❌ Discord WS disabled after repeated failures');
+                DISCORD_STATUS.degraded = true;
+                return; // stop retrying until process restart
+            }
             setTimeout(connect, 5000);
         });
         ws.on('error', (err) => {
@@ -18315,6 +18387,11 @@ function startDiscordGateway() {
 }
 
 startDiscordGateway();
+
+// Public status endpoint for Discord readiness/degradation
+app.get('/api/discord/status', (req, res) => {
+    try { res.json({ ok: true, ...DISCORD_STATUS }); } catch (err) { res.status(500).json({ ok: false, error: err?.message || String(err) }); }
+});
 
 // API to read current members in a given voice channel
 app.get('/api/discord/voice/:channelId', (req, res) => {

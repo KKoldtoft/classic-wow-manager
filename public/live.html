@@ -144,14 +144,20 @@
         }
 
         async function refreshTitle() {
-            try { const r = await fetch(`/api/discord/channel/${channelId}`); const j = await r.json(); vmTitle.textContent = (j && j.ok && j.name) ? `Voice Monitor — ${j.name}` : `Voice Monitor — ${channelId}`; } catch { vmTitle.textContent = `Voice Monitor — ${channelId}`; }
+            try {
+                const st = await fetch('/api/discord/status').then(r=>r.ok?r.json():{ok:false});
+                if (st && st.ok && st.degraded) { vmTitle.textContent = 'Voice Monitor — Discord degraded'; vmStatus.textContent = 'Discord connection is degraded. Voice data may be unavailable.'; return; }
+                const r = await fetch(`/api/discord/channel/${channelId}`); const j = await r.json(); vmTitle.textContent = (j && j.ok && j.name) ? `Voice Monitor — ${j.name}` : `Voice Monitor — ${channelId}`;
+            } catch { vmTitle.textContent = `Voice Monitor — ${channelId}`; }
         }
 
         function extractId(raw) { const s = String(raw ?? ''); const m = s.match(/\d{10,}/); return m ? m[0] : s; }
 
         async function refresh() {
             try {
-                const res = await fetch(`/api/discord/voice-enriched/${channelId}`);
+                const status = await fetch('/api/discord/status').then(r=>r.ok?r.json():{ok:false});
+                if (status && status.ok && status.degraded) { return; }
+                const res = await fetch(`/api/discord/voice-enriched/${channelId}`, { headers: { 'Cache-Control': 'no-cache' } });
                 const data = await res.json();
                 const users = Array.isArray(data.users) ? data.users : [];
                 const ids = users.map(u => extractId(u.id)).filter(Boolean);
