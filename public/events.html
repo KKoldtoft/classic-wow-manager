@@ -123,6 +123,7 @@
                     <p style="margin: 0; color: #cbd5e1;">
                         We’re always recruiting new members. As a member, you’ll earn 10 bonus points from any of our raids and become part of our guild community. Whisper any current member in-game for an invite.
                     </p>
+                    <div id="guild-newest-members" style="margin: 4px 0 2px 0; color:#e5e7eb; font-size:14px; display:none;"></div>
                     <!-- Hero numbers -->
                     <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
                         <div id="guild-hero-card-total" style="background:#0b1220; border:1px solid #1f2937; border-radius:12px; padding:14px; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:space-between; gap:6px;">
@@ -253,6 +254,52 @@
                     const members = data.members;
                     const total = members.length;
                     const level60Count = members.filter(m => Number(m.level) === 60).length;
+                    // Newest members line (based on join_date if available)
+                    try {
+                        const parseJoinDate = (s) => {
+                            if (!s) return null;
+                            const str = String(s).trim();
+                            // Try formats like: 07 Sep '25 or 07 Sep 25
+                            const m = str.match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+'?(\d{2,4})$/);
+                            if (m) {
+                                const d = parseInt(m[1], 10);
+                                const monStr = m[2].toLowerCase();
+                                const yRaw = m[3];
+                                const months = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+                                const mon = months[monStr.slice(0,3)] ?? null;
+                                if (mon != null) {
+                                    let y = parseInt(yRaw, 10);
+                                    if (y < 100) y += 2000; // assume 20xx
+                                    const dt = new Date(Date.UTC(y, mon, d));
+                                    if (!isNaN(dt.getTime())) return dt.getTime();
+                                }
+                            }
+                            // Fallback: Date.parse
+                            const t = Date.parse(str);
+                            return Number.isFinite(t) ? t : null;
+                        };
+                        const canonicalClass = (c) => String(c||'').toLowerCase();
+                        const classToHex = (cls) => {
+                            const map = { 'warrior':'#C79C6E','paladin':'#F58CBA','hunter':'#ABD473','rogue':'#FFF569','priest':'#FFFFFF','shaman':'#0070DE','mage':'#40C7EB','warlock':'#8787ED','druid':'#FF7D0A','monk':'#00FF96','demon hunter':'#A330C9','death knight':'#C41E3A' };
+                            const key = canonicalClass(cls);
+                            return map[key] || '#e5e7eb';
+                        };
+                        // Only consider those with a parsable join_date
+                        const withJoin = members.map(m => ({...m, _jd: parseJoinDate(m.join_date)})).filter(m => m._jd != null);
+                        withJoin.sort((a,b)=> b._jd - a._jd);
+                        const top = withJoin.slice(0, 3);
+                        const container = document.getElementById('guild-newest-members');
+                        if (container && top.length > 0) {
+                            const names = top.map(m => `<span style="color:${classToHex(m.class)}; font-weight:600;">${m.character_name}</span>`);
+                            let joinedWord = top.length === 1 ? 'member' : 'members';
+                            let listStr = '';
+                            if (names.length === 1) listStr = names[0];
+                            else if (names.length === 2) listStr = `${names[0]} and ${names[1]}`;
+                            else listStr = `${names[0]}, ${names[1]} and ${names[2]}`;
+                            container.innerHTML = `Welcome to our newest ${joinedWord}: ${listStr}`;
+                            container.style.display = 'block';
+                        }
+                    } catch {}
                     const toNumber = (v) => {
                         const n = Number(v);
                         return Number.isFinite(n) ? n : null;

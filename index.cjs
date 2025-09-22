@@ -4797,6 +4797,7 @@ app.get('/api/guild-members', async (req, res) => {
         race, 
         sex,
         last_online_days,
+        join_date,
         discord_id,
         CASE WHEN discord_id IS NOT NULL THEN true ELSE false END as has_discord_link
       FROM guildies 
