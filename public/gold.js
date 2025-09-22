@@ -144,12 +144,7 @@ class GoldPotManager {
                     this.showContent();
                     try {
                         const banner = document.getElementById('engineBanner');
-                        if (banner) {
-                            const pill = `<span class="pill ${eff.mode==='manual'?'manual':'auto'}">${eff.mode==='manual'?'Engine manual':'Engine auto'}</span>`;
-                            const dbg = `<a href="/api/rewards/${this.currentEventId}/debug" target="_blank" rel="noopener noreferrer">debug</a>`;
-                            banner.innerHTML = `${pill} Using canonical rewards engine — ${dbg}`;
-                            banner.style.display = 'flex';
-                        }
+                        if (banner) { banner.style.display = 'none'; }
                         const parityBtn = document.getElementById('parityBtn');
                         const parityStatus = document.getElementById('parityStatus');
                         if (parityBtn) parityBtn.disabled = true;
