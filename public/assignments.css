@@ -234,3 +234,7 @@ body:not(.assignments-main) .manual-rewards-section { margin-bottom: 32px !impor
 /* Main page panel tweaks */
 .main-panel { max-width: 100% !important; margin: 0 !important; }
 .main-panel .ranking-position { display: none !important; }
+
+/* Assignments: set header background to #052235 except where already using #232229 */
+body.assignments .section-header { background: #052235; }
+body.assignments .manual-rewards-section .section-header { background: #052235; }

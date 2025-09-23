@@ -1062,7 +1062,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function renderRoster() {
-        rosterEventTitle.textContent = `Roster for Event ID: ${eventId} (Loading...)`;
+        // Keep roster page title text empty
+        if (rosterEventTitle) rosterEventTitle.textContent = '';
         try {
             const rosterData = await fetchRoster(eventId);
             
@@ -1438,9 +1439,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 rosterGrid.appendChild(columnDiv);
             }
 
-        if (title) {
-            rosterEventTitle.textContent = title;
-        }
+        // Do not render a header title on the roster page
+        if (rosterEventTitle) rosterEventTitle.textContent = '';
         // This is now called from renderRoster
         // setupEventListeners();
     }

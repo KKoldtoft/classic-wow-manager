@@ -15,8 +15,8 @@ body, html {
 
 /* Roster stats wraps the dashboard to the same max width look as roster container */
 .roster-stats-wrapper .stats-section {
-    background: #2c2f33;
-    border: 1px solid #444;
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
+    border: 1px solid rgba(131, 168, 255, 0.18);
     border-radius: 8px;
     padding: 12px 16px;
 }
@@ -30,8 +30,8 @@ body, html {
 }
 
 .stat-card {
-    background: linear-gradient(135deg, #1a1a1a, #252525);
-    border: 1px solid #444;
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
+    border: 1px solid rgba(131, 168, 255, 0.18);
     border-radius: 10px;
     padding: 14px;
     text-align: center;
@@ -88,30 +88,7 @@ body, html {
 .players-tooltip .cat-guildies h4 { margin-top: 12px; }
 .players-tooltip .cat-first h4 { margin-top: 12px; }
 
-.back-button-wrapper {
-    text-align: left; /* Keep the back button left-aligned */
-    margin-bottom: 20px;
-}
-
-/* Back button style */
-.back-button {
-    display: inline-block;
-    background-color: #5865F2; /* Discord blue */
-    color: white;
-    padding: 8px 15px;
-    border-radius: 8px;
-    text-decoration: none;
-    /* margin-bottom is now on the wrapper */
-    transition: background-color 0.2s ease;
-}
-
-.back-button:hover {
-    background-color: #4752C4;
-}
-
-.back-button i {
-    margin-right: 5px;
-}
+/* back-button removed */
 
 #roster-event-title {
     color: #fff;
@@ -121,10 +98,10 @@ body, html {
 }
 
 .roster-container {
-    background-color: #2c2f33;
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
     padding: 20px;
     border-radius: 8px;
-    border: 1px solid #444;
+    border: 1px solid rgba(131, 168, 255, 0.18);
     display: inline-block; /* Allow the container to shrink to fit the content */
     min-width: 0; /* Override default min-width for flex children */
     vertical-align: top; /* Align to top with bench container */
@@ -535,8 +512,8 @@ body, html {
 }
 
 #bench-container.bench-container {
-    background-color: #2c2f33 !important; /* Match roster-container background */
-    border: 1px solid #444 !important; /* Keep consistent with roster-container */
+    background: linear-gradient(180deg, #0b1220, #1a2a45) !important; /* Match roster-container background */
+    border: 1px solid rgba(131, 168, 255, 0.18) !important; /* Keep consistent with roster-container */
     border-radius: 8px;
     padding: 15px;
     margin-left: 20px; /* Space between roster and bench */

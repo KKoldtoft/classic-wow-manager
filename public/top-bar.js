@@ -198,6 +198,91 @@ function injectRulesNavLink() {
     });
 }
 
+// Normalize top bar: link logo to home and remove explicit Home link
+function normalizeTopBar() {
+    try {
+        // Wrap the logo image with a link to '/'
+        const logoImg = document.querySelector('.top-bar .app-logo');
+        if (logoImg) {
+            const parent = logoImg.parentElement;
+            const isAlreadyLink = parent && parent.tagName && parent.tagName.toLowerCase() === 'a';
+            if (!isAlreadyLink) {
+                const logoLink = document.createElement('a');
+                logoLink.href = '/';
+                logoLink.className = 'logo-link';
+                // Replace img with anchor, then append img inside
+                parent && parent.replaceChild(logoLink, logoImg);
+                logoLink.appendChild(logoImg);
+            } else {
+                // Ensure href and class on existing link
+                if (!parent.getAttribute('href')) parent.setAttribute('href', '/');
+                parent.setAttribute('href', '/');
+                parent.classList.add('logo-link');
+            }
+        }
+
+        // Remove any explicit Home link from top navs
+        document.querySelectorAll('.top-nav').forEach(nav => {
+            nav.querySelectorAll('a.top-nav-link[href="/"]').forEach(el => {
+                el.remove();
+            });
+        });
+    } catch (_) {
+        // no-op
+    }
+}
+
+// Add icons to nav links and ensure consistent button styling
+function enhanceTopNavIcons() {
+	try {
+		const iconForHref = (href) => {
+			if (!href) return 'fa-link';
+			try {
+				const u = new URL(href, window.location.origin);
+				switch (u.pathname) {
+					case '/guild-members': return 'fa-users';
+					case '/attendance': return 'fa-user-check';
+					case '/rules': return 'fa-scroll';
+					case '/stats': return 'fa-chart-line';
+					case '/faq': return 'fa-question-circle';
+					case '/itemlog': return 'fa-shield-alt';
+					case '/gold': return 'fa-coins';
+					case '/loot': return 'fa-box-open';
+					default: return 'fa-link';
+				}
+			} catch (_) { return 'fa-link'; }
+		};
+
+		// Links
+		document.querySelectorAll('.top-nav a.top-nav-link').forEach(link => {
+			// Skip if already enhanced
+			if (link.querySelector('i.nav-icon')) return;
+			const href = link.getAttribute('href') || '';
+			const icon = iconForHref(href);
+			const text = link.textContent.trim();
+			link.innerHTML = `<i class="fas ${icon} nav-icon" aria-hidden="true"></i><span class="nav-text">${text}</span>`;
+		});
+
+		// Dropdown toggle (Upcoming Raids)
+		document.querySelectorAll('.top-nav .dropdown-toggle').forEach(btn => {
+			if (!btn.classList.contains('top-nav-link')) {
+				btn.classList.add('top-nav-link');
+			}
+			const hasIcon = btn.querySelector('i.nav-icon');
+			if (!hasIcon) {
+				// Preserve existing chevron, prepend calendar icon
+				const chevron = btn.querySelector('.fa-chevron-down');
+				const label = btn.childNodes[0] && btn.childNodes[0].nodeType === Node.TEXT_NODE
+					? btn.childNodes[0].textContent.trim()
+					: (btn.textContent.replace(/\s*\u25BC|\s*▼/g, '').trim() || 'Upcoming Raids');
+				btn.innerHTML = `<i class="fas fa-calendar-alt nav-icon" aria-hidden="true"></i><span class="nav-text">${label}</span>` + (chevron ? ` <i class="fas fa-chevron-down"></i>` : ' <i class="fas fa-chevron-down"></i>');
+			}
+		});
+	} catch (_) {
+		// no-op
+	}
+}
+
 // Scroll behavior for sticky header
 let lastScrollTop = 0;
 let scrollTimeout = null;
@@ -216,7 +301,7 @@ function handleScroll() {
     
     // Only hide/show after user stops scrolling rapidly
     scrollTimeout = setTimeout(() => {
-        if (currentScrollTop > lastScrollTop && currentScrollTop > 54) {
+        if (currentScrollTop > lastScrollTop && currentScrollTop > 44) {
             // Scrolling down - hide main bar, dock raid bar to top
             topBar.classList.add('hidden');
             if (raidBar && raidBar.style.display !== 'none') {
@@ -488,7 +573,10 @@ function updateRaidNavigation(eventId) {
 // Run the functions when the document is ready.
 document.addEventListener('DOMContentLoaded', () => {
     updateAuthUI();
+    // Inject links first so icon enhancement can decorate them
     injectRulesNavLink();
+    normalizeTopBar();
+    enhanceTopNavIcons();
     highlightActiveNav();
     setupUpcomingRaidsDropdown();
     updateRaidBar();

@@ -4,11 +4,11 @@ body {
     font-family: 'Inter', sans-serif;
     background-color: #f4f4f4;
     color: #333;
-    padding-top: 54px; /* Account for actual fixed header height */
+    padding-top: 44px; /* Account for actual fixed header height */
 }
 
 body.has-raid-bar {
-    padding-top: 104px; /* Account for both header bars when raid is active (54px + 50px) */
+    padding-top: 94px; /* Account for both header bars when raid is active (44px + ~50px) */
 }
 
 /* --- Universal Top Bar --- */
@@ -16,8 +16,10 @@ body.has-raid-bar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background-color: #000000;
-    padding: 10px 20px;
+    /* Match button gradient */
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
+    padding: 0 20px;
+    height: 44px; /* Fixed bar height */
     color: white;
     position: fixed;
     top: 0;
@@ -39,7 +41,7 @@ body.has-raid-bar {
 .top-bar-left {
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 16px;
 }
 
 .app-logo {
@@ -54,28 +56,81 @@ body.has-raid-bar {
     filter: brightness(1.1);
 }
 
-.top-nav {
-    display: flex;
-    gap: 15px;
+.top-nav { display: flex; gap: 0; height: 44px; align-items: stretch; position: absolute; left: 50%; transform: translateX(-50%); top: 0; }
+
+/* Button-style top navigation links */
+.top-nav-link {
+    /* Navy-toned buttons for contrast against black top bar */
+    --btn-grad-start: #0b1220;
+    --btn-grad-end: #1a2a45;
+    --btn-border: rgba(131, 168, 255, 0.18);
+    --btn-hover-start: #102035;
+    --btn-hover-end: #233a5c;
+    --btn-active: #5865F2;
+    color: #e5e7eb;
+    text-decoration: none;
+    padding: 0 14px;
+    border-radius: 0;
+    background: linear-gradient(180deg, var(--btn-grad-start), var(--btn-grad-end));
+    border: 1px solid var(--btn-border); /* overridden by side rules below */
+    box-shadow: 0 1px 2px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+    transition: background 0.2s ease, color 0.2s ease, transform 0.05s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+    height: 44px; /* fill bar height */
 }
 
-.top-nav-link {
-    color: #b9bbbe;
-    text-decoration: none;
-    padding: 8px 12px;
-    border-radius: 5px;
-    transition: background-color 0.2s;
+/* Border rules: keep left border on all, right border only on last, no top/bottom */
+.top-nav > .top-nav-link,
+.top-nav > .top-nav-dropdown > .top-nav-link {
+    border-top: none;
+    border-bottom: none;
+    border-right: none;
+    border-left: 1px solid var(--btn-border);
+}
+
+.top-nav > .top-nav-link:last-child,
+.top-nav > .top-nav-dropdown:last-child > .top-nav-link {
+    border-right: 1px solid var(--btn-border);
 }
 
 .top-nav-link:hover {
-    background-color: #40444b;
+    background: linear-gradient(180deg, var(--btn-hover-start), var(--btn-hover-end));
 }
 
+.top-nav-link:active { transform: translateY(1px); }
+
 .top-nav-link.active {
-    background-color: #5865F2;
-    color: white;
-    font-weight: bold;
+    background: linear-gradient(180deg, var(--btn-hover-start), var(--btn-hover-end));
+    color: #ffffff;
+    font-weight: 600;
+    border-color: rgba(255,255,255,0.18);
 }
+
+/* Thin dash separators between buttons */
+/* Remove text dashes; use no gap so buttons sit flush */
+
+/* Ensure dropdown toggle inherits button styling */
+.top-nav .dropdown-toggle.top-nav-link {
+    padding-right: 10px;
+    /* Ensure same visual as buttons despite base .dropdown-toggle reset */
+    background: linear-gradient(180deg, var(--btn-grad-start), var(--btn-grad-end));
+    border-top: none;
+    border-bottom: none;
+}
+.top-nav .dropdown-toggle.top-nav-link:hover {
+    background: linear-gradient(180deg, var(--btn-hover-start), var(--btn-hover-end));
+}
+.top-nav .dropdown-toggle.top-nav-link i { opacity: 0.8; }
+
+/* Logo link normalization */
+.logo-link { display: inline-flex; align-items: center; }
+
+/* Icon and text tweaks for nav buttons */
+.nav-icon { color: #ffffff; opacity: 0.95; }
+.nav-text { color: #e5e7eb; }
 
 /* Top Navigation Dropdown */
 .top-nav-dropdown {
@@ -108,36 +163,31 @@ body.has-raid-bar {
     position: absolute;
     top: 100%;
     left: 0;
-    background-color: #2c2f33;
-    border: 1px solid #40444b;
-    border-radius: 5px;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
+    border: 1px solid rgba(131, 168, 255, 0.18);
+    border-radius: 0;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.35);
     min-width: 450px;
     max-width: 600px;
     z-index: 1001;
-    margin-top: 5px;
+    margin-top: 0;
 }
 
 .dropdown-menu.show {
     display: block;
 }
 
-.dropdown-loading {
-    padding: 15px;
-    text-align: center;
-    color: #b9bbbe;
-    font-style: italic;
-}
+.dropdown-loading { padding: 15px; text-align: center; color: #c7d2fe; font-style: italic; }
 
 .dropdown-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 12px 15px;
-    color: #b9bbbe;
+    color: #e5e7eb;
     text-decoration: none;
-    border-bottom: 1px solid #40444b;
-    transition: background-color 0.2s;
+    border-bottom: 1px solid rgba(131, 168, 255, 0.18);
+    transition: background 0.2s, color 0.2s;
     cursor: pointer;
 }
 
@@ -145,10 +195,7 @@ body.has-raid-bar {
     border-bottom: none;
 }
 
-.dropdown-item:hover {
-    background-color: #40444b;
-    color: white;
-}
+.dropdown-item:hover { background: linear-gradient(180deg, #102035, #233a5c); color: #ffffff; }
 
 .dropdown-item-left {
     flex: 1;
@@ -158,43 +205,30 @@ body.has-raid-bar {
     font-size: 14px;
 }
 
-.dropdown-item-right {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 14px;
-    color: #72767d;
-    white-space: nowrap;
-    flex-shrink: 0;
-}
+.dropdown-item-right { display: flex; align-items: center; gap: 5px; font-size: 14px; color: #9ca3af; white-space: nowrap; flex-shrink: 0; }
 
 .dropdown-item-time {
     font-weight: 500;
 }
 
-.dropdown-empty {
-    padding: 15px;
-    text-align: center;
-    color: #72767d;
-    font-style: italic;
-}
+.dropdown-empty { padding: 15px; text-align: center; color: #9aa0a6; font-style: italic; }
 
 /* Active Raid Bar */
 .raid-bar {
     display: flex;
-    justify-content: space-between;
+    justify-content: center; /* center links horizontally */
     align-items: center;
-    background: #00233e;
-    padding: 8px 20px;
+    background: transparent; /* not full width */
+    padding: 0; /* no extra bar padding */
     color: white;
     position: fixed;
-    top: 54px; /* Position directly below the main top bar */
+    top: 44px; /* Position directly below the main top bar */
     left: 0;
     right: 0;
     z-index: 999;
     transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
-    border-top: 1px solid #000000; /* Black separator line */
+    box-shadow: none;
+    border-top: none;
 }
 
 .raid-bar.hidden {
@@ -206,15 +240,13 @@ body.has-raid-bar {
 }
 
 /* When main bar is hidden, dock raid bar to top */
-.raid-bar.docked-top {
-    transform: translateY(-54px);
-}
+.raid-bar.docked-top { transform: translateY(-44px); }
 
 .raid-bar-left {
     display: flex;
     align-items: center;
-    gap: 30px;
-    flex: 1;
+    gap: 0;
+    flex: 0; /* shrink to content so group centers visually */
 }
 
 .raid-title {
@@ -231,54 +263,56 @@ body.has-raid-bar {
     margin-right: 8px;
 }
 
-.raid-bar-right {
-    display: flex;
-    align-items: center;
-}
+.raid-bar-right { display: none; }
 
-.raid-nav {
-    display: flex;
-    gap: 15px;
-    justify-content: center;
-    flex: 1;
-}
+.raid-nav { display: flex; gap: 0; justify-content: center; align-items: stretch; flex: 0; white-space: nowrap; }
 
-.raid-close-btn {
-    background: rgba(255, 255, 255, 0.1);
-    border: none;
-    color: #ffffff;
-    padding: 8px 10px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s, color 0.2s;
-    font-size: 14px;
-}
+.raid-close-btn { display: none; }
 
-.raid-close-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
-    color: #ff6b6b;
-}
+.raid-title { display: none; }
 
+/* Raid nav links as gradient buttons (keep current bluish color theme) */
 .raid-nav-link {
-    color: #b9bbbe;
+    --raid-btn-grad-start: #001a2e;
+    --raid-btn-grad-end: #003a5c;
+    --raid-btn-border: rgba(131, 168, 255, 0.18);
+    --raid-btn-hover-start: #032444;
+    --raid-btn-hover-end: #0b3a6b;
+    --raid-btn-active: #5865F2;
+    color: #e5e7eb;
     text-decoration: none;
-    padding: 6px 12px;
-    border-radius: 4px;
-    transition: background-color 0.2s, color 0.2s;
+    padding: 0 14px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    background: linear-gradient(180deg, var(--raid-btn-grad-start), var(--raid-btn-grad-end));
+    border: 1px solid var(--raid-btn-border);
+    border-top: none;
+    border-bottom: none;
+    border-right: none; /* only last has right border */
+    border-radius: 0;
+    transition: background 0.2s ease, color 0.2s ease, transform 0.05s ease;
     font-size: 14px;
     font-weight: 500;
 }
 
-.raid-nav-link:hover {
-    background-color: #40444b;
-    color: white;
-}
+.raid-nav-link:hover { background: linear-gradient(180deg, var(--raid-btn-hover-start), var(--raid-btn-hover-end)); color: #ffffff; }
 
 .raid-nav-link.active {
-    background-color: #5865F2;
+    background: linear-gradient(180deg, var(--raid-btn-hover-start), var(--raid-btn-hover-end));
     color: white;
     font-weight: 600;
 }
+
+/* Rounded bottom corners on the group ends */
+.raid-nav > .raid-nav-link:first-child { border-bottom-left-radius: 8px; }
+.raid-nav > .raid-nav-link:last-child { border-bottom-right-radius: 8px; border-right: 1px solid var(--raid-btn-border); }
+
+/* Side borders like top-bar: left on all, right only on last */
+.raid-nav > .raid-nav-link { border-left: 1px solid var(--raid-btn-border); }
+.raid-nav > .raid-nav-link:last-child { border-right: 1px solid var(--raid-btn-border); }
 
 #auth-container {
     display: flex;
@@ -375,14 +409,14 @@ body.has-raid-bar {
 .user-dropdown {
     display: none;
     position: absolute;
-    top: 40px; /* Position below the top bar */
+    top: 44px; /* Align with 44px top bar */
     right: 0;
-    background-color: #2c2f33;
-    border: 1px solid #40444b;
-    border-radius: 5px;
-    min-width: 150px;
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
+    border: 1px solid rgba(131, 168, 255, 0.18);
+    border-radius: 0;
+    min-width: 180px;
     z-index: 100;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.35);
 }
 
 .user-dropdown.show {
@@ -390,14 +424,17 @@ body.has-raid-bar {
 }
 
 .user-dropdown .dropdown-item {
-    color: #b9bbbe;
+    color: #e5e7eb;
     padding: 10px 15px;
     text-decoration: none;
     display: block;
+    border-bottom: 1px solid rgba(131, 168, 255, 0.18);
+    transition: background 0.2s, color 0.2s;
 }
 
 .user-dropdown .dropdown-item:hover {
-    background-color: #40444b;
+    background: linear-gradient(180deg, #102035, #233a5c);
+    color: #ffffff;
 }
 
 .logout-button {
@@ -416,7 +453,7 @@ body.has-raid-bar {
     background-color: #5865F2; /* Discord blue */
     color: white;
     border: none;
-    padding: 10px 15px;
+    padding: 5px 11px;
     border-radius: 8px;
     cursor: pointer;
     font-size: 1em;
@@ -769,7 +806,7 @@ body.home .character-card .char-text { color: #000 !important; }
     border-radius: 0 0 8px 8px; /* top corners will be 0 via override below */
     border-top-left-radius: 0;
     border-top-right-radius: 0;
-    background: rgba(0, 0, 0, 0.9); /* dark background for bottom card */
+    background: #0b1220;
 }
 
 .character-item-sub .label, .character-item-sub .value { color: #ffffff !important; font-weight: 400; }
@@ -906,14 +943,14 @@ body.home {
 
 /* Panels on frontpage */
 body.home .panel {
-    background-color: #1a191e;
-    border: 1px solid #555555;
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
+    border: 1px solid rgba(131, 168, 255, 0.18);
 }
 
 /* Panel titles on frontpage */
 body.home .panel-title {
     color: #e8e8e8;
-    border-bottom: 1px solid #24232a;
+    border-bottom: 1px solid rgba(131, 168, 255, 0.18);
 }
 
 /* Direct text inside panels on frontpage */
@@ -1005,7 +1042,7 @@ body.roster .roster-cell.empty-slot-clickable { background-color: #333; }
 /* --- Assignments dark theme --- */
 body.assignments { background-color: #121214; color: #e8e8e8; }
 body.assignments .container { background: transparent; }
-body.assignments .manual-rewards-section { --panel-accent: #555555; background: #1a191e; border: 1px solid #555555; box-shadow: none; }
+body.assignments .manual-rewards-section { --panel-accent: #555555; background: linear-gradient(180deg, #0b1220, #1a2a45); border: 1px solid rgba(131, 168, 255, 0.18); box-shadow: none; }
 body.assignments .manual-rewards-section .section-header { background: #232229; color: #e8e8e8; }
 body.assignments .manual-rewards-content { color: #e8e8e8; }
 body.assignments .assignment-entry-row { border-bottom: 1px solid #333; }
@@ -1029,8 +1066,8 @@ body.raidlogs .nav-buttons { border-color: rgba(255,255,255,0.12); }
 body.raidlogs .section-header { background: #232229; color: #e8e8e8; }
 body.raidlogs .ranking-item { border-bottom: 1px solid #333; }
 body.raidlogs .ranking-item:hover { background: #1f1e24; }
-body.raidlogs .manual-rewards-section { background: #1a191e; border: 1px solid #555555; box-shadow: none; }
-body.raidlogs .manual-rewards-section .section-header { background: #232229; }
+body.raidlogs .manual-rewards-section { background: linear-gradient(180deg, #0b1220, #1a2a45); border: 1px solid rgba(131, 168, 255, 0.18); box-shadow: none; }
+body.raidlogs .manual-rewards-section .section-header { background: #052235; }
 body.raidlogs .manual-rewards-templates { background: #232229; border: 1px solid #333; }
 body.raidlogs .mode-badge { background: #232229; color: #e8e8e8; }
 body.raidlogs .manual-rewards-form { background: #232229; border: 1px solid #333; }
@@ -1266,6 +1303,7 @@ body.faq .content { background: transparent; box-shadow: none; }
         margin-bottom: 10px;
         max-width: 140px;
     }
+    .top-nav { position: static; transform: none; }
     
     .main-content-grid {
         padding: 10px;
