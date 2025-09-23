@@ -1093,9 +1093,9 @@ body.gold #gargulCopyStatus { color:#9ca3af; }
 body.loot { background-color: #121214; color: #e8e8e8; }
 body.loot .main-content { background: transparent; }
 body.loot .auth-gate { background:#1a191e; border:1px solid #555555; color:#e8e8e8; }
-body.loot .import-section { background:#1a191e; border:1px solid #555555; }
+body.loot .import-section { background:#1a191e; border:1px solid #555555; margin-top: 20px; }
 body.loot .import-input-container textarea { background:#232229; color:#e8e8e8; border:1px solid #555555; }
-body.loot .loot-section { background:#1a191e; border:1px solid #555555; }
+body.loot .loot-section { background:#1a191e; border:1px solid #555555; margin-top: 20px; }
 body.loot .loot-section h3 { color:#e8e8e8; }
 body.loot .stat-card { background: linear-gradient(135deg, #1a1a1a, #232229); border:1px solid #555; }
 body.loot .loot-item { background:#1a1a1a; border:1px solid #555; }
