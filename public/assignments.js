@@ -356,20 +356,20 @@
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756133303/aq40positions_hbtfb6.png';
       defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756133303/aq40positions_hbtfb6.png';
     } else if (panelKeyLower.includes('twins trash')) {
-      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
-      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758751886/twins_trash_mid_dtkzg9.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758751886/twins_trash_full_cwaijs.png';
     } else if (panelKeyLower.includes('twin emperors') || (panelKeyLower.includes('twin') && !panelKeyLower.includes('trash'))) {
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
       defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
     } else if (panelKeyLower.includes('skeram') || panelKeyLower.includes('prophet')) {
-      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
-      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748092/Skeram_mid_xk7ad9.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748093/Skeram_full_qpryfl.png';
     } else if (panelKeyLower.includes('bug')) {
-      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
-      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748177/bugtrie_mid_vszif2.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748177/bigtrio_full_t5yevm.png';
     } else if (panelKeyLower.includes('sartura')) {
-      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
-      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
+      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748212/Sartura_mid_npr3zh.jpg';
+      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748212/Sartura_full_jzoyqe.png';
     } else if (panelKeyLower.includes('fankriss') || panelKeyLower.includes('fank')) {
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
       defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg';
@@ -4193,7 +4193,8 @@
             wing: 'AQ40',
             boss: 'The Prophet Skeram',
             strategy_text: "Odd groups left. Even groups right. Interupt Arcane Explotions. \n\nIf the real one spawns on your side, run to the middle and kill the clone first.\n\nHelp CC mind controlled players (Sheep, Coil, Blind, Stomp etc.)",
-            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748092/Skeram_mid_xk7ad9.jpg',
+            image_url_full: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748093/Skeram_full_qpryfl.png',
             video_url: 'https://www.youtube.com/embed/ZVb2geSq-Fc',
             boss_icon_url: '',
             entries: []
@@ -4203,7 +4204,8 @@
             wing: 'AQ40',
             boss: 'Bug Trio',
             strategy_text: 'First kill Yauj and aoe the adds when she dies.\nThen kill Kri and move away from poision.\nTaunt rotate on Vem and move on with your life.\nTremor + Poison cleansing totems',
-            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748177/bugtrie_mid_vszif2.jpg',
+            image_url_full: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748177/bigtrio_full_t5yevm.png',
             video_url: 'https://www.youtube.com/embed/YQp60n1VnPk',
             boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756630087/bug_trio_ofvrvg.png',
             entries: []
@@ -4213,7 +4215,8 @@
             wing: 'AQ40',
             boss: 'Battleguard Sartura',
             strategy_text: 'Stack & AOE adds. Pull boss out. Keep boss far away with taunt rotation when pinning. Be ready to LIP and commit.',
-            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748212/Sartura_mid_npr3zh.jpg',
+            image_url_full: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748212/Sartura_full_jzoyqe.png',
             video_url: '',
             boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756630715/sartura_soipg5.png',
             entries: []
@@ -4263,7 +4266,8 @@
             wing: 'AQ40',
             boss: 'Twins trash',
             strategy_text: 'Your main goal is to not die. If 4 Slayers, split them before you go in. Alawys kill Mindslayers last. CoR on mind controlled players.',
-            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758751886/twins_trash_mid_dtkzg9.jpg',
+            image_url_full: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758751886/twins_trash_full_cwaijs.png',
             video_url: '',
             boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631415/twinstrash_xwopji.png',
             entries: []
@@ -4659,7 +4663,8 @@
             wing: 'AQ40',
             boss: 'The Prophet Skeram',
             strategy_text: "Odd groups left. Even groups right. Interupt Arcane Explotions. \n\nIf the real one spawns on your side, run to the middle and kill the clone first.\n\nHelp CC mind controlled players (Sheep, Coil, Blind, Stomp etc.)",
-            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748092/Skeram_mid_xk7ad9.jpg',
+            image_url_full: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748093/Skeram_full_qpryfl.png',
             video_url: 'https://www.youtube.com/embed/ZVb2geSq-Fc',
             boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756127451/15345_gqfi2d.png',
             entries: []
@@ -4711,7 +4716,8 @@
             wing: 'AQ40',
             boss: 'Twins trash',
             strategy_text: 'Your main goal is to not die. If 4 Slayers, split them before you go in. Alawys kill Mindslayers last. CoR on mind controlled players.',
-            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758751886/twins_trash_mid_dtkzg9.jpg',
+            image_url_full: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758751886/twins_trash_full_cwaijs.png',
             video_url: '',
             boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756631415/twinstrash_xwopji.png',
             entries: []
@@ -4763,7 +4769,8 @@
             wing: 'AQ40',
             boss: 'Bug Trio',
             strategy_text: 'First kill Yauj and aoe the adds when she dies.\nThen kill Kri and move away from poision.\nTaunt rotate on Vem and move on with your life.\nTremor + Poison cleansing totems',
-            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748177/bugtrie_mid_vszif2.jpg',
+            image_url_full: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748177/bigtrio_full_t5yevm.png',
             video_url: 'https://www.youtube.com/embed/YQp60n1VnPk',
             boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756127717/-15511_ebf20d.png',
             entries: []
@@ -4776,7 +4783,8 @@
             wing: 'AQ40',
             boss: 'Battleguard Sartura',
             strategy_text: 'Stack & AOE adds. Pull boss out. Keep boss far away with taunt rotation when pinning. Be ready to LIP and commit.',
-            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848193/Coming_soon_spejyt.jpg',
+            image_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748212/Sartura_mid_npr3zh.jpg',
+            image_url_full: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758748212/Sartura_full_jzoyqe.png',
             video_url: '',
             boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756630715/sartura_soipg5.png',
             entries: []
