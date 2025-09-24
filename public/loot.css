@@ -60,8 +60,8 @@ body {
 .auth-gate .join-link { display:block; margin-top:8px; color:#93c5fd; text-decoration:underline; }
 
 .import-section {
-    background: #2c2c2c;
-    border: 1px solid #444;
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
+    border: 1px solid rgba(131, 168, 255, 0.18);
     border-radius: 8px;
     padding: 20px;
     margin: 0 auto 30px auto;
@@ -211,8 +211,8 @@ body {
    ==================================== */
 
 .loot-section {
-    background: #ffffff;
-    border: 1px solid #e5e7eb;
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
+    border: 1px solid rgba(131, 168, 255, 0.18);
     border-radius: 8px;
     padding: 20px;
     margin: 0 auto;
@@ -220,7 +220,7 @@ body {
 }
 
 .loot-section h3 {
-    color: #111827;
+    color: #e5e7eb;
     margin-bottom: 15px;
     font-size: 1.4em;
 }
@@ -334,16 +334,16 @@ body {
 .loot-item {
     display: flex;
     align-items: center;
-    background: #1a1a1a;
-    border: 1px solid #555;
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
+    border: 1px solid rgba(131, 168, 255, 0.18);
     border-radius: 8px;
     padding: 15px;
     transition: all 0.3s ease;
 }
 
 .loot-item:hover {
-    background: #252525;
-    border-color: #666;
+    background: linear-gradient(180deg, #102035, #233a5c);
+    border-color: rgba(255,255,255,0.18);
     transform: translateY(-1px);
 }
 
@@ -376,7 +376,7 @@ body {
 }
 
 .item-player {
-    color: #ccc;
+    color: #cbd5e1;
     font-size: 0.95em;
     min-width: 190px;
 }

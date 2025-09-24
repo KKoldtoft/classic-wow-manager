@@ -25,7 +25,7 @@ body.gold .player-breakdown span { color: #fff !important; }
 /* back-button removed */
 
 .gold-container {
-    background: transparent;
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
     border-radius: 0;
     overflow: visible;
     box-shadow: none;

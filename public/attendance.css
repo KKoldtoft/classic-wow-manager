@@ -47,7 +47,7 @@
     align-items: center;
     margin-bottom: 25px;
     padding: 20px;
-    background: #1a191e;
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
     border-radius: 10px;
     box-shadow: none;
     gap: 20px;
@@ -113,7 +113,7 @@
     align-items: center;
     justify-content: center;
     padding: 60px 20px;
-    background: #1a191e;
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
     border-radius: 10px;
     box-shadow: none;
 }
@@ -140,7 +140,7 @@
 }
 
 .error-display, .no-data-message {
-    background: #1a191e;
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
     border-radius: 10px;
     box-shadow: none;
     padding: 40px;
@@ -171,7 +171,7 @@
 
 /* Attendance Table Container */
 .attendance-table-container {
-    background: #1a191e;
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
     border-radius: 10px;
     box-shadow: none;
     overflow: hidden;
@@ -264,7 +264,7 @@
     min-width: 800px; /* Minimum width to trigger horizontal scrolling */
     border-collapse: collapse;
     font-size: 14px;
-    background: #1a191e;
+    background: linear-gradient(180deg, #0b1220, #1a2a45);
 }
 
 .attendance-table th,

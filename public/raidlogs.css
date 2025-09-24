@@ -242,9 +242,10 @@ body.stats .stats-item-chart {
 }
 
 /* Ensure embedded SVG/foreignObject backgrounds match panel */
-body.stats .stats-item-chart svg { background: #1e1e1e !important; }
-body.stats .stats-item-chart foreignObject { background: #1e1e1e !important; border: none !important; outline: none !important; }
-body.stats .stats-item-chart .apexcharts-canvas { background: #1e1e1e !important; border: none !important; outline: none !important; }
+body.stats .stats-item-chart { background: #0b1220 !important; }
+body.stats .stats-item-chart svg { background: #0b1220 !important; }
+body.stats .stats-item-chart foreignObject { background: #0b1220 !important; border: none !important; outline: none !important; }
+body.stats .stats-item-chart .apexcharts-canvas { background: #0b1220 !important; border: none !important; outline: none !important; }
 
 body.stats .stats-item-list {
     display: grid;
