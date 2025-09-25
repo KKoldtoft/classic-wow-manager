@@ -1643,6 +1643,28 @@ app.get('/discordtest', (req, res) => {
 });
 
 
+// Lightweight mode guard: temporarily short-circuit heavy endpoints to avoid router timeouts (H12)
+// Enable by setting LITE_MODE=1 in env. Only blocks known heavy/long-running paths.
+app.use((req, res, next) => {
+  if (process.env.LITE_MODE === '1') {
+    const p = req.path || '';
+    const heavyPrefixes = [
+      '/api/logs/rpb',
+      '/api/wcl/events/ingest',
+      '/api/assignments',
+      '/api/roster',
+      '/api/event-endpoints-json',
+      '/api/rewards',
+      '/api/log-data',
+      '/api/raid-stats'
+    ];
+    if (heavyPrefixes.some(pref => p.startsWith(pref))) {
+      return res.status(503).json({ message: 'Temporarily disabled due to maintenance (lite mode).' });
+    }
+  }
+  return next();
+});
+
 // All API and authentication routes should come AFTER express.static AND specific HTML routes
 app.get('/auth/discord', (req, res, next) => {
 	// Build a safe return path to embed in the OAuth state parameter
