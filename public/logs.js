@@ -5087,7 +5087,17 @@ class WoWLogsAnalyzer {
                     const payload = {
                         wclSummaryJson: this.rawEndpointData || null,
                         eventRolesJson: this.eventRolesData || null,
-                        fightsJson: this.lastFightsData || null
+                        fightsJson: this.lastFightsData || null,
+                        realmsJson: await (async()=>{
+                            try {
+                                const r = await fetch(`/api/event-realms/${encodeURIComponent(eventIdSafe)}?ts=${Date.now()}`, { cache:'no-store' });
+                                if (r && r.ok) {
+                                    const j = await r.json();
+                                    return j && j.realms ? j.realms : null;
+                                }
+                            } catch {}
+                            return null;
+                        })()
                     };
                     if (payload.wclSummaryJson || payload.eventRolesJson || payload.fightsJson) {
                         // Fire-and-forget: do not block Step 1 completion

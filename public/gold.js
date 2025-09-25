@@ -787,6 +787,14 @@ class GoldPotManager {
             if (!resp.ok) return;
             const body = await resp.json();
             const d = body && body.data;
+            // If server stored a direct realms_json mapping, prefer it
+            try {
+                const obj = d && d.realms_json;
+                if (obj && typeof obj === 'object') {
+                    Object.entries(obj).forEach(([ln, rm])=>{ const k=String(ln||'').trim(); const v=String(rm||'').trim(); if(k&&v) this.nameToRealm.set(k.toLowerCase(), v); });
+                    if (this.nameToRealm.size > 0) { console.log('[Gold] Realms via stored realms_json:', this.nameToRealm.size); return; }
+                }
+            } catch {}
             const wcl = d && d.wcl_summary_json;
             const fights = d && d.fights_json;
             // Helper: extract realm/server from various shapes

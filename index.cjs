@@ -409,11 +409,13 @@ async function initializeEventEndpointsJsonTable() {
         event_id VARCHAR(50) PRIMARY KEY,
         wcl_summary_json JSONB,
         event_roles_json JSONB,
+        realms_json JSONB,
         fights_json JSONB,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    await pool.query(`ALTER TABLE event_endpoints_json ADD COLUMN IF NOT EXISTS realms_json JSONB`);
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_event_endpoints_updated ON event_endpoints_json(updated_at)
     `);
@@ -8586,19 +8588,26 @@ app.post('/api/player-role-mapping/:eventId/store', async (req, res) => {
 // Store raw endpoints JSON blobs for an event
 app.post('/api/event-endpoints-json/:eventId', express.json({ limit: '10mb' }), async (req, res) => {
   const { eventId } = req.params;
-  const { wclSummaryJson, eventRolesJson, fightsJson } = req.body || {};
+  const { wclSummaryJson, eventRolesJson, fightsJson, realmsJson } = req.body || {};
   if (!eventId) return res.status(400).json({ success: false, message: 'Missing eventId' });
   try {
     await pool.query(`
-      INSERT INTO event_endpoints_json (event_id, wcl_summary_json, event_roles_json, fights_json, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, NOW(), NOW())
+      INSERT INTO event_endpoints_json (event_id, wcl_summary_json, event_roles_json, realms_json, fights_json, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
       ON CONFLICT (event_id)
       DO UPDATE SET 
         wcl_summary_json = COALESCE(EXCLUDED.wcl_summary_json, event_endpoints_json.wcl_summary_json),
         event_roles_json = COALESCE(EXCLUDED.event_roles_json, event_endpoints_json.event_roles_json),
+        realms_json = COALESCE(EXCLUDED.realms_json, event_endpoints_json.realms_json),
         fights_json = COALESCE(EXCLUDED.fights_json, event_endpoints_json.fights_json),
         updated_at = NOW()
-    `, [String(eventId), wclSummaryJson ? JSON.stringify(wclSummaryJson) : null, eventRolesJson ? JSON.stringify(eventRolesJson) : null, fightsJson ? JSON.stringify(fightsJson) : null]);
+    `, [
+      String(eventId),
+      wclSummaryJson ? JSON.stringify(wclSummaryJson) : null,
+      eventRolesJson ? JSON.stringify(eventRolesJson) : null,
+      realmsJson ? JSON.stringify(realmsJson) : null,
+      fightsJson ? JSON.stringify(fightsJson) : null
+    ]);
     res.json({ success: true });
   } catch (err) {
     console.error('❌ [EVENT JSON STORE] Failed to upsert JSON blobs:', err);
@@ -8612,7 +8621,7 @@ app.get('/api/event-endpoints-json/:eventId', async (req, res) => {
   if (!eventId) return res.status(400).json({ success: false, message: 'Missing eventId' });
   try {
     const result = await pool.query(`
-      SELECT event_id, wcl_summary_json, event_roles_json, fights_json, created_at, updated_at
+      SELECT event_id, wcl_summary_json, event_roles_json, realms_json, fights_json, created_at, updated_at
       FROM event_endpoints_json
       WHERE event_id = $1
     `, [String(eventId)]);
