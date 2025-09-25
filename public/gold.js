@@ -112,6 +112,16 @@ class GoldPotManager {
                 this.fetchGoldPot()
             ]);
 
+            // Store mapping name -> discordId from confirmed players (for DM tools)
+            try {
+                this.nameToDiscordId = new Map();
+                (Array.isArray(playersData) ? playersData : []).forEach(row => {
+                    const nm = String(row?.character_name || '').trim();
+                    const id = String(row?.discord_id || '').trim();
+                    if (nm && id) this.nameToDiscordId.set(nm.toLowerCase(), id);
+                });
+            } catch {}
+
             // Store and display players
             // Canonical engine fetch; prefer engine (default) in auto mode; always engine in manual mode
             const pref = localStorage.getItem('gold_use_engine_auto');

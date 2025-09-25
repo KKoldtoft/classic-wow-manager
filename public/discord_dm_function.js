@@ -247,8 +247,10 @@
         const { rewards, deductions } = buildPlusMinusLists(nameKey);
         const eventId = String(window.goldManager.currentEventId || '');
 
+        const map = (window.goldManager && window.goldManager.nameToDiscordId) ? window.goldManager.nameToDiscordId : new Map();
+        const discordId = map.get(nameKey) || TEST_DISCORD_USER_ID;
         const payload = {
-            userId: TEST_DISCORD_USER_ID,
+            userId: discordId,
             playerName: name,
             eventId,
             rewards,
@@ -417,8 +419,10 @@
             const nameKey = name.toLowerCase();
             const { points, gold } = getTotalsFor(nameKey);
             const { rewards, deductions } = buildPlusMinusLists(nameKey);
+            const map = (window.goldManager && window.goldManager.nameToDiscordId) ? window.goldManager.nameToDiscordId : new Map();
+            const discordId = map.get(nameKey) || TEST_DISCORD_USER_ID;
             const payload = {
-                userId: TEST_DISCORD_USER_ID,
+                userId: discordId,
                 playerName: name,
                 eventId,
                 rewards,
