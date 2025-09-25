@@ -41,9 +41,11 @@ module.exports = function registerRewardsEngine(app, pool) {
         `SELECT locked_at FROM rewards_snapshot_events WHERE event_id = $1`,
         [eventId]
       );
-      // Consider presence of a snapshot event row as locked (legacy behavior),
-      // even if locked_at wasn't populated on initial insert
-      return (r.rows && r.rows.length > 0) || false;
+      // Only consider legacy snapshot locked when locked_at is present (non-null)
+      if (r.rows && r.rows.length > 0) {
+        return !!r.rows[0].locked_at;
+      }
+      return false;
     }
     return false;
   }
