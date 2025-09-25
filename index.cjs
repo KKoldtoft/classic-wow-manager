@@ -8688,6 +8688,31 @@ app.get('/api/event-realms/:eventId', async (req, res) => {
     if (wcl) visit(wcl);
     if (fights) visit(fights);
 
+    // Fallback: if current event has few or no realms, try to backfill from recent events
+    if (realms.size === 0) {
+      try {
+        const recent = await client.query(`
+          SELECT wcl_summary_json, fights_json
+          FROM event_endpoints_json
+          WHERE event_id <> $1
+          ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+          LIMIT 15
+        `, [String(eventId)]);
+        for (const rec of recent.rows || []) {
+          const w = rec && rec.wcl_summary_json; const f = rec && rec.fights_json;
+          if (Array.isArray(w)) collectFromArray(w);
+          else if (w && typeof w === 'object') {
+            Object.values(w).forEach(ev => {
+              const comp = (ev && (ev.summary && (ev.summary.composition || ev.summary.participants))) || ev && (ev.composition || ev.participants) || [];
+              collectFromArray(comp);
+            });
+          }
+          if (f && Array.isArray(f.friendlies)) collectFromArray(f.friendlies);
+          if (realms.size > 0) break; // we have some data
+        }
+      } catch (_) {}
+    }
+
     // Default realm = most common realm in mapping
     let defaultRealm = null; let bestCnt = 0; const counts = new Map();
     realms.forEach((rm)=>{ const c=(counts.get(rm)||0)+1; counts.set(rm,c); if (c>bestCnt){ bestCnt=c; defaultRealm=rm; } });

@@ -5100,6 +5100,17 @@ class WoWLogsAnalyzer {
 
                     // After persisting, also force the server to compute/refresh realms mapping for this event
                     try { fetch(`/api/event-realms/${encodeURIComponent(eventIdSafe)}?ts=${Date.now()}`, { method: 'GET', cache: 'no-store' }).catch(()=>{}); } catch {}
+                    // If helper still yields no realms (edge cases), cache the last detected realm locally for Gold fallback
+                    try {
+                        const friends = this.lastFightsData && Array.isArray(this.lastFightsData.friendlies) ? this.lastFightsData.friendlies : [];
+                        const realmCounts = new Map();
+                        friends.forEach(p => {
+                            const server = (p && p.server) ? (typeof p.server === 'string' ? p.server : (p.server && (p.server.name || p.server.slug || p.server.serverName || p.server.realm))) : (p && (p.serverSlug || p.serverName || p.realm || p.realmSlug));
+                            const r = String(server||'').trim(); if (!r) return; realmCounts.set(r, (realmCounts.get(r)||0)+1);
+                        });
+                        let best=null,bestCnt=0; realmCounts.forEach((cnt, r)=>{ if (cnt>bestCnt){ best=r; bestCnt=cnt; } });
+                        if (best) { try { localStorage.setItem('gold_lastRealm', best); } catch {} }
+                    } catch {}
 
                     // NEW: Persist full v2 event stream independently of live feature
                     try {
