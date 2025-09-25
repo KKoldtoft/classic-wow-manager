@@ -1682,6 +1682,31 @@ app.get('/auth/discord/callback',
   }
 );
 
+// Emergency/dev login bypass: sets a mock user session when a valid token is provided.
+// Usage: /auth/dev-login?token=<DEV_LOGIN_TOKEN>&returnTo=/path
+// This is guarded by the DEV_LOGIN_TOKEN env var and should be used only for break-glass scenarios.
+app.get('/auth/dev-login', (req, res) => {
+  const token = String(req.query && req.query.token || '');
+  const expected = process.env.DEV_LOGIN_TOKEN || '';
+  if (!expected || token !== expected) {
+    return res.status(403).send('Forbidden');
+  }
+  const rtRaw = typeof req.query.returnTo === 'string' ? req.query.returnTo : '/';
+  const returnTo = (rtRaw && rtRaw.startsWith('/')) ? rtRaw : '/';
+  const mockUser = {
+    id: 'dev-bypass',
+    username: 'DevBypass',
+    discriminator: '0000',
+    avatar: null,
+    email: null,
+    accessToken: 'dev-bypass'
+  };
+  req.login(mockUser, (err) => {
+    if (err) return res.status(500).send('Login failed');
+    res.redirect(returnTo);
+  });
+});
+
 // --- Discord test API endpoints ---
 // Sends a DM saying "Hello world" to a hard-coded Discord user ID for testing
 app.post('/api/discord/test/dm', async (req, res) => {
