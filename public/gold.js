@@ -768,6 +768,7 @@ class GoldPotManager {
     // Build name -> realm mapping from stored WCL summary JSON for this event
     async fetchNameRealms(){
         this.nameToRealm = new Map();
+        this._defaultRealm = null;
         try {
             const resp = await fetch(`/api/event-endpoints-json/${this.currentEventId}`);
             if (!resp.ok) return;
@@ -852,6 +853,21 @@ class GoldPotManager {
         } catch {}
     }
 
+    getDefaultRealm(){
+        if (this._defaultRealm) return this._defaultRealm;
+        try {
+            const counts = new Map();
+            this.nameToRealm.forEach((realm)=>{
+                const r = String(realm||'').trim(); if (!r) return;
+                counts.set(r, (counts.get(r)||0)+1);
+            });
+            let best=null, bestCnt=0;
+            counts.forEach((cnt, realm)=>{ if (cnt>bestCnt){ bestCnt=cnt; best=realm; } });
+            this._defaultRealm = best || null;
+            return this._defaultRealm;
+        } catch { return null; }
+    }
+
     getDisplayNameWithRealm(name){
         const raw = String(name||'').trim();
         if (!raw) return '';
@@ -875,7 +891,7 @@ class GoldPotManager {
             sortedPlayers.forEach(p => {
                 const key = String(p.character_name||'').trim().toLowerCase();
                 const totals = this.playerTotals.get(key) || { gold: 0 };
-                const realm = this.nameToRealm.get(key);
+                const realm = this.nameToRealm.get(key) || this.getDefaultRealm();
                 const nameOut = realm ? `${p.character_name}-${realm}` : p.character_name;
                 pushGold(nameOut, Number(totals.gold||0));
             });
@@ -919,12 +935,12 @@ class GoldPotManager {
             // Guildbank (if any) → Onepbank-Firemaw
             if (guildbankAmt > 0) pushGold('Onepbank-Firemaw', guildbankAmt);
 
-            // Raidleader → the RL from roster input; map to -realm using nameToRealm
+            // Raidleader → the RL from roster input; map to -realm using nameToRealm (fallback to default realm)
             try {
                 const meta = await fetch(`/api/events/${this.currentEventId}/raidleader`).then(r => r.ok ? r.json() : null);
                 const rlNameRaw = meta && meta.success ? String(meta.raidleaderName||'').trim() : '';
                 if (rlNameRaw) {
-                    const realm = this.nameToRealm.get(rlNameRaw.toLowerCase());
+                    const realm = this.nameToRealm.get(rlNameRaw.toLowerCase()) || this.getDefaultRealm();
                     const nameOut = realm ? `${rlNameRaw}-${realm}` : rlNameRaw;
                     pushGold(nameOut, rlAmt);
                 }
@@ -934,7 +950,7 @@ class GoldPotManager {
             const emitted = new Set();
             sortedPlayers.forEach(p => {
                 const key = String(p.character_name||'').trim().toLowerCase();
-                const realm = this.nameToRealm.get(key);
+                const realm = this.nameToRealm.get(key) || this.getDefaultRealm();
                 const nameOut = realm ? `${p.character_name}-${realm}` : p.character_name;
                 if (!emitted.has(nameOut) && goldMap.has(nameOut)) {
                     lines.push(`${nameOut},${Number(goldMap.get(nameOut)||0)}`);
