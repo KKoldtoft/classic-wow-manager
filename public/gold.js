@@ -770,7 +770,8 @@ class GoldPotManager {
         this.nameToRealm = new Map();
         this._defaultRealm = null;
         try {
-            const resp = await fetch(`/api/event-endpoints-json/${this.currentEventId}`);
+            // Important: avoid caches; ensure we read fresh JSON from server
+            const resp = await fetch(`/api/event-endpoints-json/${this.currentEventId}?ts=${Date.now()}`, { cache: 'no-store' });
             if (!resp.ok) return;
             const body = await resp.json();
             const d = body && body.data;
@@ -864,6 +865,16 @@ class GoldPotManager {
             let best=null, bestCnt=0;
             counts.forEach((cnt, realm)=>{ if (cnt>bestCnt){ bestCnt=cnt; best=realm; } });
             this._defaultRealm = best || null;
+            if (!this._defaultRealm) {
+                // Fallback: remember last known realm from previous events
+                try {
+                    const cached = localStorage.getItem('gold_lastRealm') || '';
+                    if (cached) this._defaultRealm = cached;
+                } catch {}
+            } else {
+                // Persist for future events where realm data is missing
+                try { localStorage.setItem('gold_lastRealm', this._defaultRealm); } catch {}
+            }
             return this._defaultRealm;
         } catch { return null; }
     }
