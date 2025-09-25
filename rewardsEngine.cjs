@@ -95,7 +95,7 @@ module.exports = function registerRewardsEngine(app, pool) {
     return parseInt(r.rows[0] && r.rows[0].total_gold || 0) || 0;
   }
 
-  function buildManualModeFromSnapshot({ entries, manualRewards, totalGoldPot }) {
+  async function buildManualModeFromSnapshot(req, eventId, { entries, manualRewards, totalGoldPot }) {
     // Canonical panel registry used here (subset for manual path)
     const panels = new Map(); // panel_key -> Map<nameKey, points>
     const ensurePanel = (k) => { if (!panels.has(k)) panels.set(k, new Map()); return panels.get(k); };
@@ -123,6 +123,29 @@ module.exports = function registerRewardsEngine(app, pool) {
       const panel = ensurePanel(panelKey);
       panel.set(key, (panel.get(key) || 0) + pts);
     });
+
+    // Enrich missing/unknown classes from raid logs dataset (ensures class-colored UI and correct class in engine output)
+    try {
+      const baseUrl = req.protocol + '://' + req.get('host');
+      const r = await fetch(`${baseUrl}/api/log-data/${encodeURIComponent(eventId)}`, { headers: { 'Accept': 'application/json', 'Cookie': req.headers.cookie || '' } });
+      if (r && r.ok) {
+        const body = await r.json();
+        const rows = Array.isArray(body?.data) ? body.data : [];
+        const classByName = new Map();
+        rows.forEach(p => {
+          const nm = String(p?.character_name || '').trim();
+          const cls = String(p?.character_class || '').trim();
+          if (!nm || !cls) return;
+          classByName.set(nameKey(nm), cls);
+        });
+        playersMap.forEach((val, k) => {
+          if (!val.class || String(val.class).toLowerCase() === 'unknown') {
+            const cls = classByName.get(k);
+            if (cls) val.class = cls;
+          }
+        });
+      }
+    } catch (_) {}
 
     // Manual: split into points vs gold
     const manualPointsPanel = ensurePanel('manual_points');
@@ -568,7 +591,7 @@ module.exports = function registerRewardsEngine(app, pool) {
       ]);
       const locked = (entries && entries.length > 0) ? true : await getSnapshotLocked(client, eventId);
       if (locked) {
-        const out = buildManualModeFromSnapshot({ entries, manualRewards, totalGoldPot });
+        const out = await buildManualModeFromSnapshot(req, eventId, { entries, manualRewards, totalGoldPot });
         return res.json(out);
       }
       // Automatic mode (compute from datasets)
@@ -599,7 +622,7 @@ module.exports = function registerRewardsEngine(app, pool) {
       // Build both views to compute panel diffs
       const baseUrl = req.protocol + '://' + req.get('host');
       const autoOut = await buildAutoModeFromDatasets(req, eventId).catch(()=>null);
-      const manualOut = buildManualModeFromSnapshot({ entries, manualRewards, totalGoldPot });
+      const manualOut = await buildManualModeFromSnapshot(req, eventId, { entries, manualRewards, totalGoldPot });
       const src = locked ? manualOut : autoOut;
       const other = locked ? autoOut : manualOut;
       const byKey = (panels)=>{
