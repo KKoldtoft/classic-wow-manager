@@ -765,17 +765,34 @@ class GoldPotManager {
             const d = body && body.data;
             const wcl = d && d.wcl_summary_json;
             const fights = d && d.fights_json;
-            if (!wcl) return;
-            // Our stored shape is an object keyed by event (e.g., warcraft_logs_role_event_1) → { summary: { composition: [...] } }
+            // Helper: extract realm/server from various shapes
+            const getRealm = (obj)=>{
+                if (!obj) return '';
+                // direct string
+                if (typeof obj.server === 'string' && obj.server) return String(obj.server).trim();
+                // object with name/slug
+                if (obj.server && typeof obj.server === 'object') {
+                    const cand = obj.server.name || obj.server.slug || obj.server.serverName || obj.server.realm || '';
+                    if (cand) return String(cand).trim();
+                }
+                // other common fields
+                const direct = obj.serverSlug || obj.serverName || obj.realm || obj.realmSlug || '';
+                if (direct) return String(direct).trim();
+                return '';
+            };
+            const put = (name, realm)=>{
+                const n = String(name||'').trim();
+                const r = String(realm||'').trim();
+                if (n && r) this.nameToRealm.set(n.toLowerCase(), r);
+            };
             const collectFromArray = (arr)=>{
                 (arr||[]).forEach(p => {
-                    const name = String(p?.name||'').trim();
-                    const server = String(p?.server||'').trim();
-                    if (name && server) this.nameToRealm.set(name.toLowerCase(), server);
+                    const name = String(p?.name||p?.character_name||p?.playerName||p?.characterName||'').trim();
+                    const realm = getRealm(p);
+                    if (name && realm) put(name, realm);
                 });
             };
             if (Array.isArray(wcl)) {
-                // Fallback: direct array of players
                 collectFromArray(wcl);
             } else if (wcl && typeof wcl === 'object') {
                 Object.values(wcl).forEach(ev => {
@@ -783,7 +800,7 @@ class GoldPotManager {
                     collectFromArray(comp);
                 });
             }
-            // Extra fallback: fights JSON friendlies often contains server
+            // Extra fallback: fights JSON friendlies often contains server (sometimes nested under .server or as serverSlug)
             if (fights && Array.isArray(fights.friendlies)) {
                 collectFromArray(fights.friendlies);
             }
