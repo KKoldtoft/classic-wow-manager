@@ -770,6 +770,18 @@ class GoldPotManager {
         this.nameToRealm = new Map();
         this._defaultRealm = null;
         try {
+            // Try robust server-side realms helper first
+            try {
+                const rel = await fetch(`/api/event-realms/${this.currentEventId}?ts=${Date.now()}`, { cache: 'no-store' });
+                if (rel && rel.ok) {
+                    const data = await rel.json();
+                    const realmsObj = (data && data.realms) ? data.realms : {};
+                    Object.entries(realmsObj).forEach(([ln, rm])=>{ const k=String(ln||'').trim(); const v=String(rm||'').trim(); if(k&&v) this.nameToRealm.set(k, v); });
+                    if (data && data.defaultRealm) this._defaultRealm = String(data.defaultRealm);
+                    if (this.nameToRealm.size > 0) { console.log('[Gold] Realms via server helper:', this.nameToRealm.size); return; }
+                }
+            } catch {}
+
             // Important: avoid caches; ensure we read fresh JSON from server
             const resp = await fetch(`/api/event-endpoints-json/${this.currentEventId}?ts=${Date.now()}`, { cache: 'no-store' });
             if (!resp.ok) return;

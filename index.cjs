@@ -1643,27 +1643,6 @@ app.get('/discordtest', (req, res) => {
 });
 
 
-// Lightweight mode guard: temporarily short-circuit heavy endpoints to avoid router timeouts (H12)
-// Enable by setting LITE_MODE=1 in env. Only blocks known heavy/long-running paths.
-app.use((req, res, next) => {
-  if (process.env.LITE_MODE === '1') {
-    const p = req.path || '';
-    const heavyPrefixes = [
-      '/api/wcl/events/ingest',
-      '/api/assignments',
-      '/api/roster',
-      '/api/event-endpoints-json',
-      '/api/rewards',
-      '/api/log-data',
-      '/api/raid-stats'
-    ];
-    if (heavyPrefixes.some(pref => p.startsWith(pref))) {
-      return res.status(503).json({ message: 'Temporarily disabled due to maintenance (lite mode).' });
-    }
-  }
-  return next();
-});
-
 // All API and authentication routes should come AFTER express.static AND specific HTML routes
 app.get('/auth/discord', (req, res, next) => {
 	// Build a safe return path to embed in the OAuth state parameter
@@ -1702,31 +1681,6 @@ app.get('/auth/discord/callback',
     res.redirect(destination);
   }
 );
-
-// Emergency/dev login bypass: sets a mock user session when a valid token is provided.
-// Usage: /auth/dev-login?token=<DEV_LOGIN_TOKEN>&returnTo=/path
-// This is guarded by the DEV_LOGIN_TOKEN env var and should be used only for break-glass scenarios.
-app.get('/auth/dev-login', (req, res) => {
-  const token = String(req.query && req.query.token || '');
-  const expected = process.env.DEV_LOGIN_TOKEN || '';
-  if (!expected || token !== expected) {
-    return res.status(403).send('Forbidden');
-  }
-  const rtRaw = typeof req.query.returnTo === 'string' ? req.query.returnTo : '/';
-  const returnTo = (rtRaw && rtRaw.startsWith('/')) ? rtRaw : '/';
-  const mockUser = {
-    id: 'dev-bypass',
-    username: 'DevBypass',
-    discriminator: '0000',
-    avatar: null,
-    email: null,
-    accessToken: 'dev-bypass'
-  };
-  req.login(mockUser, (err) => {
-    if (err) return res.status(500).send('Login failed');
-    res.redirect(returnTo);
-  });
-});
 
 // --- Discord test API endpoints ---
 // Sends a DM saying "Hello world" to a hard-coded Discord user ID for testing
@@ -8670,6 +8624,83 @@ app.get('/api/event-endpoints-json/:eventId', async (req, res) => {
   }
 });
 
+// Compute name -> realm mapping for an event from stored WCL JSON blobs (summary/fights)
+app.get('/api/event-realms/:eventId', async (req, res) => {
+  const { eventId } = req.params;
+  if (!eventId) return res.status(400).json({ success: false, message: 'Missing eventId' });
+  let client;
+  try {
+    client = await pool.connect();
+    const r = await client.query(`
+      SELECT wcl_summary_json, fights_json FROM event_endpoints_json WHERE event_id = $1
+    `, [String(eventId)]);
+    if (!r.rows.length) return res.json({ success: true, realms: {}, defaultRealm: null });
+    const row = r.rows[0] || {};
+    const wcl = row.wcl_summary_json || null;
+    const fights = row.fights_json || null;
+
+    const realms = new Map();
+    const put = (name, realm) => {
+      const n = String(name || '').trim();
+      const rm = String(realm || '').trim();
+      if (!n || !rm) return;
+      const key = n.toLowerCase();
+      if (!realms.has(key)) realms.set(key, rm);
+    };
+    const getRealm = (obj) => {
+      if (!obj || typeof obj !== 'object') return '';
+      if (typeof obj.server === 'string' && obj.server) return String(obj.server).trim();
+      if (obj.server && typeof obj.server === 'object') {
+        const cand = obj.server.name || obj.server.slug || obj.server.serverName || obj.server.realm || '';
+        if (cand) return String(cand).trim();
+      }
+      const direct = obj.serverSlug || obj.serverName || obj.realm || obj.realmSlug || '';
+      if (direct) return String(direct).trim();
+      return '';
+    };
+    const collectFromArray = (arr) => {
+      (arr || []).forEach(p => {
+        const nm = String(p && (p.name || p.character_name || p.playerName || p.characterName) || '').trim();
+        const rm = getRealm(p);
+        if (nm && rm) put(nm, rm);
+      });
+    };
+    // Summary composition arrays
+    if (Array.isArray(wcl)) {
+      collectFromArray(wcl);
+    } else if (wcl && typeof wcl === 'object') {
+      Object.values(wcl).forEach(ev => {
+        const comp = (ev && (ev.summary && (ev.summary.composition || ev.summary.participants))) || ev && (ev.composition || ev.participants) || [];
+        collectFromArray(comp);
+      });
+    }
+    // Fights friendlies
+    if (fights && Array.isArray(fights.friendlies)) collectFromArray(fights.friendlies);
+    // Deep walk (in case fields are nested)
+    const visit = (node) => {
+      if (!node || typeof node !== 'object') return;
+      const nm = String(node.name || node.playerName || node.characterName || '').trim();
+      const rm = getRealm(node);
+      if (nm && rm) put(nm, rm);
+      if (Array.isArray(node)) { node.forEach(visit); return; }
+      Object.values(node).forEach(visit);
+    };
+    if (wcl) visit(wcl);
+    if (fights) visit(fights);
+
+    // Default realm = most common realm in mapping
+    let defaultRealm = null; let bestCnt = 0; const counts = new Map();
+    realms.forEach((rm)=>{ const c=(counts.get(rm)||0)+1; counts.set(rm,c); if (c>bestCnt){ bestCnt=c; defaultRealm=rm; } });
+
+    return res.json({ success: true, realms: Object.fromEntries(Array.from(realms.entries())), defaultRealm: defaultRealm || null });
+  } catch (err) {
+    console.error('❌ [/api/event-realms/:eventId] Failed to compute realms:', err);
+    return res.status(500).json({ success: false, message: 'Failed to compute realms' });
+  } finally {
+    if (client) client.release();
+  }
+});
+
 // Retrieve player role mapping data for an event
 app.get('/api/player-role-mapping/:eventId', async (req, res) => {
     const { eventId } = req.params;
@@ -11875,35 +11906,6 @@ app.post('/api/rewards-snapshot/:eventId/unlock', requireManagement, async (req,
         if (client) await client.query('ROLLBACK');
         console.error('❌ [SNAPSHOT] Unlock error:', error);
         return res.status(500).json({ success: false, message: 'Error unlocking snapshot' });
-    } finally {
-        if (client) client.release();
-    }
-});
-
-// Convenience admin endpoint: zero out edited points for specific non-player rows in Too Low Damage
-// Use for temporary cleanup when UI edits are problematic
-app.post('/api/rewards-snapshot/:eventId/zero-old-totems', requireManagement, async (req, res) => {
-    const { eventId } = req.params;
-    let client;
-    try {
-        client = await pool.connect();
-        const editedById = req.user?.id || null;
-        const editedByName = req.user?.username || req.user?.global_name || req.user?.display_name || 'unknown';
-        const names = [ 'zzOLDHealing Stream Totem V', 'zzOLDMagma Totem IV' ];
-        const sql = `UPDATE rewards_and_deductions_points
-                        SET point_value_edited = 0,
-                            edited_by_id = $1,
-                            edited_by_name = $2,
-                            updated_at = CURRENT_TIMESTAMP
-                      WHERE event_id = $3 AND panel_key = 'too_low_damage'
-                        AND LOWER(character_name) = ANY($4)`;
-        const params = [ editedById, editedByName, eventId, names.map(n => n.toLowerCase()) ];
-        const result = await client.query(sql, params);
-        try { broadcastUpdate('raidlogs', eventId, { type: 'snapshot_entry_updated', key: 'too_low_damage' }); } catch {}
-        return res.json({ success: true, updated: result.rowCount });
-    } catch (error) {
-        console.error('❌ [SNAPSHOT] Zero-old-totems error:', error);
-        return res.status(500).json({ success: false, message: 'Error zeroing old totem rows' });
     } finally {
         if (client) client.release();
     }
