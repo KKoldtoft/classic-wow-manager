@@ -814,6 +814,19 @@ class GoldPotManager {
             if (fights && Array.isArray(fights.friendlies)) {
                 collectFromArray(fights.friendlies);
             }
+            // Deep walk fallback: scan both blobs for any node with a name and recognizable server field
+            try {
+                const visit = (node) => {
+                    if (!node || typeof node !== 'object') return;
+                    const name = String(node.name || node.playerName || node.characterName || '').trim();
+                    const realm = getRealm(node);
+                    if (name && realm) put(name, realm);
+                    if (Array.isArray(node)) { node.forEach(visit); return; }
+                    Object.values(node).forEach(visit);
+                };
+                if (wcl) visit(wcl);
+                if (fights) visit(fights);
+            } catch {}
             console.log('[Gold] Built name→realm map entries:', this.nameToRealm.size);
 
             // Additionally collect Goblin Rocket Helmet users for +5 points panel
