@@ -11880,6 +11880,35 @@ app.post('/api/rewards-snapshot/:eventId/unlock', requireManagement, async (req,
     }
 });
 
+// Convenience admin endpoint: zero out edited points for specific non-player rows in Too Low Damage
+// Use for temporary cleanup when UI edits are problematic
+app.post('/api/rewards-snapshot/:eventId/zero-old-totems', requireManagement, async (req, res) => {
+    const { eventId } = req.params;
+    let client;
+    try {
+        client = await pool.connect();
+        const editedById = req.user?.id || null;
+        const editedByName = req.user?.username || req.user?.global_name || req.user?.display_name || 'unknown';
+        const names = [ 'zzOLDHealing Stream Totem V', 'zzOLDMagma Totem IV' ];
+        const sql = `UPDATE rewards_and_deductions_points
+                        SET point_value_edited = 0,
+                            edited_by_id = $1,
+                            edited_by_name = $2,
+                            updated_at = CURRENT_TIMESTAMP
+                      WHERE event_id = $3 AND panel_key = 'too_low_damage'
+                        AND LOWER(character_name) = ANY($4)`;
+        const params = [ editedById, editedByName, eventId, names.map(n => n.toLowerCase()) ];
+        const result = await client.query(sql, params);
+        try { broadcastUpdate('raidlogs', eventId, { type: 'snapshot_entry_updated', key: 'too_low_damage' }); } catch {}
+        return res.json({ success: true, updated: result.rowCount });
+    } catch (error) {
+        console.error('❌ [SNAPSHOT] Zero-old-totems error:', error);
+        return res.status(500).json({ success: false, message: 'Error zeroing old totem rows' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // --- Manual Rewards Templates API Endpoints ---
 // Get all templates
 app.get('/api/manual-rewards-templates', async (req, res) => {
