@@ -138,6 +138,8 @@ class GoldPotManager {
                     // Use engine result
                     this.engineResult = eff;
                     this.snapshotLocked = (eff.mode === 'manual');
+                    // Ensure realms are loaded for Gargul export
+                    try { await this.fetchNameRealms(); } catch {}
                     // Build players list from engine players
                     this.allPlayers = (eff.players||[]).map(p=>({ character_name:p.name, character_class:p.class||'Unknown' }));
                     // Build totals map
@@ -918,7 +920,10 @@ class GoldPotManager {
                 goldMap.set(nameWithRealm, Math.max(0, prev + Math.max(0, Number(amount)||0)));
             };
 
-            // Player rows
+            // Player rows (always ensure realms are present before composing Gargul)
+            if (!this.nameToRealm || this.nameToRealm.size === 0) {
+                try { await this.fetchNameRealms(); } catch {}
+            }
             const allowDefaultRealm = (this.nameToRealm && this.nameToRealm.size > 0);
             sortedPlayers.forEach(p => {
                 const key = String(p.character_name||'').trim().toLowerCase();
