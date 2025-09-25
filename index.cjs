@@ -1649,7 +1649,6 @@ app.use((req, res, next) => {
   if (process.env.LITE_MODE === '1') {
     const p = req.path || '';
     const heavyPrefixes = [
-      '/api/logs/rpb',
       '/api/wcl/events/ingest',
       '/api/assignments',
       '/api/roster',
