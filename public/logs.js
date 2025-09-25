@@ -5150,11 +5150,83 @@ class WoWLogsAnalyzer {
                 this.updateWorkflowStep(1, 'completed', 'All players matched successfully', '✅');
                 console.log('✅ [WORKFLOW] Step 1 completed - all players matched');
             }
+
+            // Show realms debug popup with names → realms for verification
+            try {
+                const evForPopup = String(this?.workflowState?.eventId || this.getActiveEventSession() || '').trim();
+                if (evForPopup) await this.showRealmsDebugPopup(evForPopup);
+            } catch (_) {}
             
         } catch (error) {
             this.updateWorkflowStep(1, 'error', `Log analysis failed: ${error.message}`, '❌');
             throw error;
         }
+    }
+
+    async showRealmsDebugPopup(eventId){
+        try {
+            // Build overlay
+            let wrap = document.getElementById('realmsDebugOverlay');
+            if (wrap) { try { wrap.remove(); } catch {} }
+            wrap = document.createElement('div');
+            wrap.id = 'realmsDebugOverlay';
+            wrap.style.position = 'fixed';
+            wrap.style.inset = '0';
+            wrap.style.background = 'rgba(0,0,0,0.6)';
+            wrap.style.zIndex = '10000';
+            wrap.style.display = 'flex';
+            wrap.style.alignItems = 'center';
+            wrap.style.justifyContent = 'center';
+            const panel = document.createElement('div');
+            panel.style.background = '#111827';
+            panel.style.border = '1px solid #374151';
+            panel.style.borderRadius = '10px';
+            panel.style.width = 'min(820px, 96vw)';
+            panel.style.maxHeight = '80vh';
+            panel.style.overflow = 'auto';
+            panel.style.padding = '14px';
+            panel.style.color = '#e5e7eb';
+            const header = document.createElement('div');
+            header.style.display = 'flex'; header.style.alignItems = 'center'; header.style.justifyContent = 'space-between'; header.style.marginBottom = '8px';
+            const title = document.createElement('div'); title.textContent = 'Realms detected for Gargul export'; title.style.fontWeight = '800'; title.style.fontSize = '18px';
+            const closeBtn = document.createElement('button'); closeBtn.textContent = '✕'; closeBtn.style.background = 'transparent'; closeBtn.style.border = '1px solid #4b5563'; closeBtn.style.color = '#e5e7eb'; closeBtn.style.borderRadius = '6px'; closeBtn.style.padding = '4px 8px'; closeBtn.onclick = ()=>{ document.body.removeChild(wrap); };
+            header.appendChild(title); header.appendChild(closeBtn);
+            const content = document.createElement('div'); content.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'; content.style.fontSize = '13px';
+            content.textContent = 'Loading realms…';
+            panel.appendChild(header); panel.appendChild(content); wrap.appendChild(panel); document.body.appendChild(wrap);
+
+            // Fetch from server helper first
+            let realmsMap = new Map(); let defaultRealm = null;
+            try {
+                const r = await fetch(`/api/event-realms/${encodeURIComponent(eventId)}?ts=${Date.now()}`, { cache: 'no-store' });
+                if (r && r.ok) {
+                    const j = await r.json();
+                    defaultRealm = j && j.defaultRealm ? String(j.defaultRealm) : null;
+                    const obj = (j && j.realms) ? j.realms : {};
+                    Object.entries(obj).forEach(([k,v])=>{ const ln=String(k||'').trim(); const rm=String(v||'').trim(); if(ln&&rm) realmsMap.set(ln, rm); });
+                }
+            } catch {}
+
+            // As fallback, peek the stored blobs so we can show something useful
+            if (realmsMap.size === 0) {
+                try {
+                    const resp = await fetch(`/api/event-endpoints-json/${encodeURIComponent(eventId)}?ts=${Date.now()}`, { cache: 'no-store' });
+                    if (resp && resp.ok) {
+                        const body = await resp.json();
+                        const d = body && body.data; const fights = d && d.fights_json; const list = Array.isArray(fights && fights.friendlies) ? fights.friendlies : [];
+                        list.forEach(p=>{ const nm=String(p&&p.name||'').trim(); const rm=String((p&&p.server&& (typeof p.server==='string'?p.server:(p.server.name||p.server.slug||p.server.serverName||p.server.realm))) || (p&& (p.serverSlug||p.serverName||p.realm||p.realmSlug)) || '').trim(); if(nm&&rm) realmsMap.set(nm.toLowerCase(), rm); });
+                    }
+                } catch {}
+            }
+
+            const items = Array.from(realmsMap.entries()).sort((a,b)=> a[0].localeCompare(b[0]));
+            if (items.length === 0) {
+                content.innerHTML = '<div style="color:#f59e0b;">No per-player realms detected for this event. The Gold page will not append realms unless we can resolve them per player.</div>' + (defaultRealm? `<div style="margin-top:8px; opacity:.85;">Default realm guess: <strong>${defaultRealm}</strong></div>`: '');
+            } else {
+                const rows = items.map(([k,v])=>`<div style="display:flex; gap:10px;"><div style="width:280px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${k}</div><div>→</div><div>${v}</div></div>`).join('');
+                content.innerHTML = `<div style="margin-bottom:6px; opacity:.85;">Resolved ${items.length} player realms${defaultRealm?` (default: ${defaultRealm})`:''}.</div><div>${rows}</div>`;
+            }
+        } catch {}
     }
 
     async runWorkflowStep2(logUrl) {
