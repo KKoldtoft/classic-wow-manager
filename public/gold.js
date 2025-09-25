@@ -911,10 +911,11 @@ class GoldPotManager {
             };
 
             // Player rows
+            const allowDefaultRealm = (this.nameToRealm && this.nameToRealm.size > 0);
             sortedPlayers.forEach(p => {
                 const key = String(p.character_name||'').trim().toLowerCase();
                 const totals = this.playerTotals.get(key) || { gold: 0 };
-                const realm = this.nameToRealm.get(key) || this.getDefaultRealm();
+                const realm = this.nameToRealm.get(key) || (allowDefaultRealm ? this.getDefaultRealm() : null);
                 const nameOut = realm ? `${p.character_name}-${realm}` : p.character_name;
                 pushGold(nameOut, Number(totals.gold||0));
             });
@@ -963,7 +964,8 @@ class GoldPotManager {
                 const meta = await fetch(`/api/events/${this.currentEventId}/raidleader`).then(r => r.ok ? r.json() : null);
                 const rlNameRaw = meta && meta.success ? String(meta.raidleaderName||'').trim() : '';
                 if (rlNameRaw) {
-                    const realm = this.nameToRealm.get(rlNameRaw.toLowerCase()) || this.getDefaultRealm();
+                    const allowDefaultRealm = (this.nameToRealm && this.nameToRealm.size > 0);
+                    const realm = this.nameToRealm.get(rlNameRaw.toLowerCase()) || (allowDefaultRealm ? this.getDefaultRealm() : null);
                     const nameOut = realm ? `${rlNameRaw}-${realm}` : rlNameRaw;
                     pushGold(nameOut, rlAmt);
                 }
@@ -973,7 +975,8 @@ class GoldPotManager {
             const emitted = new Set();
             sortedPlayers.forEach(p => {
                 const key = String(p.character_name||'').trim().toLowerCase();
-                const realm = this.nameToRealm.get(key) || this.getDefaultRealm();
+                const allowDefaultRealm = (this.nameToRealm && this.nameToRealm.size > 0);
+                const realm = this.nameToRealm.get(key) || (allowDefaultRealm ? this.getDefaultRealm() : null);
                 const nameOut = realm ? `${p.character_name}-${realm}` : p.character_name;
                 if (!emitted.has(nameOut) && goldMap.has(nameOut)) {
                     lines.push(`${nameOut},${Number(goldMap.get(nameOut)||0)}`);
