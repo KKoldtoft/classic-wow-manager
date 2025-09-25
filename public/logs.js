@@ -5098,6 +5098,9 @@ class WoWLogsAnalyzer {
                         }).catch(() => {});
                     }
 
+                    // After persisting, also force the server to compute/refresh realms mapping for this event
+                    try { fetch(`/api/event-realms/${encodeURIComponent(eventIdSafe)}?ts=${Date.now()}`, { method: 'GET', cache: 'no-store' }).catch(()=>{}); } catch {}
+
                     // NEW: Persist full v2 event stream independently of live feature
                     try {
                         const ingestBody = { eventId: eventIdSafe, report: String(logUrl || '').trim() };
