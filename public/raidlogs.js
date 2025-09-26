@@ -760,6 +760,10 @@ class RaidLogsManager {
             this.updateGoldCards();
             // Points breakdown debug table removed
             
+            // Hide loading and show content
+            this.hideLoading();
+            this.showContent();
+            
             // Update the original position now that content is loaded
             setTimeout(() => {
                 this.storeOriginalPosition();
