@@ -333,6 +333,40 @@ const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', 1);
 
+// --- IP Whitelist Configuration ---
+const IP_WHITELIST_ENABLED = true; // Set to false to disable whitelist
+const ALLOWED_IPS = [
+  '77.33.25.62',
+  '89.23.224.94'
+];
+
+// IP Whitelist Middleware
+function ipWhitelistMiddleware(req, res, next) {
+  if (!IP_WHITELIST_ENABLED) {
+    return next(); // Whitelist disabled, allow all
+  }
+
+  // Get client IP (handle proxies)
+  const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim();
+  
+  // Check if IP is in whitelist
+  if (ALLOWED_IPS.includes(clientIp)) {
+    console.log(`✅ [WHITELIST] Allowed IP: ${clientIp}`);
+    return next();
+  }
+
+  // Block unauthorized IP
+  console.log(`🚫 [WHITELIST] Blocked IP: ${clientIp}`);
+  return res.status(403).json({ 
+    success: false, 
+    message: 'Access denied: IP address not authorized',
+    ip: clientIp 
+  });
+}
+
+// Apply IP whitelist to all routes
+app.use(ipWhitelistMiddleware);
+
 // --- Cloudinary Configuration ---
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
