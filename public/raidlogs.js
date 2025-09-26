@@ -7404,8 +7404,11 @@ class RaidLogsManager {
     async autoAddFourHorsemenTanks() {
         if (!this.activeEventId) {
             console.error('❌ [4H TANKS] No active event ID');
+            alert('No active event selected. Please select an event first.');
             return;
         }
+        
+        console.log('🛡️ [4H TANKS] Starting auto-add Four Horsemen tanks process...');
         try {
             // Fetch assignments for this event
             const res = await fetch(`/api/assignments/${this.activeEventId}`);
@@ -7490,8 +7493,12 @@ class RaidLogsManager {
             await this.fetchManualRewardsData();
             this.populateManualRewardsTable();
             this.updateTotalPointsCard();
+            
+            alert(`Successfully added ${selected.length} Four Horsemen tank entries!`);
+            console.log(`✅ [4H TANKS] Successfully added ${selected.length} tank entries`);
         } catch (err) {
             console.error('❌ [4H TANKS] Failed to auto add 4H tanks:', err);
+            alert(`Failed to add Four Horsemen tank entries: ${err.message}`);
         }
     }
 
@@ -7708,7 +7715,12 @@ class RaidLogsManager {
 
     // Auto-add Tanks: MT, OT1, OT2, OT3 from main page Tanking panel (ID1..ID4 markers)
     async autoAddMainTanks() {
-        if (!this.activeEventId) return;
+        if (!this.activeEventId) {
+            alert('No active event selected. Please select an event first.');
+            return;
+        }
+        
+        console.log('🛡️ [TANKS] Starting auto-add main tanks process...');
         try {
             const res = await fetch(`/api/assignments/${this.activeEventId}`);
             const data = await res.json();
@@ -7716,7 +7728,11 @@ class RaidLogsManager {
             const panels = Array.isArray(data.panels) ? data.panels : [];
             const tankingPanel = panels.find(p => String(p.boss || '').toLowerCase() === 'tanking' && (!p.wing || String(p.wing).trim() === '' || String(p.wing).toLowerCase() === 'main'))
                                || panels.find(p => String(p.boss || '').toLowerCase() === 'tanking');
-            if (!tankingPanel || !Array.isArray(tankingPanel.entries)) { console.warn('⚠️ [TANKS] Tanking panel not found'); return; }
+            if (!tankingPanel || !Array.isArray(tankingPanel.entries)) { 
+                console.warn('⚠️ [TANKS] Tanking panel not found'); 
+                alert('No tanking assignments found. Please set up tank assignments first.'); 
+                return; 
+            }
             const pickByMarker = (marker) => {
                 const e = tankingPanel.entries.find(en => String(en.marker_icon_url || '').toLowerCase().includes(marker));
                 return e?.character_name || null;
@@ -7753,8 +7769,13 @@ class RaidLogsManager {
             await this.fetchManualRewardsData();
             this.populateManualRewardsTable();
             this.updateTotalPointsCard();
+            
+            const addedCount = order.filter(({marker}) => pickByMarker(marker)).length;
+            alert(`Successfully added ${addedCount} tank entries!`);
+            console.log(`✅ [TANKS] Successfully added ${addedCount} tank entries`);
         } catch (err) {
             console.error('❌ [TANKS] Failed to auto add main tanks:', err);
+            alert(`Failed to add tank entries: ${err.message}`);
         }
     }
 
