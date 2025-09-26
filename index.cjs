@@ -1595,18 +1595,99 @@ async function requireRosterManager(req, res, next) {
 app.use(express.json({ limit: '15mb' }));
 
 // --- EMERGENCY IP WHITELIST ---
-const EMERGENCY_MODE = true; // Set to false to disable
-const WHITELISTED_IPS = [
-  '89.23.224.94', // Kim's IP (from logs)
-  '127.0.0.1',    // Localhost
-  '::1'           // IPv6 localhost
-];
+// Dynamic whitelist settings (cached in memory, updated from database)
+let emergencyWhitelistSettings = {
+  enabled: true,
+  ips: [
+    { ip: '89.23.224.94', name: 'Kim - Primary', enabled: true },
+    { ip: '77.33.25.62', name: 'Kim - Secondary', enabled: true },
+    { ip: '127.0.0.1', name: 'Localhost', enabled: true },
+    { ip: '::1', name: 'IPv6 Localhost', enabled: true }
+  ]
+};
+
+// Load whitelist settings from database on startup
+async function loadWhitelistSettings() {
+  let client;
+  try {
+    client = await pool.connect();
+    
+    // Check if whitelist table exists
+    const tableCheck = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'emergency_whitelist'
+      );
+    `);
+    
+    if (!tableCheck.rows[0].exists) {
+      // Create table if it doesn't exist
+      await client.query(`
+        CREATE TABLE emergency_whitelist (
+          id SERIAL PRIMARY KEY,
+          enabled BOOLEAN DEFAULT true,
+          ip_address VARCHAR(45) NOT NULL,
+          name VARCHAR(255) NOT NULL,
+          ip_enabled BOOLEAN DEFAULT true,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      
+      // Insert default IPs
+      for (const ipData of emergencyWhitelistSettings.ips) {
+        await client.query(`
+          INSERT INTO emergency_whitelist (ip_address, name, ip_enabled)
+          VALUES ($1, $2, $3)
+        `, [ipData.ip, ipData.name, ipData.enabled]);
+      }
+      
+      console.log('✅ [WHITELIST] Created emergency whitelist table with default IPs');
+    } else {
+      // Load settings from database
+      const settingsResult = await client.query(`
+        SELECT enabled FROM emergency_whitelist LIMIT 1
+      `);
+      
+      const ipsResult = await client.query(`
+        SELECT ip_address, name, ip_enabled 
+        FROM emergency_whitelist 
+        ORDER BY id
+      `);
+      
+      if (settingsResult.rows.length > 0) {
+        emergencyWhitelistSettings.enabled = settingsResult.rows[0].enabled;
+      }
+      
+      if (ipsResult.rows.length > 0) {
+        emergencyWhitelistSettings.ips = ipsResult.rows.map(row => ({
+          ip: row.ip_address,
+          name: row.name,
+          enabled: row.ip_enabled
+        }));
+      }
+      
+      console.log(`✅ [WHITELIST] Loaded ${ipsResult.rows.length} whitelist entries from database`);
+    }
+  } catch (error) {
+    console.error('❌ [WHITELIST] Error loading whitelist settings:', error);
+  } finally {
+    if (client) client.release();
+  }
+}
+
+// Initialize whitelist on startup
+loadWhitelistSettings();
 
 app.use((req, res, next) => {
-  if (EMERGENCY_MODE) {
+  if (emergencyWhitelistSettings.enabled) {
     const clientIP = req.headers['x-forwarded-for']?.split(',')[0] || req.connection.remoteAddress || req.socket.remoteAddress;
     
-    if (!WHITELISTED_IPS.includes(clientIP)) {
+    const allowedIPs = emergencyWhitelistSettings.ips
+      .filter(ipData => ipData.enabled)
+      .map(ipData => ipData.ip);
+    
+    if (!allowedIPs.includes(clientIP)) {
       console.log(`🚫 [EMERGENCY] Blocked IP: ${clientIP} - Path: ${req.path}`);
       return res.status(503).send(`
         <html>
@@ -1620,7 +1701,8 @@ app.use((req, res, next) => {
       `);
     }
     
-    console.log(`✅ [EMERGENCY] Allowed IP: ${clientIP} - Path: ${req.path}`);
+    const allowedEntry = emergencyWhitelistSettings.ips.find(ipData => ipData.ip === clientIP);
+    console.log(`✅ [EMERGENCY] Allowed IP: ${clientIP} (${allowedEntry?.name || 'Unknown'}) - Path: ${req.path}`);
   }
   
   next();
@@ -12195,6 +12277,201 @@ app.post('/api/rewards-snapshot/:eventId/unlock', requireManagement, async (req,
         if (client) await client.query('ROLLBACK');
         console.error('❌ [SNAPSHOT] Unlock error:', error);
         return res.status(500).json({ success: false, message: 'Error unlocking snapshot' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// --- Emergency Whitelist Management API Endpoints ---
+// Get whitelist settings
+app.get('/api/admin/whitelist', requireManagement, async (req, res) => {
+    res.json({
+        success: true,
+        data: emergencyWhitelistSettings
+    });
+});
+
+// Update whitelist enabled/disabled status
+app.post('/api/admin/whitelist/toggle', requireManagement, async (req, res) => {
+    const { enabled } = req.body;
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        await client.query(`
+            UPDATE emergency_whitelist 
+            SET enabled = $1, updated_at = CURRENT_TIMESTAMP
+        `, [enabled]);
+        
+        emergencyWhitelistSettings.enabled = enabled;
+        
+        console.log(`🎛️ [WHITELIST] Emergency whitelist ${enabled ? 'ENABLED' : 'DISABLED'} by ${req.user?.username || 'unknown'}`);
+        
+        res.json({
+            success: true,
+            message: `Emergency whitelist ${enabled ? 'enabled' : 'disabled'}`,
+            enabled: enabled
+        });
+        
+    } catch (error) {
+        console.error('❌ [WHITELIST] Error toggling whitelist:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating whitelist status',
+            error: error.message
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Add new IP to whitelist
+app.post('/api/admin/whitelist/add', requireManagement, async (req, res) => {
+    const { ip, name } = req.body;
+    
+    if (!ip || !name) {
+        return res.status(400).json({
+            success: false,
+            message: 'IP address and name are required'
+        });
+    }
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Check if IP already exists
+        const existing = await client.query(`
+            SELECT id FROM emergency_whitelist WHERE ip_address = $1
+        `, [ip]);
+        
+        if (existing.rows.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'IP address already exists in whitelist'
+            });
+        }
+        
+        await client.query(`
+            INSERT INTO emergency_whitelist (ip_address, name, ip_enabled)
+            VALUES ($1, $2, true)
+        `, [ip, name]);
+        
+        // Update in-memory cache
+        emergencyWhitelistSettings.ips.push({
+            ip: ip,
+            name: name,
+            enabled: true
+        });
+        
+        console.log(`➕ [WHITELIST] Added IP ${ip} (${name}) by ${req.user?.username || 'unknown'}`);
+        
+        res.json({
+            success: true,
+            message: 'IP address added to whitelist',
+            data: { ip, name, enabled: true }
+        });
+        
+    } catch (error) {
+        console.error('❌ [WHITELIST] Error adding IP:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error adding IP to whitelist',
+            error: error.message
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Remove IP from whitelist
+app.delete('/api/admin/whitelist/:ip', requireManagement, async (req, res) => {
+    const { ip } = req.params;
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        const result = await client.query(`
+            DELETE FROM emergency_whitelist WHERE ip_address = $1
+            RETURNING ip_address, name
+        `, [ip]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'IP address not found in whitelist'
+            });
+        }
+        
+        // Update in-memory cache
+        emergencyWhitelistSettings.ips = emergencyWhitelistSettings.ips.filter(ipData => ipData.ip !== ip);
+        
+        console.log(`➖ [WHITELIST] Removed IP ${ip} (${result.rows[0].name}) by ${req.user?.username || 'unknown'}`);
+        
+        res.json({
+            success: true,
+            message: 'IP address removed from whitelist',
+            data: result.rows[0]
+        });
+        
+    } catch (error) {
+        console.error('❌ [WHITELIST] Error removing IP:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error removing IP from whitelist',
+            error: error.message
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Toggle individual IP enabled/disabled
+app.post('/api/admin/whitelist/:ip/toggle', requireManagement, async (req, res) => {
+    const { ip } = req.params;
+    const { enabled } = req.body;
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        const result = await client.query(`
+            UPDATE emergency_whitelist 
+            SET ip_enabled = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE ip_address = $2
+            RETURNING ip_address, name, ip_enabled
+        `, [enabled, ip]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'IP address not found in whitelist'
+            });
+        }
+        
+        // Update in-memory cache
+        const ipIndex = emergencyWhitelistSettings.ips.findIndex(ipData => ipData.ip === ip);
+        if (ipIndex !== -1) {
+            emergencyWhitelistSettings.ips[ipIndex].enabled = enabled;
+        }
+        
+        console.log(`🎛️ [WHITELIST] ${enabled ? 'Enabled' : 'Disabled'} IP ${ip} (${result.rows[0].name}) by ${req.user?.username || 'unknown'}`);
+        
+        res.json({
+            success: true,
+            message: `IP address ${enabled ? 'enabled' : 'disabled'}`,
+            data: result.rows[0]
+        });
+        
+    } catch (error) {
+        console.error('❌ [WHITELIST] Error toggling IP:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating IP status',
+            error: error.message
+        });
     } finally {
         if (client) client.release();
     }

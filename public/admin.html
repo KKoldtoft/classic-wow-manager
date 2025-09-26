@@ -167,6 +167,52 @@
             border-bottom: none;
         }
         
+        /* Toggle Switch Styles */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 26px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .3s;
+            border-radius: 26px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: #28a745;
+        }
+
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+        }
+
         /* Responsive Design */
         @media (max-width: 768px) {
             .container, .management-panel {
@@ -261,6 +307,74 @@
                 <button class="btn" onclick="createTemplatesTable()">Create Templates Table</button>
                 <button class="btn danger" onclick="showManagementTools()">Management Tools</button>
                 <div id="management-data"></div>
+            </div>
+            
+            <!-- Emergency Whitelist Management section -->
+            <div id="whitelist-section" class="permission-card management-section" style="display: none;">
+                <h2>🚫 Emergency Whitelist Management</h2>
+                <p>Control the emergency IP whitelist that can block all traffic except whitelisted IPs during server overload.</p>
+                
+                <!-- Master Toggle -->
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <h3 style="margin: 0 0 5px 0; color: #e74c3c;">
+                                <i class="fas fa-shield-alt"></i> Emergency Whitelist Status
+                            </h3>
+                            <p style="margin: 0; color: #6c757d; font-size: 14px;">
+                                When enabled, only whitelisted IPs can access the site.
+                            </p>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span id="whitelist-status" style="font-weight: 500;">Loading...</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="whitelist-master-toggle" onchange="toggleWhitelist()">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Add New IP Form -->
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3 style="margin: 0 0 15px 0;">
+                        <i class="fas fa-plus"></i> Add New IP Address
+                    </h3>
+                    <div style="display: flex; gap: 10px; align-items: end;">
+                        <div style="flex: 1;">
+                            <label for="new-ip-address" style="display: block; margin-bottom: 5px; font-weight: 500;">IP Address:</label>
+                            <input type="text" id="new-ip-address" placeholder="192.168.1.1" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div style="flex: 1;">
+                            <label for="new-ip-name" style="display: block; margin-bottom: 5px; font-weight: 500;">Name/Description:</label>
+                            <input type="text" id="new-ip-name" placeholder="John's Home IP" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button class="btn" onclick="addNewIP()" id="add-ip-btn">
+                            <i class="fas fa-plus"></i> Add IP
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- IP List -->
+                <div>
+                    <h3><i class="fas fa-list"></i> Whitelisted IP Addresses</h3>
+                    <div id="whitelist-loading" style="text-align: center; padding: 20px; color: #7f8c8d;">
+                        Loading whitelist...
+                    </div>
+                    <table id="whitelist-table" class="data-table" style="display: none;">
+                        <thead>
+                            <tr>
+                                <th>IP Address</th>
+                                <th>Name/Description</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="whitelist-table-body">
+                            <!-- IP list will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
             </div>
             
             <!-- Guild Import section -->
@@ -3260,6 +3374,243 @@
                 alert('Network error occurred while deleting background.');
             }
         }
+
+        // --- Whitelist Management Functions ---
+        let whitelistData = null;
+
+        async function loadWhitelist() {
+            try {
+                console.log('Loading whitelist data...');
+                const response = await fetch('/api/admin/whitelist');
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    whitelistData = result.data;
+                    updateWhitelistUI();
+                } else {
+                    throw new Error(result.message || 'Failed to load whitelist');
+                }
+            } catch (error) {
+                console.error('Error loading whitelist:', error);
+                document.getElementById('whitelist-loading').innerHTML = `
+                    <div style="color: #e74c3c;">
+                        <i class="fas fa-exclamation-triangle"></i> Error loading whitelist: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        function updateWhitelistUI() {
+            if (!whitelistData) return;
+
+            // Update master toggle
+            const masterToggle = document.getElementById('whitelist-master-toggle');
+            const statusSpan = document.getElementById('whitelist-status');
+            
+            masterToggle.checked = whitelistData.enabled;
+            statusSpan.textContent = whitelistData.enabled ? 'ENABLED' : 'DISABLED';
+            statusSpan.style.color = whitelistData.enabled ? '#28a745' : '#dc3545';
+
+            // Update IP table
+            const tableBody = document.getElementById('whitelist-table-body');
+            const loadingDiv = document.getElementById('whitelist-loading');
+            const table = document.getElementById('whitelist-table');
+
+            loadingDiv.style.display = 'none';
+            table.style.display = 'table';
+
+            tableBody.innerHTML = whitelistData.ips.map(ip => `
+                <tr>
+                    <td style="font-family: monospace; font-weight: 500;">${ip.ip}</td>
+                    <td>${ip.name}</td>
+                    <td>
+                        <span style="
+                            color: ${ip.enabled ? '#28a745' : '#dc3545'}; 
+                            font-weight: 500;
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 5px;
+                        ">
+                            <i class="fas fa-circle" style="font-size: 8px;"></i>
+                            ${ip.enabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                    </td>
+                    <td>
+                        <button 
+                            class="btn ${ip.enabled ? 'danger' : ''}" 
+                            onclick="toggleIPStatus('${ip.ip}', ${!ip.enabled})"
+                            style="font-size: 12px; padding: 6px 12px;"
+                        >
+                            <i class="fas fa-${ip.enabled ? 'ban' : 'check'}"></i>
+                            ${ip.enabled ? 'Disable' : 'Enable'}
+                        </button>
+                        <button 
+                            class="btn danger" 
+                            onclick="removeIP('${ip.ip}', '${ip.name}')"
+                            style="font-size: 12px; padding: 6px 12px; margin-left: 5px;"
+                        >
+                            <i class="fas fa-trash"></i>
+                            Remove
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function toggleWhitelist() {
+            const toggle = document.getElementById('whitelist-master-toggle');
+            const enabled = toggle.checked;
+
+            try {
+                const response = await fetch('/api/admin/whitelist/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    whitelistData.enabled = enabled;
+                    updateWhitelistUI();
+                    
+                    const message = enabled 
+                        ? '🚫 Emergency whitelist ENABLED! Only whitelisted IPs can access the site.'
+                        : '✅ Emergency whitelist DISABLED! All traffic is now allowed.';
+                    
+                    alert(message);
+                } else {
+                    // Revert toggle on error
+                    toggle.checked = !enabled;
+                    alert(`Error: ${result.message}`);
+                }
+            } catch (error) {
+                console.error('Error toggling whitelist:', error);
+                toggle.checked = !enabled;
+                alert('Network error occurred while updating whitelist.');
+            }
+        }
+
+        async function addNewIP() {
+            const ipInput = document.getElementById('new-ip-address');
+            const nameInput = document.getElementById('new-ip-name');
+            const addBtn = document.getElementById('add-ip-btn');
+
+            const ip = ipInput.value.trim();
+            const name = nameInput.value.trim();
+
+            if (!ip || !name) {
+                alert('Please enter both IP address and name.');
+                return;
+            }
+
+            // Basic IP validation
+            const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^::1$|^127\.0\.0\.1$/;
+            if (!ipRegex.test(ip)) {
+                alert('Please enter a valid IP address.');
+                return;
+            }
+
+            addBtn.disabled = true;
+            addBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Adding...';
+
+            try {
+                const response = await fetch('/api/admin/whitelist/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip, name })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    // Update local data
+                    whitelistData.ips.push(result.data);
+                    updateWhitelistUI();
+                    
+                    // Clear form
+                    ipInput.value = '';
+                    nameInput.value = '';
+                    
+                    alert(`✅ IP address ${ip} added successfully!`);
+                } else {
+                    alert(`Error: ${result.message}`);
+                }
+            } catch (error) {
+                console.error('Error adding IP:', error);
+                alert('Network error occurred while adding IP.');
+            } finally {
+                addBtn.disabled = false;
+                addBtn.innerHTML = '<i class="fas fa-plus"></i> Add IP';
+            }
+        }
+
+        async function toggleIPStatus(ip, enabled) {
+            if (!confirm(`Are you sure you want to ${enabled ? 'enable' : 'disable'} IP ${ip}?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/whitelist/${encodeURIComponent(ip)}/toggle`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    // Update local data
+                    const ipIndex = whitelistData.ips.findIndex(ipData => ipData.ip === ip);
+                    if (ipIndex !== -1) {
+                        whitelistData.ips[ipIndex].enabled = enabled;
+                        updateWhitelistUI();
+                    }
+                    
+                    alert(`✅ IP ${ip} ${enabled ? 'enabled' : 'disabled'} successfully!`);
+                } else {
+                    alert(`Error: ${result.message}`);
+                }
+            } catch (error) {
+                console.error('Error toggling IP:', error);
+                alert('Network error occurred while updating IP.');
+            }
+        }
+
+        async function removeIP(ip, name) {
+            if (!confirm(`Are you sure you want to remove IP ${ip} (${name})?\n\nThis action cannot be undone.`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/whitelist/${encodeURIComponent(ip)}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    // Update local data
+                    whitelistData.ips = whitelistData.ips.filter(ipData => ipData.ip !== ip);
+                    updateWhitelistUI();
+                    
+                    alert(`✅ IP ${ip} removed successfully!`);
+                } else {
+                    alert(`Error: ${result.message}`);
+                }
+            } catch (error) {
+                console.error('Error removing IP:', error);
+                alert('Network error occurred while removing IP.');
+            }
+        }
+
+        // Add to the showManagementPermissions function
+        const originalShowManagementPermissions = showManagementPermissions;
+        showManagementPermissions = function() {
+            originalShowManagementPermissions();
+            document.getElementById('whitelist-section').style.display = 'block';
+            loadWhitelist(); // Load whitelist data when management sections are shown
+        };
     </script>
     </div>
 </body>
