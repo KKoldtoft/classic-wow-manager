@@ -580,15 +580,6 @@ module.exports = function registerRewardsEngine(app, pool) {
       return res.status(401).json({ success: false, message: 'Authentication required' });
     }
     const { eventId } = req.params;
-    
-    // Check cache first (shorter TTL for rewards engine due to complexity)
-    const cacheKey = `rewards-effective:${eventId}`;
-    const cachedResult = app.locals.getCachedResponse ? app.locals.getCachedResponse(cacheKey) : null;
-    if (cachedResult) {
-      console.log(`🏆 [REWARDS ENGINE] Returning cached data for event: ${eventId}`);
-      return res.json(cachedResult);
-    }
-    
     let client;
     try {
       client = await pool.connect();
@@ -599,20 +590,13 @@ module.exports = function registerRewardsEngine(app, pool) {
         getGoldPotTotal(client, eventId)
       ]);
       const locked = (entries && entries.length > 0) ? true : await getSnapshotLocked(client, eventId);
-      let result;
       if (locked) {
-        result = await buildManualModeFromSnapshot(req, eventId, { entries, manualRewards, totalGoldPot });
-      } else {
-        // Automatic mode (compute from datasets)
-        result = await buildAutoModeFromDatasets(req, eventId);
+        const out = await buildManualModeFromSnapshot(req, eventId, { entries, manualRewards, totalGoldPot });
+        return res.json(out);
       }
-      
-      // Cache the response (shorter TTL due to computational complexity)
-      if (app.locals.setCachedResponse) {
-        app.locals.setCachedResponse(cacheKey, result, 15000); // 15 seconds TTL
-      }
-      
-      return res.json(result);
+      // Automatic mode (compute from datasets)
+      const autoOut = await buildAutoModeFromDatasets(req, eventId);
+      return res.json(autoOut);
     } catch (err) {
       console.error('❌ [REWARDS ENGINE] effective error:', err);
       return res.status(500).json({ success: false, message: 'Engine error', error: err && (err.message || String(err)) });

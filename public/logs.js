@@ -4563,12 +4563,7 @@ class WoWLogsAnalyzer {
             console.log('🧹 [FRONTEND] PHASE 1: Clearing F11 status cell...');
             this.updateRPBProgressMessage('Phase 1: Clearing previous status...');
             
-            // Add timeout handling for Phase 1
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('timeout')), 25000) // 25 seconds
-            );
-
-            const clearPromise = fetch(this.rpbApiUrl, {
+            const clearResponse = await fetch(this.rpbApiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -4578,30 +4573,7 @@ class WoWLogsAnalyzer {
                 })
             });
 
-            let clearResult;
-            try {
-                const clearResponse = await Promise.race([clearPromise, timeoutPromise]);
-                
-                // Check if response is HTML (503 error page)
-                const contentType = clearResponse.headers.get('content-type');
-                if (contentType && contentType.includes('text/html')) {
-                    throw new Error('Server returned HTML error page (likely 503 timeout)');
-                }
-                
-                if (!clearResponse.ok) {
-                    throw new Error(`HTTP ${clearResponse.status}: ${clearResponse.statusText}`);
-                }
-                
-                clearResult = await clearResponse.json();
-            } catch (error) {
-                if (error.message.includes('timeout') || error.message.includes('503') || error.message.includes('HTML error page')) {
-                    console.log('⚠️ [RPB] Phase 1 timed out (likely Heroku timeout), proceeding anyway...');
-                    this.updateRPBProgressMessage('Phase 1: Handling server timeout gracefully...');
-                    clearResult = { success: true, previousStatus: 'timeout_handled' };
-                } else {
-                    throw error;
-                }
-            }
+            const clearResult = await clearResponse.json();
             
             if (!clearResult.success) {
                 throw new Error('Phase 1 failed: ' + clearResult.error);
@@ -4624,8 +4596,8 @@ class WoWLogsAnalyzer {
             console.log('🚀 [FRONTEND] PHASE 2: Starting RPB processing...');
             this.updateRPBProgressMessage('Phase 2: Starting analysis...');
             
-            // Start RPB in background with timeout handling (don't wait for completion)
-            const phase2Promise = fetch(this.rpbApiUrl, {
+            // Start RPB in background (don't wait for completion)
+            fetch(this.rpbApiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -4634,48 +4606,12 @@ class WoWLogsAnalyzer {
                     action: 'startRPB',
                     logUrl: logUrl
                 })
+            }).catch(error => {
+                console.error('Failed to start RPB Phase 2:', error);
+                if (!this.rpbCompleted) {
+                    this.showError(`Phase 2 failed: ${error.message}`);
+                }
             });
-
-            const phase2Timeout = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('timeout')), 25000) // 25 seconds
-            );
-
-            // Try to get response but handle timeouts gracefully
-            Promise.race([phase2Promise, phase2Timeout])
-                .then(async (response) => {
-                    try {
-                        // Check if response is HTML (503 error page)
-                        const contentType = response.headers.get('content-type');
-                        if (contentType && contentType.includes('text/html')) {
-                            console.log('⚠️ [RPB] Phase 2 returned HTML error page (likely 503), continuing with polling...');
-                            return;
-                        }
-                        
-                        if (!response.ok) {
-                            console.log(`⚠️ [RPB] Phase 2 HTTP ${response.status}, continuing with polling...`);
-                            return;
-                        }
-                        
-                        const result = await response.json();
-                        if (!result.success) {
-                            console.warn('⚠️ [RPB] Phase 2 returned error, continuing with polling:', result.error);
-                        } else {
-                            console.log('✅ [RPB] Phase 2 started successfully');
-                        }
-                    } catch (jsonError) {
-                        console.log('⚠️ [RPB] Phase 2 JSON parse error (likely timeout), continuing with polling...');
-                    }
-                })
-                .catch(error => {
-                    if (error.message.includes('timeout') || error.message.includes('503')) {
-                        console.log('⚠️ [RPB] Phase 2 timed out (likely Heroku timeout), continuing with polling...');
-                    } else {
-                        console.error('❌ [RPB] Phase 2 unexpected error:', error);
-                        if (!this.rpbCompleted) {
-                            this.showError(`Phase 2 failed: ${error.message}`);
-                        }
-                    }
-                });
 
             // Start polling immediately after starting Phase 2
             this.rpbCompleted = false;
@@ -5499,7 +5435,6 @@ class WoWLogsAnalyzer {
             
             this.updateWorkflowStep(9, 'completed', 'World Buffs data imported', '✅');
             console.log('✅ [WORKFLOW] Step 9 completed');
-            
             
         } catch (error) {
             this.updateWorkflowStep(9, 'error', `World Buffs import failed: ${error.message}`, '❌');
@@ -7348,4 +7283,4 @@ class WoWLogsAnalyzer {
 let wowLogsAnalyzer;
 document.addEventListener('DOMContentLoaded', () => {
     wowLogsAnalyzer = new WoWLogsAnalyzer();
-});
+}); 

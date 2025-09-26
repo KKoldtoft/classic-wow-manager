@@ -349,60 +349,6 @@ const pool = new Pool({
   ssl: isProduction ? { rejectUnauthorized: false } : false,
 });
 
-// --- Simple In-Memory Cache for API Responses ---
-const apiCache = new Map(); // key -> { data, timestamp, ttl }
-
-function getCacheKey(endpoint, eventId, params = {}) {
-  const paramStr = Object.keys(params).length > 0 ? JSON.stringify(params) : '';
-  return `${endpoint}:${eventId}:${paramStr}`;
-}
-
-function getCachedResponse(key) {
-  const cached = apiCache.get(key);
-  if (!cached) return null;
-  
-  const now = Date.now();
-  if (now - cached.timestamp > cached.ttl) {
-    apiCache.delete(key);
-    return null;
-  }
-  
-  return cached.data;
-}
-
-function setCachedResponse(key, data, ttlMs = 30000) { // 30 seconds default
-  apiCache.set(key, {
-    data: data,
-    timestamp: Date.now(),
-    ttl: ttlMs
-  });
-  
-  // Clean up expired entries periodically
-  if (Math.random() < 0.01) { // 1% chance to trigger cleanup
-    const now = Date.now();
-    for (const [k, v] of apiCache.entries()) {
-      if (now - v.timestamp > v.ttl) {
-        apiCache.delete(k);
-      }
-    }
-  }
-}
-
-function clearCacheByPattern(pattern) {
-  console.log(`🗑️ [CACHE] Clearing cache entries matching pattern: ${pattern}`);
-  const keysToDelete = [];
-  for (const key of apiCache.keys()) {
-    if (key.includes(pattern)) {
-      keysToDelete.push(key);
-    }
-  }
-  keysToDelete.forEach(key => {
-    apiCache.delete(key);
-    console.log(`🗑️ [CACHE] Cleared cache key: ${key}`);
-  });
-  return keysToDelete.length;
-}
-
 let dbConnectionStatus = 'Connecting...';
 
 pool.connect()
@@ -1593,176 +1539,6 @@ async function requireRosterManager(req, res, next) {
 
 // Add the JSON middleware to parse request bodies (raise limit for large JSON blobs)
 app.use(express.json({ limit: '15mb' }));
-
-// --- EMERGENCY IP WHITELIST ---
-// Dynamic whitelist settings (cached in memory, updated from database)
-let emergencyWhitelistSettings = {
-  enabled: true,
-  ips: [
-    { ip: '89.23.224.94', name: 'Kim - Primary', enabled: true },
-    { ip: '77.33.25.62', name: 'Kim - Secondary', enabled: true },
-    { ip: '127.0.0.1', name: 'Localhost', enabled: true },
-    { ip: '::1', name: 'IPv6 Localhost', enabled: true }
-  ]
-};
-
-// Load whitelist settings from database on startup
-async function loadWhitelistSettings() {
-  let client;
-  try {
-    client = await pool.connect();
-    
-    // Check if whitelist table exists
-    const tableCheck = await client.query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_name = 'emergency_whitelist'
-      );
-    `);
-    
-    if (!tableCheck.rows[0].exists) {
-      // Create table if it doesn't exist
-      await client.query(`
-        CREATE TABLE emergency_whitelist (
-          id SERIAL PRIMARY KEY,
-          enabled BOOLEAN DEFAULT true,
-          ip_address VARCHAR(45) NOT NULL,
-          name VARCHAR(255) NOT NULL,
-          ip_enabled BOOLEAN DEFAULT true,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-      `);
-      
-      // Insert default IPs
-      for (const ipData of emergencyWhitelistSettings.ips) {
-        await client.query(`
-          INSERT INTO emergency_whitelist (ip_address, name, ip_enabled)
-          VALUES ($1, $2, $3)
-        `, [ipData.ip, ipData.name, ipData.enabled]);
-      }
-      
-      console.log('✅ [WHITELIST] Created emergency whitelist table with default IPs');
-    } else {
-      // Load settings from database
-      const settingsResult = await client.query(`
-        SELECT enabled FROM emergency_whitelist LIMIT 1
-      `);
-      
-      const ipsResult = await client.query(`
-        SELECT ip_address, name, ip_enabled 
-        FROM emergency_whitelist 
-        ORDER BY id
-      `);
-      
-      if (settingsResult.rows.length > 0) {
-        emergencyWhitelistSettings.enabled = settingsResult.rows[0].enabled;
-      }
-      
-      if (ipsResult.rows.length > 0) {
-        emergencyWhitelistSettings.ips = ipsResult.rows.map(row => ({
-          ip: row.ip_address,
-          name: row.name,
-          enabled: row.ip_enabled
-        }));
-      }
-      
-      console.log(`✅ [WHITELIST] Loaded ${ipsResult.rows.length} whitelist entries from database`);
-    }
-  } catch (error) {
-    console.error('❌ [WHITELIST] Error loading whitelist settings:', error);
-  } finally {
-    if (client) client.release();
-  }
-}
-
-// Initialize whitelist on startup
-loadWhitelistSettings();
-
-app.use((req, res, next) => {
-  if (emergencyWhitelistSettings.enabled) {
-    const clientIP = req.headers['x-forwarded-for']?.split(',')[0] || req.connection.remoteAddress || req.socket.remoteAddress;
-    
-    const allowedIPs = emergencyWhitelistSettings.ips
-      .filter(ipData => ipData.enabled)
-      .map(ipData => ipData.ip);
-    
-    if (!allowedIPs.includes(clientIP)) {
-      console.log(`🚫 [EMERGENCY] Blocked IP: ${clientIP} - Path: ${req.path}`);
-      return res.status(503).send(`
-        <html>
-          <head><title>Site Maintenance</title></head>
-          <body style="font-family: Arial; text-align: center; padding: 50px;">
-            <h1>🔧 Site Under Maintenance</h1>
-            <p>The site is temporarily down for maintenance.</p>
-            <p>Please try again in a few minutes.</p>
-          </body>
-        </html>
-      `);
-    }
-    
-    const allowedEntry = emergencyWhitelistSettings.ips.find(ipData => ipData.ip === clientIP);
-    console.log(`✅ [EMERGENCY] Allowed IP: ${clientIP} (${allowedEntry?.name || 'Unknown'}) - Path: ${req.path}`);
-  }
-  
-  next();
-});
-
-// Rate limiting for API endpoints only (not static files)
-const requestCounts = new Map(); // ip -> { count, resetTime }
-const REQUEST_LIMIT = 300; // requests per minute per IP (increased for normal usage)
-const WINDOW_MS = 60 * 1000; // 1 minute
-
-app.use((req, res, next) => {
-  // Skip rate limiting for static files and main page
-  if (req.path === '/' || 
-      req.path.startsWith('/images/') ||
-      req.path.startsWith('/css/') ||
-      req.path.startsWith('/js/') ||
-      req.path.endsWith('.html') ||
-      req.path.endsWith('.css') ||
-      req.path.endsWith('.js') ||
-      req.path.endsWith('.png') ||
-      req.path.endsWith('.jpg') ||
-      req.path.endsWith('.webp') ||
-      req.path.endsWith('.ico') ||
-      !req.path.startsWith('/api/')) {
-    return next();
-  }
-
-  const ip = req.ip || req.connection.remoteAddress || 'unknown';
-  const now = Date.now();
-  
-  // Get or create request count for this IP
-  let ipData = requestCounts.get(ip);
-  if (!ipData || now > ipData.resetTime) {
-    ipData = { count: 0, resetTime: now + WINDOW_MS };
-    requestCounts.set(ip, ipData);
-  }
-  
-  // Check if limit exceeded
-  if (ipData.count >= REQUEST_LIMIT) {
-    return res.status(429).json({
-      success: false,
-      error: 'Too many API requests. Please slow down.',
-      retryAfter: Math.ceil((ipData.resetTime - now) / 1000)
-    });
-  }
-  
-  // Increment count and continue
-  ipData.count++;
-  
-  // Cleanup expired entries periodically (1% chance)
-  if (Math.random() < 0.01) {
-    for (const [cleanupIp, cleanupData] of requestCounts.entries()) {
-      if (now > cleanupData.resetTime) {
-        requestCounts.delete(cleanupIp);
-      }
-    }
-  }
-  
-  next();
-});
 
 // 🎯 Discord API endpoints removed - we now get channel names directly from Raid-Helper API!
 
@@ -5806,16 +5582,11 @@ app.post('/api/logs/rpb', async (req, res) => {
     }
 
     // Make request to Google Apps Script
-    // Add delay to avoid Google rate limiting (random 1-3 seconds)
-    const delay = 1000 + Math.random() * 2000;
-    await new Promise(resolve => setTimeout(resolve, delay));
-    
     const response = await axios({
       method: 'POST',
       url: rpbWebAppUrl,
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)', // Add user agent
       },
       data: requestData,
       timeout: action === 'startRPB' ? 400000 : 30000, // 6.5 min for startRPB, 30s for status checks
@@ -5885,16 +5656,11 @@ app.post('/api/logs/world-buffs', async (req, res) => {
     }
 
     // Make request to Google Apps Script
-    // Add delay to avoid Google rate limiting (random 1-3 seconds)
-    const delay = 1000 + Math.random() * 2000;
-    await new Promise(resolve => setTimeout(resolve, delay));
-    
     const response = await axios({
       method: 'POST',
       url: worldBuffsWebAppUrl,
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)', // Add user agent
       },
       data: requestData,
       timeout: action === 'populateWorldBuffs' ? 120000 : 30000, // 2 min for populate, 30s for status checks
@@ -5961,16 +5727,11 @@ app.post('/api/logs/cla-backup', async (req, res) => {
     }
 
     // Make request to Google Apps Script
-    // Add delay to avoid Google rate limiting (random 1-3 seconds)
-    const delay = 1000 + Math.random() * 2000;
-    await new Promise(resolve => setTimeout(resolve, delay));
-    
     const response = await axios({
       method: 'POST',
       url: claBackupWebAppUrl,
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)', // Add user agent
       },
       data: requestData,
       timeout: 60000, // 1 minute timeout for backup creation
@@ -6040,16 +5801,11 @@ app.post('/api/logs/frost-res', async (req, res) => {
     }
 
     // Make request to Google Apps Script
-    // Add delay to avoid Google rate limiting (random 1-3 seconds)
-    const delay = 1000 + Math.random() * 2000;
-    await new Promise(resolve => setTimeout(resolve, delay));
-    
     const response = await axios({
       method: 'POST',
       url: frostResWebAppUrl,
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)', // Add user agent
       },
       data: requestData,
       timeout: action === 'populateFrostRes' ? 120000 : 60000, // 2 min for populate, 1 min for backup/status
@@ -8390,8 +8146,7 @@ app.get('/api/confirmed-logs/:raidId/players', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [CONFIRM LOGS] Table does not exist, returning empty array');
-            res.json({ success: true, data: [] });
-            return;
+            return res.json({ success: true, data: [] });
         }
         
         // Build query based on manually_matched filter
@@ -8618,8 +8373,7 @@ app.get('/api/confirmed-logs/:raidId/all-players', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [GOLD POT] Table does not exist, returning empty array');
-            res.json({ success: true, data: [] });
-            return;
+            return res.json({ success: true, data: [] });
         }
         
         const result = await client.query(
@@ -8699,13 +8453,6 @@ app.post('/api/log-data/:eventId/store', async (req, res) => {
         }
         
         console.log(`✅ [LOG DATA] Successfully stored ${logData.length} player records`);
-        
-        // Clear cache for all data endpoints related to this event
-        clearCacheByPattern(`log-data:${eventId}`);
-        clearCacheByPattern(`abilities-data:${eventId}`);
-        clearCacheByPattern(`world-buffs-data:${eventId}`);
-        clearCacheByPattern(`raid-stats:${eventId}`);
-        
         res.json({ 
             success: true, 
             message: `Stored log data for ${logData.length} players`,
@@ -8820,13 +8567,6 @@ app.post('/api/player-role-mapping/:eventId/store', async (req, res) => {
         }
         
         console.log(`✅ [ROLE MAPPING] Successfully stored ${roleMappingData.length} role mapping records`);
-        
-        // Clear cache for all data endpoints related to this event (role changes can affect all stats)
-        clearCacheByPattern(`log-data:${eventId}`);
-        clearCacheByPattern(`abilities-data:${eventId}`);
-        clearCacheByPattern(`world-buffs-data:${eventId}`);
-        clearCacheByPattern(`raid-stats:${eventId}`);
-        
         res.json({ 
             success: true, 
             message: `Stored role mapping for ${roleMappingData.length} players`,
@@ -9204,14 +8944,6 @@ function mapSpecToRole(spec) {
 app.get('/api/log-data/:eventId', async (req, res) => {
     const { eventId } = req.params;
     
-    // Check cache first
-    const cacheKey = getCacheKey('log-data', eventId);
-    const cachedResult = getCachedResponse(cacheKey);
-    if (cachedResult) {
-        console.log(`📖 [LOG DATA] Returning cached data for event: ${eventId}`);
-        return res.json(cachedResult);
-    }
-    
     console.log(`📖 [LOG DATA] Retrieving enhanced log data for event: ${eventId}`);
     
     let client;
@@ -9228,8 +8960,7 @@ app.get('/api/log-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [LOG DATA] Table does not exist, returning empty data');
-            res.json({ success: true, data: [], hasData: false });
-            return;
+            return res.json({ success: true, data: [], hasData: false });
         }
         
         // Enhanced query that joins with roster_overrides to get better role/spec data
@@ -9303,17 +9034,12 @@ app.get('/api/log-data/:eventId', async (req, res) => {
         
         console.log(`🎯 [LOG DATA] Enhanced ${enhancedData.length} records with roster override data`);
         
-        const responseData = { 
+        res.json({ 
             success: true, 
             data: enhancedData,
             hasData: hasData,
             eventId: eventId
-        };
-        
-        // Cache the response
-        setCachedResponse(cacheKey, responseData);
-        
-        res.json(responseData);
+        });
         
     } catch (error) {
         console.error('❌ [LOG DATA] Error retrieving log data:', error);
@@ -9404,8 +9130,7 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
     `);
     if (!logTableCheck.rows[0].exists) {
       console.log('⚠️ [PLAYER STREAKS] log_data table missing');
-      res.json({ success: true, data: [] });
-      return;
+      return res.json({ success: true, data: [] });
     }
 
     const parseEventDate = (dateStr) => {
@@ -9437,8 +9162,7 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
     `, [eventId]);
 
     if (eventRows.rows.length === 0) {
-      res.json({ success: true, data: [] });
-      return;
+      return res.json({ success: true, data: [] });
     }
 
     // Build resolvers (same approach as /api/attendance)
@@ -9596,8 +9320,7 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
     }
 
     if (participantsMap.size === 0) {
-      res.json({ success: true, data: [], eventId, minStreak: 4, totalCount: 0 });
-      return;
+      return res.json({ success: true, data: [], eventId, minStreak: 4, totalCount: 0 });
     }
 
     // Build response for resolved participants with streak >= 4
@@ -9641,8 +9364,7 @@ app.get('/api/guild-members/:eventId', async (req, res) => {
         const have = new Set(tablesCheck.rows.map(r => r.table_name));
         if (!have.has('log_data') || !have.has('guildies')) {
             console.log('⚠️ [GUILD MEMBERS] required tables missing');
-            res.json({ success: true, data: [] });
-            return;
+            return res.json({ success: true, data: [] });
         }
         
         // 1) All rows for this event (may lack discord_id)
@@ -9652,8 +9374,7 @@ app.get('/api/guild-members/:eventId', async (req, res) => {
             WHERE event_id = $1
         `, [eventId]);
         if (eventRows.rows.length === 0) {
-            res.json({ success: true, data: [], eventId, pointsPerMember: 10, totalCount: 0 });
-            return;
+            return res.json({ success: true, data: [], eventId, pointsPerMember: 10, totalCount: 0 });
         }
 
         // 2) Build resolvers similar to streaks
@@ -9730,8 +9451,7 @@ app.get('/api/guild-members/:eventId', async (req, res) => {
         }
 
         if (participantsMap.size === 0) {
-            res.json({ success: true, data: [], eventId, pointsPerMember: 10, totalCount: 0 });
-            return;
+            return res.json({ success: true, data: [], eventId, pointsPerMember: 10, totalCount: 0 });
         }
 
         // 4) Intersect with guildies by discord_id
@@ -9780,14 +9500,6 @@ app.get('/api/guild-members/:eventId', async (req, res) => {
 app.get('/api/abilities-data/:eventId', async (req, res) => {
     const { eventId } = req.params;
     
-    // Check cache first
-    const cacheKey = getCacheKey('abilities-data', eventId);
-    const cachedResult = getCachedResponse(cacheKey);
-    if (cachedResult) {
-        console.log(`💣 [ABILITIES] Returning cached data for event: ${eventId}`);
-        return res.json(cachedResult);
-    }
-    
     console.log(`💣 [ABILITIES] Retrieving abilities data for event: ${eventId}`);
     
     let client;
@@ -9804,8 +9516,7 @@ app.get('/api/abilities-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [ABILITIES] Table does not exist, returning empty data');
-            res.json({ success: true, data: [] });
-            return;
+            return res.json({ success: true, data: [] });
         }
         
         // Query for specific abilities: Dense Dynamite, Goblin Sapper Charge, Stratholme Holy Water
@@ -9956,7 +9667,7 @@ app.get('/api/abilities-data/:eventId', async (req, res) => {
         console.log(`💣 [ABILITIES] Processed ${finalData.length} characters with abilities usage`);
         console.log(`💣 [ABILITIES] Final data sample:`, finalData.slice(0, 2));
         
-        const responseData = { 
+        res.json({ 
             success: true, 
             data: finalData,
             eventId: eventId,
@@ -9964,12 +9675,7 @@ app.get('/api/abilities-data/:eventId', async (req, res) => {
                 calculation_divisor: calculationDivisor,
                 max_points: maxPoints
             }
-        };
-        
-        // Cache the response
-        setCachedResponse(cacheKey, responseData);
-        
-        res.json(responseData);
+        });
         
     } catch (error) {
         console.error('❌ [ABILITIES] Error retrieving abilities data:', error);
@@ -10111,14 +9817,6 @@ app.get('/api/shame-data/:eventId', async (req, res) => {
 app.get('/api/world-buffs-data/:eventId', async (req, res) => {
     const { eventId } = req.params;
     
-    // Check cache first
-    const cacheKey = getCacheKey('world-buffs-data', eventId);
-    const cachedResult = getCachedResponse(cacheKey);
-    if (cachedResult) {
-        console.log(`🌍 [WORLD BUFFS] Returning cached data for event: ${eventId}`);
-        return res.json(cachedResult);
-    }
-    
     console.log(`🌍 [WORLD BUFFS] Retrieving world buffs data for event: ${eventId}`);
     
     let client;
@@ -10165,8 +9863,7 @@ app.get('/api/world-buffs-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [WORLD BUFFS] Table does not exist, returning empty data');
-            res.json({ success: true, data: [], requiredBuffs });
-            return;
+            return res.json({ success: true, data: [], requiredBuffs });
         }
         
         // First get summary data per character (amount_summary should be the same for all buffs of a character)
@@ -10369,19 +10066,14 @@ app.get('/api/world-buffs-data/:eventId', async (req, res) => {
         console.log(`🌍 [WORLD BUFFS] Final data sample:`, uniqueFinalData.slice(0, 2));
         console.log(`🌍 [WORLD BUFFS] API Response - includeDMF: ${includeDMF}, requiredBuffs: ${requiredBuffs}`);
         
-        const responseData = { 
+        res.json({ 
             success: true, 
             data: uniqueFinalData,
             eventId: eventId,
             requiredBuffs: requiredBuffs,
             channelId: channelId,
             includeDMF: includeDMF
-        };
-        
-        // Cache the response
-        setCachedResponse(cacheKey, responseData);
-        
-        res.json(responseData);
+        });
         
     } catch (error) {
         console.error('❌ [WORLD BUFFS] Error retrieving world buffs data:', error);
@@ -10415,8 +10107,7 @@ app.get('/api/frost-resistance-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [FROST RESISTANCE] Table does not exist, returning empty data');
-            res.json({ success: true, data: [] });
-            return;
+            return res.json({ success: true, data: [] });
         }
         
         // Get frost resistance data
@@ -10679,8 +10370,7 @@ app.get('/api/mana-potions-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [MANA POTIONS] Table does not exist, returning empty data');
-            res.json({ success: true, data: [] });
-            return;
+            return res.json({ success: true, data: [] });
         }
         
         // Get dynamic settings for mana potions calculation
@@ -10784,8 +10474,7 @@ app.get('/api/runes-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [RUNES] Table does not exist, returning empty data');
-            res.json({ success: true, data: [] });
-            return;
+            return res.json({ success: true, data: [] });
         }
         
         // Get dynamic settings for runes calculation
@@ -10914,8 +10603,7 @@ app.get('/api/interrupts-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [INTERRUPTS] Table does not exist, returning empty data');
-            res.json({ success: true, data: [] });
-            return;
+            return res.json({ success: true, data: [] });
         }
         
         // Get dynamic settings for interrupts calculation
@@ -11015,8 +10703,7 @@ app.get('/api/disarms-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [DISARMS] Table does not exist, returning empty data');
-            res.json({ success: true, data: [] });
-            return;
+            return res.json({ success: true, data: [] });
         }
         
         // Get dynamic settings for disarms calculation
@@ -11116,8 +10803,7 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [WINDFURY] Table does not exist, returning empty data');
-            res.json({ success: true, data: [] });
-            return;
+            return res.json({ success: true, data: [] });
         }
         
         // Get dynamic settings for Windfury calculation
@@ -11582,14 +11268,6 @@ app.get('/api/raid-helper/events/:eventId', async (req, res) => {
 app.get('/api/manual-rewards/:eventId', async (req, res) => {
     const { eventId } = req.params;
     
-    // Check cache first
-    const cacheKey = getCacheKey('manual-rewards', eventId);
-    const cachedResult = getCachedResponse(cacheKey);
-    if (cachedResult) {
-        console.log(`⚖️ [MANUAL REWARDS] Returning cached data for event: ${eventId}`);
-        return res.json(cachedResult);
-    }
-    
     console.log(`⚖️ [MANUAL REWARDS] Retrieving manual rewards/deductions for event: ${eventId}`);
     
     let client;
@@ -11606,8 +11284,7 @@ app.get('/api/manual-rewards/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [MANUAL REWARDS] Table does not exist, returning empty data');
-            res.json({ success: true, data: [] });
-            return;
+            return res.json({ success: true, data: [] });
         }
         
         // Get manual rewards/deductions for this event
@@ -11630,16 +11307,11 @@ app.get('/api/manual-rewards/:eventId', async (req, res) => {
         
         console.log(`⚖️ [MANUAL REWARDS] Found ${result.rows.length} manual entries for event: ${eventId}`);
         
-        const responseData = { 
+        res.json({ 
             success: true, 
             data: result.rows,
             eventId: eventId
-        };
-        
-        // Cache the response
-        setCachedResponse(cacheKey, responseData);
-        
-        res.json(responseData);
+        });
         
     } catch (error) {
         console.error('❌ [MANUAL REWARDS] Error retrieving manual rewards/deductions:', error);
@@ -11698,9 +11370,6 @@ app.post('/api/manual-rewards/:eventId', requireManagement, async (req, res) => 
         
         const newEntry = result.rows[0];
         console.log(`✅ [MANUAL REWARDS] Created entry with ID: ${newEntry.id}`);
-        
-        // Clear cache for this event's manual rewards
-        clearCacheByPattern(`manual-rewards:${eventId}`);
         
         try { broadcastUpdate('raidlogs', eventId, { type: 'manual_rewards_changed', id: newEntry.id, byUserId: createdBy }); } catch {}
         res.json({ 
@@ -11773,9 +11442,6 @@ app.put('/api/manual-rewards/:eventId/:entryId', requireManagement, async (req, 
         const updatedEntry = result.rows[0];
         console.log(`✅ [MANUAL REWARDS] Updated entry ID: ${updatedEntry.id}`);
         
-        // Clear cache for this event's manual rewards
-        clearCacheByPattern(`manual-rewards:${eventId}`);
-        
         try { broadcastUpdate('raidlogs', eventId, { type: 'manual_rewards_changed', id: updatedEntry.id, byUserId: req.user?.id || null }); } catch {}
         res.json({ 
             success: true, 
@@ -11837,9 +11503,6 @@ app.delete('/api/manual-rewards/:eventId/:entryId', requireManagement, async (re
         
         const deletedEntry = result.rows[0];
         console.log(`✅ [MANUAL REWARDS] Deleted entry ID: ${deletedEntry.id}`);
-        
-        // Clear cache for this event's manual rewards
-        clearCacheByPattern(`manual-rewards:${eventId}`);
         
         try { broadcastUpdate('raidlogs', eventId, { type: 'manual_rewards_changed', id: deletedEntry.id, op: 'delete', byUserId: req.user?.id || null }); } catch {}
         res.json({ 
@@ -12282,201 +11945,6 @@ app.post('/api/rewards-snapshot/:eventId/unlock', requireManagement, async (req,
     }
 });
 
-// --- Emergency Whitelist Management API Endpoints ---
-// Get whitelist settings
-app.get('/api/admin/whitelist', requireManagement, async (req, res) => {
-    res.json({
-        success: true,
-        data: emergencyWhitelistSettings
-    });
-});
-
-// Update whitelist enabled/disabled status
-app.post('/api/admin/whitelist/toggle', requireManagement, async (req, res) => {
-    const { enabled } = req.body;
-    
-    let client;
-    try {
-        client = await pool.connect();
-        
-        await client.query(`
-            UPDATE emergency_whitelist 
-            SET enabled = $1, updated_at = CURRENT_TIMESTAMP
-        `, [enabled]);
-        
-        emergencyWhitelistSettings.enabled = enabled;
-        
-        console.log(`🎛️ [WHITELIST] Emergency whitelist ${enabled ? 'ENABLED' : 'DISABLED'} by ${req.user?.username || 'unknown'}`);
-        
-        res.json({
-            success: true,
-            message: `Emergency whitelist ${enabled ? 'enabled' : 'disabled'}`,
-            enabled: enabled
-        });
-        
-    } catch (error) {
-        console.error('❌ [WHITELIST] Error toggling whitelist:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error updating whitelist status',
-            error: error.message
-        });
-    } finally {
-        if (client) client.release();
-    }
-});
-
-// Add new IP to whitelist
-app.post('/api/admin/whitelist/add', requireManagement, async (req, res) => {
-    const { ip, name } = req.body;
-    
-    if (!ip || !name) {
-        return res.status(400).json({
-            success: false,
-            message: 'IP address and name are required'
-        });
-    }
-    
-    let client;
-    try {
-        client = await pool.connect();
-        
-        // Check if IP already exists
-        const existing = await client.query(`
-            SELECT id FROM emergency_whitelist WHERE ip_address = $1
-        `, [ip]);
-        
-        if (existing.rows.length > 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'IP address already exists in whitelist'
-            });
-        }
-        
-        await client.query(`
-            INSERT INTO emergency_whitelist (ip_address, name, ip_enabled)
-            VALUES ($1, $2, true)
-        `, [ip, name]);
-        
-        // Update in-memory cache
-        emergencyWhitelistSettings.ips.push({
-            ip: ip,
-            name: name,
-            enabled: true
-        });
-        
-        console.log(`➕ [WHITELIST] Added IP ${ip} (${name}) by ${req.user?.username || 'unknown'}`);
-        
-        res.json({
-            success: true,
-            message: 'IP address added to whitelist',
-            data: { ip, name, enabled: true }
-        });
-        
-    } catch (error) {
-        console.error('❌ [WHITELIST] Error adding IP:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error adding IP to whitelist',
-            error: error.message
-        });
-    } finally {
-        if (client) client.release();
-    }
-});
-
-// Remove IP from whitelist
-app.delete('/api/admin/whitelist/:ip', requireManagement, async (req, res) => {
-    const { ip } = req.params;
-    
-    let client;
-    try {
-        client = await pool.connect();
-        
-        const result = await client.query(`
-            DELETE FROM emergency_whitelist WHERE ip_address = $1
-            RETURNING ip_address, name
-        `, [ip]);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'IP address not found in whitelist'
-            });
-        }
-        
-        // Update in-memory cache
-        emergencyWhitelistSettings.ips = emergencyWhitelistSettings.ips.filter(ipData => ipData.ip !== ip);
-        
-        console.log(`➖ [WHITELIST] Removed IP ${ip} (${result.rows[0].name}) by ${req.user?.username || 'unknown'}`);
-        
-        res.json({
-            success: true,
-            message: 'IP address removed from whitelist',
-            data: result.rows[0]
-        });
-        
-    } catch (error) {
-        console.error('❌ [WHITELIST] Error removing IP:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error removing IP from whitelist',
-            error: error.message
-        });
-    } finally {
-        if (client) client.release();
-    }
-});
-
-// Toggle individual IP enabled/disabled
-app.post('/api/admin/whitelist/:ip/toggle', requireManagement, async (req, res) => {
-    const { ip } = req.params;
-    const { enabled } = req.body;
-    
-    let client;
-    try {
-        client = await pool.connect();
-        
-        const result = await client.query(`
-            UPDATE emergency_whitelist 
-            SET ip_enabled = $1, updated_at = CURRENT_TIMESTAMP
-            WHERE ip_address = $2
-            RETURNING ip_address, name, ip_enabled
-        `, [enabled, ip]);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'IP address not found in whitelist'
-            });
-        }
-        
-        // Update in-memory cache
-        const ipIndex = emergencyWhitelistSettings.ips.findIndex(ipData => ipData.ip === ip);
-        if (ipIndex !== -1) {
-            emergencyWhitelistSettings.ips[ipIndex].enabled = enabled;
-        }
-        
-        console.log(`🎛️ [WHITELIST] ${enabled ? 'Enabled' : 'Disabled'} IP ${ip} (${result.rows[0].name}) by ${req.user?.username || 'unknown'}`);
-        
-        res.json({
-            success: true,
-            message: `IP address ${enabled ? 'enabled' : 'disabled'}`,
-            data: result.rows[0]
-        });
-        
-    } catch (error) {
-        console.error('❌ [WHITELIST] Error toggling IP:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error updating IP status',
-            error: error.message
-        });
-    } finally {
-        if (client) client.release();
-    }
-});
-
 // --- Manual Rewards Templates API Endpoints ---
 // Get all templates
 app.get('/api/manual-rewards-templates', async (req, res) => {
@@ -12643,9 +12111,6 @@ app.post('/api/manual-rewards/:eventId/from-templates', requireManagement, async
 
         console.log(`✅ [TEMPLATES] Successfully inserted ${insertedEntries.length} template entries for event: ${eventId}`);
 
-        // Clear cache for this event's manual rewards
-        clearCacheByPattern(`manual-rewards:${eventId}`);
-        
         res.json({ 
             success: true, 
             message: `Successfully inserted ${insertedEntries.length} template entries`,
@@ -12981,8 +12446,7 @@ app.get('/api/sunder-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [SUNDER] Table does not exist, returning empty data');
-            res.json({ success: true, data: [] });
-            return;
+            return res.json({ success: true, data: [] });
         }
         
         // Get dynamic settings for sunder armor calculation
@@ -13105,8 +12569,7 @@ app.get('/api/curse-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [CURSE] Table does not exist, returning empty data');
-            res.json({ success: true, data: [] });
-            return;
+            return res.json({ success: true, data: [] });
         }
         
         // Get dynamic settings for curse of recklessness calculation
@@ -13223,8 +12686,7 @@ app.get('/api/curse-shadow-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [CURSE SHADOW] Table does not exist, returning empty data');
-            res.json({ success: true, data: [] });
-            return;
+            return res.json({ success: true, data: [] });
         }
         
         // Get dynamic settings for curse of shadow calculation
@@ -16124,14 +15586,6 @@ app.post('/api/loot/import', async (req, res) => {
 app.get('/api/raid-stats/:eventId', async (req, res) => {
     const { eventId } = req.params;
     
-    // Check cache first
-    const cacheKey = getCacheKey('raid-stats', eventId);
-    const cachedResult = getCachedResponse(cacheKey);
-    if (cachedResult) {
-        console.log(`📊 [RAID STATS] Returning cached data for event: ${eventId}`);
-        return res.json(cachedResult);
-    }
-    
     console.log(`📊 [RAID STATS] Fetching raid statistics for event: ${eventId}`);
     
     let client;
@@ -16299,18 +15753,13 @@ app.get('/api/raid-stats/:eventId', async (req, res) => {
             }
         }
         
-        const responseData = {
+        res.json({
             success: true,
             data: {
                 rpb: rpbData,
                 stats: raidStats
             }
-        };
-        
-        // Cache the response
-        setCachedResponse(cacheKey, responseData);
-        
-        res.json(responseData);
+        });
         
     } catch (error) {
         console.error('❌ [RAID STATS] Error fetching raid statistics:', error);
@@ -18805,11 +18254,6 @@ app.post('/api/discord/voice-monitor/config', async (req, res) => {
 // Register rewards engine endpoints BEFORE catch-all
 try {
   if (typeof registerRewardsEngine === 'function') {
-    // Expose cache functions to rewards engine
-    app.locals.getCachedResponse = getCachedResponse;
-    app.locals.setCachedResponse = setCachedResponse;
-    app.locals.getCacheKey = getCacheKey;
-    
     registerRewardsEngine(app, pool);
     console.log('✅ Rewards engine endpoints registered');
   } else {

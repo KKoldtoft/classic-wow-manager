@@ -121,7 +121,6 @@ class RaidLogsManager {
         this.playerPanels = new Map(); // key: panelId, value: { slug, name, className }
         this._myGoldTooltipCards = new WeakSet();
         this.engineResult = null;
-        
         this.loadRaidLogsData();
     }
 
@@ -674,7 +673,6 @@ class RaidLogsManager {
                 }
             } catch {}
 
-            
             // To avoid exhausting browser/Heroku resources, fetch in small batches instead of all-at-once
             // Batch 1: core datasets and light endpoints
             await Promise.all([
@@ -732,10 +730,6 @@ class RaidLogsManager {
             // Update gold cards after primary render
             this.updateGoldCards();
             // Points breakdown debug table removed
-            
-            // Hide loading and show content
-            this.hideLoading();
-            this.showContent();
             
             // Update the original position now that content is loaded
             setTimeout(() => {
@@ -6210,7 +6204,7 @@ class RaidLogsManager {
 
     renderPointsBreakdownTable() {
         const pbContainer = document.getElementById('points-breakdown-table-container');
-        if (!pbContainer) return;
+        if (!container) return;
         const lower = s=>String(s||'').toLowerCase();
         const confirmedPlayers = (this.logData||[]).filter(p=>!this.shouldIgnorePlayer(p.character_name));
         const nameList = confirmedPlayers.map(p=>p.character_name);
@@ -7381,11 +7375,8 @@ class RaidLogsManager {
     async autoAddFourHorsemenTanks() {
         if (!this.activeEventId) {
             console.error('❌ [4H TANKS] No active event ID');
-            alert('No active event selected. Please select an event first.');
             return;
         }
-        
-        console.log('🛡️ [4H TANKS] Starting auto-add Four Horsemen tanks process...');
         try {
             // Fetch assignments for this event
             const res = await fetch(`/api/assignments/${this.activeEventId}`);
@@ -7467,21 +7458,11 @@ class RaidLogsManager {
             }
 
             // Refresh list
-            console.log('🔄 [4H TANKS] Refreshing manual rewards data...');
             await this.fetchManualRewardsData();
-            
-            console.log('🔄 [4H TANKS] Updating table display...');
             this.populateManualRewardsTable();
             this.updateTotalPointsCard();
-            
-            // Small delay to ensure DOM update
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            alert(`Successfully added ${selected.length} Four Horsemen tank entries!`);
-            console.log(`✅ [4H TANKS] Successfully added ${selected.length} tank entries`);
         } catch (err) {
             console.error('❌ [4H TANKS] Failed to auto add 4H tanks:', err);
-            alert(`Failed to add Four Horsemen tank entries: ${err.message}`);
         }
     }
 
@@ -7548,21 +7529,11 @@ class RaidLogsManager {
                     })
                 });
             }
-            console.log('🔄 [RAZ MC] Refreshing manual rewards data...');
             await this.fetchManualRewardsData();
-            
-            console.log('🔄 [RAZ MC] Updating table display...');
             this.populateManualRewardsTable();
             this.updateTotalPointsCard();
-            
-            // Small delay to ensure DOM update
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            alert(`Successfully added ${selected.length} Razuvious MC priest entries!`);
-            console.log(`✅ [RAZ MC] Successfully added ${selected.length} priest entries`);
         } catch (err) {
             console.error('❌ [RAZ MC] Failed to auto add Raz MC priests:', err);
-            alert(`Failed to add Razuvious MC priest entries: ${err.message}`);
         }
     }
 
@@ -7599,21 +7570,11 @@ class RaidLogsManager {
                     icon_url: iconUrl
                 })
             });
-            console.log('🔄 [PULLER] Refreshing manual rewards data...');
             await this.fetchManualRewardsData();
-            
-            console.log('🔄 [PULLER] Updating table display...');
             this.populateManualRewardsTable();
             this.updateTotalPointsCard();
-            
-            // Small delay to ensure DOM update
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            alert(`Successfully added puller entry for ${h.character_name}!`);
-            console.log(`✅ [PULLER] Successfully added puller entry`);
         } catch (err) {
             console.error('❌ [PULLER] Failed to auto add hunter puller:', err);
-            alert(`Failed to add puller entry: ${err.message}`);
         }
     }
 
@@ -7652,21 +7613,11 @@ class RaidLogsManager {
                     icon_url: iconUrl
                 })
             });
-            console.log('🔄 [GLUTH] Refreshing manual rewards data...');
             await this.fetchManualRewardsData();
-            
-            console.log('🔄 [GLUTH] Updating table display...');
             this.populateManualRewardsTable();
             this.updateTotalPointsCard();
-            
-            // Small delay to ensure DOM update
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            alert(`Successfully added Gluth kite entry for ${druid.character_name}!`);
-            console.log(`✅ [GLUTH] Successfully added Gluth kite entry`);
         } catch (err) {
             console.error('❌ [GLUTH] Failed to auto add Gluth kite druid:', err);
-            alert(`Failed to add Gluth kite entry: ${err.message}`);
         }
     }
 
@@ -7718,32 +7669,17 @@ class RaidLogsManager {
                     })
                 });
             }
-            console.log('🔄 [SUMMON] Refreshing manual rewards data...');
             await this.fetchManualRewardsData();
-            
-            console.log('🔄 [SUMMON] Updating table display...');
             this.populateManualRewardsTable();
             this.updateTotalPointsCard();
-            
-            // Small delay to ensure DOM update
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            alert(`Successfully added summoner entries (1 main summoner + 2 empty clicker slots)!`);
-            console.log(`✅ [SUMMON] Successfully added summoner entries`);
         } catch (err) {
             console.error('❌ [SUMMON] Failed to auto add summoners:', err);
-            alert(`Failed to add summoner entries: ${err.message}`);
         }
     }
 
     // Auto-add Tanks: MT, OT1, OT2, OT3 from main page Tanking panel (ID1..ID4 markers)
     async autoAddMainTanks() {
-        if (!this.activeEventId) {
-            alert('No active event selected. Please select an event first.');
-            return;
-        }
-        
-        console.log('🛡️ [TANKS] Starting auto-add main tanks process...');
+        if (!this.activeEventId) return;
         try {
             const res = await fetch(`/api/assignments/${this.activeEventId}`);
             const data = await res.json();
@@ -7751,11 +7687,7 @@ class RaidLogsManager {
             const panels = Array.isArray(data.panels) ? data.panels : [];
             const tankingPanel = panels.find(p => String(p.boss || '').toLowerCase() === 'tanking' && (!p.wing || String(p.wing).trim() === '' || String(p.wing).toLowerCase() === 'main'))
                                || panels.find(p => String(p.boss || '').toLowerCase() === 'tanking');
-            if (!tankingPanel || !Array.isArray(tankingPanel.entries)) { 
-                console.warn('⚠️ [TANKS] Tanking panel not found'); 
-                alert('No tanking assignments found. Please set up tank assignments first.'); 
-                return; 
-            }
+            if (!tankingPanel || !Array.isArray(tankingPanel.entries)) { console.warn('⚠️ [TANKS] Tanking panel not found'); return; }
             const pickByMarker = (marker) => {
                 const e = tankingPanel.entries.find(en => String(en.marker_icon_url || '').toLowerCase().includes(marker));
                 return e?.character_name || null;
@@ -7789,22 +7721,11 @@ class RaidLogsManager {
                     })
                 });
             }
-            console.log('🔄 [TANKS] Refreshing manual rewards data...');
             await this.fetchManualRewardsData();
-            
-            console.log('🔄 [TANKS] Updating table display...');
             this.populateManualRewardsTable();
             this.updateTotalPointsCard();
-            
-            // Small delay to ensure DOM update
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            const addedCount = order.filter(({marker}) => pickByMarker(marker)).length;
-            alert(`Successfully added ${addedCount} tank entries!`);
-            console.log(`✅ [TANKS] Successfully added ${addedCount} tank entries`);
         } catch (err) {
             console.error('❌ [TANKS] Failed to auto add main tanks:', err);
-            alert(`Failed to add tank entries: ${err.message}`);
         }
     }
 
@@ -8678,7 +8599,6 @@ class RaidLogsManager {
             console.error('[SNAPSHOT] Diagnostic lock error', e);
         }
     }
-
 }
 
 // Initialize the raid logs manager when the page loads
