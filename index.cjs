@@ -346,6 +346,12 @@ function ipWhitelistMiddleware(req, res, next) {
     return next(); // Whitelist disabled, allow all
   }
 
+  // ALWAYS allow API endpoints - these are needed for the app to function
+  if (req.path.startsWith('/api/')) {
+    console.log(`🔓 [WHITELIST] API endpoint allowed: ${req.method} ${req.path}`);
+    return next();
+  }
+
   // Get client IP (handle all proxy scenarios)
   let clientIp = req.headers['x-forwarded-for'] || 
                   req.headers['x-real-ip'] || 
