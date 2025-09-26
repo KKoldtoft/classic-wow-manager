@@ -761,8 +761,10 @@ class RaidLogsManager {
             // Points breakdown debug table removed
             
             // Hide loading and show content
+            console.log('🔧 [DEBUG] About to hide loading and show content');
             this.hideLoading();
             this.showContent();
+            console.log('✅ [DEBUG] Called hideLoading and showContent');
             
             // Update the original position now that content is loaded
             setTimeout(() => {
@@ -6636,7 +6638,14 @@ class RaidLogsManager {
     }
 
     showContent() {
-        document.getElementById('raid-logs-container').style.display = 'block';
+        console.log('🔧 [DEBUG] showContent() called');
+        const container = document.getElementById('raid-logs-container');
+        if (container) {
+            container.style.display = 'block';
+            console.log('✅ [DEBUG] Set raid-logs-container display to block');
+        } else {
+            console.error('❌ [DEBUG] raid-logs-container not found!');
+        }
         document.getElementById('no-data-message').style.display = 'none';
         document.getElementById('error-display').style.display = 'none';
     }
