@@ -1579,12 +1579,28 @@ async function requireRosterManager(req, res, next) {
 // Add the JSON middleware to parse request bodies (raise limit for large JSON blobs)
 app.use(express.json({ limit: '15mb' }));
 
-// Simple per-IP request limiting to prevent overwhelming the server
+// Rate limiting for API endpoints only (not static files)
 const requestCounts = new Map(); // ip -> { count, resetTime }
-const REQUEST_LIMIT = 100; // requests per minute per IP
+const REQUEST_LIMIT = 300; // requests per minute per IP (increased for normal usage)
 const WINDOW_MS = 60 * 1000; // 1 minute
 
 app.use((req, res, next) => {
+  // Skip rate limiting for static files and main page
+  if (req.path === '/' || 
+      req.path.startsWith('/images/') ||
+      req.path.startsWith('/css/') ||
+      req.path.startsWith('/js/') ||
+      req.path.endsWith('.html') ||
+      req.path.endsWith('.css') ||
+      req.path.endsWith('.js') ||
+      req.path.endsWith('.png') ||
+      req.path.endsWith('.jpg') ||
+      req.path.endsWith('.webp') ||
+      req.path.endsWith('.ico') ||
+      !req.path.startsWith('/api/')) {
+    return next();
+  }
+
   const ip = req.ip || req.connection.remoteAddress || 'unknown';
   const now = Date.now();
   
@@ -1599,7 +1615,7 @@ app.use((req, res, next) => {
   if (ipData.count >= REQUEST_LIMIT) {
     return res.status(429).json({
       success: false,
-      error: 'Too many requests. Please slow down.',
+      error: 'Too many API requests. Please slow down.',
       retryAfter: Math.ceil((ipData.resetTime - now) / 1000)
     });
   }
