@@ -2669,6 +2669,20 @@
     overflow-x: auto;
 }
 
+/* Page header styles */
+.page-header {
+    margin-bottom: 1.5rem;
+}
+
+.page-header .workflow-container {
+    margin-bottom: 0;
+}
+
+.page-header .raidlogs-toggle-container {
+    padding: 0;
+    margin: 0;
+}
+
 /* Raidlogs Toggle Switch Styles */
 .toggle-switch {
     position: relative;
