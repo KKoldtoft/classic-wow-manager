@@ -13041,8 +13041,8 @@ app.get('/api/faerie-fire-data/:eventId', async (req, res) => {
             const uptimeMatch = row.ability_value.toString().match(/\((\d+(?:\.\d+)?)%\)/);
             const uptimePercentage = uptimeMatch ? parseFloat(uptimeMatch[1]) : 0;
             
-            // Calculate points based on threshold
-            const earnedPoints = uptimePercentage > uptimeThreshold ? points : 0;
+            // Calculate points based on threshold (inclusive - >= instead of >)
+            const earnedPoints = uptimePercentage >= uptimeThreshold ? points : 0;
             
             return {
                 character_name: row.character_name,
