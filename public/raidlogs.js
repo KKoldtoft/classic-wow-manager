@@ -134,6 +134,25 @@ class RaidLogsManager {
                 if (!this._loadingRaid) this.loadRaidLogsData();
             }, 150);
         });
+        
+        // Cleanup SSE connections on page unload
+        window.addEventListener('beforeunload', () => {
+            this.cleanupSSEConnection();
+        });
+        
+        // Also cleanup on visibility change (tab switch/minimize)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                console.log('🔍 [SSE] Page hidden, cleaning up connection');
+                this.cleanupSSEConnection();
+            } else {
+                console.log('🔍 [SSE] Page visible, reinitializing connection');
+                // Small delay to avoid rapid reconnections
+                setTimeout(() => {
+                    this.initializeLiveUpdates();
+                }, 1000);
+            }
+        });
 
         // Add click handlers for page navigation buttons
         this.setupPageNavigationButtons();
@@ -233,12 +252,20 @@ class RaidLogsManager {
     }
     initializeLiveUpdates(){
         try {
+            // Initialize reconnection state
+            if (!this._sseReconnectAttempts) this._sseReconnectAttempts = 0;
+            if (!this._sseBaseDelay) this._sseBaseDelay = 2000; // Start with 2 seconds
+            
             const scope = 'raidlogs';
             const eventId = this.activeEventId || '';
             if (!eventId) return;
+            
             const url = `/api/updates/stream?scope=${encodeURIComponent(scope)}&eventId=${encodeURIComponent(eventId)}`;
+            console.log(`🔌 [SSE] Attempting connection (attempt ${this._sseReconnectAttempts + 1})`);
+            
             const es = new EventSource(url, { withCredentials: true });
             this._es = es;
+            
             const showToast = () => {
                 if (this._refreshToastShown) return;
                 this._refreshToastShown = true;
@@ -257,6 +284,14 @@ class RaidLogsManager {
                     t.style.transform = 'translateY(0)';
                 });
             };
+            
+            es.onopen = () => {
+                console.log(`✅ [SSE] Connection established successfully`);
+                // Reset reconnection attempts on successful connection
+                this._sseReconnectAttempts = 0;
+                this._sseBaseDelay = 2000;
+            };
+            
             es.onmessage = (e)=>{
                 try {
                     const msg = JSON.parse(e.data||'{}');
@@ -269,8 +304,70 @@ class RaidLogsManager {
                     showToast();
                 } catch {}
             };
-            es.onerror = ()=>{};
-        } catch (e) { console.warn('SSE init failed', e); }
+            
+            es.onerror = () => {
+                console.warn(`❌ [SSE] Connection error (attempt ${this._sseReconnectAttempts + 1})`);
+                es.close();
+                this.scheduleSSEReconnection();
+            };
+            
+        } catch (e) { 
+            console.warn('SSE init failed', e);
+            this.scheduleSSEReconnection();
+        }
+    }
+    
+    scheduleSSEReconnection() {
+        // Clear any existing reconnection timer
+        if (this._sseReconnectTimer) {
+            clearTimeout(this._sseReconnectTimer);
+        }
+        
+        // Don't reconnect if user has navigated away
+        if (!this.activeEventId) {
+            console.log(`🚫 [SSE] No active event, skipping reconnection`);
+            return;
+        }
+        
+        // Increment attempt counter
+        this._sseReconnectAttempts++;
+        
+        // Max 8 attempts with exponential backoff
+        if (this._sseReconnectAttempts > 8) {
+            console.error(`🚫 [SSE] Max reconnection attempts reached, giving up`);
+            return;
+        }
+        
+        // Calculate delay with exponential backoff + jitter
+        const baseDelay = this._sseBaseDelay;
+        const exponentialDelay = baseDelay * Math.pow(2, Math.min(this._sseReconnectAttempts - 1, 5));
+        const jitter = Math.random() * 2000; // Add up to 2 seconds of jitter
+        const totalDelay = Math.min(exponentialDelay + jitter, 60000); // Cap at 60 seconds
+        
+        console.log(`⏳ [SSE] Scheduling reconnection in ${Math.round(totalDelay)}ms (attempt ${this._sseReconnectAttempts}/8)`);
+        
+        this._sseReconnectTimer = setTimeout(() => {
+            this.initializeLiveUpdates();
+        }, totalDelay);
+    }
+
+    cleanupSSEConnection() {
+        console.log(`🧹 [SSE] Cleaning up connection...`);
+        
+        // Clear reconnection timer
+        if (this._sseReconnectTimer) {
+            clearTimeout(this._sseReconnectTimer);
+            this._sseReconnectTimer = null;
+        }
+        
+        // Close existing SSE connection
+        if (this._es) {
+            this._es.close();
+            this._es = null;
+        }
+        
+        // Reset connection state
+        this._sseReconnectAttempts = 0;
     }
 
     setupPageNavigationButtons() {
