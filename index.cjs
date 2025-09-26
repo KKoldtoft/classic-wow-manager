@@ -1594,6 +1594,38 @@ async function requireRosterManager(req, res, next) {
 // Add the JSON middleware to parse request bodies (raise limit for large JSON blobs)
 app.use(express.json({ limit: '15mb' }));
 
+// --- EMERGENCY IP WHITELIST ---
+const EMERGENCY_MODE = true; // Set to false to disable
+const WHITELISTED_IPS = [
+  '89.23.224.94', // Kim's IP (from logs)
+  '127.0.0.1',    // Localhost
+  '::1'           // IPv6 localhost
+];
+
+app.use((req, res, next) => {
+  if (EMERGENCY_MODE) {
+    const clientIP = req.headers['x-forwarded-for']?.split(',')[0] || req.connection.remoteAddress || req.socket.remoteAddress;
+    
+    if (!WHITELISTED_IPS.includes(clientIP)) {
+      console.log(`🚫 [EMERGENCY] Blocked IP: ${clientIP} - Path: ${req.path}`);
+      return res.status(503).send(`
+        <html>
+          <head><title>Site Maintenance</title></head>
+          <body style="font-family: Arial; text-align: center; padding: 50px;">
+            <h1>🔧 Site Under Maintenance</h1>
+            <p>The site is temporarily down for maintenance.</p>
+            <p>Please try again in a few minutes.</p>
+          </body>
+        </html>
+      `);
+    }
+    
+    console.log(`✅ [EMERGENCY] Allowed IP: ${clientIP} - Path: ${req.path}`);
+  }
+  
+  next();
+});
+
 // Rate limiting for API endpoints only (not static files)
 const requestCounts = new Map(); // ip -> { count, resetTime }
 const REQUEST_LIMIT = 300; // requests per minute per IP (increased for normal usage)
