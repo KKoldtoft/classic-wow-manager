@@ -8585,6 +8585,13 @@ app.post('/api/log-data/:eventId/store', async (req, res) => {
         }
         
         console.log(`✅ [LOG DATA] Successfully stored ${logData.length} player records`);
+        
+        // Clear cache for all data endpoints related to this event
+        clearCacheByPattern(`log-data:${eventId}`);
+        clearCacheByPattern(`abilities-data:${eventId}`);
+        clearCacheByPattern(`world-buffs-data:${eventId}`);
+        clearCacheByPattern(`raid-stats:${eventId}`);
+        
         res.json({ 
             success: true, 
             message: `Stored log data for ${logData.length} players`,
@@ -8699,6 +8706,13 @@ app.post('/api/player-role-mapping/:eventId/store', async (req, res) => {
         }
         
         console.log(`✅ [ROLE MAPPING] Successfully stored ${roleMappingData.length} role mapping records`);
+        
+        // Clear cache for all data endpoints related to this event (role changes can affect all stats)
+        clearCacheByPattern(`log-data:${eventId}`);
+        clearCacheByPattern(`abilities-data:${eventId}`);
+        clearCacheByPattern(`world-buffs-data:${eventId}`);
+        clearCacheByPattern(`raid-stats:${eventId}`);
+        
         res.json({ 
             success: true, 
             message: `Stored role mapping for ${roleMappingData.length} players`,
