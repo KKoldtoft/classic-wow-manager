@@ -580,9 +580,22 @@ module.exports = function registerRewardsEngine(app, pool) {
       return res.status(401).json({ success: false, message: 'Authentication required' });
     }
     const { eventId } = req.params;
+    
+    // Set timeout to prevent hanging requests
+    req.setTimeout(30000, () => {
+      console.log('⏰ [REWARDS ENGINE] Request timeout for event:', eventId);
+      if (!res.headersSent) {
+        res.status(503).json({ success: false, message: 'Request timeout - server overloaded' });
+      }
+    });
+    
     let client;
     try {
-      client = await pool.connect();
+      // Add connection timeout
+      client = await Promise.race([
+        pool.connect(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Database connection timeout')), 10000))
+      ]);
       // Load snapshot entries first; treat presence of entries as locked materialization
       const [entries, manualRewards, totalGoldPot] = await Promise.all([
         getSnapshotEntries(client, eventId),
@@ -599,9 +612,24 @@ module.exports = function registerRewardsEngine(app, pool) {
       return res.json(autoOut);
     } catch (err) {
       console.error('❌ [REWARDS ENGINE] effective error:', err);
+      
+      // Handle specific error types with appropriate status codes
+      if (err.message && err.message.includes('timeout')) {
+        return res.status(503).json({ success: false, message: 'Database timeout - server overloaded' });
+      }
+      if (err.message && err.message.includes('pool')) {
+        return res.status(503).json({ success: false, message: 'Database connection pool exhausted' });
+      }
+      
       return res.status(500).json({ success: false, message: 'Engine error', error: err && (err.message || String(err)) });
     } finally {
-      if (client) client.release();
+      if (client) {
+        try {
+          client.release();
+        } catch (releaseErr) {
+          console.error('❌ [REWARDS ENGINE] Error releasing client:', releaseErr);
+        }
+      }
     }
   });
 

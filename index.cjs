@@ -401,6 +401,14 @@ const isProduction = process.env.NODE_ENV === 'production';
 const pool = new Pool({
   connectionString: connectionString,
   ssl: isProduction ? { rejectUnauthorized: false } : false,
+  // Critical: Limit connections to prevent exhaustion
+  max: 20, // Maximum pool size
+  min: 2,  // Minimum pool size
+  idleTimeoutMillis: 30000, // Close idle connections after 30s
+  connectionTimeoutMillis: 10000, // Timeout for getting connection from pool
+  acquireTimeoutMillis: 15000, // Timeout for acquiring connection
+  // Handle connection errors gracefully
+  allowExitOnIdle: false
 });
 
 let dbConnectionStatus = 'Connecting...';
