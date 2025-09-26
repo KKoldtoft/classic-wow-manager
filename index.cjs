@@ -1595,7 +1595,7 @@ async function requireRosterManager(req, res, next) {
 app.use(express.json({ limit: '15mb' }));
 
 // --- EMERGENCY IP WHITELIST ---
-const EMERGENCY_MODE = false; // Set to false to disable
+const EMERGENCY_MODE = true; // Set to false to disable
 const WHITELISTED_IPS = [
   '89.23.224.94', // Kim's IP (from logs)
   '127.0.0.1',    // Localhost
