@@ -114,8 +114,21 @@
                 </div>
             </nav>
 
+            <!-- Conditional Heavy Content Container -->
+            <div id="raidlogs-heavy-content" style="display: none;">
+                <!-- Toggle Information Message -->
+                <div class="raidlogs-disabled-message" id="raidlogs-disabled-message" style="margin: 20px 0; padding: 20px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #ffc107; text-align: center;">
+                    <h4 style="margin: 0 0 10px 0; color: #495057;">
+                        <i class="fas fa-info-circle"></i> Raidlogs Dashboard Disabled
+                    </h4>
+                    <p style="margin: 0; color: #6c757d;">
+                        Heavy data loading is disabled to improve performance. Enable it on the <a href="/logs" style="color: #007bff;">Logs page</a> after importing raid data.
+                    </p>
+                </div>
+            </div>
+
             <!-- Stats Section -->
-            <div class="stats-section scroll-target" id="stats-dashboard">
+            <div class="stats-section scroll-target raidlogs-heavy-element" id="stats-dashboard">
                 <!-- Stats Panel Toggle Buttons -->
                 <div class="stats-panel-toggle">
                     <button class="stats-toggle-btn active" data-panel="dashboard">
@@ -364,7 +377,7 @@
             </div>
 
             <!-- God Gamer Section -->
-            <div class="rankings-container god-gamer-container scroll-target" id="god-gamer-container">
+            <div class="rankings-container god-gamer-container scroll-target raidlogs-heavy-element" id="god-gamer-container">
                 <!-- God Gamer DPS Section -->
                 <div class="rankings-section god-gamer-dps-section" style="display: none;">
                     <div class="section-header">
@@ -388,7 +401,7 @@
                 </div>
             </div>
 
-            <div class="rankings-container">
+            <div class="rankings-container raidlogs-heavy-element">
                 <!-- Damage Dealers Section -->
                 <div class="rankings-section damage">
                     <div class="section-header">
@@ -413,7 +426,7 @@
             </div>
 
             <!-- Class-Specific Healing Section -->
-            <div class="rankings-container class-healing-container">
+            <div class="rankings-container class-healing-container raidlogs-heavy-element">
                 <!-- Shaman Healers Section -->
                 <div class="rankings-section shaman-healers-section" style="display: none;">
                     <div class="section-header">
@@ -474,7 +487,7 @@
             </div>
 
             <!-- World Buffs and Frost Resistance Section -->
-            <div class="rankings-container buffs-container scroll-target" id="buffs-container">
+            <div class="rankings-container buffs-container scroll-target raidlogs-heavy-element" id="buffs-container">
                 <!-- World Buffs Section -->
                 <div class="rankings-section world-buffs-section">
                     <div class="section-header">
@@ -507,7 +520,7 @@
             </div>
 
             <!-- Player Streaks and Guild Members Section -->
-            <div class="rankings-container streak-guild-container scroll-target" id="streak-guild-container">
+            <div class="rankings-container streak-guild-container scroll-target raidlogs-heavy-element" id="streak-guild-container">
                 <div class="rankings-section streak-section">
                     <div class="section-header">
                         <h2><i class="fas fa-fire"></i> Attendance Streak Champions</h2>
@@ -538,7 +551,7 @@
             </div>
 
             <!-- Rewards Section (Engineering, Mana Potions, and Runes) -->
-            <div class="rankings-container rewards-container scroll-target" id="rewards-container">
+            <div class="rankings-container rewards-container scroll-target raidlogs-heavy-element" id="rewards-container">
                 <div class="rankings-section abilities-section">
                     <div class="section-header">
                         <h2><img src="https://wow.zamimg.com/images/wow/icons/large/inv_misc_bomb_06.jpg" alt="Explosives" style="width: 24px; height: 24px; margin-right: 8px;"> Engineering & Holywater</h2>
@@ -572,7 +585,7 @@
             </div>
 
             <!-- Combat Actions Section (Interrupts and Disarms) -->
-            <div class="rankings-container combat-container scroll-target" id="combat-container">
+            <div class="rankings-container combat-container scroll-target raidlogs-heavy-element" id="combat-container">
                 <div class="rankings-section interrupts-section">
                     <div class="section-header">
                         <h2><img src="https://wow.zamimg.com/images/wow/icons/large/ability_kick.jpg" alt="Interrupted spells" style="width: 24px; height: 24px; margin-right: 8px;"> Interrupted spells</h2>
@@ -606,7 +619,7 @@
             </div>
 
             <!-- Sunder Armor Section -->
-            <div class="rankings-container sunder-container scroll-target" id="sunder-container">
+            <div class="rankings-container sunder-container scroll-target raidlogs-heavy-element" id="sunder-container">
                 <div class="rankings-section sunder-section">
                     <div class="section-header">
                         <h2><img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_sunder.jpg" alt="Sunder Armor" style="width: 24px; height: 24px; margin-right: 8px;"> Sunder Armor</h2>
@@ -629,7 +642,7 @@
             </div>
 
             <!-- Curses Section (Recklessness, Shadow, Elements) -->
-            <div class="rankings-container curse-container scroll-target" id="curse-container">
+            <div class="rankings-container curse-container scroll-target raidlogs-heavy-element" id="curse-container">
                 <div class="rankings-section curse-section curse-recklessness-section">
                     <div class="section-header">
                         <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_unholystrength.jpg" alt="Curse of Recklessness" style="width: 24px; height: 24px; margin-right: 8px;"> Curse of Recklessness</h2>
@@ -695,7 +708,7 @@
             </div>
 
             <!-- Polymorph & Power Infusion Section -->
-            <div class="rankings-container polymorph-power-infusion-container scroll-target" id="polymorph-power-infusion-container">
+            <div class="rankings-container polymorph-power-infusion-container scroll-target raidlogs-heavy-element" id="polymorph-power-infusion-container">
                 <div class="rankings-section polymorph-section">
                     <div class="section-header">
                         <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_polymorph.jpg" alt="Polymorph" style="width: 24px; height: 24px; margin-right: 8px;"> Polymorph</h2>
@@ -718,7 +731,7 @@
             </div>
 
             <!-- Decurses Section -->
-            <div class="rankings-container decurses-container scroll-target" id="decurses-container">
+            <div class="rankings-container decurses-container scroll-target raidlogs-heavy-element" id="decurses-container">
                 <div class="rankings-section decurses-section">
                     <div class="section-header">
                         <h2><img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_removecurse.jpg" alt="Remove Lesser Curse" style="width: 24px; height: 24px; margin-right: 8px;"> Decurses</h2>

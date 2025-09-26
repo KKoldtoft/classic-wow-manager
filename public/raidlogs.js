@@ -121,6 +121,10 @@ class RaidLogsManager {
         this.playerPanels = new Map(); // key: panelId, value: { slug, name, className }
         this._myGoldTooltipCards = new WeakSet();
         this.engineResult = null;
+        
+        // Initialize raidlogs toggle functionality
+        this.initializeRaidlogsToggle();
+        
         this.loadRaidLogsData();
     }
 
@@ -673,6 +677,25 @@ class RaidLogsManager {
                 }
             } catch {}
 
+            // Check if raidlogs toggle is enabled before loading heavy data
+            const isToggleEnabled = localStorage.getItem('raidlogsToggleEnabled') === 'true';
+            if (!isToggleEnabled) {
+                console.log('🎛️ [RAIDLOGS] Heavy data loading disabled by toggle - loading minimal data only');
+                
+                // Load only minimal data needed for Manual Rewards section
+                await Promise.all([
+                    this.fetchRewardSettings(),
+                    this.fetchCurrentUser(),
+                    this.fetchPrimaryRoles().then(roles => this.primaryRoles = roles)
+                ]);
+                
+                this.showContent();
+                this._loadingRaid = false;
+                return;
+            }
+
+            console.log('🎛️ [RAIDLOGS] Toggle enabled - loading full dataset');
+            
             // To avoid exhausting browser/Heroku resources, fetch in small batches instead of all-at-once
             // Batch 1: core datasets and light endpoints
             await Promise.all([
@@ -8598,6 +8621,61 @@ class RaidLogsManager {
         } catch (e) {
             console.error('[SNAPSHOT] Diagnostic lock error', e);
         }
+    }
+
+    // Raidlogs Toggle Functionality
+    initializeRaidlogsToggle() {
+        // Check localStorage for toggle state
+        const isEnabled = localStorage.getItem('raidlogsToggleEnabled') === 'true';
+        
+        // Apply initial state
+        this.updateRaidlogsDisplay(isEnabled);
+        
+        // Listen for toggle changes from other tabs/pages
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'raidlogsToggleEnabled') {
+                const newState = e.newValue === 'true';
+                this.updateRaidlogsDisplay(newState);
+            }
+        });
+        
+        // Listen for custom events from same page
+        window.addEventListener('raidlogsToggleChanged', (e) => {
+            this.updateRaidlogsDisplay(e.detail.enabled);
+        });
+        
+        console.log(`🎛️ [RAIDLOGS] Toggle initialized - ${isEnabled ? 'Enabled' : 'Disabled'}`);
+    }
+
+    updateRaidlogsDisplay(enabled) {
+        const heavyElements = document.querySelectorAll('.raidlogs-heavy-element');
+        const disabledMessage = document.getElementById('raidlogs-disabled-message');
+        
+        if (enabled) {
+            // Show heavy elements and hide disabled message
+            heavyElements.forEach(element => {
+                element.style.display = '';
+            });
+            if (disabledMessage) {
+                disabledMessage.style.display = 'none';
+            }
+            
+            // Load data if not already loaded and we have an active event
+            if (this.activeEventId && !this.logData) {
+                console.log('🎛️ [RAIDLOGS] Toggle enabled - loading data');
+                this.loadRaidLogsData();
+            }
+        } else {
+            // Hide heavy elements and show disabled message  
+            heavyElements.forEach(element => {
+                element.style.display = 'none';
+            });
+            if (disabledMessage) {
+                disabledMessage.style.display = 'block';
+            }
+        }
+        
+        console.log(`🎛️ [RAIDLOGS] Display updated - ${enabled ? 'Heavy elements shown' : 'Heavy elements hidden'}`);
     }
 }
 
