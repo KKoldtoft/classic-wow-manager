@@ -8728,10 +8728,14 @@ class RaidLogsManager {
 
     updateRaidlogsDisplay(enabled) {
         const heavyElements = document.querySelectorAll('.raidlogs-heavy-element');
+        const heavyContent = document.getElementById('raidlogs-heavy-content');
         const disabledMessage = document.getElementById('raidlogs-disabled-message');
         
         if (enabled) {
-            // Show heavy elements and hide disabled message
+            // Show heavy content container and individual heavy elements
+            if (heavyContent) {
+                heavyContent.style.display = '';
+            }
             heavyElements.forEach(element => {
                 element.style.display = '';
             });
@@ -8745,7 +8749,10 @@ class RaidLogsManager {
                 this.loadRaidLogsData();
             }
         } else {
-            // Hide heavy elements and show disabled message  
+            // Hide heavy content container and individual heavy elements
+            if (heavyContent) {
+                heavyContent.style.display = 'none';
+            }
             heavyElements.forEach(element => {
                 element.style.display = 'none';
             });
