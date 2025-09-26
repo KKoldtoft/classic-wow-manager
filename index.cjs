@@ -333,7 +333,53 @@ const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', 1);
 
-// IP restrictions removed - all traffic allowed
+// --- IP WHITELIST CONFIGURATION ---
+const IP_WHITELIST_ENABLED = true; // Set to false to disable whitelist
+const ALLOWED_IPS = [
+  '77.33.25.62',
+  '89.23.224.94'
+];
+
+// IP Whitelist Middleware
+function ipWhitelistMiddleware(req, res, next) {
+  if (!IP_WHITELIST_ENABLED) {
+    return next(); // Whitelist disabled, allow all
+  }
+
+  // Get client IP (handle all proxy scenarios)
+  let clientIp = req.headers['x-forwarded-for'] || 
+                  req.headers['x-real-ip'] || 
+                  req.connection.remoteAddress || 
+                  req.socket.remoteAddress ||
+                  (req.connection.socket ? req.connection.socket.remoteAddress : null) ||
+                  req.ip ||
+                  'unknown';
+
+  // Clean up IP (handle comma-separated forwarded IPs)
+  if (typeof clientIp === 'string') {
+    clientIp = clientIp.split(',')[0].trim();
+  }
+
+  console.log(`🔍 [WHITELIST] Checking IP: ${clientIp}`);
+
+  // Check if IP is in whitelist
+  if (ALLOWED_IPS.includes(clientIp)) {
+    console.log(`✅ [WHITELIST] Allowed IP: ${clientIp}`);
+    return next();
+  }
+
+  // Block unauthorized IP with JSON response
+  console.log(`🚫 [WHITELIST] Blocked IP: ${clientIp}`);
+  return res.status(403).json({ 
+    success: false, 
+    message: 'Access denied: Your IP address is not authorized to access this website.',
+    ip: clientIp,
+    contact: 'Please contact guild leadership on Discord if you need access.'
+  });
+}
+
+// Apply IP whitelist to all routes
+app.use(ipWhitelistMiddleware);
 
 // --- Cloudinary Configuration ---
 cloudinary.config({
