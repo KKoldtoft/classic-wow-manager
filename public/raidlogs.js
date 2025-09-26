@@ -686,8 +686,12 @@ class RaidLogsManager {
                 await Promise.all([
                     this.fetchRewardSettings(),
                     this.fetchCurrentUser(),
-                    this.fetchPrimaryRoles().then(roles => this.primaryRoles = roles)
+                    this.fetchPrimaryRoles().then(roles => this.primaryRoles = roles),
+                    this.fetchManualRewardsData()
                 ]);
+                
+                // Populate Manual Rewards table with the loaded data
+                this.populateManualRewardsTable();
                 
                 this.showContent();
                 this._loadingRaid = false;
@@ -6227,7 +6231,7 @@ class RaidLogsManager {
 
     renderPointsBreakdownTable() {
         const pbContainer = document.getElementById('points-breakdown-table-container');
-        if (!container) return;
+        if (!pbContainer) return;
         const lower = s=>String(s||'').toLowerCase();
         const confirmedPlayers = (this.logData||[]).filter(p=>!this.shouldIgnorePlayer(p.character_name));
         const nameList = confirmedPlayers.map(p=>p.character_name);
