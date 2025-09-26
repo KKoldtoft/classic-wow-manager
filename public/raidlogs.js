@@ -679,9 +679,11 @@ class RaidLogsManager {
                 this.fetchLogData(),
                 this.fetchRaidStats(),
                 this.fetchRewardSettings(),
-                this.fetchCurrentUser(),
-                this.fetchPrimaryRoles().then(roles => this.primaryRoles = roles)
+                this.fetchCurrentUser()
             ]);
+            
+            // Load primary roles before filtering players (critical timing)
+            this.primaryRoles = await this.fetchPrimaryRoles();
 
             // Batch 2: combat/points datasets
             await Promise.all([
