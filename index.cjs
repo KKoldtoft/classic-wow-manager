@@ -289,44 +289,147 @@ function broadcastUpdate(scope, eventId, data) {
   } catch (e) { console.warn('SSE broadcast error', e); }
 }
 
+// SSE Connection management and cleanup
+const sseConnections = new Map(); // Track connections per IP
+const MAX_CONNECTIONS_PER_IP = 3;
+const SSE_TIMEOUT_MS = 60000; // 1 minute instead of 3 minutes
+const SSE_HEARTBEAT_MS = 15000; // 15 seconds
+
+function cleanupSSEConnection(res, topic, ip, heartbeat, idleTimer, maxIdleTimer) {
+  try {
+    if (heartbeat) clearInterval(heartbeat);
+    if (idleTimer) clearTimeout(idleTimer);
+    if (maxIdleTimer) clearTimeout(maxIdleTimer);
+    
+    // Remove from topic set
+    const set = sseTopics.get(topic);
+    if (set) set.delete(res);
+    
+    // Remove from IP tracking
+    if (ip) {
+      const ipConnections = sseConnections.get(ip) || new Set();
+      ipConnections.delete(res);
+      if (ipConnections.size === 0) {
+        sseConnections.delete(ip);
+      } else {
+        sseConnections.set(ip, ipConnections);
+      }
+    }
+    
+    // Close connection if not already closed
+    if (!res.destroyed && !res.finished) {
+      try {
+        res.write('event: close\ndata: {"reason":"cleanup"}\n\n');
+        res.end();
+      } catch {}
+    }
+  } catch (error) {
+    console.warn('SSE cleanup error:', error);
+  }
+}
+
 app.get('/api/updates/stream', (req, res) => {
   if (!req.isAuthenticated || !req.isAuthenticated()) {
     // Allow anonymous read if desired; else enforce auth similar to other pages
     // return res.status(401).end();
   }
+  
+  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim();
+  
+  // Check connection limit per IP
+  const ipConnections = sseConnections.get(ip) || new Set();
+  if (ipConnections.size >= MAX_CONNECTIONS_PER_IP) {
+    console.log(`🚫 SSE connection limit reached for IP: ${ip} (${ipConnections.size}/${MAX_CONNECTIONS_PER_IP})`);
+    return res.status(429).json({ error: 'Too many SSE connections from this IP' });
+  }
+  
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.flushHeaders && res.flushHeaders();
 
   const scope = String(req.query.scope || 'global');
   const eventId = String(req.query.eventId || 'all');
   const topic = getTopic(scope, eventId);
+  
+  console.log(`🔌 SSE connection opened: ${ip} → ${scope}:${eventId}`);
 
   let set = sseTopics.get(topic);
   if (!set) { set = new Set(); sseTopics.set(topic, set); }
+  
+  // Close any existing connection from this IP for this topic
   try {
-    const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString();
     let found = null;
     for (const r of set) { if (r._sseIp === ip) { found = r; break; } }
-    if (found) { try { found.end(); } catch {} set.delete(found); }
+    if (found) { 
+      console.log(`🔄 Replacing existing SSE connection for IP: ${ip}`);
+      cleanupSSEConnection(found, topic, ip, found._heartbeat, found._idleTimer, found._maxIdleTimer);
+    }
     res._sseIp = ip;
   } catch {}
+  
   set.add(res);
+  ipConnections.add(res);
+  sseConnections.set(ip, ipConnections);
 
   // Initial ping
-  try { res.write(`data: ${JSON.stringify({ scope, eventId, type: 'connected', ts: Date.now() })}\n\n`); } catch {}
+  try { 
+    res.write(`data: ${JSON.stringify({ 
+      scope, 
+      eventId, 
+      type: 'connected', 
+      ts: Date.now(),
+      timeout: SSE_TIMEOUT_MS 
+    })}\n\n`); 
+  } catch {}
 
+  // Heartbeat with error handling
   const heartbeat = setInterval(() => {
-    try { res.write(': heartbeat\n\n'); } catch { clearInterval(heartbeat); }
-  }, 25000);
-  const idleTimer = setTimeout(() => { try { res.write('event: close\ndata: {"reason":"idle-timeout"}\n\n'); res.end(); } catch {} }, 180000);
+    if (res.destroyed || res.finished) {
+      clearInterval(heartbeat);
+      return;
+    }
+    try { 
+      res.write(': heartbeat\n\n'); 
+    } catch (error) { 
+      console.log(`💔 SSE heartbeat failed for ${ip}: ${error.message}`);
+      clearInterval(heartbeat);
+      cleanupSSEConnection(res, topic, ip, heartbeat, null, null);
+    }
+  }, SSE_HEARTBEAT_MS);
+  
+  // Shorter idle timeout (1 minute)
+  const idleTimer = setTimeout(() => { 
+    console.log(`⏰ SSE idle timeout for ${ip} after ${SSE_TIMEOUT_MS}ms`);
+    cleanupSSEConnection(res, topic, ip, heartbeat, idleTimer, null);
+  }, SSE_TIMEOUT_MS);
+  
+  // Maximum connection time (5 minutes hard limit)
+  const maxIdleTimer = setTimeout(() => {
+    console.log(`🔒 SSE max connection time reached for ${ip} (5 minutes)`);
+    cleanupSSEConnection(res, topic, ip, heartbeat, idleTimer, maxIdleTimer);
+  }, 300000);
+
+  // Store timer references for cleanup
+  res._heartbeat = heartbeat;
+  res._idleTimer = idleTimer;
+  res._maxIdleTimer = maxIdleTimer;
+  res._sseStartTime = Date.now();
 
   req.on('close', () => {
-    clearInterval(heartbeat);
-    clearTimeout(idleTimer);
-    const s = sseTopics.get(topic);
-    if (s) s.delete(res);
+    console.log(`🔌 SSE connection closed: ${ip} (duration: ${Date.now() - res._sseStartTime}ms)`);
+    cleanupSSEConnection(res, topic, ip, heartbeat, idleTimer, maxIdleTimer);
+  });
+  
+  req.on('error', (error) => {
+    console.log(`❌ SSE connection error for ${ip}: ${error.message}`);
+    cleanupSSEConnection(res, topic, ip, heartbeat, idleTimer, maxIdleTimer);
+  });
+  
+  res.on('error', (error) => {
+    console.log(`❌ SSE response error for ${ip}: ${error.message}`);
+    cleanupSSEConnection(res, topic, ip, heartbeat, idleTimer, maxIdleTimer);
   });
 });
 const PORT = process.env.PORT || 3000;
