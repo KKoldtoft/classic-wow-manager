@@ -314,57 +314,80 @@ class GoldPotManager {
 
     async fetchRaidlogsDatasets() {
         const id = this.currentEventId;
-        const endpoints = [
-            [`/api/log-data/${id}`, 'logData'],
-            ['/api/reward-settings', 'rewardSettings'],
-            [`/api/abilities-data/${id}`, 'abilitiesData'],
-            [`/api/mana-potions-data/${id}`, 'manaPotionsData'],
-            [`/api/runes-data/${id}`, 'runesData'],
-            [`/api/windfury-data/${id}`, 'windfuryData'],
-            [`/api/interrupts-data/${id}`, 'interruptsData'],
-            [`/api/disarms-data/${id}`, 'disarmsData'],
-            [`/api/sunder-data/${id}`, 'sunderData'],
-            [`/api/curse-data/${id}`, 'curseData'],
-            [`/api/curse-shadow-data/${id}`, 'curseShadowData'],
-            [`/api/curse-elements-data/${id}`, 'curseElementsData'],
-            [`/api/faerie-fire-data/${id}`, 'faerieFireData'],
-            [`/api/scorch-data/${id}`, 'scorchData'],
-            [`/api/demo-shout-data/${id}`, 'demoShoutData'],
-            [`/api/polymorph-data/${id}`, 'polymorphData'],
-            [`/api/power-infusion-data/${id}`, 'powerInfusionData'],
-            [`/api/decurses-data/${id}`, 'decursesData'],
-            [`/api/frost-resistance-data/${id}`, 'frostResistanceData'],
-            [`/api/world-buffs-data/${id}`, 'worldBuffsData'],
-            [`/api/void-damage/${id}`, 'voidDamageData'],
-            [`/api/manual-rewards/${id}`, 'manualRewardsData'],
-            [`/api/player-streaks/${id}`, 'playerStreaks'],
-            [`/api/guild-members/${id}`, 'guildMembers'],
-            [`/api/raid-stats/${id}`, 'raidStats'],
-            [`/api/big-buyer/${id}`, 'bigBuyerData']
-        ];
-        const fetches = await Promise.all(endpoints.map(([url]) => fetch(url).catch(()=>null)));
-        for (let i = 0; i < endpoints.length; i++) {
-            const key = endpoints[i][1];
-            const resp = fetches[i];
-            try {
-                if (resp && resp.ok) {
-                    const json = await resp.json();
-                    if (key === 'logData') this.logData = json.data || [];
-                    else if (key === 'rewardSettings') this.rewardSettings = json.settings || {};
-                    else if (key === 'raidStats') this.datasets.raidStats = json.data || json || {};
-                    else {
-                        const arr = (json.data || json.settings || json) && (json.data || []);
-                        if (key === 'manualRewardsData') {
-                            this.datasets[key] = (arr || []).map(e => ({ ...e, is_gold: !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||'')))) }));
-                        } else {
-                            this.datasets[key] = arr;
-                        }
+        
+        // To avoid overwhelming server resources, fetch in small batches instead of all-at-once
+        // Batch 1: Core data needed immediately (5 requests)
+        await Promise.all([
+            this.fetchSingleDataset(`/api/log-data/${id}`, 'logData'),
+            this.fetchSingleDataset('/api/reward-settings', 'rewardSettings'), 
+            this.fetchSingleDataset(`/api/raid-stats/${id}`, 'raidStats'),
+            this.fetchSingleDataset(`/api/manual-rewards/${id}`, 'manualRewardsData'),
+            this.fetchSingleDataset(`/api/guild-members/${id}`, 'guildMembers')
+        ]);
+
+        // Batch 2: Combat abilities data (8 requests)
+        await Promise.all([
+            this.fetchSingleDataset(`/api/abilities-data/${id}`, 'abilitiesData'),
+            this.fetchSingleDataset(`/api/mana-potions-data/${id}`, 'manaPotionsData'),
+            this.fetchSingleDataset(`/api/runes-data/${id}`, 'runesData'),
+            this.fetchSingleDataset(`/api/windfury-data/${id}`, 'windfuryData'),
+            this.fetchSingleDataset(`/api/interrupts-data/${id}`, 'interruptsData'),
+            this.fetchSingleDataset(`/api/disarms-data/${id}`, 'disarmsData'),
+            this.fetchSingleDataset(`/api/sunder-data/${id}`, 'sunderData'),
+            this.fetchSingleDataset(`/api/void-damage/${id}`, 'voidDamageData')
+        ]);
+
+        // Batch 3: Debuff/curse data (8 requests)
+        await Promise.all([
+            this.fetchSingleDataset(`/api/curse-data/${id}`, 'curseData'),
+            this.fetchSingleDataset(`/api/curse-shadow-data/${id}`, 'curseShadowData'),
+            this.fetchSingleDataset(`/api/curse-elements-data/${id}`, 'curseElementsData'),
+            this.fetchSingleDataset(`/api/faerie-fire-data/${id}`, 'faerieFireData'),
+            this.fetchSingleDataset(`/api/scorch-data/${id}`, 'scorchData'),
+            this.fetchSingleDataset(`/api/demo-shout-data/${id}`, 'demoShoutData'),
+            this.fetchSingleDataset(`/api/polymorph-data/${id}`, 'polymorphData'),
+            this.fetchSingleDataset(`/api/power-infusion-data/${id}`, 'powerInfusionData')
+        ]);
+
+        // Batch 4: Auxiliary data (5 requests)
+        await Promise.all([
+            this.fetchSingleDataset(`/api/decurses-data/${id}`, 'decursesData'),
+            this.fetchSingleDataset(`/api/frost-resistance-data/${id}`, 'frostResistanceData'),
+            this.fetchSingleDataset(`/api/world-buffs-data/${id}`, 'worldBuffsData'),
+            this.fetchSingleDataset(`/api/player-streaks/${id}`, 'playerStreaks'),
+            this.fetchSingleDataset(`/api/big-buyer/${id}`, 'bigBuyerData')
+        ]);
+
+        // Sanitize non-players across datasets after all fetches complete
+        this.sanitizeDatasets();
+    }
+
+    async fetchSingleDataset(url, key) {
+        try {
+            const resp = await fetch(url);
+            if (resp && resp.ok) {
+                const json = await resp.json();
+                if (key === 'logData') this.logData = json.data || [];
+                else if (key === 'rewardSettings') this.rewardSettings = json.settings || {};
+                else if (key === 'raidStats') this.datasets.raidStats = json.data || json || {};
+                else {
+                    const arr = (json.data || json.settings || json) && (json.data || []);
+                    if (key === 'manualRewardsData') {
+                        this.datasets[key] = (arr || []).map(e => ({ ...e, is_gold: !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||'')))) }));
+                    } else {
+                        this.datasets[key] = arr;
                     }
-                } else {
-                    this.datasets[key] = [];
                 }
-            } catch { this.datasets[key] = []; }
+            } else {
+                this.datasets[key] = [];
+            }
+        } catch (error) {
+            console.warn(`Failed to fetch ${url}:`, error);
+            this.datasets[key] = [];
         }
+    }
+
+    sanitizeDatasets() {
         // Sanitize non-players across datasets (only for array datasets)
         Object.keys(this.datasets).forEach(k => {
             const v = this.datasets[k];

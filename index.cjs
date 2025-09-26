@@ -349,6 +349,45 @@ const pool = new Pool({
   ssl: isProduction ? { rejectUnauthorized: false } : false,
 });
 
+// --- Simple In-Memory Cache for API Responses ---
+const apiCache = new Map(); // key -> { data, timestamp, ttl }
+
+function getCacheKey(endpoint, eventId, params = {}) {
+  const paramStr = Object.keys(params).length > 0 ? JSON.stringify(params) : '';
+  return `${endpoint}:${eventId}:${paramStr}`;
+}
+
+function getCachedResponse(key) {
+  const cached = apiCache.get(key);
+  if (!cached) return null;
+  
+  const now = Date.now();
+  if (now - cached.timestamp > cached.ttl) {
+    apiCache.delete(key);
+    return null;
+  }
+  
+  return cached.data;
+}
+
+function setCachedResponse(key, data, ttlMs = 30000) { // 30 seconds default
+  apiCache.set(key, {
+    data: data,
+    timestamp: Date.now(),
+    ttl: ttlMs
+  });
+  
+  // Clean up expired entries periodically
+  if (Math.random() < 0.01) { // 1% chance to trigger cleanup
+    const now = Date.now();
+    for (const [k, v] of apiCache.entries()) {
+      if (now - v.timestamp > v.ttl) {
+        apiCache.delete(k);
+      }
+    }
+  }
+}
+
 let dbConnectionStatus = 'Connecting...';
 
 pool.connect()
@@ -1539,6 +1578,46 @@ async function requireRosterManager(req, res, next) {
 
 // Add the JSON middleware to parse request bodies (raise limit for large JSON blobs)
 app.use(express.json({ limit: '15mb' }));
+
+// Simple per-IP request limiting to prevent overwhelming the server
+const requestCounts = new Map(); // ip -> { count, resetTime }
+const REQUEST_LIMIT = 100; // requests per minute per IP
+const WINDOW_MS = 60 * 1000; // 1 minute
+
+app.use((req, res, next) => {
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const now = Date.now();
+  
+  // Get or create request count for this IP
+  let ipData = requestCounts.get(ip);
+  if (!ipData || now > ipData.resetTime) {
+    ipData = { count: 0, resetTime: now + WINDOW_MS };
+    requestCounts.set(ip, ipData);
+  }
+  
+  // Check if limit exceeded
+  if (ipData.count >= REQUEST_LIMIT) {
+    return res.status(429).json({
+      success: false,
+      error: 'Too many requests. Please slow down.',
+      retryAfter: Math.ceil((ipData.resetTime - now) / 1000)
+    });
+  }
+  
+  // Increment count and continue
+  ipData.count++;
+  
+  // Cleanup expired entries periodically (1% chance)
+  if (Math.random() < 0.01) {
+    for (const [cleanupIp, cleanupData] of requestCounts.entries()) {
+      if (now > cleanupData.resetTime) {
+        requestCounts.delete(cleanupIp);
+      }
+    }
+  }
+  
+  next();
+});
 
 // 🎯 Discord API endpoints removed - we now get channel names directly from Raid-Helper API!
 
@@ -5582,11 +5661,16 @@ app.post('/api/logs/rpb', async (req, res) => {
     }
 
     // Make request to Google Apps Script
+    // Add delay to avoid Google rate limiting (random 1-3 seconds)
+    const delay = 1000 + Math.random() * 2000;
+    await new Promise(resolve => setTimeout(resolve, delay));
+    
     const response = await axios({
       method: 'POST',
       url: rpbWebAppUrl,
       headers: {
         'Content-Type': 'application/json',
+        'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)', // Add user agent
       },
       data: requestData,
       timeout: action === 'startRPB' ? 400000 : 30000, // 6.5 min for startRPB, 30s for status checks
@@ -5656,11 +5740,16 @@ app.post('/api/logs/world-buffs', async (req, res) => {
     }
 
     // Make request to Google Apps Script
+    // Add delay to avoid Google rate limiting (random 1-3 seconds)
+    const delay = 1000 + Math.random() * 2000;
+    await new Promise(resolve => setTimeout(resolve, delay));
+    
     const response = await axios({
       method: 'POST',
       url: worldBuffsWebAppUrl,
       headers: {
         'Content-Type': 'application/json',
+        'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)', // Add user agent
       },
       data: requestData,
       timeout: action === 'populateWorldBuffs' ? 120000 : 30000, // 2 min for populate, 30s for status checks
@@ -5727,11 +5816,16 @@ app.post('/api/logs/cla-backup', async (req, res) => {
     }
 
     // Make request to Google Apps Script
+    // Add delay to avoid Google rate limiting (random 1-3 seconds)
+    const delay = 1000 + Math.random() * 2000;
+    await new Promise(resolve => setTimeout(resolve, delay));
+    
     const response = await axios({
       method: 'POST',
       url: claBackupWebAppUrl,
       headers: {
         'Content-Type': 'application/json',
+        'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)', // Add user agent
       },
       data: requestData,
       timeout: 60000, // 1 minute timeout for backup creation
@@ -5801,11 +5895,16 @@ app.post('/api/logs/frost-res', async (req, res) => {
     }
 
     // Make request to Google Apps Script
+    // Add delay to avoid Google rate limiting (random 1-3 seconds)
+    const delay = 1000 + Math.random() * 2000;
+    await new Promise(resolve => setTimeout(resolve, delay));
+    
     const response = await axios({
       method: 'POST',
       url: frostResWebAppUrl,
       headers: {
         'Content-Type': 'application/json',
+        'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)', // Add user agent
       },
       data: requestData,
       timeout: action === 'populateFrostRes' ? 120000 : 60000, // 2 min for populate, 1 min for backup/status
@@ -8146,7 +8245,8 @@ app.get('/api/confirmed-logs/:raidId/players', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [CONFIRM LOGS] Table does not exist, returning empty array');
-            return res.json({ success: true, data: [] });
+            res.json({ success: true, data: [] });
+            return;
         }
         
         // Build query based on manually_matched filter
@@ -8373,7 +8473,8 @@ app.get('/api/confirmed-logs/:raidId/all-players', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [GOLD POT] Table does not exist, returning empty array');
-            return res.json({ success: true, data: [] });
+            res.json({ success: true, data: [] });
+            return;
         }
         
         const result = await client.query(
@@ -8944,6 +9045,14 @@ function mapSpecToRole(spec) {
 app.get('/api/log-data/:eventId', async (req, res) => {
     const { eventId } = req.params;
     
+    // Check cache first
+    const cacheKey = getCacheKey('log-data', eventId);
+    const cachedResult = getCachedResponse(cacheKey);
+    if (cachedResult) {
+        console.log(`📖 [LOG DATA] Returning cached data for event: ${eventId}`);
+        return res.json(cachedResult);
+    }
+    
     console.log(`📖 [LOG DATA] Retrieving enhanced log data for event: ${eventId}`);
     
     let client;
@@ -8960,7 +9069,8 @@ app.get('/api/log-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [LOG DATA] Table does not exist, returning empty data');
-            return res.json({ success: true, data: [], hasData: false });
+            res.json({ success: true, data: [], hasData: false });
+            return;
         }
         
         // Enhanced query that joins with roster_overrides to get better role/spec data
@@ -9034,12 +9144,17 @@ app.get('/api/log-data/:eventId', async (req, res) => {
         
         console.log(`🎯 [LOG DATA] Enhanced ${enhancedData.length} records with roster override data`);
         
-        res.json({ 
+        const responseData = { 
             success: true, 
             data: enhancedData,
             hasData: hasData,
             eventId: eventId
-        });
+        };
+        
+        // Cache the response
+        setCachedResponse(cacheKey, responseData);
+        
+        res.json(responseData);
         
     } catch (error) {
         console.error('❌ [LOG DATA] Error retrieving log data:', error);
@@ -9130,7 +9245,8 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
     `);
     if (!logTableCheck.rows[0].exists) {
       console.log('⚠️ [PLAYER STREAKS] log_data table missing');
-      return res.json({ success: true, data: [] });
+      res.json({ success: true, data: [] });
+      return;
     }
 
     const parseEventDate = (dateStr) => {
@@ -9162,7 +9278,8 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
     `, [eventId]);
 
     if (eventRows.rows.length === 0) {
-      return res.json({ success: true, data: [] });
+      res.json({ success: true, data: [] });
+      return;
     }
 
     // Build resolvers (same approach as /api/attendance)
@@ -9320,7 +9437,8 @@ app.get('/api/player-streaks/:eventId', async (req, res) => {
     }
 
     if (participantsMap.size === 0) {
-      return res.json({ success: true, data: [], eventId, minStreak: 4, totalCount: 0 });
+      res.json({ success: true, data: [], eventId, minStreak: 4, totalCount: 0 });
+      return;
     }
 
     // Build response for resolved participants with streak >= 4
@@ -9364,7 +9482,8 @@ app.get('/api/guild-members/:eventId', async (req, res) => {
         const have = new Set(tablesCheck.rows.map(r => r.table_name));
         if (!have.has('log_data') || !have.has('guildies')) {
             console.log('⚠️ [GUILD MEMBERS] required tables missing');
-            return res.json({ success: true, data: [] });
+            res.json({ success: true, data: [] });
+            return;
         }
         
         // 1) All rows for this event (may lack discord_id)
@@ -9374,7 +9493,8 @@ app.get('/api/guild-members/:eventId', async (req, res) => {
             WHERE event_id = $1
         `, [eventId]);
         if (eventRows.rows.length === 0) {
-            return res.json({ success: true, data: [], eventId, pointsPerMember: 10, totalCount: 0 });
+            res.json({ success: true, data: [], eventId, pointsPerMember: 10, totalCount: 0 });
+            return;
         }
 
         // 2) Build resolvers similar to streaks
@@ -9451,7 +9571,8 @@ app.get('/api/guild-members/:eventId', async (req, res) => {
         }
 
         if (participantsMap.size === 0) {
-            return res.json({ success: true, data: [], eventId, pointsPerMember: 10, totalCount: 0 });
+            res.json({ success: true, data: [], eventId, pointsPerMember: 10, totalCount: 0 });
+            return;
         }
 
         // 4) Intersect with guildies by discord_id
@@ -9500,6 +9621,14 @@ app.get('/api/guild-members/:eventId', async (req, res) => {
 app.get('/api/abilities-data/:eventId', async (req, res) => {
     const { eventId } = req.params;
     
+    // Check cache first
+    const cacheKey = getCacheKey('abilities-data', eventId);
+    const cachedResult = getCachedResponse(cacheKey);
+    if (cachedResult) {
+        console.log(`💣 [ABILITIES] Returning cached data for event: ${eventId}`);
+        return res.json(cachedResult);
+    }
+    
     console.log(`💣 [ABILITIES] Retrieving abilities data for event: ${eventId}`);
     
     let client;
@@ -9516,7 +9645,8 @@ app.get('/api/abilities-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [ABILITIES] Table does not exist, returning empty data');
-            return res.json({ success: true, data: [] });
+            res.json({ success: true, data: [] });
+            return;
         }
         
         // Query for specific abilities: Dense Dynamite, Goblin Sapper Charge, Stratholme Holy Water
@@ -9667,7 +9797,7 @@ app.get('/api/abilities-data/:eventId', async (req, res) => {
         console.log(`💣 [ABILITIES] Processed ${finalData.length} characters with abilities usage`);
         console.log(`💣 [ABILITIES] Final data sample:`, finalData.slice(0, 2));
         
-        res.json({ 
+        const responseData = { 
             success: true, 
             data: finalData,
             eventId: eventId,
@@ -9675,7 +9805,12 @@ app.get('/api/abilities-data/:eventId', async (req, res) => {
                 calculation_divisor: calculationDivisor,
                 max_points: maxPoints
             }
-        });
+        };
+        
+        // Cache the response
+        setCachedResponse(cacheKey, responseData);
+        
+        res.json(responseData);
         
     } catch (error) {
         console.error('❌ [ABILITIES] Error retrieving abilities data:', error);
@@ -9817,6 +9952,14 @@ app.get('/api/shame-data/:eventId', async (req, res) => {
 app.get('/api/world-buffs-data/:eventId', async (req, res) => {
     const { eventId } = req.params;
     
+    // Check cache first
+    const cacheKey = getCacheKey('world-buffs-data', eventId);
+    const cachedResult = getCachedResponse(cacheKey);
+    if (cachedResult) {
+        console.log(`🌍 [WORLD BUFFS] Returning cached data for event: ${eventId}`);
+        return res.json(cachedResult);
+    }
+    
     console.log(`🌍 [WORLD BUFFS] Retrieving world buffs data for event: ${eventId}`);
     
     let client;
@@ -9863,7 +10006,8 @@ app.get('/api/world-buffs-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [WORLD BUFFS] Table does not exist, returning empty data');
-            return res.json({ success: true, data: [], requiredBuffs });
+            res.json({ success: true, data: [], requiredBuffs });
+            return;
         }
         
         // First get summary data per character (amount_summary should be the same for all buffs of a character)
@@ -10066,14 +10210,19 @@ app.get('/api/world-buffs-data/:eventId', async (req, res) => {
         console.log(`🌍 [WORLD BUFFS] Final data sample:`, uniqueFinalData.slice(0, 2));
         console.log(`🌍 [WORLD BUFFS] API Response - includeDMF: ${includeDMF}, requiredBuffs: ${requiredBuffs}`);
         
-        res.json({ 
+        const responseData = { 
             success: true, 
             data: uniqueFinalData,
             eventId: eventId,
             requiredBuffs: requiredBuffs,
             channelId: channelId,
             includeDMF: includeDMF
-        });
+        };
+        
+        // Cache the response
+        setCachedResponse(cacheKey, responseData);
+        
+        res.json(responseData);
         
     } catch (error) {
         console.error('❌ [WORLD BUFFS] Error retrieving world buffs data:', error);
@@ -10107,7 +10256,8 @@ app.get('/api/frost-resistance-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [FROST RESISTANCE] Table does not exist, returning empty data');
-            return res.json({ success: true, data: [] });
+            res.json({ success: true, data: [] });
+            return;
         }
         
         // Get frost resistance data
@@ -10370,7 +10520,8 @@ app.get('/api/mana-potions-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [MANA POTIONS] Table does not exist, returning empty data');
-            return res.json({ success: true, data: [] });
+            res.json({ success: true, data: [] });
+            return;
         }
         
         // Get dynamic settings for mana potions calculation
@@ -10474,7 +10625,8 @@ app.get('/api/runes-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [RUNES] Table does not exist, returning empty data');
-            return res.json({ success: true, data: [] });
+            res.json({ success: true, data: [] });
+            return;
         }
         
         // Get dynamic settings for runes calculation
@@ -10603,7 +10755,8 @@ app.get('/api/interrupts-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [INTERRUPTS] Table does not exist, returning empty data');
-            return res.json({ success: true, data: [] });
+            res.json({ success: true, data: [] });
+            return;
         }
         
         // Get dynamic settings for interrupts calculation
@@ -10703,7 +10856,8 @@ app.get('/api/disarms-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [DISARMS] Table does not exist, returning empty data');
-            return res.json({ success: true, data: [] });
+            res.json({ success: true, data: [] });
+            return;
         }
         
         // Get dynamic settings for disarms calculation
@@ -10803,7 +10957,8 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [WINDFURY] Table does not exist, returning empty data');
-            return res.json({ success: true, data: [] });
+            res.json({ success: true, data: [] });
+            return;
         }
         
         // Get dynamic settings for Windfury calculation
@@ -11268,6 +11423,14 @@ app.get('/api/raid-helper/events/:eventId', async (req, res) => {
 app.get('/api/manual-rewards/:eventId', async (req, res) => {
     const { eventId } = req.params;
     
+    // Check cache first
+    const cacheKey = getCacheKey('manual-rewards', eventId);
+    const cachedResult = getCachedResponse(cacheKey);
+    if (cachedResult) {
+        console.log(`⚖️ [MANUAL REWARDS] Returning cached data for event: ${eventId}`);
+        return res.json(cachedResult);
+    }
+    
     console.log(`⚖️ [MANUAL REWARDS] Retrieving manual rewards/deductions for event: ${eventId}`);
     
     let client;
@@ -11284,7 +11447,8 @@ app.get('/api/manual-rewards/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [MANUAL REWARDS] Table does not exist, returning empty data');
-            return res.json({ success: true, data: [] });
+            res.json({ success: true, data: [] });
+            return;
         }
         
         // Get manual rewards/deductions for this event
@@ -11307,11 +11471,16 @@ app.get('/api/manual-rewards/:eventId', async (req, res) => {
         
         console.log(`⚖️ [MANUAL REWARDS] Found ${result.rows.length} manual entries for event: ${eventId}`);
         
-        res.json({ 
+        const responseData = { 
             success: true, 
             data: result.rows,
             eventId: eventId
-        });
+        };
+        
+        // Cache the response
+        setCachedResponse(cacheKey, responseData);
+        
+        res.json(responseData);
         
     } catch (error) {
         console.error('❌ [MANUAL REWARDS] Error retrieving manual rewards/deductions:', error);
@@ -12446,7 +12615,8 @@ app.get('/api/sunder-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [SUNDER] Table does not exist, returning empty data');
-            return res.json({ success: true, data: [] });
+            res.json({ success: true, data: [] });
+            return;
         }
         
         // Get dynamic settings for sunder armor calculation
@@ -12569,7 +12739,8 @@ app.get('/api/curse-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [CURSE] Table does not exist, returning empty data');
-            return res.json({ success: true, data: [] });
+            res.json({ success: true, data: [] });
+            return;
         }
         
         // Get dynamic settings for curse of recklessness calculation
@@ -12686,7 +12857,8 @@ app.get('/api/curse-shadow-data/:eventId', async (req, res) => {
         
         if (!tableCheck.rows[0].exists) {
             console.log('⚠️ [CURSE SHADOW] Table does not exist, returning empty data');
-            return res.json({ success: true, data: [] });
+            res.json({ success: true, data: [] });
+            return;
         }
         
         // Get dynamic settings for curse of shadow calculation
@@ -15586,6 +15758,14 @@ app.post('/api/loot/import', async (req, res) => {
 app.get('/api/raid-stats/:eventId', async (req, res) => {
     const { eventId } = req.params;
     
+    // Check cache first
+    const cacheKey = getCacheKey('raid-stats', eventId);
+    const cachedResult = getCachedResponse(cacheKey);
+    if (cachedResult) {
+        console.log(`📊 [RAID STATS] Returning cached data for event: ${eventId}`);
+        return res.json(cachedResult);
+    }
+    
     console.log(`📊 [RAID STATS] Fetching raid statistics for event: ${eventId}`);
     
     let client;
@@ -15753,13 +15933,18 @@ app.get('/api/raid-stats/:eventId', async (req, res) => {
             }
         }
         
-        res.json({
+        const responseData = {
             success: true,
             data: {
                 rpb: rpbData,
                 stats: raidStats
             }
-        });
+        };
+        
+        // Cache the response
+        setCachedResponse(cacheKey, responseData);
+        
+        res.json(responseData);
         
     } catch (error) {
         console.error('❌ [RAID STATS] Error fetching raid statistics:', error);
@@ -18254,6 +18439,11 @@ app.post('/api/discord/voice-monitor/config', async (req, res) => {
 // Register rewards engine endpoints BEFORE catch-all
 try {
   if (typeof registerRewardsEngine === 'function') {
+    // Expose cache functions to rewards engine
+    app.locals.getCachedResponse = getCachedResponse;
+    app.locals.setCachedResponse = setCachedResponse;
+    app.locals.getCacheKey = getCacheKey;
+    
     registerRewardsEngine(app, pool);
     console.log('✅ Rewards engine endpoints registered');
   } else {

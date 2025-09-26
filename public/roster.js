@@ -122,14 +122,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Compare string overlay handlers
-    // Normalize a player name for compare: use the exact name shown in roster (no realm suffix)
-    // Example: "Lavol-Ashbringer" -> "lavol"
-    function normalizeCompareName(raw) {
-        const base = String(raw || '').trim();
-        // Strip everything from the first hyphen onward (realm part)
-        const noRealm = base.replace(/-.+$/, '');
-        return noRealm.toLowerCase();
-    }
     function openCompareOverlay() {
         if (!compareOverlay) return;
         compareOverlay.style.display = 'flex';
@@ -166,9 +158,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const clsRaw = (p.class || p.class_name || '').trim();
             if (!display || !clsRaw) return;
             const canonicalClass = canonicalizeClassForDbMatch(String(clsRaw));
-            // Key by display name exactly as shown and also normalized without realm suffix
             map.set(display.toLowerCase(), canonicalClass);
-            map.set(normalizeCompareName(display), canonicalClass);
         };
         (currentRosterData.raidDrop || []).forEach(push);
         (currentRosterData.bench || []).forEach(push);
@@ -179,7 +169,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const rosterMap = buildRosterNameClassMap();
         let nameMatches = 0, classMatches = 0;
         const rows = list.map(item => {
-            const key = normalizeCompareName(item.name);
+            const key = String(item.name || '').trim().toLowerCase();
             const inputClassCanonical = getCanonicalClass(item.cls);
             const rosterClass = rosterMap.get(key);
             const hasName = rosterMap.has(key);
