@@ -388,6 +388,21 @@ function setCachedResponse(key, data, ttlMs = 30000) { // 30 seconds default
   }
 }
 
+function clearCacheByPattern(pattern) {
+  console.log(`🗑️ [CACHE] Clearing cache entries matching pattern: ${pattern}`);
+  const keysToDelete = [];
+  for (const key of apiCache.keys()) {
+    if (key.includes(pattern)) {
+      keysToDelete.push(key);
+    }
+  }
+  keysToDelete.forEach(key => {
+    apiCache.delete(key);
+    console.log(`🗑️ [CACHE] Cleared cache key: ${key}`);
+  });
+  return keysToDelete.length;
+}
+
 let dbConnectionStatus = 'Connecting...';
 
 pool.connect()
@@ -11556,6 +11571,9 @@ app.post('/api/manual-rewards/:eventId', requireManagement, async (req, res) => 
         const newEntry = result.rows[0];
         console.log(`✅ [MANUAL REWARDS] Created entry with ID: ${newEntry.id}`);
         
+        // Clear cache for this event's manual rewards
+        clearCacheByPattern(`manual-rewards:${eventId}`);
+        
         try { broadcastUpdate('raidlogs', eventId, { type: 'manual_rewards_changed', id: newEntry.id, byUserId: createdBy }); } catch {}
         res.json({ 
             success: true, 
@@ -11627,6 +11645,9 @@ app.put('/api/manual-rewards/:eventId/:entryId', requireManagement, async (req, 
         const updatedEntry = result.rows[0];
         console.log(`✅ [MANUAL REWARDS] Updated entry ID: ${updatedEntry.id}`);
         
+        // Clear cache for this event's manual rewards
+        clearCacheByPattern(`manual-rewards:${eventId}`);
+        
         try { broadcastUpdate('raidlogs', eventId, { type: 'manual_rewards_changed', id: updatedEntry.id, byUserId: req.user?.id || null }); } catch {}
         res.json({ 
             success: true, 
@@ -11688,6 +11709,9 @@ app.delete('/api/manual-rewards/:eventId/:entryId', requireManagement, async (re
         
         const deletedEntry = result.rows[0];
         console.log(`✅ [MANUAL REWARDS] Deleted entry ID: ${deletedEntry.id}`);
+        
+        // Clear cache for this event's manual rewards
+        clearCacheByPattern(`manual-rewards:${eventId}`);
         
         try { broadcastUpdate('raidlogs', eventId, { type: 'manual_rewards_changed', id: deletedEntry.id, op: 'delete', byUserId: req.user?.id || null }); } catch {}
         res.json({ 
@@ -12296,6 +12320,9 @@ app.post('/api/manual-rewards/:eventId/from-templates', requireManagement, async
 
         console.log(`✅ [TEMPLATES] Successfully inserted ${insertedEntries.length} template entries for event: ${eventId}`);
 
+        // Clear cache for this event's manual rewards
+        clearCacheByPattern(`manual-rewards:${eventId}`);
+        
         res.json({ 
             success: true, 
             message: `Successfully inserted ${insertedEntries.length} template entries`,
