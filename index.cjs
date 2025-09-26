@@ -1326,7 +1326,62 @@ const HELPER_ROLE_NAME = (process.env.HELPER_ROLE_NAME || 'Helper');
 const MANAGEMENT_ROLE_ID = process.env.MANAGEMENT_ROLE_ID || null;
 const HELPER_ROLE_ID = process.env.HELPER_ROLE_ID || null;
 
-// Function to fetch user's guild member data including roles (with caching)
+// Enhanced Discord API function with proper backoff for all error types
+async function discordApiCallWithBackoff(url, options = {}, retryOptions = {}) {
+    const maxRetries = retryOptions.maxRetries || 3;
+    const baseDelay = retryOptions.baseDelay || 1000;
+    const maxDelay = retryOptions.maxDelay || 10000;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            const response = await axios.get(url, {
+                ...options,
+                timeout: 10000
+            });
+            return response;
+        } catch (error) {
+            const status = error.response?.status;
+            const isLastAttempt = attempt === maxRetries;
+            
+            // Log the error for monitoring
+            console.log(`🔍 Discord API attempt ${attempt + 1}/${maxRetries + 1} failed:`, {
+                status,
+                statusText: error.response?.statusText,
+                url: url.replace(/Bearer\s+[\w.-]+/, 'Bearer [REDACTED]')
+            });
+            
+            // Don't retry certain errors
+            if (status === 403 || status === 404 || isLastAttempt) {
+                throw error;
+            }
+            
+            // Calculate backoff delay
+            let delay = baseDelay * Math.pow(2, attempt);
+            
+            // Handle rate limiting with specific retry-after header
+            if (status === 429) {
+                const retryAfter = error.response?.headers['retry-after'];
+                if (retryAfter) {
+                    delay = Math.max(delay, parseInt(retryAfter) * 1000);
+                }
+            }
+            
+            // Handle 401 errors with exponential backoff (token might be temporarily invalid)
+            if (status === 401) {
+                delay = Math.min(delay * 1.5, maxDelay);
+                console.log(`🔐 401 Unauthorized - applying backoff delay: ${delay}ms`);
+            }
+            
+            // Cap the delay
+            delay = Math.min(delay, maxDelay);
+            
+            console.log(`⏳ Retrying Discord API call in ${delay}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+}
+
+// Function to fetch user's guild member data including roles (with caching and backoff)
 async function fetchUserGuildMember(accessToken, guildId) {
     // Create cache key based on full access token and guild ID to avoid collisions
     const cacheKey = `${accessToken}__${guildId}`;
@@ -1340,12 +1395,20 @@ async function fetchUserGuildMember(accessToken, guildId) {
 
     try {
         console.log(`🔍 Fetching guild member data for guild ${guildId}`);
-        const response = await axios.get(`https://discord.com/api/v10/users/@me/guilds/${guildId}/member`, {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+        const response = await discordApiCallWithBackoff(
+            `https://discord.com/api/v10/users/@me/guilds/${guildId}/member`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+                }
+            },
+            {
+                maxRetries: 3,
+                baseDelay: 1000,
+                maxDelay: 8000
             }
-        });
+        );
         
         console.log(`✅ Guild member data received:`, response.data);
         
@@ -1357,16 +1420,16 @@ async function fetchUserGuildMember(accessToken, guildId) {
         
         return response.data;
     } catch (error) {
-        console.error('❌ Error fetching guild member data:', {
+        console.error('❌ Error fetching guild member data after retries:', {
             status: error.response?.status,
             statusText: error.response?.statusText,
             data: error.response?.data,
             message: error.message
         });
         
-        // If we have stale cached data and it's a rate limit error, use the stale data
-        if (error.response?.status === 429 && cached) {
-            console.log(`⚠️ Rate limited, using stale cached data (${Math.floor((Date.now() - cached.timestamp) / 1000)}s old)`);
+        // If we have stale cached data and it's any retryable error, use the stale data
+        if ((error.response?.status === 429 || error.response?.status === 401 || error.response?.status === 500) && cached) {
+            console.log(`⚠️ Using stale cached data due to ${error.response?.status} error (${Math.floor((Date.now() - cached.timestamp) / 1000)}s old)`);
             return cached.data;
         }
         
@@ -1418,12 +1481,20 @@ async function fetchGuildRoles(guildId, attempt = 1) {
             return [];
         }
         
-        const response = await axios.get(`https://discord.com/api/v10/guilds/${guildId}/roles`, {
-            headers: {
-                'Authorization': `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-                'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+        const response = await discordApiCallWithBackoff(
+            `https://discord.com/api/v10/guilds/${guildId}/roles`,
+            {
+                headers: {
+                    'Authorization': `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+                    'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+                }
+            },
+            {
+                maxRetries: 2,
+                baseDelay: 500,
+                maxDelay: 5000
             }
-        });
+        );
         
         console.log(`✅ Guild roles received: ${response.data.length} roles`);
         
