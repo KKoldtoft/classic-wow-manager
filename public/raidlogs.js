@@ -692,7 +692,9 @@ class RaidLogsManager {
                 
                 // Populate Manual Rewards table with the loaded data
                 this.populateManualRewardsTable();
+                this.displayManualRewards();
                 
+                this.hideLoading();
                 this.showContent();
                 this._loadingRaid = false;
                 return;
