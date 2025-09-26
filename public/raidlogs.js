@@ -2640,7 +2640,10 @@ class RaidLogsManager {
         } else {
             damageDealer = this.logData
             .filter(player => {
-                const role = (player.role_detected || '').toLowerCase();
+                const nameKey = String(player.character_name || '').trim().toLowerCase();
+                const primaryRole = this.primaryRoles ? String(this.primaryRoles[nameKey] || '').toLowerCase() : '';
+                const fallbackRole = (player.role_detected || '').toLowerCase();
+                const role = primaryRole || fallbackRole;
                 const damage = parseInt(player.damage_amount) || 0;
                 const name = String(player.character_name || '');
                 return (role === 'dps' || role === 'tank') && damage > 0 && !this.shouldIgnorePlayer(name);
@@ -2656,7 +2659,10 @@ class RaidLogsManager {
         } else {
             healers = this.logData
             .filter(player => {
-                const role = (player.role_detected || '').toLowerCase();
+                const nameKey = String(player.character_name || '').trim().toLowerCase();
+                const primaryRole = this.primaryRoles ? String(this.primaryRoles[nameKey] || '').toLowerCase() : '';
+                const fallbackRole = (player.role_detected || '').toLowerCase();
+                const role = primaryRole || fallbackRole;
                 const healing = parseInt(player.healing_amount) || 0;
                 const name = String(player.character_name || '');
                 return role === 'healer' && healing > 0 && !this.shouldIgnorePlayer(name);
@@ -2667,6 +2673,27 @@ class RaidLogsManager {
         console.log(`📊 Found ${damageDealer.length} damage dealers and ${healers.length} healers`);
         console.log('🔍 [DEBUG] Damage dealers:', damageDealer.map(p => `${p.character_name} (${p.role_detected})`));
         console.log('🔍 [DEBUG] Healers:', healers.map(p => `${p.character_name} (${p.role_detected})`));
+        
+        // Debug primary roles usage
+        if (this.primaryRoles) {
+            console.log('🔍 [DEBUG] Primary roles mapping sample:', Object.entries(this.primaryRoles).slice(0, 10));
+            console.log('🔍 [DEBUG] Role resolution for first 5 players:', this.logData.slice(0, 5).map(p => {
+                const nameKey = String(p.character_name || '').trim().toLowerCase();
+                const primaryRole = String(this.primaryRoles[nameKey] || '').toLowerCase();
+                const fallbackRole = (p.role_detected || '').toLowerCase();
+                return {
+                    name: p.character_name,
+                    nameKey,
+                    primaryRole,
+                    fallbackRole,
+                    finalRole: primaryRole || fallbackRole,
+                    damage: p.damage_amount,
+                    healing: p.healing_amount
+                };
+            }));
+        } else {
+            console.log('⚠️ [DEBUG] No primary roles mapping available!');
+        }
 
         // Calculate God Gamer awards
         const godGamerDPS = (!this.snapshotLocked && this.engineResult) ? null : this.calculateGodGamerDPS(damageDealer);

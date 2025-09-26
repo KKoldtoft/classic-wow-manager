@@ -334,7 +334,7 @@ const PORT = process.env.PORT || 3000;
 app.set('trust proxy', 1);
 
 // --- MAINTENANCE MODE CONFIGURATION ---
-const MAINTENANCE_MODE_ENABLED = true; // Set to false to disable maintenance mode
+const MAINTENANCE_MODE_ENABLED = false; // Set to false to disable maintenance mode
 const MAINTENANCE_ALLOWED_IPS = [
   '77.33.25.62',
   '89.23.224.94'
