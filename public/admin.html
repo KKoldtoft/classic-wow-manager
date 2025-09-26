@@ -647,11 +647,15 @@
             // Show management section if user has Management role
             if (user.hasManagementRole) {
                 document.getElementById('management-section').style.display = 'block';
+                document.getElementById('whitelist-section').style.display = 'block';
                 document.getElementById('guild-import-section').style.display = 'block';
                 document.getElementById('channel-filter-section').style.display = 'block';
                 document.getElementById('attendance-channel-filter-section').style.display = 'block';
                 document.getElementById('rewards-section').style.display = 'block';
                 document.getElementById('channel-backgrounds-section').style.display = 'block';
+                
+                // Load whitelist data when management sections are shown
+                loadWhitelist();
                 document.getElementById('class-spec-mapping-section').style.display = 'block';
             }
         }
@@ -3604,13 +3608,6 @@
             }
         }
 
-        // Add to the showManagementPermissions function
-        const originalShowManagementPermissions = showManagementPermissions;
-        showManagementPermissions = function() {
-            originalShowManagementPermissions();
-            document.getElementById('whitelist-section').style.display = 'block';
-            loadWhitelist(); // Load whitelist data when management sections are shown
-        };
     </script>
     </div>
 </body>
