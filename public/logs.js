@@ -7357,7 +7357,13 @@ document.addEventListener('DOMContentLoaded', () => {
 function initializeRaidlogsToggle() {
     // Check localStorage for saved state
     const savedState = localStorage.getItem('raidlogsToggleEnabled');
-    const isEnabled = savedState === 'true';
+    // Default to enabled if no state is saved (backwards compatibility)
+    const isEnabled = savedState !== null ? savedState === 'true' : true;
+    
+    // Save default state to localStorage if not set
+    if (savedState === null) {
+        localStorage.setItem('raidlogsToggleEnabled', 'true');
+    }
     
     // Set initial state
     const toggle = document.getElementById('raidlogs-toggle');
