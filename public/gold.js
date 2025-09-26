@@ -50,8 +50,6 @@ class GoldPotManager {
             debugExport.addEventListener('click', () => this.exportDebugJson());
         }
 
-        // Initialize toggle listener for raidlogs toggle system
-        this.initializeToggleListener();
     }
 
     async loadData() {
@@ -106,15 +104,7 @@ class GoldPotManager {
 
             if (!this.currentEventId) { this.showError('No active event session found. Please select an event from the events page.'); return; }
 
-            // Check if raidlogs toggle is enabled before loading heavy data
-            const isToggleEnabled = localStorage.getItem('raidlogsToggleEnabled') === 'true';
-            if (!isToggleEnabled) {
-                console.log('🎛️ [GOLD] Heavy data loading disabled by toggle - showing disabled message');
-                this.showToggleDisabledMessage();
-                return;
-            }
-
-            console.log('🎛️ [GOLD] Toggle enabled - loading gold pot data for event:', this.currentEventId);
+            console.log('🎛️ [GOLD] Loading gold pot data for event:', this.currentEventId);
             
             // Fetch base data in parallel (players from logs/confirmed list only)
             const [eventData, playersData, goldPot] = await Promise.all([
@@ -1546,44 +1536,6 @@ class GoldPotManager {
         if (goldContent) goldContent.style.display = 'block';
     }
 
-    showToggleDisabledMessage() {
-        const loadingIndicator = document.getElementById('loadingIndicator');
-        const errorDisplay = document.getElementById('errorDisplay');
-        const goldContent = document.getElementById('goldContent');
-        const disabledMessage = document.getElementById('gold-disabled-message');
-        
-        if (loadingIndicator) loadingIndicator.style.display = 'none';
-        if (errorDisplay) errorDisplay.style.display = 'none';
-        if (goldContent) goldContent.style.display = 'none';
-        if (disabledMessage) disabledMessage.style.display = 'block';
-    }
-
-    initializeToggleListener() {
-        // Listen for toggle changes from logs page
-        window.addEventListener('storage', (e) => {
-            if (e.key === 'raidlogsToggleEnabled') {
-                const newState = e.newValue === 'true';
-                if (newState) {
-                    console.log('🎛️ [GOLD] Toggle enabled - reloading data');
-                    this.loadData();
-                } else {
-                    console.log('🎛️ [GOLD] Toggle disabled - showing disabled message');
-                    this.showToggleDisabledMessage();
-                }
-            }
-        });
-
-        // Listen for custom events from same page
-        window.addEventListener('raidlogsToggleChanged', (e) => {
-            if (e.detail.enabled) {
-                console.log('🎛️ [GOLD] Toggle enabled - reloading data');
-                this.loadData();
-            } else {
-                console.log('🎛️ [GOLD] Toggle disabled - showing disabled message');
-                this.showToggleDisabledMessage();
-            }
-        });
-    }
 }
 
 // Initialize the Gold Pot Manager when the page loads

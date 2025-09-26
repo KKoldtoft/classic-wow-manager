@@ -122,9 +122,6 @@ class RaidLogsManager {
         this._myGoldTooltipCards = new WeakSet();
         this.engineResult = null;
         
-        // Initialize raidlogs toggle functionality
-        this.initializeRaidlogsToggle();
-        
         this.loadRaidLogsData();
     }
 
@@ -677,30 +674,6 @@ class RaidLogsManager {
                 }
             } catch {}
 
-            // Check if raidlogs toggle is enabled before loading heavy data
-            const isToggleEnabled = localStorage.getItem('raidlogsToggleEnabled') === 'true';
-            if (!isToggleEnabled) {
-                console.log('🎛️ [RAIDLOGS] Heavy data loading disabled by toggle - loading minimal data only');
-                
-                // Load only minimal data needed for Manual Rewards section
-                await Promise.all([
-                    this.fetchRewardSettings(),
-                    this.fetchCurrentUser(),
-                    this.fetchPrimaryRoles().then(roles => this.primaryRoles = roles),
-                    this.fetchManualRewardsData()
-                ]);
-                
-                // Populate Manual Rewards table with the loaded data
-                this.populateManualRewardsTable();
-                this.displayManualRewards();
-                
-                this.hideLoading();
-                this.showContent();
-                this._loadingRaid = false;
-                return;
-            }
-
-            console.log('🎛️ [RAIDLOGS] Toggle enabled - loading full dataset');
             
             // To avoid exhausting browser/Heroku resources, fetch in small batches instead of all-at-once
             // Batch 1: core datasets and light endpoints
@@ -761,10 +734,8 @@ class RaidLogsManager {
             // Points breakdown debug table removed
             
             // Hide loading and show content
-            console.log('🔧 [DEBUG] About to hide loading and show content');
             this.hideLoading();
             this.showContent();
-            console.log('✅ [DEBUG] Called hideLoading and showContent');
             
             // Update the original position now that content is loaded
             setTimeout(() => {
@@ -6638,14 +6609,7 @@ class RaidLogsManager {
     }
 
     showContent() {
-        console.log('🔧 [DEBUG] showContent() called');
-        const container = document.getElementById('raid-logs-container');
-        if (container) {
-            container.style.display = 'block';
-            console.log('✅ [DEBUG] Set raid-logs-container display to block');
-        } else {
-            console.error('❌ [DEBUG] raid-logs-container not found!');
-        }
+        document.getElementById('raid-logs-container').style.display = 'block';
         document.getElementById('no-data-message').style.display = 'none';
         document.getElementById('error-display').style.display = 'none';
     }
@@ -8715,67 +8679,6 @@ class RaidLogsManager {
         }
     }
 
-    // Raidlogs Toggle Functionality
-    initializeRaidlogsToggle() {
-        // Check localStorage for toggle state
-        const isEnabled = localStorage.getItem('raidlogsToggleEnabled') === 'true';
-        
-        // Apply initial state
-        this.updateRaidlogsDisplay(isEnabled);
-        
-        // Listen for toggle changes from other tabs/pages
-        window.addEventListener('storage', (e) => {
-            if (e.key === 'raidlogsToggleEnabled') {
-                const newState = e.newValue === 'true';
-                this.updateRaidlogsDisplay(newState);
-            }
-        });
-        
-        // Listen for custom events from same page
-        window.addEventListener('raidlogsToggleChanged', (e) => {
-            this.updateRaidlogsDisplay(e.detail.enabled);
-        });
-        
-        console.log(`🎛️ [RAIDLOGS] Toggle initialized - ${isEnabled ? 'Enabled' : 'Disabled'}`);
-    }
-
-    updateRaidlogsDisplay(enabled) {
-        const heavyElements = document.querySelectorAll('.raidlogs-heavy-element');
-        const heavyContent = document.getElementById('raidlogs-heavy-content');
-        const disabledMessage = document.getElementById('raidlogs-disabled-message');
-        
-        if (enabled) {
-            // Show heavy content container and individual heavy elements
-            if (heavyContent) {
-                heavyContent.style.display = '';
-            }
-            heavyElements.forEach(element => {
-                element.style.display = '';
-            });
-            if (disabledMessage) {
-                disabledMessage.style.display = 'none';
-            }
-            
-            // Load data if not already loaded and we have an active event
-            if (this.activeEventId && !this.logData) {
-                console.log('🎛️ [RAIDLOGS] Toggle enabled - loading data');
-                this.loadRaidLogsData();
-            }
-        } else {
-            // Hide heavy content container and individual heavy elements
-            if (heavyContent) {
-                heavyContent.style.display = 'none';
-            }
-            heavyElements.forEach(element => {
-                element.style.display = 'none';
-            });
-            if (disabledMessage) {
-                disabledMessage.style.display = 'block';
-            }
-        }
-        
-        console.log(`🎛️ [RAIDLOGS] Display updated - ${enabled ? 'Heavy elements shown' : 'Heavy elements hidden'}`);
-    }
 }
 
 // Initialize the raid logs manager when the page loads

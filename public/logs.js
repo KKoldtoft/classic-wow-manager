@@ -5500,8 +5500,6 @@ class WoWLogsAnalyzer {
             this.updateWorkflowStep(9, 'completed', 'World Buffs data imported', '✅');
             console.log('✅ [WORKFLOW] Step 9 completed');
             
-            // Automatically enable raidlogs toggle now that import is complete
-            enableRaidlogsToggleOnStep9Completion();
             
         } catch (error) {
             this.updateWorkflowStep(9, 'error', `World Buffs import failed: ${error.message}`, '❌');
@@ -7350,69 +7348,4 @@ class WoWLogsAnalyzer {
 let wowLogsAnalyzer;
 document.addEventListener('DOMContentLoaded', () => {
     wowLogsAnalyzer = new WoWLogsAnalyzer();
-    initializeRaidlogsToggle();
 });
-
-// Raidlogs Toggle Functionality
-function initializeRaidlogsToggle() {
-    // Check localStorage for saved state
-    const savedState = localStorage.getItem('raidlogsToggleEnabled');
-    // Default to enabled if no state is saved (backwards compatibility)
-    const isEnabled = savedState !== null ? savedState === 'true' : true;
-    
-    // Save default state to localStorage if not set
-    if (savedState === null) {
-        localStorage.setItem('raidlogsToggleEnabled', 'true');
-    }
-    
-    // Set initial state
-    const toggle = document.getElementById('raidlogs-toggle');
-    const status = document.getElementById('raidlogs-toggle-status');
-    
-    if (toggle && status) {
-        toggle.checked = isEnabled;
-        updateToggleStatus(isEnabled);
-    }
-}
-
-function handleRaidlogsToggle() {
-    const toggle = document.getElementById('raidlogs-toggle');
-    const isEnabled = toggle.checked;
-    
-    // Save state to localStorage
-    localStorage.setItem('raidlogsToggleEnabled', isEnabled.toString());
-    
-    // Update UI
-    updateToggleStatus(isEnabled);
-    
-    // Notify all raidlogs pages (if open in other tabs)
-    window.dispatchEvent(new CustomEvent('raidlogsToggleChanged', { 
-        detail: { enabled: isEnabled } 
-    }));
-    
-    console.log(`🎛️ [RAIDLOGS TOGGLE] ${isEnabled ? 'Enabled' : 'Disabled'} raidlogs heavy loading`);
-}
-
-function updateToggleStatus(isEnabled) {
-    const status = document.getElementById('raidlogs-toggle-status');
-    if (status) {
-        status.textContent = isEnabled ? 'Enabled' : 'Disabled';
-        status.style.color = isEnabled ? '#28a745' : '#dc3545';
-    }
-}
-
-// Function to automatically enable toggle when step 9 completes
-function enableRaidlogsToggleOnStep9Completion() {
-    console.log('🎉 [WORKFLOW] Step 9 completed - automatically enabling raidlogs toggle');
-    
-    const toggle = document.getElementById('raidlogs-toggle');
-    if (toggle && !toggle.checked) {
-        toggle.checked = true;
-        handleRaidlogsToggle();
-    }
-}
-
-// Check if raidlogs toggle is enabled (for use by raidlogs page)
-function isRaidlogsToggleEnabled() {
-    return localStorage.getItem('raidlogsToggleEnabled') === 'true';
-} 
