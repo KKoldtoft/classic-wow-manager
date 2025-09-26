@@ -7490,9 +7490,15 @@ class RaidLogsManager {
             }
 
             // Refresh list
+            console.log('🔄 [4H TANKS] Refreshing manual rewards data...');
             await this.fetchManualRewardsData();
+            
+            console.log('🔄 [4H TANKS] Updating table display...');
             this.populateManualRewardsTable();
             this.updateTotalPointsCard();
+            
+            // Small delay to ensure DOM update
+            await new Promise(resolve => setTimeout(resolve, 100));
             
             alert(`Successfully added ${selected.length} Four Horsemen tank entries!`);
             console.log(`✅ [4H TANKS] Successfully added ${selected.length} tank entries`);
@@ -7565,11 +7571,21 @@ class RaidLogsManager {
                     })
                 });
             }
+            console.log('🔄 [RAZ MC] Refreshing manual rewards data...');
             await this.fetchManualRewardsData();
+            
+            console.log('🔄 [RAZ MC] Updating table display...');
             this.populateManualRewardsTable();
             this.updateTotalPointsCard();
+            
+            // Small delay to ensure DOM update
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            alert(`Successfully added ${selected.length} Razuvious MC priest entries!`);
+            console.log(`✅ [RAZ MC] Successfully added ${selected.length} priest entries`);
         } catch (err) {
             console.error('❌ [RAZ MC] Failed to auto add Raz MC priests:', err);
+            alert(`Failed to add Razuvious MC priest entries: ${err.message}`);
         }
     }
 
@@ -7606,11 +7622,21 @@ class RaidLogsManager {
                     icon_url: iconUrl
                 })
             });
+            console.log('🔄 [PULLER] Refreshing manual rewards data...');
             await this.fetchManualRewardsData();
+            
+            console.log('🔄 [PULLER] Updating table display...');
             this.populateManualRewardsTable();
             this.updateTotalPointsCard();
+            
+            // Small delay to ensure DOM update
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            alert(`Successfully added puller entry for ${h.character_name}!`);
+            console.log(`✅ [PULLER] Successfully added puller entry`);
         } catch (err) {
             console.error('❌ [PULLER] Failed to auto add hunter puller:', err);
+            alert(`Failed to add puller entry: ${err.message}`);
         }
     }
 
@@ -7649,11 +7675,21 @@ class RaidLogsManager {
                     icon_url: iconUrl
                 })
             });
+            console.log('🔄 [GLUTH] Refreshing manual rewards data...');
             await this.fetchManualRewardsData();
+            
+            console.log('🔄 [GLUTH] Updating table display...');
             this.populateManualRewardsTable();
             this.updateTotalPointsCard();
+            
+            // Small delay to ensure DOM update
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            alert(`Successfully added Gluth kite entry for ${druid.character_name}!`);
+            console.log(`✅ [GLUTH] Successfully added Gluth kite entry`);
         } catch (err) {
             console.error('❌ [GLUTH] Failed to auto add Gluth kite druid:', err);
+            alert(`Failed to add Gluth kite entry: ${err.message}`);
         }
     }
 
@@ -7705,11 +7741,21 @@ class RaidLogsManager {
                     })
                 });
             }
+            console.log('🔄 [SUMMON] Refreshing manual rewards data...');
             await this.fetchManualRewardsData();
+            
+            console.log('🔄 [SUMMON] Updating table display...');
             this.populateManualRewardsTable();
             this.updateTotalPointsCard();
+            
+            // Small delay to ensure DOM update
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            alert(`Successfully added summoner entries (1 main summoner + 2 empty clicker slots)!`);
+            console.log(`✅ [SUMMON] Successfully added summoner entries`);
         } catch (err) {
             console.error('❌ [SUMMON] Failed to auto add summoners:', err);
+            alert(`Failed to add summoner entries: ${err.message}`);
         }
     }
 
@@ -7766,9 +7812,15 @@ class RaidLogsManager {
                     })
                 });
             }
+            console.log('🔄 [TANKS] Refreshing manual rewards data...');
             await this.fetchManualRewardsData();
+            
+            console.log('🔄 [TANKS] Updating table display...');
             this.populateManualRewardsTable();
             this.updateTotalPointsCard();
+            
+            // Small delay to ensure DOM update
+            await new Promise(resolve => setTimeout(resolve, 100));
             
             const addedCount = order.filter(({marker}) => pickByMarker(marker)).length;
             alert(`Successfully added ${addedCount} tank entries!`);
