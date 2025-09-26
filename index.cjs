@@ -333,39 +333,147 @@ const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', 1);
 
-// --- IP Whitelist Configuration ---
-const IP_WHITELIST_ENABLED = true; // Set to false to disable whitelist
-const ALLOWED_IPS = [
+// --- MAINTENANCE MODE CONFIGURATION ---
+const MAINTENANCE_MODE_ENABLED = true; // Set to false to disable maintenance mode
+const MAINTENANCE_ALLOWED_IPS = [
   '77.33.25.62',
   '89.23.224.94'
 ];
 
-// IP Whitelist Middleware
-function ipWhitelistMiddleware(req, res, next) {
-  if (!IP_WHITELIST_ENABLED) {
-    return next(); // Whitelist disabled, allow all
+// Maintenance Mode Middleware - BLOCKS EVERYONE with nice maintenance page
+function maintenanceModeMiddleware(req, res, next) {
+  if (!MAINTENANCE_MODE_ENABLED) {
+    return next(); // Maintenance disabled, allow all
   }
 
-  // Get client IP (handle proxies)
-  const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim();
-  
-  // Check if IP is in whitelist
-  if (ALLOWED_IPS.includes(clientIp)) {
-    console.log(`✅ [WHITELIST] Allowed IP: ${clientIp}`);
+  // Get client IP (handle all proxy scenarios)
+  let clientIp = req.headers['x-forwarded-for'] || 
+                  req.headers['x-real-ip'] || 
+                  req.connection.remoteAddress || 
+                  req.socket.remoteAddress ||
+                  (req.connection.socket ? req.connection.socket.remoteAddress : null) ||
+                  req.ip ||
+                  'unknown';
+
+  // Clean up IP (handle comma-separated forwarded IPs)
+  if (typeof clientIp === 'string') {
+    clientIp = clientIp.split(',')[0].trim();
+  }
+
+  console.log(`🔍 [MAINTENANCE] Checking IP: ${clientIp}`);
+
+  // Check if IP is in maintenance whitelist
+  if (MAINTENANCE_ALLOWED_IPS.includes(clientIp)) {
+    console.log(`✅ [MAINTENANCE] Admin access allowed: ${clientIp}`);
     return next();
   }
 
-  // Block unauthorized IP
-  console.log(`🚫 [WHITELIST] Blocked IP: ${clientIp}`);
-  return res.status(403).json({ 
-    success: false, 
-    message: 'Access denied: IP address not authorized',
-    ip: clientIp 
-  });
+  // Block everyone else with maintenance page
+  console.log(`🚫 [MAINTENANCE] Blocked IP: ${clientIp} - Showing maintenance page`);
+  
+  const maintenancePage = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1Principles - Under Maintenance</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        .maintenance-container {
+            text-align: center;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            margin: 20px;
+        }
+        .logo {
+            width: 120px;
+            height: auto;
+            margin-bottom: 30px;
+        }
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            color: #fff;
+        }
+        .subtitle {
+            font-size: 1.2em;
+            margin-bottom: 30px;
+            opacity: 0.9;
+        }
+        .message {
+            font-size: 1.1em;
+            line-height: 1.6;
+            margin-bottom: 30px;
+            opacity: 0.8;
+        }
+        .spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .eta {
+            font-size: 0.9em;
+            opacity: 0.7;
+            margin-top: 20px;
+        }
+        .contact {
+            margin-top: 30px;
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="maintenance-container">
+        <div class="spinner"></div>
+        <h1>🛠️ Under Maintenance</h1>
+        <div class="subtitle">1Principles Classic WoW Manager</div>
+        <div class="message">
+            We're currently performing some important updates to improve your experience.<br>
+            The website will be back online shortly.
+        </div>
+        <div class="eta">
+            <strong>Expected downtime:</strong> A few minutes<br>
+            <strong>Your IP:</strong> ${clientIp}
+        </div>
+        <div class="contact">
+            If you need immediate assistance, please contact the guild leadership on Discord.
+        </div>
+    </div>
+</body>
+</html>`;
+
+  return res.status(503).send(maintenancePage);
 }
 
-// Apply IP whitelist to all routes
-app.use(ipWhitelistMiddleware);
+// Apply maintenance mode to ALL routes (before any other middleware)
+app.use(maintenanceModeMiddleware);
 
 // --- Cloudinary Configuration ---
 cloudinary.config({
