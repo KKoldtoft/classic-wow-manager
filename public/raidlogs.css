@@ -398,6 +398,7 @@ body.stats .rankings-container .rankings-section {
 .ranking-number {
     color: var(--text-secondary, #a0a0a0);
     font-size: 1.1em;
+    min-width: 30px;
 }
 
 /* Character info */
@@ -416,25 +417,25 @@ body.stats .rankings-container .rankings-section {
 }
 
 /* Visual meter background using CSS gradients */
-.character-info.class-warrior { background: linear-gradient(to right, #C79C6E var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #C79C6E; }
+.character-info.class-warrior { background: linear-gradient(to right, #C79C6E var(--fill-percentage, 100%), rgba(199,156,110,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #C79C6E; }
 
-.character-info.class-paladin { background: linear-gradient(to right, #F58CBA var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #F58CBA; }
+.character-info.class-paladin { background: linear-gradient(to right, #F58CBA var(--fill-percentage, 100%), rgba(245,140,186,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #F58CBA; }
 
-.character-info.class-hunter { background: linear-gradient(to right, #ABD473 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #ABD473; }
+.character-info.class-hunter { background: linear-gradient(to right, #ABD473 var(--fill-percentage, 100%), rgba(171,212,115,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #ABD473; }
 
-.character-info.class-rogue { background: linear-gradient(to right, #FFF569 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #FFF569; }
+.character-info.class-rogue { background: linear-gradient(to right, #FFF569 var(--fill-percentage, 100%), rgba(255,245,105,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #FFF569; }
 
-.character-info.class-priest { background: linear-gradient(to right, #FFFFFF var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #FFFFFF; }
+.character-info.class-priest { background: linear-gradient(to right, #FFFFFF var(--fill-percentage, 100%), rgba(255,255,255,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #FFFFFF; }
 
-.character-info.class-shaman { background: linear-gradient(to right, #0070DE var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #0070DE; }
+.character-info.class-shaman { background: linear-gradient(to right, #0070DE var(--fill-percentage, 100%), rgba(0,112,222,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #0070DE; }
 
-.character-info.class-mage { background: linear-gradient(to right, #69CCF0 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #69CCF0; }
+.character-info.class-mage { background: linear-gradient(to right, #69CCF0 var(--fill-percentage, 100%), rgba(105,204,240,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #69CCF0; }
 
-.character-info.class-warlock { background: linear-gradient(to right, #9482C9 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #9482C9; }
+.character-info.class-warlock { background: linear-gradient(to right, #9482C9 var(--fill-percentage, 100%), rgba(148,130,201,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #9482C9; }
 
-.character-info.class-druid { background: linear-gradient(to right, #FF7D0A var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #FF7D0A; }
+.character-info.class-druid { background: linear-gradient(to right, #FF7D0A var(--fill-percentage, 100%), rgba(255,125,10,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #FF7D0A; }
 
-.character-info.class-unknown { background: linear-gradient(to right, var(--secondary-bg, #2a2a2a) var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #2a2a2a; }
+.character-info.class-unknown { background: linear-gradient(to right, var(--secondary-bg, #2a2a2a) var(--fill-percentage, 100%), rgba(42,42,42,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #2a2a2a; }
 
 .character-name {
     font-weight: 600;

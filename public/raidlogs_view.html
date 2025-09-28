@@ -446,28 +446,95 @@
           if (!items.length) return;
           const cls = section.className;
           const has = (k)=> cls.includes(k);
+          // Explicit mapping for World Buffs: fixed discrete steps
+          if (has('world-buffs-section')) {
+            const worldBuffsPercent = (n)=>{
+              const v = Math.max(0, Math.floor(Number(n)||0));
+              if (v >= 6) return 100;
+              if (v === 5) return 90;
+              if (v === 4) return 70;
+              if (v === 3) return 50;
+              if (v === 2) return 30;
+              if (v === 1) return 10;
+              return 0;
+            };
+            // Sort by buff count desc and set fill explicitly
+            try {
+              const list = section.querySelector('.rankings-list');
+              const tuples = items.map(el => {
+                const txt = String(el.querySelector('.character-details')?.textContent||'');
+                const m = txt.match(/(\d+)/);
+                const v = m ? Number(m[1])||0 : 0;
+                return { el, v };
+              });
+              tuples.sort((a,b)=> b.v - a.v);
+              tuples.forEach((t, i)=>{
+                list.appendChild(t.el);
+                const num = t.el.querySelector('.ranking-number'); if (num) num.textContent = `#${i+1}`;
+                const pct = worldBuffsPercent(t.v);
+                const info = t.el.querySelector('.character-info');
+                if (info) info.style.setProperty('--fill-percentage', `${pct}%`);
+              });
+            } catch {}
+            return; // Skip generic handling
+          }
           let extractor = null;
           let cap100 = false;
           let fixedMax = null;
           let forceAll100 = false;
           let sortDesc = false;
+          let mappingName = null;
           if (has('damage')) extractor = (item)=> extractLastInt(item);
           else if (has('healing')) extractor = (item)=> extractLastInt(item);
           else if (has('too-low-damage-section')) extractor = (item)=> extractLastInt(item);
           else if (has('too-low-healing-section')) extractor = (item)=> extractLastInt(item);
           else if (has('guild-section')) forceAll100 = true;
+          else if (has('abilities-section')) { extractor = (item)=> extractPoints(item); mappingName = 'abilities'; sortDesc = true; }
           else if (has('streak-section')) { extractor = (item)=> extractLastInt(item); fixedMax = 15; sortDesc = true; }
           else if (has('interrupts-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
-          else if (has('curse-recklessness-section') || has('curse-elements-section') || has('curse-shadow-section') || has('faerie-fire-section')) { extractor = (item)=> extractPercent(item); cap100 = true; }
-          else if (has('mana-potions-section')) extractor = (item)=> extractLastInt(item);
-          else if (has('runes-section')) extractor = (item)=> extractLastInt(item);
+          else if (has('curse-recklessness-section') || has('curse-elements-section') || has('curse-shadow-section') || has('faerie-fire-section')) { extractor = (item)=> extractPercent(item); cap100 = true; sortDesc = true; }
+          else if (has('mana-potions-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
+          else if (has('runes-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
           else if (has('rocket-helmet-section')) forceAll100 = true;
           else if (has('sunder-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
-          else if (has('disarms-section')) extractor = (item)=> extractLastInt(item);
+          else if (has('disarms-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
+          else if (has('big-buyer-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
+          else if (has('frost-resistance-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
+          else if (has('power-infusion-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
+          else if (has('world-buffs-section')) { extractor = (item)=> extractLastInt(item); mappingName = 'worldBuffs'; sortDesc = true; }
           else if (has('windfury-section')) extractor = null;
           if (forceAll100) { items.forEach(item => { const info=item.querySelector('.character-info'); if (info) info.style.setProperty('--fill-percentage','100%'); }); return; }
           if (!extractor) return;
           const values = items.map(item => { try { return extractor(item); } catch { return 0; } });
+          const worldBuffsPercent = (n)=>{
+            const v = Math.max(0, Math.floor(Number(n)||0));
+            if (v >= 6) return 100;
+            if (v === 5) return 90;
+            if (v === 4) return 70;
+            if (v === 3) return 50;
+            if (v === 2) return 30;
+            if (v === 1) return 10;
+            return 0;
+          };
+          const abilitiesPercent = (pts)=>{
+            const p = Math.max(0, Math.floor(Number(pts)||0));
+            if (p >= 15) return 100;
+            if (p === 14) return 95;
+            if (p === 13) return 90;
+            if (p === 12) return 85;
+            if (p === 11) return 80;
+            if (p === 10) return 75;
+            if (p === 9) return 70;
+            if (p === 8) return 65;
+            if (p === 7) return 60;
+            if (p === 6) return 55;
+            if (p === 5) return 50;
+            if (p === 4) return 45;
+            if (p === 3) return 40;
+            if (p === 2) return 35;
+            if (p === 1) return 30;
+            return 0;
+          };
           let max = fixedMax != null ? fixedMax : Math.max(1, ...values);
           if (sortDesc) {
             try {
@@ -478,7 +545,9 @@
                 list.appendChild(t.el);
                 const num = t.el.querySelector('.ranking-number'); if (num) num.textContent = `#${i+1}`;
                 let pct = 0;
-                if (cap100) pct = Math.min(100, Math.round(t.v));
+                if (mappingName === 'worldBuffs') pct = worldBuffsPercent(t.v);
+                else if (mappingName === 'abilities') pct = abilitiesPercent(t.v);
+                else if (cap100) pct = Math.min(100, Math.round(t.v));
                 else pct = Math.round((t.v / max) * 100);
                 pct = Math.max(5, Math.min(100, pct));
                 const info = t.el.querySelector('.character-info');
@@ -490,7 +559,9 @@
           items.forEach((item, idx) => {
             const v = values[idx] || 0;
             let pct = 0;
-            if (cap100) pct = Math.min(100, Math.round(v));
+            if (mappingName === 'worldBuffs') pct = worldBuffsPercent(v);
+            else if (mappingName === 'abilities') pct = abilitiesPercent(v);
+            else if (cap100) pct = Math.min(100, Math.round(v));
             else pct = Math.round((v / max) * 100);
             pct = Math.max(5, Math.min(100, pct));
             const info = item.querySelector('.character-info');
@@ -528,6 +599,15 @@
       if (!m) return 0;
       const val = parseFloat(m[1]);
       return isNaN(val) ? 0 : val;
+    }
+    function extractPoints(item){
+      // points are displayed in the right column; read the numeric value
+      try {
+        const txt = String(item.querySelector('.performance-amount .amount-value')?.textContent||'');
+        const m = txt.match(/-?\d+/);
+        if (!m) return 0;
+        return Math.abs(parseInt(m[0],10))||0;
+      } catch { return 0; }
     }
 
     async function load(){

@@ -9788,38 +9788,68 @@ app.get('/api/guild-members/:eventId', async (req, res) => {
             if (!participantsMap.has(did)) participantsMap.set(did, { character_name: r.character_name, character_class: r.character_class });
         }
 
-        if (participantsMap.size === 0) {
+        // Direct guild match by name+class (no Discord dependency)
+        const directMatchesRes = await client.query(`
+            SELECT ld.character_name, ld.character_class
+            FROM log_data ld
+            JOIN guildies g
+              ON LOWER(ld.character_name) = LOWER(g.character_name)
+             AND LOWER(ld.character_class) = LOWER(g.class)
+            WHERE ld.event_id = $1
+        `, [eventId]);
+        const directSet = new Set(directMatchesRes.rows.map(r => `${String(r.character_name)}|${String(r.character_class)}`));
+
+        if (participantsMap.size === 0 && directSet.size === 0) {
             return res.json({ success: true, data: [], eventId, pointsPerMember: 10, totalCount: 0 });
         }
 
-        // 4) Intersect with guildies by discord_id
+        // 4) Intersect with guildies by discord_id (alts in guild)
         const dids = Array.from(participantsMap.keys());
-        const guildRes = await client.query(`
+        const guildRes = dids.length ? await client.query(`
             SELECT discord_id, character_name FROM guildies WHERE discord_id = ANY($1)
-        `, [dids]);
-        const guildSet = new Map(guildRes.rows.map(r => [String(r.discord_id), r.character_name]));
+        `, [dids]) : { rows: [] };
+        const guildSet = new Map((guildRes.rows||[]).map(r => [String(r.discord_id), r.character_name]));
 
-        const guildMembers = dids
-            .filter(did => guildSet.has(did))
-            .map(did => {
-                const info = participantsMap.get(did);
-                return {
-                    character_name: info.character_name,
-                    character_class: info.character_class,
-                    discord_id: did,
-                    guild_character_name: guildSet.get(did) || info.character_name,
-                    points: 10
-                };
+        const out = [];
+        const seen = new Set();
+        // Add direct name+class matches first
+        directMatchesRes.rows.forEach(r => {
+            const key = `${String(r.character_name)}|${String(r.character_class)}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            out.push({
+                character_name: r.character_name,
+                character_class: r.character_class,
+                discord_id: null,
+                guild_character_name: r.character_name,
+                points: 10
             });
+        });
+        // Add discord-linked matches (covers alts in guild)
+        dids.forEach(did => {
+            if (!guildSet.has(did)) return;
+            const info = participantsMap.get(did);
+            if (!info) return;
+            const key = `${String(info.character_name)}|${String(info.character_class)}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            out.push({
+                character_name: info.character_name,
+                character_class: info.character_class,
+                discord_id: did,
+                guild_character_name: guildSet.get(did) || info.character_name,
+                points: 10
+            });
+        });
 
-        console.log(`🏰 [GUILD MEMBERS] Found ${guildMembers.length} guild members in raid for event: ${eventId}`);
+        console.log(`🏰 [GUILD MEMBERS] Found ${out.length} guild members in raid for event: ${eventId}`);
         
         res.json({ 
             success: true, 
-            data: guildMembers,
+            data: out,
             eventId,
             pointsPerMember: 10,
-            totalCount: guildMembers.length
+            totalCount: out.length
         });
         
     } catch (error) {

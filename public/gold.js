@@ -210,13 +210,8 @@ class GoldPotManager {
             const box = document.getElementById('nameFilterDebug');
             const list = document.getElementById('nameFilterDebugList');
             if (box && list) {
-                if (filteredOut.length) {
-                    box.style.display = 'block';
-                    list.innerHTML = filteredOut.map(it => `<div>• ${it.name} — ${it.reason}</div>`).join('');
-                } else {
-                    box.style.display = 'none';
-                    list.innerHTML = '';
-                }
+                box.style.display = 'none';
+                list.innerHTML = '';
             }
         } catch {}
         const out = [];

@@ -4173,12 +4173,26 @@ class RaidLogsManager {
         const container = document.getElementById('shaman-healers-list');
         const section = container.closest('.rankings-section');
         
-        // Filter shamans and take top 3
+        // Filter shamans and take top 3 (sorted by healing desc)
+        const toNum = (v)=> {
+            const raw = String(v==null?0:v).trim().toLowerCase();
+            const m = raw.match(/^([0-9]+(?:\.[0-9]+)?)([kmb])?$/);
+            if (m) {
+                let n = parseFloat(m[1]);
+                const suf = m[2];
+                if (suf === 'k') n *= 1e3; else if (suf === 'm') n *= 1e6; else if (suf === 'b') n *= 1e9;
+                return Number.isFinite(n)?n:0;
+            }
+            const digits = raw.replace(/[^0-9.]/g, '');
+            const n = Number(digits);
+            return Number.isFinite(n)?n:0;
+        };
         const shamanHealers = healers
             .filter(player => {
                 const className = (player.character_class || '').toLowerCase();
                 return className.includes('shaman');
             })
+            .sort((a,b)=> toNum(b.healing_amount) - toNum(a.healing_amount))
             .slice(0, 3); // Top 3 shamans
 
         if (shamanHealers.length === 0) {
@@ -4190,14 +4204,17 @@ class RaidLogsManager {
         section.classList.add('shaman-healers');
 
         const pointsArray = [25, 20, 15]; // Points for positions 1, 2, 3
-        const maxHealing = parseInt(shamanHealers[0].healing_amount) || 1;
+        const maxHealing = Math.max(1, toNum(shamanHealers[0]?.healing_amount));
 
         container.innerHTML = shamanHealers.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const formattedHealing = this.formatNumber(parseInt(player.healing_amount) || 0);
-            const playerHealing = parseInt(player.healing_amount) || 0;
-            const fillPercentage = Math.max(5, (playerHealing / maxHealing) * 100);
+            const rawHeal = toNum(player.healing_amount);
+            const formattedHealing = this.formatNumber(rawHeal || 0);
+            const playerHealing = rawHeal;
+            let fillPercentage = (playerHealing / maxHealing) * 100;
+            if (index === 0) fillPercentage = 100; // ensure #1 is full width
+            fillPercentage = Math.max(5, Math.min(100, Math.round(fillPercentage)));
             const points = pointsArray[index] || 0;
 
             return `
@@ -4226,12 +4243,26 @@ class RaidLogsManager {
         const container = document.getElementById('priest-healers-list');
         const section = container.closest('.rankings-section');
         
-        // Filter priests and take top 2
+        // Filter priests and take top 2 (sorted by healing desc)
+        const toNum = (v)=> {
+            const raw = String(v==null?0:v).trim().toLowerCase();
+            const m = raw.match(/^([0-9]+(?:\.[0-9]+)?)([kmb])?$/);
+            if (m) {
+                let n = parseFloat(m[1]);
+                const suf = m[2];
+                if (suf === 'k') n *= 1e3; else if (suf === 'm') n *= 1e6; else if (suf === 'b') n *= 1e9;
+                return Number.isFinite(n)?n:0;
+            }
+            const digits = raw.replace(/[^0-9.]/g, '');
+            const n = Number(digits);
+            return Number.isFinite(n)?n:0;
+        };
         const priestHealers = healers
             .filter(player => {
                 const className = (player.character_class || '').toLowerCase();
                 return className.includes('priest');
             })
+            .sort((a,b)=> toNum(b.healing_amount) - toNum(a.healing_amount))
             .slice(0, 2); // Top 2 priests
 
         if (priestHealers.length === 0) {
@@ -4243,14 +4274,17 @@ class RaidLogsManager {
         section.classList.add('priest-healers');
 
         const pointsArray = [20, 15]; // Points for positions 1, 2
-        const maxHealing = parseInt(priestHealers[0].healing_amount) || 1;
+        const maxHealing = Math.max(1, toNum(priestHealers[0]?.healing_amount));
 
         container.innerHTML = priestHealers.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const formattedHealing = this.formatNumber(parseInt(player.healing_amount) || 0);
-            const playerHealing = parseInt(player.healing_amount) || 0;
-            const fillPercentage = Math.max(5, (playerHealing / maxHealing) * 100);
+            const rawHeal = toNum(player.healing_amount);
+            const formattedHealing = this.formatNumber(rawHeal || 0);
+            const playerHealing = rawHeal;
+            let fillPercentage = (playerHealing / maxHealing) * 100;
+            if (index === 0) fillPercentage = 100;
+            fillPercentage = Math.max(5, Math.min(100, Math.round(fillPercentage)));
             const points = pointsArray[index] || 0;
 
             return `
@@ -4295,14 +4329,16 @@ class RaidLogsManager {
         section.classList.add('druid-healers');
 
         const pointsArray = [15]; // Points for position 1
-        const maxHealing = parseInt(druidHealers[0].healing_amount) || 1;
+        const toNum = (v)=> { const s=String(v==null?0:v).replace(/[\,\s]/g,''); const n=Number(s); return Number.isFinite(n)?n:0; };
+        const maxHealing = Math.max(1, toNum(druidHealers[0].healing_amount));
 
         container.innerHTML = druidHealers.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const formattedHealing = this.formatNumber(parseInt(player.healing_amount) || 0);
-            const playerHealing = parseInt(player.healing_amount) || 0;
-            const fillPercentage = 100; // Always 100% since it's the top druid
+            const rawHeal = toNum(player.healing_amount);
+            const formattedHealing = this.formatNumber(rawHeal || 0);
+            const playerHealing = rawHeal;
+            const fillPercentage = 100; // Single row, keep at 100%
             const points = pointsArray[index] || 0;
 
             return `
@@ -4351,7 +4387,9 @@ class RaidLogsManager {
         container.innerHTML = playersWithAbilities.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const fillPercentage = Math.max(5, (player.total_used / maxAbilities) * 100); // Minimum 5% for visibility
+            let fillPercentage = (player.total_used / maxAbilities) * 100;
+            if (index === 0) fillPercentage = 100;
+            fillPercentage = Math.max(5, Math.min(100, Math.round(fillPercentage)));
 
             // Create breakdown of abilities used
             const abilities = [];
@@ -4800,7 +4838,9 @@ class RaidLogsManager {
             const position = index + 1;
             const resolvedClass = player.character_class || this.resolveClassForName(player.character_name) || 'Unknown';
             const characterClass = this.normalizeClassName(resolvedClass);
-            const fillPercentage = Math.max(5, (player.total_runes / maxRunes) * 100); // Minimum 5% for visibility
+            let fillPercentage = (player.total_runes / maxRunes) * 100;
+            if (index === 0) fillPercentage = 100;
+            fillPercentage = Math.max(5, Math.min(100, Math.round(fillPercentage)));
 
             // Create breakdown of runes used
             const runes = [];
@@ -5722,8 +5762,8 @@ class RaidLogsManager {
         section.classList.add('curse', 'curse-recklessness');
 
         // Filter out players with 0 points and sort by uptime percentage (highest first)
-        const playersWithUptime = players.filter(player => player.uptime_percentage >= 0)
-            .sort((a, b) => b.uptime_percentage - a.uptime_percentage);
+        const playersWithUptime = players.filter(player => (Number(player.uptime_percentage||player.uptime||0) >= 0))
+            .sort((a, b) => (Number(b.uptime_percentage||b.uptime||0)) - (Number(a.uptime_percentage||a.uptime||0)));
 
         if (playersWithUptime.length === 0) {
             container.innerHTML = `
@@ -5736,14 +5776,17 @@ class RaidLogsManager {
         }
 
         // Get max uptime for percentage calculation
-        const maxUptime = Math.max(...playersWithUptime.map(p => p.uptime_percentage)) || 1;
+        const maxUptime = Math.max(...playersWithUptime.map(p => Number(p.uptime_percentage||p.uptime||0))) || 1;
 
         container.innerHTML = playersWithUptime.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const fillPercentage = Math.max(5, (player.uptime_percentage / maxUptime) * 100); // Minimum 5% for visibility
+            let fillPercentage = (Number(player.uptime_percentage||player.uptime||0) / maxUptime) * 100;
+            if (index === 0) fillPercentage = 100;
+            fillPercentage = Math.max(5, Math.min(100, Math.round(fillPercentage)));
 
-            const uptimeText = `${player.uptime_percentage.toFixed(1)}% uptime`;
+            const up = Number(player.uptime_percentage||player.uptime||0);
+            const uptimeText = `${up.toFixed(1)}% uptime`;
             
             // Determine point color based on uptime threshold
             let pointColor = '#ff6b35'; // default
@@ -5763,7 +5806,7 @@ class RaidLogsManager {
                             ${this.truncateWithTooltip(uptimeText).displayText}
                         </div>
                     </div>
-                    <div class="performance-amount" title="${player.uptime_percentage.toFixed(1)}% uptime (threshold: ${this.curseSettings.uptime_threshold}%)">
+                    <div class="performance-amount" title="${up.toFixed(1)}% uptime (threshold: ${this.curseSettings.uptime_threshold}%)">
                         <div class="amount-value" style="color: ${pointColor}">${player.points}</div>
                         <div class="points-label">points</div>
                     </div>
@@ -5786,8 +5829,8 @@ class RaidLogsManager {
         section.classList.add('curse', 'curse-shadow');
 
         // Filter out players with 0 points and sort by uptime percentage (highest first)
-        const playersWithUptime = players.filter(player => player.uptime_percentage >= 0)
-            .sort((a, b) => b.uptime_percentage - a.uptime_percentage);
+        const playersWithUptime = players.filter(player => (Number(player.uptime_percentage||player.uptime||0) >= 0))
+            .sort((a, b) => (Number(b.uptime_percentage||b.uptime||0)) - (Number(a.uptime_percentage||a.uptime||0)));
 
         if (playersWithUptime.length === 0) {
             container.innerHTML = `
@@ -5800,14 +5843,17 @@ class RaidLogsManager {
         }
 
         // Get max uptime for percentage calculation
-        const maxUptime = Math.max(...playersWithUptime.map(p => p.uptime_percentage)) || 1;
+        const maxUptime = Math.max(...playersWithUptime.map(p => Number(p.uptime_percentage||p.uptime||0))) || 1;
 
         container.innerHTML = playersWithUptime.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const fillPercentage = Math.max(5, (player.uptime_percentage / maxUptime) * 100); // Minimum 5% for visibility
+            let fillPercentage = (Number(player.uptime_percentage||player.uptime||0) / maxUptime) * 100;
+            if (index === 0) fillPercentage = 100;
+            fillPercentage = Math.max(5, Math.min(100, Math.round(fillPercentage)));
 
-            const uptimeText = `${player.uptime_percentage.toFixed(1)}% uptime`;
+            const up = Number(player.uptime_percentage||player.uptime||0);
+            const uptimeText = `${up.toFixed(1)}% uptime`;
             
             // Determine point color based on uptime threshold
             let pointColor = '#ff6b35'; // default
@@ -5827,7 +5873,7 @@ class RaidLogsManager {
                             ${this.truncateWithTooltip(uptimeText).displayText}
                         </div>
                     </div>
-                    <div class="performance-amount" title="${player.uptime_percentage.toFixed(1)}% uptime (threshold: ${this.curseShadowSettings.uptime_threshold}%)">
+                    <div class="performance-amount" title="${up.toFixed(1)}% uptime (threshold: ${this.curseShadowSettings.uptime_threshold}%)">
                         <div class="amount-value" style="color: ${pointColor}">${player.points}</div>
                         <div class="points-label">points</div>
                     </div>
@@ -5850,8 +5896,8 @@ class RaidLogsManager {
         section.classList.add('curse', 'curse-elements');
 
         // Filter out players with 0 points and sort by uptime percentage (highest first)
-        const playersWithUptime = players.filter(player => player.uptime_percentage >= 0)
-            .sort((a, b) => b.uptime_percentage - a.uptime_percentage);
+        const playersWithUptime = players.filter(player => (Number(player.uptime_percentage||player.uptime||0) >= 0))
+            .sort((a, b) => (Number(b.uptime_percentage||b.uptime||0)) - (Number(a.uptime_percentage||a.uptime||0)));
 
         if (playersWithUptime.length === 0) {
             container.innerHTML = `
@@ -5864,14 +5910,17 @@ class RaidLogsManager {
         }
 
         // Get max uptime for percentage calculation
-        const maxUptime = Math.max(...playersWithUptime.map(p => p.uptime_percentage)) || 1;
+        const maxUptime = Math.max(...playersWithUptime.map(p => Number(p.uptime_percentage||p.uptime||0))) || 1;
 
         container.innerHTML = playersWithUptime.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const fillPercentage = Math.max(5, (player.uptime_percentage / maxUptime) * 100); // Minimum 5% for visibility
+            let fillPercentage = (Number(player.uptime_percentage||player.uptime||0) / maxUptime) * 100;
+            if (index === 0) fillPercentage = 100;
+            fillPercentage = Math.max(5, Math.min(100, Math.round(fillPercentage)));
 
-            const uptimeText = `${player.uptime_percentage.toFixed(1)}% uptime`;
+            const up = Number(player.uptime_percentage||player.uptime||0);
+            const uptimeText = `${up.toFixed(1)}% uptime`;
             
             // Determine point color based on uptime threshold
             let pointColor = '#ff6b35'; // default
@@ -5891,7 +5940,7 @@ class RaidLogsManager {
                             ${this.truncateWithTooltip(uptimeText).displayText}
                         </div>
                     </div>
-                    <div class="performance-amount" title="${player.uptime_percentage.toFixed(1)}% uptime (threshold: ${this.curseElementsSettings.uptime_threshold}%)">
+                    <div class="performance-amount" title="${up.toFixed(1)}% uptime (threshold: ${this.curseElementsSettings.uptime_threshold}%)">
                         <div class="amount-value" style="color: ${pointColor}">${player.points}</div>
                         <div class="points-label">points</div>
                     </div>
@@ -6060,7 +6109,9 @@ class RaidLogsManager {
         container.innerHTML = playersWithDemoShout.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const fillPercentage = Math.max(5, (player.demo_shout_count / maxDemoShout) * 100); // Minimum 5% for visibility
+            let fillPercentage = (player.demo_shout_count / maxDemoShout) * 100;
+            if (index === 0) fillPercentage = 100;
+            fillPercentage = Math.max(5, Math.min(100, Math.round(fillPercentage)));
 
             const demoShoutText = `${player.demo_shout_count} demo shouts`;
             
@@ -6124,7 +6175,9 @@ class RaidLogsManager {
         container.innerHTML = playersWithPolymorphs.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const fillPercentage = Math.max(5, (player.polymorphs_used / maxPolymorphs) * 100); // Minimum 5% for visibility
+            let fillPercentage = (player.polymorphs_used / maxPolymorphs) * 100;
+            if (index === 0) fillPercentage = 100;
+            fillPercentage = Math.max(5, Math.min(100, Math.round(fillPercentage)));
 
             const polymorphText = `${player.polymorphs_used} polymorphs`;
 
