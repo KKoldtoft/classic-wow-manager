@@ -490,6 +490,9 @@ initializeRaidDurationsTable();
 
 // Migrate player confirmed logs table
 migratePlayerConfirmedLogsTable();
+
+    // Initialize rewards snapshot tables (entries + event header)
+    initializeRewardsSnapshotTablesOnStartup();
   })
   .catch(err => {
     console.error('Error connecting to PostgreSQL database:', err.stack);
@@ -511,6 +514,69 @@ async function initializeEventsCacheTable() {
     console.log('✅ Events cache table initialized');
   } catch (error) {
     console.error('❌ Error creating events cache table:', error);
+  }
+}
+
+// Initialize rewards snapshot tables (legacy set used by raidlogs admin/ui)
+async function initializeRewardsSnapshotTablesOnStartup() {
+  try {
+    // Header/event row (one per event)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS rewards_snapshot_events (
+        event_id VARCHAR(255) PRIMARY KEY,
+        locked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        locked_by_id VARCHAR(255),
+        locked_by_name VARCHAR(255)
+      )
+    `);
+
+    // Entries (row-per-entry)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS rewards_and_deductions_points (
+        id SERIAL PRIMARY KEY,
+        event_id VARCHAR(255) NOT NULL,
+        panel_key VARCHAR(100) NOT NULL,
+        panel_name VARCHAR(255) NOT NULL,
+        discord_user_id VARCHAR(255),
+        character_name VARCHAR(255) NOT NULL,
+        character_class VARCHAR(50),
+        ranking_number_original INTEGER,
+        point_value_original INTEGER,
+        character_details_original TEXT,
+        primary_numeric_original INTEGER,
+        aux_json JSONB,
+        point_value_edited INTEGER,
+        character_details_edited TEXT,
+        primary_numeric_edited INTEGER,
+        edited_by_id VARCHAR(255),
+        edited_by_name VARCHAR(255),
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Helpful indexes
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_rewards_points_event ON rewards_and_deductions_points (event_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_rewards_points_panel ON rewards_and_deductions_points (event_id, panel_key)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_rewards_points_discord ON rewards_and_deductions_points (discord_user_id)`);
+    await pool.query(`ALTER TABLE rewards_and_deductions_points ADD COLUMN IF NOT EXISTS panel_id TEXT`);
+
+    // Add published/version and dashboard header fields on the event header row
+    await pool.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS published BOOLEAN DEFAULT FALSE`);
+    await pool.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1`);
+    await pool.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS published_at TIMESTAMP`);
+    await pool.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS published_by_id TEXT`);
+    await pool.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS published_by_name TEXT`);
+    await pool.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS total_gold_pot BIGINT`);
+    await pool.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS shared_gold_pot BIGINT`);
+    await pool.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS raid_duration_minutes INTEGER`);
+    await pool.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS bosses_killed INTEGER`);
+    await pool.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS last_boss TEXT`);
+    await pool.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS wow_logs_url TEXT`);
+    await pool.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS rpb_archive_url TEXT`);
+
+    console.log('✅ Rewards snapshot tables initialized');
+  } catch (error) {
+    console.error('❌ Error initializing rewards snapshot tables:', error);
   }
 }
 
@@ -1461,11 +1527,18 @@ async function discordApiCallWithBackoff(url, options = {}, retryOptions = {}) {
             // Calculate backoff delay
             let delay = baseDelay * Math.pow(2, attempt);
             
-            // Handle rate limiting with specific retry-after header
+            // Handle rate limiting: honor Retry-After without capping
             if (status === 429) {
-                const retryAfter = error.response?.headers['retry-after'];
-                if (retryAfter) {
-                    delay = Math.max(delay, parseInt(retryAfter) * 1000);
+                const retryAfterHeader = error.response?.headers['retry-after'];
+                const retryAfterFromBody = (error.response?.data && typeof error.response.data.retry_after === 'number')
+                    ? error.response.data.retry_after
+                    : null;
+                const retryAfterSec = retryAfterHeader != null ? Number(retryAfterHeader) : retryAfterFromBody;
+                if (retryAfterSec && !Number.isNaN(retryAfterSec) && retryAfterSec > 0) {
+                    const delayMs = Math.ceil(retryAfterSec * 1000);
+                    console.log(`⏳ Rate limited (429) - honoring Retry-After: ${delayMs}ms`);
+                    await new Promise(resolve => setTimeout(resolve, delayMs));
+                    continue;
                 }
             }
             
@@ -1475,7 +1548,7 @@ async function discordApiCallWithBackoff(url, options = {}, retryOptions = {}) {
                 console.log(`🔐 401 Unauthorized - applying backoff delay: ${delay}ms`);
             }
             
-            // Cap the delay
+            // Cap the delay for non-429 cases
             delay = Math.min(delay, maxDelay);
             
             console.log(`⏳ Retrying Discord API call in ${delay}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
@@ -1496,32 +1569,40 @@ async function fetchUserGuildMember(accessToken, guildId) {
         return cached.data;
     }
 
+    // Await in-flight request for same user/guild if present
+    if (userMemberInFlight.has(cacheKey)) {
+        console.log('⏳ Awaiting in-flight guild member fetch');
+        try { return await userMemberInFlight.get(cacheKey); } catch (_) {}
+    }
+
     try {
         console.log(`🔍 Fetching guild member data for guild ${guildId}`);
-        const response = await discordApiCallWithBackoff(
-            `https://discord.com/api/v10/users/@me/guilds/${guildId}/member`,
-            {
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+        const inFlight = (async () => {
+            const response = await discordApiCallWithBackoff(
+                `https://discord.com/api/v10/users/@me/guilds/${guildId}/member`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+                    }
+                },
+                {
+                    maxRetries: 3,
+                    baseDelay: 1000,
+                    maxDelay: 8000
                 }
-            },
-            {
-                maxRetries: 3,
-                baseDelay: 1000,
-                maxDelay: 8000
-            }
-        );
-        
-        console.log(`✅ Guild member data received:`, response.data);
-        
+            );
+            console.log(`✅ Guild member data received`);
+            return response.data;
+        })();
+        userMemberInFlight.set(cacheKey, inFlight);
+        const data = await inFlight;
         // Cache the successful response
         userMemberCache.set(cacheKey, {
-            data: response.data,
+            data,
             timestamp: Date.now()
         });
-        
-        return response.data;
+        return data;
     } catch (error) {
         console.error('❌ Error fetching guild member data after retries:', {
             status: error.response?.status,
@@ -1537,6 +1618,8 @@ async function fetchUserGuildMember(accessToken, guildId) {
         }
         
         return null;
+    } finally {
+        userMemberInFlight.delete(cacheKey);
     }
 }
 
@@ -1546,8 +1629,13 @@ let guildRolesCacheTime = 0;
 
 // Cache for user member data to avoid repeated API calls
 const userMemberCache = new Map();
+// Track in-flight user member requests to deduplicate concurrent calls
+const userMemberInFlight = new Map();
+// Short-lived cache for aggregated /user response per access token
+const userInfoCache = new Map(); // accessToken -> { value, timestamp }
 // Allow overriding cache TTLs; default to short TTLs in non-production to avoid confusion while testing
 const USER_CACHE_TTL = process.env.USER_CACHE_TTL_MS ? parseInt(process.env.USER_CACHE_TTL_MS, 10) : (process.env.NODE_ENV === 'production' ? 15 * 60 * 1000 : 60 * 1000);
+const USER_INFO_TTL = process.env.USER_INFO_TTL_MS ? parseInt(process.env.USER_INFO_TTL_MS, 10) : (process.env.NODE_ENV === 'production' ? 2 * 60 * 1000 : 30 * 1000);
 const GUILD_CACHE_TTL = process.env.GUILD_CACHE_TTL_MS ? parseInt(process.env.GUILD_CACHE_TTL_MS, 10) : (process.env.NODE_ENV === 'production' ? 10 * 60 * 1000 : 60 * 1000);
 
 // Clean up old cache entries every 30 minutes
@@ -1566,6 +1654,43 @@ setInterval(() => {
         console.log(`🧹 Cleaned up ${cleanedCount} old cache entries`);
     }
 }, 30 * 60 * 1000); // Run every 30 minutes
+
+// Compute both Management and Helper permissions from a single member fetch
+async function getUserPermissionsCombined(accessToken) {
+    // Check short-lived /user cache
+    const cachedInfo = userInfoCache.get(accessToken);
+    if (cachedInfo && (Date.now() - cachedInfo.timestamp) < USER_INFO_TTL) {
+        return cachedInfo.value;
+    }
+
+    const memberData = await fetchUserGuildMember(accessToken, DISCORD_GUILD_ID);
+    let hasMgmt = false;
+    let hasHelp = false;
+    if (memberData && Array.isArray(memberData.roles)) {
+        // Prefer ID checks when configured
+        if (MANAGEMENT_ROLE_ID) {
+            hasMgmt = memberData.roles.some(rid => String(rid) === String(MANAGEMENT_ROLE_ID));
+        }
+        if (HELPER_ROLE_ID) {
+            hasHelp = memberData.roles.some(rid => String(rid) === String(HELPER_ROLE_ID));
+        }
+        // Resolve by role name if needed
+        if ((!MANAGEMENT_ROLE_ID || !hasMgmt) || (!HELPER_ROLE_ID || !hasHelp)) {
+            const roles = await fetchGuildRoles(DISCORD_GUILD_ID);
+            const roleMap = new Map(roles.map(role => [role.id, role.name]));
+            const userRoleNames = memberData.roles.map(roleId => roleMap.get(roleId)).filter(Boolean);
+            if (!hasMgmt) {
+                hasMgmt = userRoleNames.some(name => (name || '').toLowerCase() === MANAGEMENT_ROLE_NAME.toLowerCase());
+            }
+            if (!hasHelp) {
+                hasHelp = userRoleNames.some(name => (name || '').toLowerCase() === HELPER_ROLE_NAME.toLowerCase());
+            }
+        }
+    }
+    const value = { hasManagementRole: !!hasMgmt, hasHelperRole: !!hasHelp };
+    userInfoCache.set(accessToken, { value, timestamp: Date.now() });
+    return value;
+}
 
 // Function to fetch guild roles to map role IDs to names (with one retry on failure)
 async function fetchGuildRoles(guildId, attempt = 1) {
@@ -1739,10 +1864,7 @@ app.get('/event/:eventId/roster', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'roster.html'));
 });
 
-// Serve Raid Logs, Gold, and Loot pages with event-scoped URLs
-app.get('/event/:eventId/raidlogs', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'raidlogs.html'));
-});
+// Serve Gold and Loot pages with event-scoped URLs
 
 app.get('/event/:eventId/gold', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'gold.html'));
@@ -1793,8 +1915,38 @@ app.get('/history', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'history.html'));
 });
 
-app.get('/raidlogs', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'raidlogs.html'));
+// Admin-only raidlogs page (heavy compute)
+app.get('/raidlogs_admin', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.redirect('/');
+  }
+  try {
+    const ok = await hasManagementRole(req.user.accessToken);
+    if (!ok) return res.status(403).send('Management role required');
+  } catch {
+    return res.status(403).send('Management role required');
+  }
+  res.sendFile(path.join(__dirname, 'public', 'raidlogs.html'));
+});
+
+// Preserve legacy route for now but redirect non-management away
+app.get('/raidlogs', async (req, res) => {
+  return res.sendFile(path.join(__dirname, 'public', 'raidlogs_view.html'));
+});
+
+// Event-scoped public viewer
+app.get('/event/:eventId/raidlogs', async (req, res) => {
+  return res.sendFile(path.join(__dirname, 'public', 'raidlogs_view.html'));
+});
+
+// Event-scoped admin page (heavy compute)
+app.get('/event/:eventId/raidlogs_admin', async (req, res) => {
+  if (!req.isAuthenticated()) return res.redirect('/');
+  try {
+    const ok = await hasManagementRole(req.user.accessToken);
+    if (!ok) return res.status(403).send('Management role required');
+  } catch { return res.status(403).send('Management role required'); }
+  return res.sendFile(path.join(__dirname, 'public', 'raidlogs.html'));
 });
 
 app.get('/stats', (req, res) => {
@@ -2639,11 +2791,13 @@ app.get('/user', async (req, res) => {
       // Optional: allow forcing a refresh of role caches via query param
       if (String(req.query.refresh || '') === '1') {
         clearRoleCachesForAccessToken(req.user.accessToken);
+        userInfoCache.delete(req.user.accessToken);
       }
-      // Check if user has Management/Helper roles
+      // Check if user has Management/Helper roles in one combined fetch
       console.log(`👤 Checking permissions for user ${req.user.username}`);
-      const isManagement = await hasManagementRole(req.user.accessToken);
-      const isHelper = await hasHelperRole(req.user.accessToken);
+      const perms = await getUserPermissionsCombined(req.user.accessToken);
+      const isManagement = !!(perms && perms.hasManagementRole);
+      const isHelper = !!(perms && perms.hasHelperRole);
 
       res.json({
         loggedIn: true,
@@ -11823,6 +11977,7 @@ app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, express.json(
     const { eventId } = req.params;
     const useEngine = !!(req.body && (req.body.useEngine === true));
     let entries = Array.isArray(req.body?.entries) ? req.body.entries : [];
+    const header = (req.body && req.body.header) ? req.body.header : null;
     const lockedById = req.user?.id || null;
     const lockedByName = req.user?.username || req.user?.global_name || req.user?.display_name || 'unknown';
     let client;
@@ -11838,6 +11993,26 @@ app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, express.json(
              ON CONFLICT (event_id) DO UPDATE SET locked_by_id = EXCLUDED.locked_by_id, locked_by_name = EXCLUDED.locked_by_name, locked_at = NOW()`,
             [eventId, lockedById, lockedByName]
         );
+
+        if (header) {
+            const {
+              raidDurationMinutes = null,
+              bossesKilled = null,
+              lastBoss = null,
+              wowLogsUrl = null,
+              rpbArchiveUrl = null
+            } = header || {};
+            await client.query(
+              `UPDATE rewards_snapshot_events
+                 SET raid_duration_minutes = COALESCE($2, raid_duration_minutes),
+                     bosses_killed = COALESCE($3, bosses_killed),
+                     last_boss = COALESCE($4, last_boss),
+                     wow_logs_url = COALESCE($5, wow_logs_url),
+                     rpb_archive_url = COALESCE($6, rpb_archive_url)
+               WHERE event_id = $1`,
+              [eventId, raidDurationMinutes, bossesKilled, lastBoss, wowLogsUrl, rpbArchiveUrl]
+            );
+        }
 
         // Always replace snapshot rows for the event to avoid resurrecting stale data
         await client.query('DELETE FROM rewards_and_deductions_points WHERE event_id = $1', [eventId]);
@@ -11890,6 +12065,23 @@ app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, express.json(
                     big_buyer: 'Big Buyer Bonus',
                     manual_points: 'Manual'
                 };
+                // Helper for class icon URLs (stable, no auth)
+                const classIconUrl = (cls) => {
+                  const k = String(cls||'').toLowerCase();
+                  const map = {
+                    warrior: 'https://wow.zamimg.com/images/wow/icons/large/classicon_warrior.jpg',
+                    paladin: 'https://wow.zamimg.com/images/wow/icons/large/classicon_paladin.jpg',
+                    hunter: 'https://wow.zamimg.com/images/wow/icons/large/classicon_hunter.jpg',
+                    rogue: 'https://wow.zamimg.com/images/wow/icons/large/classicon_rogue.jpg',
+                    priest: 'https://wow.zamimg.com/images/wow/icons/large/classicon_priest.jpg',
+                    shaman: 'https://wow.zamimg.com/images/wow/icons/large/classicon_shaman.jpg',
+                    mage: 'https://wow.zamimg.com/images/wow/icons/large/classicon_mage.jpg',
+                    warlock: 'https://wow.zamimg.com/images/wow/icons/large/classicon_warlock.jpg',
+                    druid: 'https://wow.zamimg.com/images/wow/icons/large/classicon_druid.jpg'
+                  };
+                  return map[k] || null;
+                };
+
                 const built = [];
                 for (const p of panels) {
                     const panelKey = String(p.panel_key||'');
@@ -11927,8 +12119,42 @@ app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, express.json(
                             console.warn('⚠️ [SNAPSHOT] Windfury per-type expand failed, falling back to engine rows');
                         }
                     }
-                    // Generic add for other panels (or fallback)
+                    // Generic add for other panels (or fallback) with detail text
                     rows.forEach((r, idx) => {
+                        let details = '';
+                        try {
+                          const nm = String(r.name||'');
+                          if (panelKey === 'frost_resistance') {
+                            const fr = r.frost_resistance ?? r.value ?? null;
+                            if (fr != null) details = `FR ${fr}`;
+                          } else if (panelKey === 'world_buffs_copy') {
+                            if (Array.isArray(r.missing_buffs) && r.missing_buffs.length) {
+                              details = `Missing: ${r.missing_buffs.join(', ')}`;
+                            }
+                          } else if (panelKey === 'mana_potions') {
+                            const used = r.used ?? r.value ?? null;
+                            if (used != null) details = `Used: ${used}`;
+                          } else if (panelKey === 'runes') {
+                            const used = r.used ?? r.value ?? null;
+                            if (used != null) details = `Used: ${used}`;
+                          } else if (panelKey === 'interrupts') {
+                            const cnt = r.count ?? r.value ?? null; if (cnt != null) details = `Interrupts: ${cnt}`;
+                          } else if (panelKey === 'disarms') {
+                            const cnt = r.count ?? r.value ?? null; if (cnt != null) details = `Disarms: ${cnt}`;
+                          } else if (panelKey === 'sunder') {
+                            const cnt = r.count ?? r.value ?? null; if (cnt != null) details = `Sunders: ${cnt}`;
+                          } else if (panelKey === 'decurses') {
+                            const cnt = r.count ?? r.value ?? null; if (cnt != null) details = `Decurses: ${cnt}`;
+                          } else if (panelKey === 'polymorph') {
+                            const cnt = r.count ?? r.value ?? null; if (cnt != null) details = `Polymorphs: ${cnt}`;
+                          } else if (panelKey === 'power_infusion') {
+                            const cnt = r.count ?? r.value ?? null; if (cnt != null) details = `Infusions: ${cnt}`;
+                          } else if (panelKey === 'abilities') {
+                            const used = r.used ?? r.count ?? null; if (used != null) details = `Abilities used: ${used}`;
+                          } else if (panelKey === 'void_damage') {
+                            if (r.type) details = String(r.type);
+                          }
+                        } catch {}
                         built.push({
                             panel_key: panelKey,
                             panel_name: panelName,
@@ -11937,12 +12163,30 @@ app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, express.json(
                             character_class: null,
                             ranking_number_original: Number.isFinite(idx+1) ? (idx+1) : null,
                             point_value_original: Number(r.points)||0,
-                            character_details_original: null,
+                            character_details_original: (details||null),
                             primary_numeric_original: null,
-                            aux_json: null
+                            aux_json: {}
                         });
                     });
                 }
+                // Enrich with class and icon from log_data where possible
+                try {
+                  const clsRes = await client.query(
+                    `SELECT LOWER(character_name) AS key, character_class FROM log_data WHERE event_id = $1`,
+                    [eventId]
+                  );
+                  const clsMap = new Map(clsRes.rows.map(r => [String(r.key||'').toLowerCase(), r.character_class]));
+                  built.forEach(en => {
+                    if (!en.character_class && en.character_name) {
+                      const c = clsMap.get(String(en.character_name).toLowerCase());
+                      if (c) en.character_class = c;
+                    }
+                    if (en.character_class) {
+                      const icon = classIconUrl(en.character_class);
+                      if (icon) en.aux_json = Object.assign({}, en.aux_json||{}, { icon_url: icon });
+                    }
+                  });
+                } catch (e) { console.warn('⚠️ [SNAPSHOT] Class enrichment failed', e?.message||e); }
                 entries = built;
             } catch (e) {
                 console.error('❌ [SNAPSHOT] Engine materialization failed, falling back to provided entries:', e?.message||e);
@@ -12026,7 +12270,15 @@ app.get('/api/rewards-snapshot/:eventId', async (req, res) => {
             `SELECT * FROM rewards_and_deductions_points WHERE event_id = $1 ORDER BY panel_key, ranking_number_original NULLS LAST, character_name`,
             [eventId]
         );
-        return res.json({ success: true, data: rows.rows });
+        // Include header snapshot summary
+        const hdr = await client.query(
+          `SELECT event_id, locked_at, locked_by_id, locked_by_name, published, version, published_at, published_by_id, published_by_name,
+                  raid_duration_minutes, bosses_killed, last_boss, wow_logs_url, rpb_archive_url
+           FROM rewards_snapshot_events WHERE event_id = $1`,
+          [eventId]
+        );
+        const header = hdr.rows[0] || null;
+        return res.json({ success: true, data: rows.rows, header });
     } catch (error) {
         console.error('❌ [SNAPSHOT] Fetch error:', error);
         return res.status(500).json({ success: false, message: 'Error fetching snapshot rows' });
@@ -12127,6 +12379,211 @@ app.post('/api/rewards-snapshot/:eventId/unlock', requireManagement, async (req,
     } finally {
         if (client) client.release();
     }
+});
+
+// Publish current snapshot for an event (mark as published and stamp publisher)
+app.post('/api/rewards-snapshot/:eventId/publish', requireManagement, async (req, res) => {
+  const { eventId } = req.params;
+  const publisherId = req.user?.id || null;
+  const publisherName = req.user?.username || req.user?.global_name || req.user?.display_name || 'unknown';
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    // Ensure header table exists in case startup migrations didn't run
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS rewards_snapshot_events (
+        event_id VARCHAR(255) PRIMARY KEY,
+        locked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        locked_by_id VARCHAR(255),
+        locked_by_name VARCHAR(255)
+      )
+    `);
+    // Defensive: ensure required columns exist before attempting to update
+    await client.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS published BOOLEAN DEFAULT FALSE`);
+    await client.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1`);
+    await client.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS published_at TIMESTAMP`);
+    await client.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS published_by_id TEXT`);
+    await client.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS published_by_name TEXT`);
+    await client.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS total_gold_pot BIGINT`);
+    await client.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS shared_gold_pot BIGINT`);
+    // Defensive: ensure manual rewards table exists and has expected columns used by the merge
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS manual_rewards_deductions (
+        id SERIAL PRIMARY KEY,
+        event_id VARCHAR(255) NOT NULL,
+        player_name VARCHAR(255) NOT NULL,
+        player_class VARCHAR(50),
+        discord_id VARCHAR(255),
+        description TEXT NOT NULL,
+        points DECIMAL(10,2) NOT NULL,
+        created_by VARCHAR(255) NOT NULL,
+        icon_url VARCHAR(500),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await client.query(`ALTER TABLE manual_rewards_deductions ADD COLUMN IF NOT EXISTS is_gold BOOLEAN DEFAULT FALSE`);
+    // Ensure header exists
+    await client.query(
+      `INSERT INTO rewards_snapshot_events (event_id, locked_by_id, locked_by_name)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (event_id) DO NOTHING`,
+      [eventId, publisherId, publisherName]
+    );
+    // Bump version and mark published
+    const updRes = await client.query(
+      `UPDATE rewards_snapshot_events
+         SET published = TRUE,
+             published_at = NOW(),
+             published_by_id = $2,
+             published_by_name = $3,
+             version = COALESCE(version, 0) + 1
+       WHERE event_id = $1`,
+      [eventId, publisherId, publisherName]
+    );
+    // If no row was updated (very unlikely because of the insert above), force-create then update
+    if (updRes.rowCount === 0) {
+      await client.query(
+        `INSERT INTO rewards_snapshot_events (event_id, locked_at, locked_by_id, locked_by_name)
+         VALUES ($1, NOW(), $2, $3)
+         ON CONFLICT (event_id) DO NOTHING`,
+        [eventId, publisherId, publisherName]
+      );
+      await client.query(
+        `UPDATE rewards_snapshot_events
+            SET published = TRUE,
+                published_at = NOW(),
+                published_by_id = $2,
+                published_by_name = $3,
+                version = COALESCE(version, 0) + 1
+          WHERE event_id = $1`,
+        [eventId, publisherId, publisherName]
+      );
+    }
+
+    // Sanity check and force-set if needed
+    const chk = await client.query(
+      `SELECT published, published_at FROM rewards_snapshot_events WHERE event_id = $1`,
+      [eventId]
+    );
+    const row = chk.rows && chk.rows[0] ? chk.rows[0] : null;
+    if (!row || row.published !== true || !row.published_at) {
+      await client.query(
+        `UPDATE rewards_snapshot_events SET published = TRUE, published_at = NOW() WHERE event_id = $1`,
+        [eventId]
+      );
+    }
+
+    // Merge Manual Rewards/Deductions into snapshot entries for public view
+    // Replace existing manual_points rows then insert from manual_rewards_deductions
+    try {
+      await client.query(`DELETE FROM rewards_and_deductions_points WHERE event_id = $1 AND panel_key = 'manual_points'`, [eventId]);
+      await client.query(`
+        INSERT INTO rewards_and_deductions_points (
+          event_id, panel_key, panel_name, discord_user_id, character_name, character_class,
+          ranking_number_original, point_value_original, character_details_original, primary_numeric_original, aux_json
+        )
+        SELECT 
+          $1::varchar AS event_id,
+          'manual_points' AS panel_key,
+          'Manual Rewards and Deductions' AS panel_name,
+          m.discord_id AS discord_user_id,
+          m.player_name AS character_name,
+          m.player_class AS character_class,
+          NULL::int AS ranking_number_original,
+          COALESCE(m.points,0)::int AS point_value_original,
+          COALESCE(m.description,'') AS character_details_original,
+          NULL::int AS primary_numeric_original,
+          jsonb_build_object('is_gold', COALESCE(m.is_gold,false)) AS aux_json
+        FROM manual_rewards_deductions m
+        WHERE m.event_id = $1
+      `, [eventId]);
+    } catch (e) {
+      console.warn('⚠️ [SNAPSHOT PUBLISH] Manual merge failed:', e?.message||e);
+    }
+    // Compute gold pot aggregates from snapshot entries: shared = sum of non-gold positives? We persist explicit totals only if provided in request; else leave null
+    try {
+      const providedTotal = req.body && Number.isFinite(Number(req.body.total_gold_pot)) ? Number(req.body.total_gold_pot) : null;
+      const providedShared = req.body && Number.isFinite(Number(req.body.shared_gold_pot)) ? Number(req.body.shared_gold_pot) : null;
+      if (providedTotal !== null || providedShared !== null) {
+        await client.query(
+          `UPDATE rewards_snapshot_events SET total_gold_pot = COALESCE($2,total_gold_pot), shared_gold_pot = COALESCE($3, shared_gold_pot) WHERE event_id = $1`,
+          [eventId, providedTotal, providedShared]
+        );
+      } else {
+        // Auto-compute from loot_items for this event
+        const goldRes = await client.query(
+          `SELECT COALESCE(SUM(gold_amount),0) AS total_gold FROM loot_items WHERE event_id = $1`,
+          [eventId]
+        );
+        const totalGold = Number(goldRes.rows && goldRes.rows[0] && goldRes.rows[0].total_gold) || 0;
+        const sharedGold = Math.floor(totalGold * 0.85);
+        await client.query(
+          `UPDATE rewards_snapshot_events SET total_gold_pot = $2, shared_gold_pot = $3 WHERE event_id = $1`,
+          [eventId, totalGold, sharedGold]
+        );
+      }
+    } catch {}
+    // Return the final header row so client can verify
+    const finalHdr = await client.query(
+      `SELECT event_id, published, published_at, version,
+              raid_duration_minutes, bosses_killed, last_boss, wow_logs_url, rpb_archive_url,
+              total_gold_pot, shared_gold_pot
+         FROM rewards_snapshot_events WHERE event_id = $1`,
+      [eventId]
+    );
+    await client.query('COMMIT');
+    try { broadcastUpdate('raidlogs', eventId, { type: 'snapshot_published' }); } catch {}
+    return res.json({ success: true, header: finalHdr.rows && finalHdr.rows[0] ? finalHdr.rows[0] : null });
+  } catch (error) {
+    if (client) await client.query('ROLLBACK');
+    console.error('❌ [SNAPSHOT] Publish error:', error);
+    return res.status(500).json({ success: false, message: 'Error publishing snapshot', error: String(error && (error.detail || error.message || error)) });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Public read: return published snapshot header + entries for event
+app.get('/api/raidlogs/published/:eventId', async (req, res) => {
+  const { eventId } = req.params;
+  let client;
+  try {
+    client = await pool.connect();
+    const hdr = await client.query(
+      `SELECT event_id, version, published, published_at, published_by_name,
+              raid_duration_minutes, bosses_killed, last_boss, wow_logs_url, rpb_archive_url,
+              total_gold_pot, shared_gold_pot
+         FROM rewards_snapshot_events
+        WHERE event_id = $1 AND published = TRUE
+        ORDER BY published_at DESC NULLS LAST, version DESC
+        LIMIT 1`,
+      [eventId]
+    );
+    if (hdr.rows.length === 0) {
+      return res.json({ success: true, header: null, entries: [] });
+    }
+    const header = hdr.rows[0];
+    const rows = await client.query(
+      `SELECT panel_key, panel_name, character_name, character_class,
+              point_value_edited, point_value_original,
+              character_details_edited, character_details_original,
+              COALESCE(point_value_edited, point_value_original) AS points,
+              COALESCE(character_details_edited, character_details_original) AS character_details,
+              primary_numeric_original, aux_json
+         FROM rewards_and_deductions_points
+        WHERE event_id = $1
+        ORDER BY panel_key, ranking_number_original NULLS LAST, character_name`,
+      [eventId]
+    );
+    res.json({ success: true, header, entries: rows.rows });
+  } catch (error) {
+    console.error('❌ [PUBLISHED] Fetch error:', error);
+    res.status(500).json({ success: false, message: 'Error fetching published snapshot' });
+  } finally {
+    if (client) client.release();
+  }
 });
 
 // --- Manual Rewards Templates API Endpoints ---

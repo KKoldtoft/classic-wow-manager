@@ -354,7 +354,7 @@ body.stats .rankings-container .rankings-section {
 .ranking-item {
     display: flex;
     align-items: center;
-    padding: 15px 25px;
+    padding: 10px 25px;
     border-bottom: 1px solid var(--border-color, #3a3a3a);
     transition: background-color 0.2s ease;
 }
@@ -404,58 +404,37 @@ body.stats .rankings-container .rankings-section {
 .character-info {
     flex: 1;
     margin-left: 20px;
-    padding: 0px 0px 0px 70px; /* left padding for 50px icon + spacing */
-    border-radius: 20px;
+    padding: 0px 0px 0px 60px; /* left padding for 43px icon + spacing */
     position: relative;
-    min-height: 70px; /* target height for compact layout */
+    min-height: 50px; /* target height for compact layout */
     display: flex;
     flex-direction: column;
     justify-content: center;
-    border:solid;
-    border-width: 2px;
-    border-color: #000;
+    border: none;
+    box-shadow: inset 0 0 0 4px rgba(0,0,0,0.85); /* default; overridden per class below */
+    border-radius: 6px;
 }
 
 /* Visual meter background using CSS gradients */
-.character-info.class-warrior {
-    background: linear-gradient(to right, #C79C6E var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
-}
+.character-info.class-warrior { background: linear-gradient(to right, #C79C6E var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #C79C6E; }
 
-.character-info.class-paladin {
-    background: linear-gradient(to right, #F58CBA var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
-}
+.character-info.class-paladin { background: linear-gradient(to right, #F58CBA var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #F58CBA; }
 
-.character-info.class-hunter {
-    background: linear-gradient(to right, #ABD473 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
-}
+.character-info.class-hunter { background: linear-gradient(to right, #ABD473 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #ABD473; }
 
-.character-info.class-rogue {
-    background: linear-gradient(to right, #FFF569 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
-}
+.character-info.class-rogue { background: linear-gradient(to right, #FFF569 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #FFF569; }
 
-.character-info.class-priest {
-    background: linear-gradient(to right, #FFFFFF var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
-}
+.character-info.class-priest { background: linear-gradient(to right, #FFFFFF var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #FFFFFF; }
 
-.character-info.class-shaman {
-    background: linear-gradient(to right, #0070DE var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
-}
+.character-info.class-shaman { background: linear-gradient(to right, #0070DE var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #0070DE; }
 
-.character-info.class-mage {
-    background: linear-gradient(to right, #69CCF0 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
-}
+.character-info.class-mage { background: linear-gradient(to right, #69CCF0 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #69CCF0; }
 
-.character-info.class-warlock {
-    background: linear-gradient(to right, #9482C9 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
-}
+.character-info.class-warlock { background: linear-gradient(to right, #9482C9 var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #9482C9; }
 
-.character-info.class-druid {
-    background: linear-gradient(to right, #FF7D0A var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
-}
+.character-info.class-druid { background: linear-gradient(to right, #FF7D0A var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #FF7D0A; }
 
-.character-info.class-unknown {
-    background: linear-gradient(to right, var(--secondary-bg, #2a2a2a) var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%));
-}
+.character-info.class-unknown { background: linear-gradient(to right, var(--secondary-bg, #2a2a2a) var(--fill-percentage, 100%), #666666 var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #2a2a2a; }
 
 .character-name {
     font-weight: 600;
@@ -472,6 +451,7 @@ body.stats .rankings-container .rankings-section {
     text-overflow: ellipsis;
     cursor: help;
     display: block;
+    position: relative; top: -4px;
 }
 
 .character-spec {
@@ -1294,13 +1274,13 @@ body.stats .rankings-container .rankings-section {
 
 /* Spec icon styling for raid logs */
 .spec-icon {
-    width: 50px;
-    height: 50px;
+    width: 47px;
+    height: 47px;
     margin-right: 12px;
     flex-shrink: 0;
     vertical-align: middle;
     position: absolute;
-    left: 12px;
+    left: 2px;
     top: 50%;
     transform: translateY(-50%);
     border-radius: 5px;
@@ -1324,12 +1304,11 @@ body.stats .rankings-container .rankings-section {
 /* Stats section styling */
 .stats-section {
     --panel-accent: #5865F2;
-    background: #0e121d;
-    border: 4px solid var(--panel-accent);
-    border-radius: 8px;
-    padding: 20px;
+    border: 0px solid var(--panel-accent);
+    border-radius: 0px;
+    padding: 00px;
     margin: 40px auto 30px auto;
-    max-width: 1025px;
+    max-width: 1400px;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
     position: relative;
 }
@@ -1423,8 +1402,8 @@ body.stats .rankings-container .rankings-section {
 /* Add stats dashboard styles */
 .stats-dashboard {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    grid-template-rows: 1fr 1fr;
+    grid-template-columns: repeat(5, 1fr);
+    grid-template-rows: 1fr;
     gap: 20px;
     margin-bottom: 2px;
 }
@@ -1873,7 +1852,6 @@ body.stats .rankings-container .rankings-section {
     position: relative;
     overflow: hidden;
     padding: 0 0 0 70px !important; /* room for 50px icon + spacing */
-    min-height: 70px !important;
 }
 
 /* Remove frost-specific overlay to match world buffs panel visuals */
@@ -1901,7 +1879,7 @@ body.stats .rankings-container .rankings-section {
 
 .rankings-section.frost-resistance-section .spec-icon {
     position: absolute !important;
-    left: 12px !important;
+    left: 0px !important;
     top: 50% !important;
     transform: translateY(-50%) !important;
     z-index: 2 !important; /* above progress overlay */
@@ -2109,6 +2087,70 @@ body.stats .rankings-container .rankings-section {
     }
 }
 
+/* Floating Admin Actions - similar look to floating-nav but separate classes */
+.floating-admin-actions {
+    position: fixed;
+    top: 90px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(30, 30, 30, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    max-width: 95vw;
+    width: fit-content;
+}
+.faa-buttons {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    gap: 0;
+    white-space: nowrap;
+    position: relative;
+    border: solid 1px #ffffff;
+    border-radius: 12px;
+}
+.faa-buttons::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    height: calc(100% - 16px);
+    background: linear-gradient(135deg, #5865F2, #4752C4);
+    border-radius: 8px;
+    transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1;
+    opacity: 0;
+    width: 0;
+}
+.faa-btn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.9);
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    position: relative;
+    white-space: nowrap;
+    min-width: fit-content;
+    z-index: 2;
+}
+.faa-btn:first-child { border-radius: 8px 0 0 8px; }
+.faa-btn:last-child { border-radius: 0 8px 8px 0; border-right: none; }
+.faa-btn:only-child { border-radius: 8px; border-right: none; }
+.faa-btn:hover { background: rgba(255, 255, 255, 0.1); color: #ffffff; transform: translateY(-1px); }
+
+@media (max-width: 768px) {
+    .floating-admin-actions { top: 58px; }
+    .faa-buttons { padding: 6px; }
+    .faa-btn { padding: 8px 10px; font-size: 0.8rem; }
+}
+
 @media (max-width: 480px) {
     .nav-btn {
         padding: 8px 10px;
@@ -2293,7 +2335,8 @@ body.raid-active .scroll-target {
     border-radius: 12px;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
     margin: 0 auto 30px auto;
-    max-width: 1200px;
+    max-width: 1400px;
+    width: 100%;
     overflow: hidden;
 }
 

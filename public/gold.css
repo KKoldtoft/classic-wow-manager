@@ -203,6 +203,43 @@ body.gold .player-breakdown span { color: #fff !important; }
     gap: 1rem;
 }
 
+/* Emphasize numeric values on summary cards */
+body.gold #totalGoldPotValue,
+body.gold #totalGold,
+body.gold #managementGoldValue,
+body.gold #averageGold,
+body.gold #goldPerPointValue {
+    color: #f5c542 !important;
+}
+
+/* Gargul check status coloring */
+body.gold #gargulCheckValue.match-ok { color: #22c55e !important; }
+body.gold #gargulCheckValue.match-fail { color: #ef4444 !important; }
+
+/* Floating Admin Actions on gold page (similar to raidlogs look) */
+.floating-admin-actions {
+    position: fixed;
+    top: 90px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(30, 30, 30, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    max-width: 95vw;
+    width: fit-content;
+}
+.faa-buttons { display:flex; align-items:center; padding:8px; gap:0; white-space:nowrap; position:relative; border:solid 1px #ffffff; border-radius:12px; }
+.faa-buttons::before { content:''; position:absolute; top:8px; left:8px; height:calc(100% - 16px); background: linear-gradient(135deg, #5865F2, #4752C4); border-radius:8px; transition: all .8s cubic-bezier(0.4,0,0.2,1); z-index:1; opacity:0; width:0; }
+.faa-btn { background:transparent; border:none; color:rgba(255,255,255,0.9); padding:10px 14px; font-size:.85rem; font-weight:600; cursor:pointer; transition:all .2s ease; border-right:1px solid rgba(255,255,255,.1); position:relative; white-space:nowrap; min-width:fit-content; z-index:2; }
+.faa-btn:first-child { border-radius:8px 0 0 8px; }
+.faa-btn:last-child { border-radius:0 8px 8px 0; border-right:none; }
+.faa-btn:only-child { border-radius:8px; border-right:none; }
+.faa-btn:hover { background: rgba(255,255,255,0.1); color:#fff; transform: translateY(-1px); }
+@media (max-width: 768px){ .floating-admin-actions { top:58px; } .faa-buttons { padding:6px; } .faa-btn { padding:8px 10px; font-size:.8rem; } }
+
 .player-card {
     background: var(--card-bg, #1e1e1e);
     border: 1px solid var(--border-color, #3a3a3a);
@@ -280,8 +317,8 @@ body.gold .player-breakdown span { color: #fff !important; }
 }
 
 /* Row background state by sign */
-.player-breakdown .player-breakdown-row.row-positive { background: rgba(0, 0, 0, 0.2); }
-.player-breakdown .player-breakdown-row.row-negative { background: rgba(231, 76, 60, 0.2); }
+.player-breakdown .player-breakdown-row.row-positive { background: rgba(0, 0, 0, 0.4); }
+.player-breakdown .player-breakdown-row.row-negative { background: rgba(231, 76, 60, 0.8); }
 
 .player-info {
     display: flex;

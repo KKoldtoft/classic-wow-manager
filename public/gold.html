@@ -92,12 +92,17 @@
             </div>
             <div class="gold-content" id="goldContent" style="display: block; max-width:1400px; margin:0 auto;">
                 <div id="engineBanner" class="engine-banner" style="display:none;"></div>
+                <div id="nameFilterDebug" style="display:none; margin:8px 0 12px 0; padding:10px 12px; border:1px solid #374151; border-radius:8px; background:#111827; color:#e5e7eb;">
+                    <div style="font-weight:700; margin-bottom:6px;">Filtered entries (name rule)</div>
+                    <div id="nameFilterDebugList" style="font-size:13px; line-height:1.35;"></div>
+                </div>
                 <div id="computeToggle" class="engine-toggle" style="display:none; margin: 8px 0 12px 0;">
                     <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer;">
                         <input type="checkbox" id="engineToggle" />
                         <span style="color:#e5e7eb; font-size:13px;">Use engine (auto mode)</span>
                     </label>
                 </div>
+                <!-- Floating admin actions (added below) intentionally sits outside summary -->
                 <div class="summary">
                     <div class="card" id="cardPlayers">
                         <h3>Players</h3>
@@ -105,27 +110,34 @@
                         <div class="tooltip" id="playersTooltip"></div>
                     </div>
                     <div class="card">
-                        <h3>Total Points</h3>
-                        <div class="value" id="totalPoints">--</div>
+                        <h3>Total Gold</h3>
+                        <div class="value" id="totalGoldPotValue">--</div>
                     </div>
                     <div class="card">
-                        <h3>Total Gold (Shared)</h3>
+                        <h3>Shared Gold</h3>
                         <div class="value" id="totalGold">--</div>
+                    </div>
+                    <div class="card">
+                        <h3>Management Gold</h3>
+                        <div class="value" id="managementGoldValue">--</div>
+                    </div>
+                    <div class="card">
+                        <h3>Total Points</h3>
+                        <div class="value" id="totalPoints">--</div>
                     </div>
                     <div class="card">
                         <h3>Average Gold Cut</h3>
                         <div class="value" id="averageGold">--</div>
                     </div>
-                    <div class="card" style="align-self:flex-start; display:flex; flex-direction:column; gap:8px;">
-                        <h3>DM Tools</h3>
-                        <button id="sendGoldCutsPromptBtn" class="discord-button" style="padding:8px 12px; font-size:14px; display:inline-flex; align-items:center; gap:8px;">
-                            <i class="fab fa-discord"></i>
-                            Send gold cuts prompt
-                        </button>
-                        <div style="font-size:12px; color:#9ca3af; max-width:280px;">
-                            Sends a test DM to your Discord with a randomly selected player's breakdown.
-                        </div>
+                    <div class="card">
+                        <h3>Gold pr. 1 point</h3>
+                        <div class="value" id="goldPerPointValue">--</div>
                     </div>
+                    <div class="card">
+                        <h3>Gargul string check</h3>
+                        <div class="value" id="gargulCheckValue">--</div>
+                    </div>
+                    
                     
                 </div>
                 <div id="playersGrid" class="players-grid-cards"></div>
@@ -140,6 +152,15 @@
             </div>
         </div>
     </div>
+
+    <!-- Floating Admin Actions (Gold) -->
+    <nav class="floating-admin-actions" id="floating-admin-actions" style="display:none;">
+        <div class="faa-buttons" id="faa-buttons-gold">
+            <button class="faa-btn" id="faa-gold-switch-view" title="Switch to Raidlogs"><i class="fas fa-eye"></i> Go to Raidlogs</button>
+            <button class="faa-btn" id="faa-gold-upload-logs" title="Upload logs"><i class="fas fa-upload"></i> Upload logs</button>
+            <button class="faa-btn" id="faa-gold-send-dm" title="Send gold cuts prompt"><i class="fab fa-discord"></i> Send gold cuts prompt</button>
+        </div>
+    </nav>
 
     <script src="/top-bar.js"></script>
     <script src="/discord_dm_function.js"></script>

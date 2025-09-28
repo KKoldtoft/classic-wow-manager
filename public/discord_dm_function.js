@@ -244,7 +244,22 @@
         const name = String(picked.character_name||'');
         const nameKey = name.toLowerCase();
         const { points, gold } = getTotalsFor(nameKey);
-        const { rewards, deductions } = buildPlusMinusLists(nameKey);
+        let rewards = [], deductions = [];
+        try {
+            if (window.goldManager && typeof window.goldManager.getPlayerBreakdownData === 'function') {
+                const d = window.goldManager.getPlayerBreakdownData(nameKey);
+                const rows = Array.isArray(d?.items) ? d.items : [];
+                rewards = rows
+                    .filter(it => (it.pts||0) > 0 || (it.gold||0) > 0)
+                    .map(it => ({ label: it.title, points: it.pts, gold: it.gold, isGoldRow: !!it.isGoldRow }));
+                deductions = rows
+                    .filter(it => (it.pts||0) < 0 || (it.gold||0) < 0)
+                    .map(it => ({ label: it.title, points: it.pts, gold: it.gold, isGoldRow: !!it.isGoldRow }));
+            } else {
+                const built = buildPlusMinusLists(nameKey) || { rewards: [], deductions: [] };
+                rewards = built.rewards; deductions = built.deductions;
+            }
+        } catch { /* fallback to empty */ }
         const eventId = String(window.goldManager.currentEventId || '');
 
         const map = (window.goldManager && window.goldManager.nameToDiscordId) ? window.goldManager.nameToDiscordId : new Map();
@@ -418,7 +433,22 @@
             const name = String(row.dataset.playerName||'');
             const nameKey = name.toLowerCase();
             const { points, gold } = getTotalsFor(nameKey);
-            const { rewards, deductions } = buildPlusMinusLists(nameKey);
+            let rewards = [], deductions = [];
+            try {
+                if (window.goldManager && typeof window.goldManager.getPlayerBreakdownData === 'function') {
+                    const d = window.goldManager.getPlayerBreakdownData(nameKey);
+                    const rows = Array.isArray(d?.items) ? d.items : [];
+                    rewards = rows
+                        .filter(it => (it.pts||0) > 0 || (it.gold||0) > 0)
+                        .map(it => ({ label: it.title, points: it.pts, gold: it.gold, isGoldRow: !!it.isGoldRow }));
+                    deductions = rows
+                        .filter(it => (it.pts||0) < 0 || (it.gold||0) < 0)
+                        .map(it => ({ label: it.title, points: it.pts, gold: it.gold, isGoldRow: !!it.isGoldRow }));
+                } else {
+                    const built = buildPlusMinusLists(nameKey) || { rewards: [], deductions: [] };
+                    rewards = built.rewards; deductions = built.deductions;
+                }
+            } catch {}
             const map = (window.goldManager && window.goldManager.nameToDiscordId) ? window.goldManager.nameToDiscordId : new Map();
             const discordId = map.get(nameKey) || TEST_DISCORD_USER_ID;
             const payload = {
@@ -480,6 +510,8 @@
 
     window.addEventListener('load', wireGoldCutsButton);
     document.addEventListener('DOMContentLoaded', wireGoldCutsButton);
+    // Expose overlay opener for FAA button on gold page
+    try { window.sendGoldCutsPrompt = openDmOverlay; } catch {}
 })();
 
 

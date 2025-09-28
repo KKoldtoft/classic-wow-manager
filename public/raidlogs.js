@@ -170,6 +170,50 @@ class RaidLogsManager {
         // Initialize panel editing (after DOM ready)
         this.initializePanelEditing();
 
+        // Top controls wiring (always set up; visibility handled after role fetch)
+        try {
+            // Floating Admin Actions wiring (admin view)
+            const faa = document.getElementById('floating-admin-actions');
+            if (faa) faa.style.display = 'block';
+            const eid = this.activeEventId || localStorage.getItem('activeEventSession');
+            const goPublic = document.getElementById('faa-switch-public');
+            if (goPublic) {
+                goPublic.onclick = () => { window.location.href = eid ? `/event/${eid}/raidlogs` : '/raidlogs'; };
+            }
+            const publishBtn = document.getElementById('faa-publish');
+            if (publishBtn && !publishBtn._wired) {
+                publishBtn.addEventListener('click', async () => {
+                    if (!this.activeEventId) return;
+                    const ok = confirm('Publish current snapshot to public viewer?');
+                    if (!ok) return;
+                    try {
+                        await this.lockSnapshotFromCurrentView();
+                        const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/publish`, { method: 'POST' });
+                        alert(res && res.ok ? 'Published!' : 'Publish failed');
+                    } catch (e) { console.error('Publish error', e); alert('Publish error. See console.'); }
+                });
+                publishBtn._wired = true;
+            }
+            const revertBtnTop = document.getElementById('faa-revert');
+            if (revertBtnTop && !revertBtnTop._wired) {
+                revertBtnTop.addEventListener('click', async () => {
+                    if (!this.activeEventId) return;
+                    const ok = confirm('Are you sure you want to reset all manual edits and revert to computed mode?');
+                    if (!ok) return;
+                    try {
+                        const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/unlock`, { method: 'POST' });
+                        if (res && res.ok) { alert('Reverted to computed'); location.reload(); } else { alert('Failed to revert'); }
+                    } catch (e) { console.error('Revert error', e); alert('Failed to revert'); }
+                });
+                revertBtnTop._wired = true;
+            }
+            const uploadLogs = document.getElementById('faa-upload-logs');
+            if (uploadLogs) uploadLogs.onclick = () => {
+                const target = eid ? `/event/${eid}/logs` : '/logs';
+                window.location.href = target;
+            };
+        } catch {}
+
         // Standardize point value colors and keep them updated as DOM changes
         this._normalizePointValuesColors();
         const container = document.getElementById('raid-logs-container');
@@ -310,7 +354,6 @@ class RaidLogsManager {
                 es.close();
                 this.scheduleSSEReconnection();
             };
-            
         } catch (e) { 
             console.warn('SSE init failed', e);
             this.scheduleSSEReconnection();
@@ -461,7 +504,6 @@ class RaidLogsManager {
         // Store the original position
         this.storeOriginalPosition();
     }
-
     setupScrollListener() {
         let lastScrollTime = 0;
         
@@ -625,7 +667,6 @@ class RaidLogsManager {
         // Smooth scroll with custom easing
         this.smoothScrollTo(targetPosition, 800);
     }
-
     smoothScrollTo(targetPosition, duration = 800) {
         const startPosition = window.pageYOffset;
         const distance = targetPosition - startPosition;
@@ -823,7 +864,7 @@ class RaidLogsManager {
             this.sanitizeDatasets();
             this.displayRaidLogs();
             this.renderPlayerPanelsContent();
-            this.displayManualRewards();
+            try { if (typeof this.displayManualRewards === 'function') this.displayManualRewards(); } catch {}
             // Recompute totals with all data loaded
             this.updateTotalPointsCard();
             // Update gold cards after primary render
@@ -949,7 +990,6 @@ class RaidLogsManager {
             };
         }
     }
-
     async fetchSnapshotStatus() {
         if (!this.activeEventId) return;
         try {
@@ -975,7 +1015,6 @@ class RaidLogsManager {
             console.warn('⚠️ [SNAPSHOT] Failed to get status', e);
         }
     }
-
     async fetchSnapshotData() {
         try {
             const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}`);
@@ -1000,30 +1039,30 @@ class RaidLogsManager {
             badge.classList.add('manual');
             badge.classList.remove('computed');
 
-            // Add revert button
-            let revertBtn = document.getElementById('mode-revert-btn');
-            if (!revertBtn) {
-                revertBtn = document.createElement('button');
-                revertBtn.id = 'mode-revert-btn';
-                revertBtn.className = 'btn-templates btn-mini';
-                revertBtn.style.marginLeft = '8px';
-                revertBtn.innerHTML = '<i class="fas fa-undo"></i> Revert to computed';
-                revertBtn.onclick = async () => {
-                    const ok = confirm('Are you sure you want to reset all manual edits and revert to computed mode?');
-                    if (!ok) return;
-                    try {
-                        const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/unlock`, { method: 'POST' });
-                        if (res.ok) {
-                            this.snapshotLocked = false;
-                            this.snapshotEntries = [];
-                            this.updateModeBadge();
-                            // Reload to re-fetch computed data
-                            window.location.reload();
-                        }
-                    } catch (e) { console.error('❌ [SNAPSHOT] Revert failed', e); }
-                };
-                badge.parentElement.insertBefore(revertBtn, badge.nextSibling);
-            }
+            // Ensure top controls revert button is visible and wired
+            try {
+                const revertBtn = document.getElementById('mode-revert-btn');
+                if (revertBtn) {
+                    revertBtn.style.display = 'inline-flex';
+                    if (!revertBtn._wired) {
+                        revertBtn.addEventListener('click', async () => {
+                            const ok = confirm('Are you sure you want to reset all manual edits and revert to computed mode?');
+                            if (!ok) return;
+                            try {
+                                const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/unlock`, { method: 'POST' });
+                                if (res.ok) {
+                                    this.snapshotLocked = false;
+                                    this.snapshotEntries = [];
+                                    this.updateModeBadge();
+                                    window.location.reload();
+                                }
+                            } catch (e) { console.error('❌ [SNAPSHOT] Revert failed', e); }
+                        });
+                        revertBtn._wired = true;
+                    }
+                }
+            } catch {}
+
             // Top banner for manual (engine manual)
             try {
                 const top = document.getElementById('engineBannerTop');
@@ -1038,15 +1077,15 @@ class RaidLogsManager {
                 badge.innerHTML = '<i class="fas fa-microchip" style="margin-right:6px"></i> Engine auto ' + dbg;
                 badge.title = 'Using canonical rewards engine (auto mode)';
                 try { const top=document.getElementById('engineBannerTop'); if(top){ top.innerHTML = `<span class="pill auto">Engine auto</span> Using canonical rewards engine — <a href="/api/rewards/${this.activeEventId}/debug" target="_blank" rel="noopener noreferrer">debug</a>`; top.style.display='flex'; } } catch {}
-        } else {
-            badge.innerHTML = '<i class="fas fa-microchip" style="margin-right:6px"></i> Computed mode';
-            badge.title = 'Live computed from logs and data sources';
+            } else {
+                badge.innerHTML = '<i class="fas fa-microchip" style="margin-right:6px"></i> Computed mode';
+                badge.title = 'Live computed from logs and data sources';
                 try { const top=document.getElementById('engineBannerTop'); if(top){ top.innerHTML = `<span class=\"pill auto\">Legacy compute</span> Engine not in use`; top.style.display='flex'; } } catch {}
             }
             badge.classList.add('computed');
             badge.classList.remove('manual');
             const revertBtn = document.getElementById('mode-revert-btn');
-            if (revertBtn) revertBtn.remove();
+            if (revertBtn) revertBtn.style.display = 'none';
         }
     }
 
@@ -1263,7 +1302,6 @@ class RaidLogsManager {
             this.runesSettings = { usage_divisor: 2, points_per_division: 1 }; // fallback
         }
     }
-
     async fetchInterruptsData() {
         console.log(`⚡ Fetching interrupts data for event: ${this.activeEventId}`);
         
@@ -1321,7 +1359,6 @@ class RaidLogsManager {
             this.disarmsSettings = { points_per_disarm: 1, disarms_needed: 1, max_points: 5 }; // fallback
         }
     }
-
     async fetchSunderData() {
         console.log(`⚔️ Fetching sunder armor data for event: ${this.activeEventId}`);
         
@@ -1436,7 +1473,6 @@ class RaidLogsManager {
             this.curseElementsSettings = { uptime_threshold: 85, points: 10 }; // fallback
         }
     }
-
     async fetchFaerieFireData() {
         console.log(`🌟 Fetching faerie fire data for event: ${this.activeEventId}`);
         
@@ -1640,7 +1676,6 @@ class RaidLogsManager {
             return null;
         }
     }
-
     async fetchVoidDamageData() {
         if (!this.activeEventId) {
             console.log('💜 [VOID DAMAGE] No active event ID');
@@ -1990,7 +2025,6 @@ class RaidLogsManager {
                     if (pts > 0) positivePoints += pts; else if (pts < 0) negativePoints += Math.abs(pts);
                 });
             }
-
             // Add points from Goblin Rocket Helmet (fixed +5)
             if (this.rocketHelmetData && Array.isArray(this.rocketHelmetData)) {
                 this.rocketHelmetData.forEach(player => {
@@ -2326,7 +2360,6 @@ class RaidLogsManager {
             valueElement.textContent = '--';
         }
     }
-
     async fetchGoldPot() {
         if (!this.activeEventId) return;
         try {
@@ -2384,7 +2417,6 @@ class RaidLogsManager {
             this.managementCuts = { management: 0, organizer: 0, raidleader: 0, helper: 0, founder: 0, guildbank: 0, percents: { organizerPct: 0, rlPct: 0, helperPct: 0, foundersPct: 0, guildbankPct: 0 } };
         }
     }
-
     updateGoldCards() {
         // Update Total Gold
         const totalGoldEl = document.getElementById('gold-total-value');
@@ -2627,7 +2659,6 @@ class RaidLogsManager {
         card.addEventListener('mousemove', onMouseMove);
         card.addEventListener('mouseleave', onMouseLeave);
     }
-
     computeMyPointsAndGold() {
         const pointsEls = document.querySelectorAll('#gold-panel #my-points-value, .player-panel #my-points-value');
         const pointsDetailEls = document.querySelectorAll('#gold-panel #my-points-detail, .player-panel #my-points-detail');
@@ -2711,8 +2742,6 @@ class RaidLogsManager {
         goldEls.forEach(el=> el.textContent = Math.round(myGold).toLocaleString());
         goldDetailEls.forEach(el=> el && (el.textContent = `Each point = ${Math.round(gpp).toLocaleString()} gold`));
     }
-
-
     displayRaidLogs() {
         if (!this.logData || this.logData.length === 0) {
             console.log(`❌ No log data found for event: ${this.activeEventId}`);
@@ -3106,7 +3135,6 @@ class RaidLogsManager {
             this.applySnapshotOverlay();
         }
     }
-
     // --- Snapshot/Editing Helpers ---
     initializePanelEditing() {
         // Map panel_key to container element IDs and friendly names
@@ -3212,7 +3240,6 @@ class RaidLogsManager {
         const tmpLock = document.getElementById('mode-lock-btn');
         if (tmpLock && tmpLock.parentElement) tmpLock.parentElement.removeChild(tmpLock);
     }
-
     async onEditPanel(cfg) {
         // Only enter edit UI; confirmation and locking will happen on Save
         if (!this.snapshotLocked) {
@@ -3251,7 +3278,6 @@ class RaidLogsManager {
             cfg._saveBtn.style.display = 'inline-flex';
         }
     }
-
     async onSavePanel(cfg, saveBtn) {
         // If not yet locked, confirm and lock now
         if (!this.snapshotLocked || !this.snapshotEntries || this.snapshotEntries.length === 0) {
@@ -3401,12 +3427,86 @@ class RaidLogsManager {
     }
 
     async lockSnapshotFromCurrentView() {
-        // Lock snapshot directly from canonical engine panels for perfect parity
+        // Lock snapshot from the currently rendered view to preserve exact texts/icons
         try {
+            const header = (()=>{
+                try{
+                    const stats = this.raidStats && this.raidStats.stats ? this.raidStats.stats : null;
+                    const rpb = this.raidStats && this.raidStats.rpb ? this.raidStats.rpb : null;
+                    return {
+                        raidDurationMinutes: (stats && typeof stats.totalTime === 'number') ? stats.totalTime : null,
+                        bossesKilled: (stats && typeof stats.bossesKilled === 'number') ? stats.bossesKilled : null,
+                        lastBoss: (stats && stats.lastBoss) ? String(stats.lastBoss) : null,
+                        wowLogsUrl: (stats && stats.logUrl) ? String(stats.logUrl) : null,
+                        rpbArchiveUrl: (rpb && rpb.archiveUrl) ? String(rpb.archiveUrl) : null
+                    };
+                } catch { return null; }
+            })();
+            const entries = [];
+            const norm = (s)=> String(s||'').trim();
+            const normClass = (cls)=> this.normalizeClassName ? this.normalizeClassName(cls) : String(cls||'').toLowerCase();
+            const lower = (s)=> String(s||'').toLowerCase();
+            (this.panelConfigs||[]).forEach(cfg => {
+                const list = document.getElementById(cfg.containerId);
+                if (!list) return;
+                const items = Array.from(list.querySelectorAll('.ranking-item'));
+                items.forEach((item, idx) => {
+                    const nameEl = item.querySelector('.character-name');
+                    const infoEl = item.querySelector('.character-info');
+                    const detailsEl = item.querySelector('.character-details');
+                    const pointsEl = item.querySelector('.performance-amount .amount-value');
+                    if (!nameEl) return;
+                    const img = (infoEl && infoEl.querySelector) ? infoEl.querySelector('img') : (nameEl ? nameEl.querySelector('img') : null);
+                    const itemKeyAttr = (cfg.key === 'windfury_totems' && item && item.getAttribute) ? (item.getAttribute('data-item-key') || null) : null;
+                    // Class resolution: prefer DOM class on character-info, then nameEl, then logData, then fallback
+                    let domClass = '';
+                    try {
+                        const c1 = infoEl ? Array.from(infoEl.classList).find(c => c.startsWith('class-')) : '';
+                        const c2 = Array.from(nameEl.classList).find(c => c.startsWith('class-')) || '';
+                        domClass = (c1 || c2 || '').replace('class-','');
+                    } catch {}
+                    let character_name = norm(nameEl.textContent || '').replace(/^[\s\S]*?\s{2,}/,'').trim();
+                    if (!character_name && nameEl.childNodes && nameEl.childNodes.length) {
+                        try { character_name = norm(Array.from(nameEl.childNodes).filter(n=>n.nodeType===Node.TEXT_NODE).map(n=>n.textContent).join(' ')); } catch {}
+                    }
+                    let characterClass = domClass;
+                    if (!characterClass && character_name) {
+                        const row = (this.logData||[]).find(p => lower(p.character_name) === lower(character_name));
+                        characterClass = row?.character_class || this.resolveClassForName && this.resolveClassForName(character_name) || '';
+                    }
+                    const normalizedClass = this.normalizeClassName ? this.normalizeClassName(characterClass) : String(characterClass||'').toLowerCase();
+                    // Apply normalized class back to DOM so styling stays consistent
+                    try {
+                        if (infoEl && normalizedClass) {
+                            // Remove any existing class-*
+                            Array.from(infoEl.classList).filter(c=>c.startsWith('class-')).forEach(c=>infoEl.classList.remove(c));
+                            infoEl.classList.add(`class-${normalizedClass}`);
+                        }
+                        if (nameEl && normalizedClass) {
+                            Array.from(nameEl.classList).filter(c=>c.startsWith('class-')).forEach(c=>nameEl.classList.remove(c));
+                            nameEl.classList.add(`class-${normalizedClass}`);
+                        }
+                    } catch {}
+                    const details = detailsEl ? norm(detailsEl.textContent||'') : '';
+                    const pts = pointsEl ? Math.round(Number(pointsEl.textContent||0)) : 0;
+                    entries.push({
+                        panel_key: cfg.key,
+                        panel_name: cfg.name,
+                        discord_user_id: null,
+                        character_name,
+                        character_class: normalizedClass || null,
+                        ranking_number_original: Number.isFinite(idx+1) ? (idx+1) : null,
+                        point_value_original: pts,
+                        character_details_original: details || null,
+                        primary_numeric_original: null,
+                        aux_json: (function(){ const o = {}; if (img && img.src) o.icon_url = img.src; if (itemKeyAttr) o.item_key = itemKeyAttr; return o; })()
+                    });
+                });
+            });
             const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/lock`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ useEngine: true })
+                body: JSON.stringify({ entries, header })
             });
             if (res.ok) {
                 await this.fetchSnapshotStatus();
@@ -3585,7 +3685,6 @@ class RaidLogsManager {
             `;
         }).join('');
     }
-
     calculateGodGamerDPS(players) {
         if (players.length < 2) {
             return null; // Need at least 2 players to compare
@@ -3695,7 +3794,6 @@ class RaidLogsManager {
             </div>
         `;
     }
-
     displayGodGamerHealer(godGamer) {
         const container = document.getElementById('god-gamer-healer-list');
         const section = container.closest('.rankings-section');
@@ -3737,7 +3835,6 @@ class RaidLogsManager {
             </div>
         `;
     }
-
     displayDamageRankings(players) {
         const container = document.getElementById('damage-dealers-list');
         const section = container.closest('.rankings-section');
@@ -3936,7 +4033,6 @@ class RaidLogsManager {
             `;
             return;
         }
-
         // Get max DPS for percentage calculation (use highest DPS even if it's low)
         const maxDPS = Math.max(...playersWithPenalties.map(p => p.dps), 1);
 
@@ -4176,7 +4272,6 @@ class RaidLogsManager {
             `;
         }).join('');
     }
-
     displayDruidHealers(healers) {
         const container = document.getElementById('druid-healers-list');
         const section = container.closest('.rankings-section');
@@ -4248,7 +4343,6 @@ class RaidLogsManager {
             `;
             return;
         }
-
         // Get max abilities used for percentage calculation
         const maxAbilities = Math.max(...playersWithAbilities.map(p => p.total_used)) || 1;
 
@@ -4312,7 +4406,6 @@ class RaidLogsManager {
             headerElement.textContent = `Ranked by calculated points (abilities used × avg targets ÷ ${calculation_divisor}, max ${max_points})`;
         }
     }
-
     displayWorldBuffsRankings(players) {
         const container = document.getElementById('world-buffs-list');
         if (!container) return;
@@ -4576,7 +4669,6 @@ class RaidLogsManager {
             }
         }
     }
-
     displayManaPotionsRankings(players) {
         const container = document.getElementById('mana-potions-list');
         const section = container.closest('.rankings-section');
@@ -4672,7 +4764,6 @@ class RaidLogsManager {
             `;
         }).join('');
     }
-
     updateManaPotionsHeader() {
         const headerElement = document.querySelector('.mana-potions-section .section-header p');
         if (headerElement && this.manaPotionsSettings) {
@@ -4681,7 +4772,6 @@ class RaidLogsManager {
             headerElement.textContent = `Ranked by points (1 pt per ${ppp} potions above ${threshold}, max ${max_points})`;
         }
     }
-
     displayRunesRankings(players) {
         const container = document.getElementById('runes-list');
         const section = container.closest('.rankings-section');
@@ -5144,6 +5234,39 @@ class RaidLogsManager {
         }
     }
 
+    populateManualRewardsTable() {
+        const rewardsCol = document.getElementById('manual-rewards-list-rewards');
+        const dedsCol = document.getElementById('manual-rewards-list-deductions');
+        if (!rewardsCol || !dedsCol) return;
+        const entries = Array.isArray(this.manualRewardsData) ? this.manualRewardsData : [];
+        rewardsCol.innerHTML = '';
+        dedsCol.innerHTML = '';
+        if (entries.length === 0) return;
+        const normalized = (cls)=> String(cls||'').toLowerCase();
+        entries.forEach((e)=>{
+            const item = document.createElement('div');
+            const cls = normalized(e.player_class);
+            const val = Number(e.points)||0;
+            const amtClass = val>0 ? 'positive' : val<0 ? 'negative' : 'zero';
+            item.className = 'ranking-item';
+            item.innerHTML = `
+                <div class="ranking-number"></div>
+                <div class="character-info ${cls?('class-'+cls):'class-unknown'}">
+                  <div class="character-name ${cls?('class-'+cls):''}">${e.player_name||''}</div>
+                  <div class="character-details">${e.description||''}</div>
+                </div>
+                <div class="performance-amount"><span class="amount-value ${amtClass} ${e.is_gold ? 'gold-amount' : ''}">${Math.round(val)}</span></div>
+                <div class="entry-actions" style="display:${this.currentUser?.hasManagementRole?'inline-flex':'none'}">
+                  <button class="entry-action entry-action-edit" title="Edit"><i class="fas fa-pen"></i></button>
+                  <button class="entry-action entry-action-delete" title="Delete"><i class="fas fa-trash"></i></button>
+                </div>`;
+            const editBtn = item.querySelector('.entry-action-edit');
+            const delBtn = item.querySelector('.entry-action-delete');
+            if (editBtn) editBtn.addEventListener('click', ()=> this.editEntry(e));
+            if (delBtn) delBtn.addEventListener('click', ()=> this.deleteEntry(e));
+            if (val >= 0 || e.is_gold) rewardsCol.appendChild(item); else dedsCol.appendChild(item);
+        });
+    }
     displaySunderRankings(players) {
         const container = document.getElementById('sunder-list');
         const section = container.closest('.rankings-section');
@@ -5248,7 +5371,6 @@ class RaidLogsManager {
             this.ensureGenericInfoOverlayForSection(section);
         });
     }
-
     ensureGenericInfoOverlayForSection(section) {
         if (!section || section.__panelInfoAttached) return;
         section.__panelInfoAttached = true;
@@ -5592,7 +5714,6 @@ class RaidLogsManager {
         overlay.addEventListener('click', () => { if (!isLocked) hideOverlay(); });
         closeX.addEventListener('click', (e) => { e.stopPropagation(); isLocked = false; hideOverlay(); });
     }
-
     displayCurseRankings(players) {
         const container = document.getElementById('curse-recklessness-list');
         const section = container.closest('.rankings-section');
@@ -5912,7 +6033,6 @@ class RaidLogsManager {
             headerElement.textContent = `Ranked by points (0-${tier1_max}: ${tier1_points}pts, ${tier1_max + 1}-${tier2_max}: ${tier2_points}pts, ${tier2_max + 1}+: ${tier3_points}pts)`;
         }
     }
-
     displayDemoShoutRankings(players) {
         const container = document.getElementById('demo-shout-list');
         const section = container.closest('.rankings-section');
@@ -6037,7 +6157,6 @@ class RaidLogsManager {
             headerElement.textContent = `Ranked by points (${points_per_division} ${pointsText} per ${polymorphs_needed} ${polymorphsText}, max ${max_points})`;
         }
     }
-
     displayPowerInfusionRankings(players) {
         const container = document.getElementById('power-infusion-list');
         const section = container.closest('.rankings-section');
@@ -6247,7 +6366,6 @@ class RaidLogsManager {
             headerElement.textContent = `Players who took damage from Void Blast (${void_blast_penalty} pts) or Void Zone (${void_zone_penalty} pts)`;
         }
     }
-
     normalizeClassName(className) {
         if (!className) return 'unknown';
         
@@ -6530,7 +6648,6 @@ class RaidLogsManager {
             const key = did ? `d:${did}` : `n:${nm}`;
             manualByCanonical.set(key, (manualByCanonical.get(key)||0) + v);
         });
-
         // Damage & healing ranking arrays
         let damageMap=new Map(), healingMap=new Map(), godDpsMap=new Map(), godHealMap=new Map();
         let shamanMap=new Map(), priestMap=new Map(), druidMap=new Map();
@@ -6596,7 +6713,6 @@ class RaidLogsManager {
         const header = ['#', 'Name', ...columns.map(c=>c.label)];
         const rows = [];
         const totals = new Map(); columns.forEach(c=>totals.set(c.key,0));
-
         uniqNames.sort((a,b)=>a.localeCompare(b));
         uniqNames.forEach(nm=>{
             const key = lower(nm);
@@ -6757,7 +6873,6 @@ class RaidLogsManager {
             }
         }
     }
-
     showError(message) {
         document.getElementById('loading-indicator').style.display = 'none';
         document.getElementById('raid-logs-container').style.display = 'none';
@@ -6943,7 +7058,6 @@ class RaidLogsManager {
             console.warn('⚠️ buildPlayerPanels failed', e);
         }
     }
-
     // Build rows like /gold player-card and render split lists (Rewards/Deductions)
     renderPlayerPanelsContent() {
         try {
@@ -7077,7 +7191,11 @@ class RaidLogsManager {
     // Helpers to filter out non-player entities and resolve missing class
     shouldIgnorePlayer(name) {
         if (!name) return false;
-        const n = String(name).toLowerCase();
+        const raw = String(name||'');
+        // Allow special letters; disallow numbers and whitespace (multi-word)
+        if (/\d/.test(raw)) return true;
+        if (/\s/.test(raw)) return true;
+        const n = raw.toLowerCase();
         // Filter common non-player entities by whole words so real names like "Warduro" don't match
         // Matches: zzOLD, totem/totems, ward/wards, trap/traps, dummy/dummies, battle chicken
         return /\b(zzold|totems?|wards?|traps?|dumm(?:y|ies)|battle\s*chicken)\b/i.test(n);
@@ -7291,7 +7409,6 @@ class RaidLogsManager {
             }
         }
     }
-
     updateMostDeathsCard() {
         const valueElement = document.getElementById('most-deaths-value');
         const detailElement = document.getElementById('most-deaths-detail');
@@ -7380,6 +7497,38 @@ class RaidLogsManager {
 
     // --- Manual Rewards and Deductions Methods ---
     
+    displayManualRewards() {
+        const hasManagement = !!(this.currentUser && this.currentUser.hasManagementRole);
+        const templatesEl = document.getElementById('manual-rewards-templates');
+        const formEl = document.getElementById('manual-rewards-form');
+        const listEl = document.getElementById('manual-rewards-list');
+        const noEntriesEl = document.getElementById('no-entries-message');
+        const deniedEl = document.getElementById('access-denied-message');
+        const loadingEl = document.getElementById('manual-rewards-loading');
+
+        if (loadingEl) loadingEl.style.display = 'none';
+
+        if (hasManagement) {
+            if (templatesEl) templatesEl.style.display = 'block';
+            if (formEl) formEl.style.display = 'block';
+            if (deniedEl) deniedEl.style.display = 'none';
+        } else {
+            if (templatesEl) templatesEl.style.display = 'none';
+            if (formEl) formEl.style.display = 'none';
+            if (deniedEl) deniedEl.style.display = 'block';
+        }
+
+        // Populate list with any loaded entries
+        try { this.populateManualRewardsTable(); } catch (e) { console.warn('⚠️ [MANUAL REWARDS] populate failed', e); }
+
+        // Empty state when no entries
+        try {
+            const hasRows = Array.isArray(this.manualRewardsData) && this.manualRewardsData.length > 0;
+            if (noEntriesEl) noEntriesEl.style.display = hasRows ? 'none' : 'block';
+            if (listEl) listEl.style.display = 'block';
+        } catch {}
+    }
+
     initializeManualRewards() {
         console.log('⚖️ [MANUAL REWARDS] Initializing manual rewards functionality');
         
@@ -7393,7 +7542,7 @@ class RaidLogsManager {
         
         if (playerNameInput) {
             playerNameInput.addEventListener('input', (e) => {
-                this.handlePlayerSearch(e.target.value);
+                try { this.handlePlayerSearch(e.target.value); } catch (err) { console.warn('⚠️ handlePlayerSearch missing, adding fallback', err); if (typeof this.handlePlayerSearch !== 'function') { this.handlePlayerSearch = (s)=>{ const dd=document.getElementById('player-dropdown'); if(!dd) return; const term=String(s||'').trim().toLowerCase(); if(!term){ dd.style.display='none'; return;} const src=Array.isArray(this.playersData)?this.playersData:[]; const matches=src.filter(p=>String(p.player_name||'').toLowerCase().includes(term)).slice(0,20); this.populatePlayerDropdown(matches); dd.style.display = matches.length ? 'block' : 'none'; }; this.handlePlayerSearch(e.target.value); } }
             });
             
             playerNameInput.addEventListener('keydown', (e) => {
@@ -7584,14 +7733,13 @@ class RaidLogsManager {
             }
 
             // Refresh list
-            await this.fetchManualRewardsData();
+            try { await this.fetchManualRewardsData(); } catch (e) { console.warn('⚠️ [MANUAL REWARDS] Skipping due to fetch error', e); }
             this.populateManualRewardsTable();
             this.updateTotalPointsCard();
         } catch (err) {
             console.error('❌ [4H TANKS] Failed to auto add 4H tanks:', err);
         }
     }
-
     // Auto-add Raz MC: add exactly the two priests assigned in the Razuvious panel on /assignments/military
     async autoAddRazMC() {
         if (!this.activeEventId) {
@@ -7865,7 +8013,6 @@ class RaidLogsManager {
         };
         return map[desc] ?? 0;
     }
-    
     async fetchCurrentUser() {
         console.log('👤 [MANUAL REWARDS] Fetching current user info');
         
@@ -7876,15 +8023,21 @@ class RaidLogsManager {
                 console.log('👤 [MANUAL REWARDS] Current user:', this.currentUser);
                 // Update visibility of edit/save and revert buttons based on role
                 this.updatePanelButtonsVisibility();
+                try {
+                    const btn = document.getElementById('publish-snapshot-btn');
+                    if (btn) btn.style.display = (this.currentUser?.hasManagementRole ? 'inline-flex' : 'none');
+                } catch {}
             } else {
                 console.log('👤 [MANUAL REWARDS] User not logged in');
                 this.currentUser = null;
                 this.updatePanelButtonsVisibility();
+                try { const btn = document.getElementById('publish-snapshot-btn'); if (btn) btn.style.display = 'none'; } catch {}
             }
         } catch (error) {
             console.error('❌ [MANUAL REWARDS] Error fetching user:', error);
             this.currentUser = null;
             this.updatePanelButtonsVisibility();
+            try { const btn = document.getElementById('publish-snapshot-btn'); if (btn) btn.style.display = 'none'; } catch {}
         }
     }
     
@@ -7930,7 +8083,6 @@ class RaidLogsManager {
             this.manualGoldPayoutTotal = 0;
         }
     }
-
     async buildRosterCache() {
         try {
             const res = await fetch(`/api/assignments/${this.activeEventId}/roster`);
@@ -7944,318 +8096,24 @@ class RaidLogsManager {
             this.rosterMapByName = new Map();
         }
     }
-    
+
+    // Lightweight players fetch used by manual rewards helpers
     async fetchPlayersForDropdown() {
-        if (!this.activeEventId) return;
-        
-        console.log(`👥 [MANUAL REWARDS] Fetching players for dropdown for event: ${this.activeEventId}`);
-        
         try {
             const response = await fetch(`/api/manual-rewards/${this.activeEventId}/players`);
-            
-            if (!response.ok) {
-                throw new Error(`Failed to fetch players: ${response.status}`);
-            }
-            
-            const result = await response.json();
-            this.playersData = result.data || [];
-            
-            console.log(`👥 [MANUAL REWARDS] Loaded ${this.playersData.length} players for dropdown`);
-            
-        } catch (error) {
-            console.error('❌ [MANUAL REWARDS] Error fetching players:', error);
+            if (!response.ok) throw new Error('players fetch failed');
+            const data = await response.json();
+            this.playersData = Array.isArray(data.data) ? data.data : [];
+            console.log('👤 [PLAYERS] Loaded players for dropdown:', this.playersData.length);
+            return this.playersData;
+        } catch (e) {
+            console.warn('⚠️ [PLAYERS] Failed to fetch players for dropdown', e);
             this.playersData = [];
+            return [];
         }
     }
-    
-    displayManualRewards() {
-        console.log('⚖️ [MANUAL REWARDS] Displaying manual rewards panel');
-        
-        const hasManagementRole = this.currentUser?.hasManagementRole || false;
-        
-        // Show/hide elements based on management role
-        const form = document.getElementById('manual-rewards-form');
-        const actionsHeader = document.getElementById('actions-header');
-        const accessDeniedMessage = document.getElementById('access-denied-message');
-        const manualRewardsContent = document.getElementById('manual-rewards-content');
-        
-        const templatesSection = document.getElementById('manual-rewards-templates');
-
-        // Always show the list to everyone; form/templates remain gated by role
-        if (hasManagementRole) {
-            console.log('⚖️ [MANUAL REWARDS] User has management role, showing full interface');
-            if (form) form.style.display = 'block';
-            if (templatesSection) templatesSection.style.display = 'block';
-            if (actionsHeader) actionsHeader.style.display = 'table-cell';
-            if (accessDeniedMessage) accessDeniedMessage.style.display = 'none';
-            if (manualRewardsContent) manualRewardsContent.style.display = 'block';
-            
-            this.populateManualRewardsTable();
-        } else {
-            console.log('⚖️ [MANUAL REWARDS] User does not have management role, showing read-only view');
-            if (form) form.style.display = 'none';
-            if (templatesSection) templatesSection.style.display = 'none';
-            if (actionsHeader) actionsHeader.style.display = 'none';
-            if (accessDeniedMessage) accessDeniedMessage.style.display = 'none';
-            if (manualRewardsContent) manualRewardsContent.style.display = 'block';
-            this.populateManualRewardsTable();
-        }
-    }
-    populateManualRewardsTable() {
-        const listContainer = document.getElementById('manual-rewards-list');
-        const noEntriesMessage = document.getElementById('no-entries-message');
-        const hasManagementRole = this.currentUser?.hasManagementRole || false;
-
-        if (!listContainer) return;
-
-        // Clear existing items
-        listContainer.innerHTML = '';
-
-        const entries = Array.isArray(this.manualRewardsData) ? this.manualRewardsData : [];
-        if (entries.length === 0) {
-            if (noEntriesMessage) noEntriesMessage.style.display = 'block';
-            return;
-        }
-        if (noEntriesMessage) noEntriesMessage.style.display = 'none';
-
-        // Create two-column layout: left = rewards (positive or gold), right = deductions (negative)
-        const columnsWrap = document.createElement('div');
-        columnsWrap.className = 'manual-rewards-columns';
-        const colPos = document.createElement('div');
-        colPos.className = 'manual-col manual-col-positive';
-        const colNeg = document.createElement('div');
-        colNeg.className = 'manual-col manual-col-negative';
-
-        // Partition entries
-        const positives = [];
-        const negatives = [];
-        entries.forEach((entry) => {
-            const isGold = !!(entry.is_gold) || /\[GOLD\]/i.test(String(entry.description||''));
-            const pts = Number(entry.points) || 0;
-            if (isGold || pts > 0) positives.push(entry); else if (pts < 0) negatives.push(entry);
-        });
-
-        // Render each column
-        positives.forEach((entry, idx) => {
-            const item = this.createManualRewardItem(entry, idx + 1, hasManagementRole);
-            colPos.appendChild(item);
-        });
-        negatives.forEach((entry, idx) => {
-            const item = this.createManualRewardItem(entry, idx + 1, hasManagementRole);
-            colNeg.appendChild(item);
-        });
-
-        columnsWrap.appendChild(colPos);
-        columnsWrap.appendChild(colNeg);
-        listContainer.appendChild(columnsWrap);
-    }
-    
-    createManualRewardItem(entry, position, hasManagementRole) {
-        const rankingItem = document.createElement('div');
-        rankingItem.className = 'ranking-item';
-        const isGold = !!(entry.is_gold) || /\[GOLD\]/i.test(String(entry.description||''));
-        if (isGold) { rankingItem.dataset.isGold = 'true'; rankingItem.classList.add('gold-payout'); }
-        
-        // Check if this is a template entry (empty player name)
-        const isTemplateEntry = !entry.player_name || entry.player_name.trim() === '' || entry.player_name.trim().toLowerCase() === '(unassigned)';
-        const hasIcon = entry.icon_url && entry.icon_url.trim() !== '';
-        
-        if (isTemplateEntry) {
-            rankingItem.classList.add('template-entry');
-        }
-        
-        if (hasIcon) {
-            rankingItem.classList.add('has-template-icon');
-        }
-        
-        // Position or Icon
-        const positionDiv = document.createElement('div');
-        positionDiv.className = 'ranking-position';
-        
-        // Use icon for template entries, position number for regular entries
-        if (isTemplateEntry && entry.icon_url) {
-            positionDiv.innerHTML = `<img src="${entry.icon_url}" alt="Template Icon" class="template-icon" title="${entry.description}">`;
-        } else if (entry.icon_url) {
-            // Entry has player name but originated from template, keep the icon
-            positionDiv.innerHTML = `<img src="${entry.icon_url}" alt="Template Icon" class="template-icon" title="${entry.description}">`;
-        } else {
-            // Regular manual entry, use position number
-            positionDiv.textContent = position;
-        }
-        
-        // Character Info
-        const characterInfo = document.createElement('div');
-        // Derive class from entry, or fall back to players list, then roster
-        let derivedClass = entry.player_class;
-        if (!derivedClass && entry.player_name) {
-            const lower = String(entry.player_name).toLowerCase();
-            const m = (this.playersData || []).find(p => String(p.player_name || '').toLowerCase() === lower);
-            if (m) derivedClass = m.player_class;
-            if (!derivedClass && this.rosterMapByName && this.rosterMapByName.size > 0) {
-                derivedClass = this.rosterMapByName.get(lower) || null;
-            }
-        }
-        characterInfo.className = `character-info ${derivedClass ? `class-${this.normalizeClassName(derivedClass)}` : 'class-unknown'}`;
-        
-        // Character Name and class/spec icon
-        const characterName = document.createElement('div');
-        characterName.className = 'character-name';
-        // Add class/spec icon at left if class is known
-        try {
-            const classIconHtml = this.getClassIconHtml(derivedClass || 'unknown');
-            if (classIconHtml) {
-                const wrapper = document.createElement('span');
-                wrapper.innerHTML = classIconHtml;
-                const node = wrapper.firstChild;
-                if (node) characterInfo.appendChild(node);
-            }
-        } catch {}
-        
-        if (isTemplateEntry) {
-            characterName.innerHTML = '<em>Click Edit to assign player</em>';
-            characterName.classList.add('needs-player');
-        } else {
-            characterName.textContent = entry.player_name;
-        }
-        
-        // Character Details (description)
-        const characterDetails = document.createElement('div');
-        characterDetails.className = 'character-details';
-        characterDetails.textContent = entry.description;
-        characterDetails.title = entry.description; // Tooltip for full text
-        
-        characterInfo.appendChild(characterName);
-        characterInfo.appendChild(characterDetails);
-        
-        // Performance Amount (Points)
-        const performanceAmount = document.createElement('div');
-        performanceAmount.className = 'performance-amount';
-        
-        const amountValue = document.createElement('div');
-        amountValue.className = 'amount-value';
-        const points = parseFloat(entry.points);
-        // Default formatting for non-gold
-        amountValue.textContent = points > 0 ? `+${points}` : points.toString();
-        // Gold-specific compact formatting (e.g., 3000 -> 3K, 3500 -> 3.5K), no plus sign, no icon
-        if (isGold && points > 0) {
-            amountValue.classList.add('gold-amount');
-            const abs = Math.abs(points);
-            let txt;
-            if (abs >= 1000) {
-                const k = abs / 1000;
-                const hasFraction = (abs % 1000) !== 0;
-                txt = hasFraction ? `${k.toFixed(1)}K` : `${k.toFixed(0)}K`;
-            } else {
-                txt = String(abs);
-            }
-            amountValue.textContent = txt;
-        }
-        
-        if (points > 0) {
-            amountValue.classList.add('positive');
-        } else if (points < 0) {
-            amountValue.classList.add('negative');
-        }
-        
-        performanceAmount.appendChild(amountValue);
-        
-        // Inline actions inside character-info (only for management users)
-        if (hasManagementRole) {
-            const inlineActions = document.createElement('div');
-            inlineActions.className = 'entry-actions';
-
-            const editBtn = document.createElement('button');
-            editBtn.className = 'entry-action entry-action-edit';
-            editBtn.type = 'button';
-            editBtn.title = 'Edit';
-            editBtn.innerHTML = '<i class="fas fa-pencil-alt" aria-hidden="true"></i>';
-            editBtn.onclick = () => this.editEntry(entry);
-
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'entry-action entry-action-delete';
-            deleteBtn.type = 'button';
-            deleteBtn.title = 'Delete';
-            deleteBtn.innerHTML = '<i class="fas fa-times" aria-hidden="true"></i>';
-            deleteBtn.onclick = () => this.deleteEntry(entry);
-
-            inlineActions.appendChild(editBtn);
-            inlineActions.appendChild(deleteBtn);
-            characterInfo.appendChild(inlineActions);
-        }
-        
-        // Mark entries whose names are not in WoW logs (only if logs are present)
-        try {
-            if (this.logData && Array.isArray(this.logData) && this.logData.length > 0) {
-                const nameLower = String(entry.player_name||'').toLowerCase();
-                const isInLogs = this.logData.some(p => String(p.character_name||'').toLowerCase() === nameLower);
-                if (!isInLogs && !isTemplateEntry) {
-                    rankingItem.style.border = '2px solid #ef4444';
-                    rankingItem.style.borderRadius = '8px';
-                }
-            }
-        } catch {}
-
-        // Append all elements
-        rankingItem.appendChild(positionDiv);
-        rankingItem.appendChild(characterInfo);
-        rankingItem.appendChild(performanceAmount);
-        // Actions are inline inside character-info; nothing appended here
-        
-        return rankingItem;
-    }
-    
-    handlePlayerSearch(searchTerm) {
-        const dropdown = document.getElementById('player-dropdown');
-        if (!dropdown) return;
-        
-        console.log('🔍 [PLAYER SEARCH] Search term:', searchTerm);
-        console.log('🔍 [PLAYER SEARCH] Players data length:', this.playersData?.length || 0);
-        
-        if (!searchTerm.trim()) {
-            dropdown.style.display = 'none';
-            return;
-        }
-        
-        // Ensure playersData exists and is an array
-        if (!this.playersData || !Array.isArray(this.playersData)) {
-            console.warn('⚠️ [PLAYER SEARCH] Players data not available, attempting to fetch...');
-            
-            // Show loading state in dropdown
-            dropdown.innerHTML = '<div style="padding: 8px; color: #888; font-style: italic;">Loading players...</div>';
-            dropdown.style.display = 'block';
-            this.positionDropdown();
-            
-            this.fetchPlayersForDropdown().then(() => {
-                // Retry search after fetching data
-                if (this.playersData && Array.isArray(this.playersData)) {
-                    this.handlePlayerSearch(searchTerm);
-                } else {
-                    dropdown.innerHTML = '<div style="padding: 8px; color: #888; font-style: italic;">No players available</div>';
-                }
-            }).catch(error => {
-                console.error('❌ [PLAYER SEARCH] Failed to fetch players:', error);
-                dropdown.innerHTML = '<div style="padding: 8px; color: #888; font-style: italic;">Error loading players</div>';
-            });
-            return;
-        }
-        
-        const filteredPlayers = this.playersData.filter(player => 
-            player.player_name.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-        
-        console.log('🔍 [PLAYER SEARCH] Filtered players:', filteredPlayers.length);
-        
-        this.populatePlayerDropdown(filteredPlayers);
-        
-        if (filteredPlayers.length > 0) {
-            this.positionDropdown(); // Reposition when showing
-            dropdown.style.display = 'block';
-        } else {
-            dropdown.style.display = 'none';
-        }
-    }
-    
     populatePlayerDropdown(players) {
+        if (!Array.isArray(players)) return;
         const dropdown = document.getElementById('player-dropdown');
         if (!dropdown) return;
         
@@ -8424,7 +8282,9 @@ class RaidLogsManager {
             }
             
             if (!response.ok) {
-                throw new Error(`Failed to save entry: ${response.status}`);
+                let txt = '';
+                try { txt = await response.text(); } catch {}
+                throw new Error(`Failed to save entry: ${response.status} ${txt}`);
             }
             
             const result = await response.json();
@@ -8652,7 +8512,6 @@ class RaidLogsManager {
             groupButtons.forEach(btn => { btn.disabled = false; });
         }
     }
-
     // Temporary: diagnostic lock that logs per-panel harvest counts
     async lockSnapshotDiagnostic() {
         const entries = [];

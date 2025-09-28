@@ -18,6 +18,7 @@ class GoldPotManager {
         // Snapshot/manual mode support
         this.snapshotLocked = false;
         this.snapshotEntries = [];
+        this._usingPublishedSnapshot = false;
         // Assigned tanks (from /assignments Tanking panel markers)
         this.assignedTanks = new Set();
         
@@ -26,6 +27,34 @@ class GoldPotManager {
         // Keep numeric colors normalized in breakdowns
         this._normalizeBreakdownColors = this._normalizeBreakdownColors.bind(this);
     }
+
+  normalizeSnapshotName(name){
+      try {
+          const raw = String(name||'').trim();
+          // Remove leading bullet/marker characters
+          let s = raw.replace(/^[\s•\u2022\u00B7\-–—]+/, '');
+          // Strip trailing parentheses that denote grouping e.g. (Group 1), (Tank group), (group2)
+          s = s.replace(/\s*\((?:tank\s*)?group\s*\d*\)\s*$/i, '');
+          return s.trim();
+      } catch { return String(name||'').trim(); }
+  }
+
+  isValidWoWName(name){
+      try {
+          const s = String(name||'');
+          if (/\d/.test(s)) return false; // no numbers
+          if (/\s/.test(s)) return false; // single word only
+          return true;
+      } catch { return false; }
+  }
+
+  explainNameFilter(name){
+      const raw = String(name||'');
+      if (!raw) return 'empty name';
+      if (/\d/.test(raw)) return 'contains numbers';
+      if (/\s/.test(raw)) return 'contains whitespace (multi-word)';
+      return '';
+  }
 
     initializeEventListeners() {
         // Filter change listeners
@@ -49,6 +78,24 @@ class GoldPotManager {
         if (debugExport) {
             debugExport.addEventListener('click', () => this.exportDebugJson());
         }
+
+        // Floating Admin Actions on gold page
+        try {
+            const faa = document.getElementById('floating-admin-actions');
+            if (faa) faa.style.display = 'block';
+            const eid = (()=>{ try{ const p=window.location.pathname.split('/').filter(Boolean); const i=p.indexOf('event'); return (i>=0&&p[i+1])?p[i+1]:localStorage.getItem('activeEventSession'); }catch{return localStorage.getItem('activeEventSession'); }})();
+            const toRaidlogs = document.getElementById('faa-gold-switch-view');
+            if (toRaidlogs) toRaidlogs.onclick = ()=>{ const url = eid ? `/event/${eid}/raidlogs` : '/raidlogs'; window.location.href = url; };
+            const upLogs = document.getElementById('faa-gold-upload-logs');
+            if (upLogs) upLogs.onclick = ()=>{ const target = eid ? `/event/${eid}/logs` : '/logs'; window.location.href = target; };
+            const sendDM = document.getElementById('faa-gold-send-dm');
+            if (sendDM && !sendDM._wired) {
+                sendDM.addEventListener('click', ()=>{
+                    try { if (typeof window.sendGoldCutsPrompt === 'function') window.sendGoldCutsPrompt(); else alert('DM function not available.'); } catch { alert('DM function not available.'); }
+                });
+                sendDM._wired = true;
+            }
+        } catch {}
     }
 
     async loadData() {
@@ -100,118 +147,133 @@ class GoldPotManager {
                 const gargul = document.getElementById('gargulExportSection');
                 if (gargul) gargul.style.display = (user.hasManagementRole ? 'block' : 'none');
             } catch {}
+            // Also hide floating admin actions if not management
+            try {
+                const faa = document.getElementById('floating-admin-actions');
+                if (faa) faa.style.display = (user.hasManagementRole ? 'block' : 'none');
+            } catch {}
 
             if (!this.currentEventId) { this.showError('No active event session found. Please select an event from the events page.'); return; }
 
             console.log('Loading gold pot data for event:', this.currentEventId);
             
-            // Fetch base data in parallel (players from logs/confirmed list only)
-            const [eventData, playersData, goldPot] = await Promise.all([
-                this.fetchEventDetails(),
-                this.fetchConfirmedPlayers(),
-                this.fetchGoldPot()
-            ]);
-
-            // Store mapping name -> discordId from confirmed players (for DM tools)
-            try {
-                this.nameToDiscordId = new Map();
-                (Array.isArray(playersData) ? playersData : []).forEach(row => {
-                    const nm = String(row?.character_name || '').trim();
-                    const id = String(row?.discord_id || '').trim();
-                    if (nm && id) this.nameToDiscordId.set(nm.toLowerCase(), id);
-                });
-            } catch {}
-
-            // Store and display players
-            // Canonical engine fetch; prefer engine (default) in auto mode; always engine in manual mode
-            const pref = localStorage.getItem('gold_use_engine_auto');
-            const preferEngineAuto = (pref === null || pref === '1');
-            let engineAvailable = false;
-            let eff = null;
-            try {
-                const resp = await fetch(`/api/rewards/${this.currentEventId}/effective`).catch(()=>null);
-                engineAvailable = !!(resp && resp.ok);
-                eff = engineAvailable ? await resp.json() : null;
-            } catch {}
-            if (eff && eff.success) {
-                if (eff.mode === 'manual' || preferEngineAuto) {
-                    // Use engine result
-                    this.engineResult = eff;
-                    this.snapshotLocked = (eff.mode === 'manual');
-                    // Ensure realms are loaded for Gargul export
-                    try { await this.fetchNameRealms(); } catch {}
-                    // Build players list from engine players
-                    this.allPlayers = (eff.players||[]).map(p=>({ character_name:p.name, character_class:p.class||'Unknown' }));
-                    // Build totals map
-                    this.playerTotals = new Map(Object.entries(eff.totals||{}).map(([k,v])=>[k, { name:v.name, class:v.class, points:v.points, gold:v.gold }]));
-                    // Gold meta
-                    this.totalGoldPot = Number(eff.meta?.totalGoldPot||0);
-                    this.sharedGoldPot = Number(eff.meta?.sharedGoldPot||0);
-                    this.sharedGoldPotAdjusted = Number(eff.meta?.sharedGoldPotAdjusted||this.sharedGoldPot);
-                    this.manualGoldPayoutTotal = Number(eff.meta?.manualGoldPayoutTotal||0);
-                    this.totalPointsAll = Number(eff.meta?.totalPointsAll||0);
-                    this.goldPerPoint = Number(eff.meta?.goldPerPoint||0);
-                    // Render directly and show engine banner
-                    this.renderSummaryAndList();
-                    this.showContent();
-                    try {
-                        const banner = document.getElementById('engineBanner');
-                        if (banner) { banner.style.display = 'none'; }
-                        const parityBtn = document.getElementById('parityBtn');
-                        const parityStatus = document.getElementById('parityStatus');
-                        if (parityBtn) parityBtn.disabled = true;
-                        if (parityStatus) parityStatus.textContent = 'N/A (engine in use)';
-                        // Toggle only visible in engine auto mode
-                        const toggleWrap = document.getElementById('computeToggle');
-                        const toggle = document.getElementById('engineToggle');
-                        if (toggleWrap && toggle) {
-                            toggleWrap.style.display = (eff.mode === 'manual') ? 'none' : 'block';
-                            toggle.checked = true;
-                            toggle.onchange = () => { localStorage.setItem('gold_use_engine_auto', toggle.checked ? '1' : '0'); location.reload(); };
-                        }
-                    } catch {}
-                    return;
-                }
-                // Engine available but user prefers legacy in auto mode; fall through to legacy compute
+            // First, try lightweight published snapshot path (like /raidlogs viewer)
+            const published = await this.fetchPublishedSnapshot(this.currentEventId);
+            if (published && published.success && Array.isArray(published.entries)) {
+                this._usingPublishedSnapshot = true;
+                this.snapshotLocked = true;
+                this.snapshotEntries = published.entries || [];
+                // Build players from snapshot rows
+                this.allPlayers = this.buildPlayersFromSnapshot(this.snapshotEntries);
+                // Compute totals and render
+                this.computeTotalsFromSnapshot(published.header || {});
+                this.renderSummaryAndList();
+                this.showContent();
+                return;
             }
 
-            // Fetch raidlogs datasets needed to compute points (legacy path)
-            await this.fetchRaidlogsDatasets();
-            // Fetch realms from stored WCL summary JSON for this event
-            await this.fetchNameRealms();
-            // Compute manual gold payouts (from manual rewards marked as gold)
-            try {
-                const arr = Array.isArray(this.datasets.manualRewardsData) ? this.datasets.manualRewardsData : [];
-                this.manualGoldPayoutTotal = arr.reduce((acc, e) => {
-                    const isGold = !!(e && e.is_gold);
-                    const val = Number(e && e.points) || 0;
-                    return isGold && val > 0 ? acc + val : acc;
-                }, 0);
-            } catch { this.manualGoldPayoutTotal = 0; }
-            // Fetch snapshot status/entries to mirror manual mode
-            await this.fetchSnapshotStatus();
-            if (this.snapshotLocked) {
-                await this.fetchSnapshotData();
-            }
-            // Fetch primary roles mapping to mirror raidlogs computed logic
-            await this.fetchPrimaryRoles();
-            // Fetch assigned tanks (from assignments Tanking panel)
-            await this.fetchAssignedTanks();
-            // Reconcile players strictly to confirmed logData roster and dedupe
-            this.reconcilePlayersWithLogData(playersData || []);
-            // Compute totals per player
-            this.computeTotals();
-            // Render summary and list
-            this.renderSummaryAndList();
-            
-            // Show content
-            this.showContent();
-            // Debug parity UI removed
-            
+            // No published snapshot available → show message and stop
+            this.showError('No published rewards snapshot found for this event.');
+            return;
         } catch (error) {
             console.error('Error loading gold pot data:', error);
             this.showError(error.message || 'Failed to load gold pot data');
         }
+    }
+
+    async fetchPublishedSnapshot(eventId){
+        try{
+            const res = await fetch(`/api/raidlogs/published/${eventId}`);
+            if(!res || !res.ok) return null;
+            const data = await res.json();
+            return data; // { success, header, entries }
+        }catch{return null;}
+    }
+
+    buildPlayersFromSnapshot(entries){
+        const byName = new Map();
+        const lower = s=>String(s||'').toLowerCase();
+        const filteredOut = [];
+        (entries||[]).forEach(r=>{
+            const nmRaw = String(r.character_name||'').trim();
+            const nmBase = this.normalizeSnapshotName(nmRaw);
+            if(!nmRaw) return;
+            if (!this.isValidWoWName(nmBase)) { filteredOut.push({ name: nmRaw, reason: this.explainNameFilter(nmBase) }); return; }
+            const key = lower(nmBase);
+            const clsRaw = String(r.character_class||'').trim();
+            let rec = byName.get(key);
+            if(!rec){ rec = { character_name: nmBase, classVotes: new Map() }; byName.set(key, rec); }
+            if (clsRaw){ const k = clsRaw.toLowerCase(); rec.classVotes.set(k, (rec.classVotes.get(k)||0)+1); }
+        });
+        // Render debug if any
+        try{
+            const box = document.getElementById('nameFilterDebug');
+            const list = document.getElementById('nameFilterDebugList');
+            if (box && list) {
+                if (filteredOut.length) {
+                    box.style.display = 'block';
+                    list.innerHTML = filteredOut.map(it => `<div>• ${it.name} — ${it.reason}</div>`).join('');
+                } else {
+                    box.style.display = 'none';
+                    list.innerHTML = '';
+                }
+            }
+        } catch {}
+        const out = [];
+        byName.forEach((rec)=>{
+            let bestCls = 'Unknown', bestCnt = -1;
+            rec.classVotes.forEach((cnt, cls)=>{ if(cnt>bestCnt){ bestCnt=cnt; bestCls = cls; } });
+            out.push({ character_name: rec.character_name, character_class: bestCls });
+        });
+        return out;
+    }
+
+    computeTotalsFromSnapshot(header){
+        const entries = Array.isArray(this.snapshotEntries) ? this.snapshotEntries : [];
+        const lower = s=>String(s||'').toLowerCase();
+        // Players map seeded from allPlayers
+        const nameToPlayer = new Map();
+        (this.allPlayers||[]).forEach(p=>{
+            nameToPlayer.set(lower(p.character_name), { name: p.character_name, class: p.character_class, points: 0, gold: 0 });
+        });
+        // Base: every player gets +100 points
+        nameToPlayer.forEach(v => { v.points += 100; });
+        // Sum points by player across all panels using edited else original
+        entries.forEach(r=>{
+            const key = lower(this.normalizeSnapshotName(r.character_name||'')); if(!key) return;
+            if (!this.isValidWoWName(this.normalizeSnapshotName(r.character_name||''))) return;
+            const v = nameToPlayer.get(key); if(!v) return;
+            const pts = Number(r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0;
+            v.points += pts;
+        });
+        // Manual gold payouts: add directly to player gold
+        let manualGoldPayoutTotal = 0;
+        entries.forEach(r=>{
+            if (String(r.panel_key||'') !== 'manual_points') return;
+            const aux = r.aux_json || {};
+            const isGold = !!(aux.is_gold === true || aux.is_gold === 'true');
+            if (!isGold) return;
+            const amt = Number(r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0;
+            if (!(amt>0)) return;
+            manualGoldPayoutTotal += amt;
+            const key = lower(this.normalizeSnapshotName(r.character_name||''));
+            if (!this.isValidWoWName(this.normalizeSnapshotName(r.character_name||''))) return;
+            const v = nameToPlayer.get(key); if (v) v.gold = Math.max(0, (Number(v.gold)||0) + amt);
+        });
+        this.manualGoldPayoutTotal = manualGoldPayoutTotal;
+        // Totals and GPP from header
+        let totalPointsAll = 0; nameToPlayer.forEach(v=>{ totalPointsAll += Math.max(0, Number(v.points)||0); });
+        this.totalPointsAll = totalPointsAll;
+        const totalPot = Number(header && header.total_gold_pot) || 0;
+        const sharedPot = Number(header && header.shared_gold_pot) || 0;
+        this.totalGoldPot = totalPot;
+        this.sharedGoldPot = sharedPot;
+        const adjusted = Math.max(0, sharedPot - Number(this.manualGoldPayoutTotal||0));
+        this.sharedGoldPotAdjusted = adjusted;
+        const gpp = (adjusted>0 && totalPointsAll>0) ? adjusted / totalPointsAll : 0;
+        this.goldPerPoint = gpp;
+        nameToPlayer.forEach(v=>{ const effPts = Math.max(0, Number(v.points)||0); v.gold = Math.max(0, Math.floor(effPts * gpp) + Number(v.gold||0)); });
+        this.playerTotals = nameToPlayer;
     }
 
     async fetchSnapshotStatus() {
@@ -662,6 +724,51 @@ class GoldPotManager {
             avgEl.textContent = Number(avg).toLocaleString();
         }
 
+        // Gold per 1 point = Shared Gold (adjusted) / Total Points (rounded to nearest whole number)
+        const gppCard = document.getElementById('goldPerPointValue');
+        if (gppCard) {
+            const baseShared = Number(this.sharedGoldPot) || 0;
+            const payout = Number(this.manualGoldPayoutTotal) || 0;
+            const adjusted = Math.max(0, baseShared - payout);
+            const totalPts = Math.max(0, Math.round(this.totalPointsAll||0));
+            const val = totalPts > 0 ? Math.round(adjusted / totalPts) : 0;
+            gppCard.textContent = Number(val).toLocaleString();
+        }
+
+        // New summary cards: Total Gold (pot), Management Gold (difference), Gargul check
+        const totalPotEl = document.getElementById('totalGoldPotValue');
+        if (totalPotEl) totalPotEl.textContent = Number(this.totalGoldPot||0).toLocaleString();
+        const mgmtEl = document.getElementById('managementGoldValue');
+        if (mgmtEl) {
+            const total = Number(this.totalGoldPot||0);
+            const shared = Number(this.sharedGoldPot||0);
+            const mgmt = Math.max(0, total - shared);
+            mgmtEl.textContent = Number(mgmt).toLocaleString();
+        }
+        const gargulCheckEl = document.getElementById('gargulCheckValue');
+        if (gargulCheckEl) {
+            try {
+                const ta = document.getElementById('gargulExport');
+                const txt = String(ta?.value||'');
+                let sum = 0;
+                // Match any integer at end of each line (handles header and stray spaces)
+                txt.split('\n').forEach((raw, idx)=>{
+                    const line = String(raw||'').trim();
+                    if (!line) return;
+                    if (idx===0 && /player\s*,\s*gold/i.test(line)) return;
+                    const m = line.match(/,\s*(-?\d+)\s*$/);
+                    if (m) sum += Number(m[1]);
+                });
+                const total = Number(this.totalGoldPot||0);
+                const diff = Math.abs(total - sum);
+                const ok = diff < 300;
+                gargulCheckEl.textContent = ok ? 'Value matched' : 'Match failed';
+                try { gargulCheckEl.classList.remove('match-ok','match-fail'); } catch {}
+                try { gargulCheckEl.classList.add(ok ? 'match-ok' : 'match-fail'); } catch {}
+                try { gargulCheckEl.style.setProperty('color', ok ? '#22c55e' : '#ef4444', 'important'); } catch {}
+            } catch { gargulCheckEl.textContent = '--'; }
+        }
+
         // Players grid of cards
         const grid = document.getElementById('playersGrid');
         if (!grid) return;
@@ -1014,6 +1121,29 @@ class GoldPotManager {
                 });
                 btn._wired = true;
             }
+            // Update Gargul string check vs Total Gold
+            try {
+                const cardVal = document.getElementById('gargulCheckValue');
+                if (cardVal) {
+                    const text = String(ta.value||'');
+                    let sum = 0;
+                    const linesArr = text.split('\n');
+                    for (let i=0; i<linesArr.length; i++) {
+                        const line = linesArr[i].trim();
+                        if (!line) continue;
+                        if (i===0 && /player\s*,\s*gold/i.test(line)) continue; // header row
+                        const m = line.match(/,\s*(-?\d+)\s*$/);
+                        if (m) sum += Number(m[1]);
+                    }
+                    const total = Number(this.totalGoldPot||0);
+                    const diff = Math.abs(total - sum);
+                    const ok = diff < 300;
+                    cardVal.textContent = ok ? 'Value matched' : 'Match failed';
+                    try { cardVal.classList.remove('match-ok','match-fail'); } catch {}
+                    try { cardVal.classList.add(ok ? 'match-ok' : 'match-fail'); } catch {}
+                    try { cardVal.style.setProperty('color', ok ? '#22c55e' : '#ef4444', 'important'); } catch {}
+                }
+            } catch {}
         } catch {}
     }
 
@@ -1041,250 +1171,9 @@ class GoldPotManager {
     }
     
     buildPlayerBreakdownRows(nameKey) {
+        const d = this.getPlayerBreakdownData(nameKey);
         const lower = s=>String(s||'').toLowerCase();
-        const fmtTitle = (t)=>{
-            const full=String(t||'');
-            const short = full.length>10 ? full.slice(0,10)+'…' : full;
-            return `<span title="${full}">${short}</span>`;
-        };
-        const gpp = this.goldPerPoint || 0;
-        const role = String(this.primaryRoles?.[nameKey] || '').toLowerCase();
-        const usingEngine = !!this.engineResult;
-
-        // Collect per-panel contributions similar to raidlogs breakdown order
-        const items = [];
-        const push = (title, pts) => {
-            if (!pts) return;
-            const goldVal = Math.floor(pts * gpp);
-            items.push({ title, pts, gold: goldVal });
-        };
-
-        // Base
-        if (usingEngine) {
-            const basePanel = (this.engineResult?.panels || []).find(p => p.panel_key === 'base');
-            if (basePanel && Array.isArray(basePanel.rows)) {
-                const row = basePanel.rows.find(r => lower(r.name) === nameKey);
-                if (row && row.points) push('Base', Number(row.points) || 0);
-            }
-        } else {
-            push('Base', 100);
-        }
-
-        // Helper to sum points for a name from a dataset
-        const sumFrom = (arr)=> (arr||[]).reduce((acc,row)=> acc + (lower(row.character_name||row.player_name||'')===nameKey ? (Number(row.points)||0) : 0), 0);
-
-        // Panels
-        if (usingEngine) {
-            const labelMap = {
-                damage:'Dmg Rank', healing:'Heal Rank', god_gamer_dps:'God Gamer DPS', god_gamer_healer:'God Gamer Heal',
-                abilities:'Sappers', mana_potions:'Mana pots', runes:'Runes', windfury_totems:'Totems', interrupts:'Interrupts', disarms:'Disarms',
-                curse_recklessness:'Curse Reck', curse_shadow:'Curse Shad', curse_elements:'Curse Elem', faerie_fire:'Faerie Fir', scorch:'Scorch', demo_shout:'Demo Shout',
-                polymorph:'Polymorph', power_infusion:'Power Inf', decurses:'Decurses', frost_resistance:'Frost Res', world_buffs_copy:'WorldBuffs',
-                void_damage:'Void Dmg', shaman_healers:'Shaman Healer', priest_healers:'Priest Healer', druid_healers:'Druid Healer',
-                too_low_damage:'Too Low Dmg', too_low_healing:'Too Low Heal', attendance_streaks:'Streak', guild_members:'Guild Mem', big_buyer:'Big Buyer', manual_points:'Manual'
-            };
-            (this.engineResult?.panels || []).forEach(p => {
-                if (p.panel_key === 'base') return;
-                const row = (p.rows || []).find(r => lower(r.name) === nameKey);
-                if (!row || !row.points) return;
-                const title = labelMap[p.panel_key] || p.panel_key;
-                push(title, Number(row.points) || 0);
-            });
-        } else {
-            push('Sappers', sumFrom(this.datasets.abilitiesData));
-            push('Totems', sumFrom(this.datasets.windfuryData));
-            push('RocketHelm', sumFrom(this.datasets.rocketHelmetData));
-            push('Mana pots', sumFrom(this.datasets.manaPotionsData));
-            push('Runes', sumFrom(this.datasets.runesData));
-            push('Interrupts', sumFrom(this.datasets.interruptsData));
-            push('Disarms', sumFrom(this.datasets.disarmsData));
-        }
-        // Sunder breakdown row: hide for tanks based on assignments; use snapshot when locked
-        if (!usingEngine && !this.isTankForEvent(nameKey)) {
-            if (this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) {
-                const sumSnap = (panelKey) => (this.snapshotEntries||[]).reduce((acc, r) => {
-                    if (String(r.panel_key) === panelKey && lower(r.character_name) === nameKey) {
-                        const pts = Number(r.point_value_edited != null ? r.point_value_edited : r.point_value_original) || 0;
-                        return acc + pts;
-                    }
-                    return acc;
-                }, 0);
-                const pts = sumSnap('sunder');
-                if (pts) push('Sunder', pts);
-            } else {
-                // Compute Sunder points for this name to mirror raidlogs thresholds and assigned-tank filtering
-                const rows = Array.isArray(this.datasets.sunderData) ? this.datasets.sunderData : [];
-                const lower = s=>String(s||'').toLowerCase();
-                const elig = rows.filter(r => !this.isTankForEvent(lower(r.character_name||r.player_name||'')));
-                const counts = elig.map(r => Number(r.sunder_count)||0);
-                const avg = elig.length ? (counts.reduce((a,b)=>a+b,0)/elig.length) : 0;
-                const computePts = (count) => {
-                    if (!(avg>0)) return 0;
-                    const pct = (Number(count)||0)/avg*100;
-                    if (pct < 25) return -20;
-                    if (pct < 50) return -15;
-                    if (pct < 75) return -10;
-                    if (pct < 90) return -5;
-                    if (pct <= 109) return 0;
-                    if (pct <= 124) return 5;
-                    return 10;
-                };
-                const row = rows.find(r => lower(r.character_name||r.player_name||'')===nameKey);
-                const pts = row ? computePts(row.sunder_count) : 0;
-                if (pts) push('Sunder', pts);
-            }
-        }
-        if (!usingEngine) {
-            push('Curse Reck', sumFrom(this.datasets.curseData));
-            push('Curse Shad', sumFrom(this.datasets.curseShadowData));
-            push('Curse Elem', sumFrom(this.datasets.curseElementsData));
-            push('Faerie Fir', sumFrom(this.datasets.faerieFireData));
-            push('Scorch', sumFrom(this.datasets.scorchData));
-            push('Demo Shout', sumFrom(this.datasets.demoShoutData));
-            push('Polymorph', sumFrom(this.datasets.polymorphData));
-            push('Power Inf', sumFrom(this.datasets.powerInfusionData));
-            push('Decurses', sumFrom(this.datasets.decursesData));
-            push('WorldBuffs', sumFrom(this.datasets.worldBuffsData));
-        }
-        // Only show frost resistance row for DPS to match totals logic
-        if (!usingEngine && role === 'dps') {
-            push('Frost Res', sumFrom(this.datasets.frostResistanceData));
-        }
-        if (!usingEngine) push('Void Dmg', sumFrom(this.datasets.voidDamageData));
-
-        // Rankings and awards so the card matches totals
-        if (!usingEngine && this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) {
-            const sumSnap = (panelKey) => (this.snapshotEntries||[]).reduce((acc, r) => {
-                if (String(r.panel_key) === panelKey && lower(r.character_name) === nameKey) {
-                    const pts = Number(r.point_value_edited != null ? r.point_value_edited : r.point_value_original) || 0;
-                    return acc + pts;
-                }
-                return acc;
-            }, 0);
-            push('Dmg Rank', sumSnap('damage'));
-            push('Heal Rank', sumSnap('healing'));
-            push('God Gamer DPS', sumSnap('god_gamer_dps'));
-            push('God Gamer Heal', sumSnap('god_gamer_healer'));
-            push('Shaman Healer', sumSnap('shaman_healers'));
-            push('Priest Healer', sumSnap('priest_healers'));
-            push('Druid Healer', sumSnap('druid_healers'));
-        } else if (!usingEngine) {
-            const damagePoints = this.rewardSettings?.damage?.points_array || [];
-            const damageSorted = (this.logData || [])
-                .filter(p => !this.shouldIgnorePlayer(p.character_name))
-                .filter(p => ((p.role_detected||'').toLowerCase()==='dps' || (p.role_detected||'').toLowerCase()==='tank') && (parseInt(p.damage_amount)||0) > 0)
-                .sort((a,b)=>(parseInt(b.damage_amount)||0)-(parseInt(a.damage_amount)||0));
-            const healers = (this.logData || [])
-                .filter(p => !this.shouldIgnorePlayer(p.character_name))
-                .filter(p => (p.role_detected||'').toLowerCase()==='healer' && (parseInt(p.healing_amount)||0) > 0)
-                .sort((a,b)=>(parseInt(b.healing_amount)||0)-(parseInt(a.healing_amount)||0));
-
-            const idxDamage = damageSorted.findIndex(p => lower(p.character_name) === nameKey);
-            if (idxDamage >= 0 && idxDamage < damagePoints.length) {
-                const pts = damagePoints[idxDamage] || 0; if (pts) push('Dmg Rank', pts);
-            }
-
-            const healingPoints = this.rewardSettings?.healing?.points_array || [];
-            const idxHeal = healers.findIndex(p => lower(p.character_name) === nameKey);
-            if (idxHeal >= 0 && idxHeal < healingPoints.length) {
-                const pts = healingPoints[idxHeal] || 0; if (pts) push('Heal Rank', pts);
-            }
-
-            // God Gamer awards
-            if (damageSorted.length >= 2) {
-                const first = parseInt(damageSorted[0].damage_amount)||0;
-                const second = parseInt(damageSorted[1].damage_amount)||0;
-                const diff = first - second; let pts = 0;
-                if (diff >= 250000) pts = 30; else if (diff >= 150000) pts = 20;
-                if (pts && lower(damageSorted[0].character_name) === nameKey) push('God Gamer DPS', pts);
-            }
-            if (healers.length >= 2) {
-                const first = parseInt(healers[0].healing_amount)||0;
-                const second = parseInt(healers[1].healing_amount)||0;
-                const diff = first - second; let pts = 0;
-                if (diff >= 250000) pts = 20; else if (diff >= 150000) pts = 15;
-                if (pts && lower(healers[0].character_name) === nameKey) push('God Gamer Heal', pts);
-            }
-
-            // Class-specific healer awards
-            const byClass = (arr, cls) => arr.filter(p => String(p.character_class||'').toLowerCase().includes(cls));
-            const shamans = byClass(healers,'shaman').slice(0,3);
-            const priests = byClass(healers, 'priest').slice(0,2);
-            const druids  = byClass(healers, 'druid').slice(0,1);
-            const addAward = (label, arr, ptsArr) => {
-                const i = arr.findIndex(p => lower(p.character_name) === nameKey);
-                if (i >= 0 && i < ptsArr.length) { const pts = ptsArr[i] || 0; if (pts) push(label, pts); }
-            };
-            addAward('Shaman Healer', shamans, [25,20,15]);
-            addAward('Priest Healer', priests, [20,15]);
-            addAward('Druid Healer', druids, [15]);
-        }
-
-        // Too Low Damage / Healing
-        if (!usingEngine && this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) {
-            const sumSnap = (panelKey) => (this.snapshotEntries||[]).reduce((acc, r) => {
-                if (String(r.panel_key) === panelKey && lower(r.character_name) === nameKey) {
-                    const pts = Number(r.point_value_edited != null ? r.point_value_edited : r.point_value_original) || 0;
-                    return acc + pts;
-                }
-                return acc;
-            }, 0);
-            const tlDmg = sumSnap('too_low_damage');
-            const tlHeal = sumSnap('too_low_healing');
-            if (tlDmg) push('Too Low Dmg', tlDmg);
-            if (tlHeal) push('Too Low Heal', tlHeal);
-        } else if (!usingEngine) {
-            const aftMin = this.datasets.raidStats?.stats?.activeFightTime;
-            if (aftMin && this.primaryRoles) {
-                const sec = aftMin * 60;
-                const row = (this.logData||[]).find(p => lower(p.character_name)===nameKey);
-                if (row) {
-                    const role = String(this.primaryRoles[nameKey]||'').toLowerCase();
-                    if (role==='dps') {
-                        const dps = (parseFloat(row.damage_amount)||0) / sec;
-                        let pts = 0; if (dps < 150) pts = -100; else if (dps < 200) pts = -50; else if (dps < 250) pts = -25;
-                        if (pts) push('Too Low Dmg', pts);
-                    } else if (role==='healer') {
-                        const hps = (parseFloat(row.healing_amount)||0) / sec;
-                        let pts = 0; if (hps < 85) pts = -100; else if (hps < 100) pts = -50; else if (hps < 125) pts = -25;
-                        if (pts) push('Too Low Heal', pts);
-                    }
-                }
-            }
-        }
-
-        // Streaks / Guild
-        const streakRow = (this.datasets.playerStreaks||[]).find(r=> lower(r.character_name)===nameKey);
-        if (streakRow) {
-            const s = Number(streakRow.player_streak)||0; let pts=0; if(s>=8)pts=15; else if(s===7)pts=12; else if(s===6)pts=9; else if(s===5)pts=6; else if(s===4)pts=3;
-            push('Streak', pts);
-        }
-        const guildHit = (this.datasets.guildMembers||[]).some(r=> lower(r.character_name)===nameKey);
-        if (guildHit) push('Guild Mem', 10);
-
-        // Big Buyer
-        push('Big Buyer', sumFrom(this.datasets.bigBuyerData));
-
-        // Manual rewards: split gold vs points
-        const manualGold = usingEngine
-            ? ((this.engineResult?.manual_gold || []).reduce((acc, e) => acc + (lower(e.name||'')===nameKey ? (Number(e.gold)||0) : 0), 0))
-            : ((this.datasets.manualRewardsData||[]).reduce((acc,e)=>{ if (lower(e.player_name||'')!==nameKey) return acc; const isGold = !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||'')))); return isGold ? acc + (Number(e.points)||0) : acc; }, 0));
-        const manualPts = usingEngine
-            ? 0 // manual points already included via engine panels mapping
-            : ((this.datasets.manualRewardsData||[]).reduce((acc,e)=>{ if (lower(e.player_name||'')!==nameKey) return acc; const isGold = !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||'')))); return isGold ? acc : acc + (Number(e.points)||0); }, 0));
-        if (!usingEngine && manualPts) push('Manual', manualPts);
-        if (manualGold) {
-            items.push({ title: 'Manual', pts: 0, gold: manualGold, isGoldRow: true });
-        }
-
-        // Ensure per-row gold sums to total (distribute rounding remainder to Base)
-        const computedTotalGold = Number(this.playerTotals?.get(nameKey)?.gold || 0);
-        const sumRowGold = items.reduce((acc, it) => acc + (Number(it.gold)||0), 0);
-        const remainder = computedTotalGold - sumRowGold;
-        if (remainder) {
-            items.push({ title: 'Rounding', pts: 0, gold: remainder });
-        }
-
+        const fmtTitle = (t)=>{ const full=String(t||''); const short = full.length>10 ? full.slice(0,10)+'…' : full; return `<span title="${full}">${short}</span>`; };
         const header = `
             <div style="display:grid; grid-template-columns: 1.6fr 60px 85px; gap:8px; font-size:14px; line-height:1.3; color:#111; font-weight:700; border-bottom:1px solid rgba(0,0,0,.15); padding-bottom:6px; margin-bottom:8px;">
                 <div>Name</div>
@@ -1292,23 +1181,97 @@ class GoldPotManager {
                 <div style="text-align:right;">Gold</div>
             </div>
         `;
-        const totalGold = computedTotalGold;
-        const totalPoints = Math.round(Number(this.playerTotals?.get(nameKey)?.points || 0));
+        const body = (d.items||[]).map(it => `
+            <div class="player-breakdown-row" style="display:grid; grid-template-columns: 1.6fr 60px 85px; gap:8px; font-size:16px; line-height:1.45;">
+                <div>${fmtTitle(it.title)}</div>
+                <div style="text-align:right;">${it.pts>0?`+${it.pts}`:it.pts}</div>
+                <div style="text-align:right;">${it.isGoldRow?`<i class=\"fas fa-coins\" style=\"margin-right:6px; color:#f59e0b;\"></i>`:''}${it.gold>0?`+${it.gold}`:it.gold}</div>
+            </div>`).join('');
         const footer = `
             <div class="player-footer-overlay" style="position:absolute; left:0; right:0; bottom:0; height:50px; background:rgba(0,0,0,0.5); border-bottom-left-radius:12px; border-bottom-right-radius:12px; display:flex; align-items:center; justify-content:center;">
-                <div class="gold-total-display" style=\"font-weight:900; font-size:20px; color:#f5c542; transition: opacity .25s ease;\">${totalGold.toLocaleString()} gold</div>
-                <div class="points-total-display" style=\"position:absolute; font-weight:900; font-size:20px; color:#e5e7eb; opacity:0; transition: opacity .25s ease;\">${totalPoints.toLocaleString()} points</div>
+                <div class="gold-total-display" style=\"font-weight:900; font-size:20px; color:#f5c542; transition: opacity .25s ease;\">${d.totalGold.toLocaleString()} gold</div>
+                <div class="points-total-display" style=\"position:absolute; font-weight:900; font-size:20px; color:#e5e7eb; opacity:0; transition: opacity .25s ease;\">${d.totalPoints.toLocaleString()} points</div>
             </div>
         `;
-        const body = items.length ? items
-                .filter(it => it.title !== 'Rounding')
-                .map(it => `
-                <div class="player-breakdown-row" style="display:grid; grid-template-columns: 1.6fr 60px 85px; gap:8px; font-size:16px; line-height:1.45;">
-                    <div>${fmtTitle(it.title)}</div>
-                    <div style="text-align:right;">${it.pts>0?`+${it.pts}`:it.pts}</div>
-                    <div style="text-align:right;">${it.isGoldRow?`<i class=\"fas fa-coins\" style=\"margin-right:6px; color:#f59e0b;\"></i>`:''}${it.gold>0?`+${it.gold}`:it.gold}</div>
-                </div>`).join('') : '<div style="font-size:16px; opacity:.8; color:#fff;">No breakdown</div>';
-        return header + body + footer;
+        return header + (body || '<div style="font-size:16px; opacity:.8; color:#fff;">No breakdown</div>') + footer;
+    }
+
+    getPlayerBreakdownData(nameKey) {
+        const lower = s=>String(s||'').toLowerCase();
+        const gpp = this.goldPerPoint || 0;
+        const role = String(this.primaryRoles?.[nameKey] || '').toLowerCase();
+        const usingEngine = !!this.engineResult;
+        const items = [];
+        const push = (title, pts) => { if (!pts) return; const goldVal = Math.floor(pts * gpp); items.push({ title, pts, gold: goldVal }); };
+
+        if (this._usingPublishedSnapshot) {
+            const labelMap = { base:'Base', damage:'Dmg Rank', healing:'Heal Rank', god_gamer_dps:'God Gamer DPS', god_gamer_healer:'God Gamer Heal', shaman_healers:'Shaman Healer', priest_healers:'Priest Healer', druid_healers:'Druid Healer', abilities:'Sappers', windfury_totems:'Totems', rocket_helmet:'RocketHelm', mana_potions:'Mana pots', runes:'Runes', interrupts:'Interrupts', disarms:'Disarms', sunder:'Sunder', curse_recklessness:'Curse Reck', curse_shadow:'Curse Shad', curse_elements:'Curse Elem', faerie_fire:'Faerie Fir', scorch:'Scorch', demo_shout:'Demo Shout', polymorph:'Polymorph', power_infusion:'Power Inf', decurses:'Decurses', frost_resistance:'Frost Res', world_buffs_copy:'WorldBuffs', void_damage:'Void Dmg', too_low_damage:'Too Low Dmg', too_low_healing:'Too Low Heal', attendance_streaks:'Streak', guild_members:'Guild Mem', big_buyer:'Big Buyer', manual_points:'Manual' };
+            const order = ['god_gamer_dps','god_gamer_healer','damage','healing','windfury_totems','shaman_healers','priest_healers','druid_healers','too_low_damage','too_low_healing','guild_members','attendance_streaks','abilities','interrupts','world_buffs_copy','curse_recklessness','curse_elements','curse_shadow','faerie_fire','decurses','demo_shout','mana_potions','runes','rocket_helmet','sunder','scorch','polymorph','disarms','void_damage','power_infusion','frost_resistance','big_buyer','manual_points'];
+            const perPanel = new Map(); let manualGoldForPlayer = 0;
+            (this.snapshotEntries||[]).forEach(r=>{ const nm = lower(this.normalizeSnapshotName(r.character_name||'')); if (nm !== nameKey) return; if (!this.isValidWoWName(this.normalizeSnapshotName(r.character_name||''))) return; const key = String(r.panel_key||''); const pts = Number(r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0; if (!key) return; if (key === 'base') return; if (key === 'manual_points') { const aux = r.aux_json || {}; const isGold = !!(aux.is_gold === true || aux.is_gold === 'true'); if (isGold) { if (pts>0) manualGoldForPlayer += pts; return; } } perPanel.set(key, (perPanel.get(key)||0) + pts); });
+            push('Base', 100);
+            order.forEach(k=>{ const val = perPanel.get(k); if (!val) return; const label = labelMap[k] || k; push(label, val); });
+            if (manualGoldForPlayer > 0) items.push({ title:'Manual', pts:0, gold: manualGoldForPlayer, isGoldRow:true });
+            const computedTotalGold = Number(this.playerTotals?.get(nameKey)?.gold || 0);
+            const sumRowGold = items.reduce((acc, it) => acc + (Number(it.gold)||0), 0);
+            const remainder = computedTotalGold - sumRowGold; if (remainder) items.push({ title:'Rounding', pts:0, gold: remainder });
+            const outItems = items.filter(it => it.title !== 'Rounding');
+            return { items: outItems, totalGold: computedTotalGold, totalPoints: Math.round(Number(this.playerTotals?.get(nameKey)?.points || 0)) };
+        }
+
+        // Base
+        if (usingEngine) {
+            const basePanel = (this.engineResult?.panels || []).find(p => p.panel_key === 'base');
+            if (basePanel && Array.isArray(basePanel.rows)) { const row = basePanel.rows.find(r => lower(r.name) === nameKey); if (row && row.points) push('Base', Number(row.points) || 0); }
+        } else { push('Base', 100); }
+
+        const sumFrom = (arr)=> (arr||[]).reduce((acc,row)=> acc + (lower(row.character_name||row.player_name||'')===nameKey ? (Number(row.points)||0) : 0), 0);
+
+        if (usingEngine) {
+            const labelMap = { damage:'Dmg Rank', healing:'Heal Rank', god_gamer_dps:'God Gamer DPS', god_gamer_healer:'God Gamer Heal', abilities:'Sappers', mana_potions:'Mana pots', runes:'Runes', windfury_totems:'Totems', interrupts:'Interrupts', disarms:'Disarms', curse_recklessness:'Curse Reck', curse_shadow:'Curse Shad', curse_elements:'Curse Elem', faerie_fire:'Faerie Fir', scorch:'Scorch', demo_shout:'Demo Shout', polymorph:'Polymorph', power_infusion:'Power Inf', decurses:'Decurses', frost_resistance:'Frost Res', world_buffs_copy:'WorldBuffs', void_damage:'Void Dmg', shaman_healers:'Shaman Healer', priest_healers:'Priest Healer', druid_healers:'Druid Healer', too_low_damage:'Too Low Dmg', too_low_healing:'Too Low Heal', attendance_streaks:'Streak', guild_members:'Guild Mem', big_buyer:'Big Buyer', manual_points:'Manual' };
+            (this.engineResult?.panels || []).forEach(p => { if (p.panel_key === 'base') return; const row = (p.rows || []).find(r => lower(r.name) === nameKey); if (!row || !row.points) return; const title = labelMap[p.panel_key] || p.panel_key; push(title, Number(row.points) || 0); });
+        } else {
+            push('Sappers', sumFrom(this.datasets.abilitiesData)); push('Totems', sumFrom(this.datasets.windfuryData)); push('RocketHelm', sumFrom(this.datasets.rocketHelmetData)); push('Mana pots', sumFrom(this.datasets.manaPotionsData)); push('Runes', sumFrom(this.datasets.runesData)); push('Interrupts', sumFrom(this.datasets.interruptsData)); push('Disarms', sumFrom(this.datasets.disarmsData));
+        }
+        if (!usingEngine && !this.isTankForEvent(nameKey)) {
+            if (this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) { const sumSnap = (panelKey) => (this.snapshotEntries||[]).reduce((acc, r) => { if (String(r.panel_key) === panelKey && lower(r.character_name) === nameKey) { const pts = Number(r.point_value_edited != null ? r.point_value_edited : r.point_value_original) || 0; return acc + pts; } return acc; }, 0); const pts = sumSnap('sunder'); if (pts) push('Sunder', pts); }
+            else { const rows = Array.isArray(this.datasets.sunderData) ? this.datasets.sunderData : []; const lower2 = s=>String(s||'').toLowerCase(); const elig = rows.filter(r => !this.isTankForEvent(lower2(r.character_name||r.player_name||''))); const counts = elig.map(r => Number(r.sunder_count)||0); const avg = elig.length ? (counts.reduce((a,b)=>a+b,0)/elig.length) : 0; const computePts = (count)=>{ if(!(avg>0)) return 0; const pct=(Number(count)||0)/avg*100; if(pct<25) return -20; if(pct<50) return -15; if(pct<75) return -10; if(pct<90) return -5; if(pct<=109) return 0; if(pct<=124) return 5; return 10; }; const row = rows.find(r => lower2(r.character_name||r.player_name||'')===nameKey); const pts = row ? computePts(row.sunder_count) : 0; if (pts) push('Sunder', pts); }
+        }
+        if (!usingEngine) { push('Curse Reck', sumFrom(this.datasets.curseData)); push('Curse Shad', sumFrom(this.datasets.curseShadowData)); push('Curse Elem', sumFrom(this.datasets.curseElementsData)); push('Faerie Fir', sumFrom(this.datasets.faerieFireData)); push('Scorch', sumFrom(this.datasets.scorchData)); push('Demo Shout', sumFrom(this.datasets.demoShoutData)); push('Polymorph', sumFrom(this.datasets.polymorphData)); push('Power Inf', sumFrom(this.datasets.powerInfusionData)); push('Decurses', sumFrom(this.datasets.decursesData)); push('WorldBuffs', sumFrom(this.datasets.worldBuffsData)); }
+        if (!usingEngine && role === 'dps') push('Frost Res', sumFrom(this.datasets.frostResistanceData));
+        if (!usingEngine) push('Void Dmg', sumFrom(this.datasets.voidDamageData));
+        if (!usingEngine && this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) {
+            const sumSnap = (panelKey) => (this.snapshotEntries||[]).reduce((acc, r) => { if (String(r.panel_key) === panelKey && lower(r.character_name) === nameKey) { const pts = Number(r.point_value_edited != null ? r.point_value_edited : r.point_value_original) || 0; return acc + pts; } return acc; }, 0);
+            push('Dmg Rank', sumSnap('damage')); push('Heal Rank', sumSnap('healing')); push('God Gamer DPS', sumSnap('god_gamer_dps')); push('God Gamer Heal', sumSnap('god_gamer_healer')); push('Shaman Healer', sumSnap('shaman_healers')); push('Priest Healer', sumSnap('priest_healers')); push('Druid Healer', sumSnap('druid_healers'));
+        } else if (!usingEngine) {
+            const damagePoints = this.rewardSettings?.damage?.points_array || []; const damageSorted = (this.logData || []).filter(p => !this.shouldIgnorePlayer(p.character_name)).filter(p => ((p.role_detected||'').toLowerCase()==='dps' || (p.role_detected||'').toLowerCase()==='tank') && (parseInt(p.damage_amount)||0) > 0).sort((a,b)=>(parseInt(b.damage_amount)||0)-(parseInt(a.damage_amount)||0));
+            const healers = (this.logData || []).filter(p => !this.shouldIgnorePlayer(p.character_name)).filter(p => (p.role_detected||'').toLowerCase()==='healer' && (parseInt(p.healing_amount)||0) > 0).sort((a,b)=>(parseInt(b.healing_amount)||0)-(parseInt(a.healing_amount)||0));
+            const idxDamage = damageSorted.findIndex(p => lower(p.character_name) === nameKey); if (idxDamage >= 0 && idxDamage < damagePoints.length) { const pts = damagePoints[idxDamage] || 0; if (pts) push('Dmg Rank', pts); }
+            const healingPoints = this.rewardSettings?.healing?.points_array || []; const idxHeal = healers.findIndex(p => lower(p.character_name) === nameKey); if (idxHeal >= 0 && idxHeal < healingPoints.length) { const pts = healingPoints[idxHeal] || 0; if (pts) push('Heal Rank', pts); }
+            if (damageSorted.length >= 2) { const first = parseInt(damageSorted[0].damage_amount)||0; const second = parseInt(damageSorted[1].damage_amount)||0; const diff = first - second; let pts = 0; if (diff >= 250000) pts = 30; else if (diff >= 150000) pts = 20; if (pts && lower(damageSorted[0].character_name) === nameKey) push('God Gamer DPS', pts); }
+            if (healers.length >= 2) { const first = parseInt(healers[0].healing_amount)||0; const second = parseInt(healers[1].healing_amount)||0; const diff = first - second; let pts = 0; if (diff >= 250000) pts = 20; else if (diff >= 150000) pts = 15; if (pts && lower(healers[0].character_name) === nameKey) push('God Gamer Heal', pts); }
+            const byClass = (arr, cls) => arr.filter(p => String(p.character_class||'').toLowerCase().includes(cls)); const shamans = byClass(healers,'shaman').slice(0,3); const priests = byClass(healers, 'priest').slice(0,2); const druids  = byClass(healers, 'druid').slice(0,1);
+            const addAward = (label, arr, ptsArr) => { const i = arr.findIndex(p => lower(p.character_name) === nameKey); if (i >= 0 && i < ptsArr.length) { const pts = ptsArr[i] || 0; if (pts) push(label, pts); } };
+            addAward('Shaman Healer', shamans, [25,20,15]); addAward('Priest Healer', priests, [20,15]); addAward('Druid Healer', druids, [15]);
+        }
+        if (!usingEngine && this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length>0) {
+            const sumSnap = (panelKey) => (this.snapshotEntries||[]).reduce((acc, r) => { if (String(r.panel_key) === panelKey && lower(r.character_name) === nameKey) { const pts = Number(r.point_value_edited != null ? r.point_value_edited : r.point_value_original) || 0; return acc + pts; } return acc; }, 0);
+            const tlDmg = sumSnap('too_low_damage'); const tlHeal = sumSnap('too_low_healing'); if (tlDmg) push('Too Low Dmg', tlDmg); if (tlHeal) push('Too Low Heal', tlHeal);
+        } else if (!usingEngine) {
+            const aftMin = this.datasets.raidStats?.stats?.activeFightTime; if (aftMin && this.primaryRoles) { const sec = aftMin * 60; const row = (this.logData||[]).find(p => lower(p.character_name)===nameKey); if (row) { const role2 = String(this.primaryRoles[nameKey]||'').toLowerCase(); if (role2==='dps') { const dps = (parseFloat(row.damage_amount)||0) / sec; let pts = 0; if (dps < 150) pts = -100; else if (dps < 200) pts = -50; else if (dps < 250) pts = -25; if (pts) push('Too Low Dmg', pts); } else if (role2==='healer') { const hps = (parseFloat(row.healing_amount)||0) / sec; let pts = 0; if (hps < 85) pts = -100; else if (hps < 100) pts = -50; else if (hps < 125) pts = -25; if (pts) push('Too Low Heal', pts); } } }
+        }
+        const streakRow = (this.datasets.playerStreaks||[]).find(r=> lower(r.character_name)===nameKey); if (streakRow) { const s = Number(streakRow.player_streak)||0; let pts=0; if(s>=8)pts=15; else if(s===7)pts=12; else if(s===6)pts=9; else if(s===5)pts=6; else if(s===4)pts=3; push('Streak', pts); }
+        const guildHit = (this.datasets.guildMembers||[]).some(r=> lower(r.character_name)===nameKey); if (guildHit) push('Guild Mem', 10);
+        push('Big Buyer', sumFrom(this.datasets.bigBuyerData));
+        const manualGold = usingEngine ? ((this.engineResult?.manual_gold || []).reduce((acc, e) => acc + (lower(e.name||'')===nameKey ? (Number(e.gold)||0) : 0), 0)) : ((this.datasets.manualRewardsData||[]).reduce((acc,e)=>{ if (lower(e.player_name||'')!==nameKey) return acc; const isGold = !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||'')))); return isGold ? acc + (Number(e.points)||0) : acc; }, 0));
+        const manualPts = usingEngine ? 0 : ((this.datasets.manualRewardsData||[]).reduce((acc,e)=>{ if (lower(e.player_name||'')!==nameKey) return acc; const isGold = !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||'')))); return isGold ? acc : acc + (Number(e.points)||0); }, 0));
+        if (!usingEngine && manualPts) push('Manual', manualPts);
+        if (manualGold) items.push({ title:'Manual', pts:0, gold: manualGold, isGoldRow:true });
+        const computedTotalGold = Number(this.playerTotals?.get(nameKey)?.gold || 0);
+        const sumRowGold = items.reduce((acc, it) => acc + (Number(it.gold)||0), 0);
+        const remainder = computedTotalGold - sumRowGold; if (remainder) items.push({ title:'Rounding', pts:0, gold: remainder });
+        const outItems = items.filter(it => it.title !== 'Rounding');
+        return { items: outItems, totalGold: computedTotalGold, totalPoints: Math.round(Number(this.playerTotals?.get(nameKey)?.points || 0)) };
     }
     reconcilePlayersWithLogData(playersData) {
         // Build strictly from WoW log data; ignore non-players; dedupe by name

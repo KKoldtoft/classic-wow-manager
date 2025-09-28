@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Raid Logs Viewer</title>
+  <link rel="stylesheet" href="/style.css?v=frsync-4">
+  <link rel="stylesheet" href="/raidlogs.css?v=frsync-4">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="raidlogs raidlogs-view has-raid-bar">
+  <div class="top-bar">
+    <div class="top-bar-left">
+      <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+      <nav class="top-nav">
+        <a href="/" class="top-nav-link">Home</a>
+        <div class="top-nav-dropdown">
+          <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+            Upcoming Raids <i class="fas fa-chevron-down"></i>
+          </button>
+          <div class="dropdown-menu" id="upcoming-raids-menu">
+            <div class="dropdown-loading">Loading raids...</div>
+          </div>
+        </div>
+        <a href="/guild-members" class="top-nav-link">Guild Members</a>
+        <a href="/attendance" class="top-nav-link">Regular Attendance</a>
+      </nav>
+    </div>
+    <div id="auth-container">
+      <!-- Auth content is loaded by top-bar.js -->
+    </div>
+  </div>
+
+  <!-- Active Raid Bar (shown when raid is selected) -->
+  <div class="raid-bar" id="raid-bar" style="display: none;">
+    <div class="raid-bar-left">
+      <span class="raid-title" id="raid-title">Loading...</span>
+      <nav class="raid-nav">
+        <a href="#" class="raid-nav-link" id="raid-roster-link">
+          <i class="fas fa-users"></i> Roster
+        </a>
+        <a href="#" class="raid-nav-link" id="raid-assignments-link">
+          <i class="fas fa-tasks"></i> Assignments
+        </a>
+        <a href="/raidlogs" class="raid-nav-link active" id="raid-logs-link">
+          <i class="fas fa-chart-line"></i> Raid Logs
+        </a>
+        <a href="/gold" class="raid-nav-link" id="raid-goldpot-link">
+          <i class="fas fa-coins"></i> Gold Pot
+        </a>
+        <a href="/loot" class="raid-nav-link" id="raid-loot-link">
+          <i class="fas fa-shield-alt"></i> Loot
+        </a>
+      </nav>
+    </div>
+    <div class="raid-bar-right">
+      <button class="raid-close-btn" onclick="localStorage.removeItem('activeEventSession'); location.reload();">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+  </div>
+  <div class="container">
+    <!-- Floating Admin Actions (Public view) -->
+    <nav class="floating-admin-actions" id="floating-admin-actions" style="display:none;">
+      <div class="faa-buttons" id="faa-buttons-public">
+        <button class="faa-btn" id="faa-switch-admin" title="Go to admin view"><i class="fas fa-user-shield"></i> Go to Admin view</button>
+        <button class="faa-btn" id="faa-upload-logs-view" title="Upload logs"><i class="fas fa-upload"></i> Upload logs</button>
+      </div>
+    </nav>
+    <div class="page-header" style="display:none;">
+      <h1>Raid Logs</h1>
+      <p id="view-subtitle">Published snapshot</p>
+    </div>
+
+    <div class="loading-indicator" id="loading" style="display:block">
+      <div class="spinner"></div>
+      <p>Loading published raid data...</p>
+    </div>
+
+    <div class="raid-logs-container" id="content" style="display:none">
+      <div class="stats-section scroll-target" id="stats-dashboard">
+        <div class="stats-dashboard" id="dashboard-panel">
+          <div class="stat-card raid-duration">
+            <i class="fas fa-clock stat-icon"></i>
+            <div class="stat-label">Raid Duration</div>
+            <div class="stat-value" id="raid-duration-value">--</div>
+            <div class="stat-detail">Minutes</div>
+          </div>
+          <div class="stat-card bosses-killed">
+            <i class="fas fa-skull stat-icon"></i>
+            <div class="stat-label">Bosses Killed</div>
+            <div class="stat-value" id="bosses-killed-value">--</div>
+            <div class="stat-detail">Boss encounters</div>
+          </div>
+          <div class="stat-card last-boss">
+            <i class="fas fa-trophy stat-icon"></i>
+            <div class="stat-label">Last Boss</div>
+            <div class="stat-value" id="last-boss-value">--</div>
+            <div class="stat-detail" id="last-boss-detail">—</div>
+          </div>
+          <div class="stat-card wow-logs">
+            <i class="fas fa-chart-line stat-icon"></i>
+            <div class="stat-label">WoW Logs</div>
+            <div class="stat-value"><button class="wow-logs-button" id="wow-logs-button" disabled>View Logs</button></div>
+            <div class="stat-detail" id="wow-logs-detail">—</div>
+          </div>
+          <div class="stat-card rpb-archive" id="rpb-archive-card">
+            <i class="fas fa-external-link-alt stat-icon"></i>
+            <div class="stat-label">RPB Archive</div>
+            <div class="stat-value"><button class="rpb-button" id="rpb-archive-button" disabled>View RPB</button></div>
+            <div class="stat-detail" id="rpb-archive-detail">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Manual Rewards and Deductions Panel (viewer) -->
+      <div class="manual-rewards-section scroll-target" id="manual-rewards-section" style="display:none">
+        <div class="section-header">
+          <h2><i class="fas fa-balance-scale"></i> Manual Rewards and Deductions</h2>
+          <p>Published manual rewards and deductions for this event</p>
+        </div>
+        <div class="manual-rewards-content">
+          <div class="manual-rewards-columns">
+            <div class="manual-col" id="manual-rewards-list-rewards"></div>
+            <div class="manual-col" id="manual-rewards-list-deductions"></div>
+          </div>
+          <div class="no-entries-message" id="manual-no-entries" style="display:none">
+            <i class="fas fa-inbox"></i>
+            <p>No manual rewards or deductions have been published yet.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="rankings-container" id="panels"></div>
+    </div>
+  </div>
+
+  <script>
+  // Viewer layout helpers to emulate admin sizing
+  (function(){
+    // Wire floating admin actions (public view: switch to admin, and upload logs)
+    try {
+      const faa = document.getElementById('floating-admin-actions');
+      if (faa) faa.style.display = 'block';
+      const getEventId = () => {
+        try { const parts = window.location.pathname.split('/').filter(Boolean); const idx = parts.indexOf('event'); if (idx>=0 && parts[idx+1]) return parts[idx+1]; } catch {}
+        return localStorage.getItem('activeEventSession');
+      };
+      const eid = getEventId();
+      const toAdmin = document.getElementById('faa-switch-admin');
+      if (toAdmin) toAdmin.onclick = () => { const url = eid ? `/event/${eid}/raidlogs_admin` : '/raidlogs_admin'; window.location.href = url; };
+      const uploadBtn = document.getElementById('faa-upload-logs-view');
+      if (uploadBtn) uploadBtn.onclick = () => { const tgt = eid ? `/event/${eid}/logs` : '/logs'; window.location.href = tgt; };
+    } catch {}
+    const style = document.createElement('style');
+    style.textContent = `
+      body.raidlogs-view .rankings-container { display:flex; gap: 0px 30px; row-gap: 0px; column-gap: 30px; justify-content:center; flex-wrap:wrap; }
+      body.raidlogs-view .rankings-container .rankings-section { flex: 1 1 420px; }
+      /* Viewer-specific icon sizing for all panels */
+      body.raidlogs-view .rankings-section .spec-icon { width: 47px !important; height: 47px !important; }
+      /* God Gamer row spans full width with two equal panels */
+      .god-gamer-row { display:flex; gap:30px; width: 100%; }
+      .god-gamer-row .rankings-section { flex: 0 0 calc((100% - 30px) / 2); }
+      /* Triple row spans full width with three equal panels */
+      .triple-row { display:flex; gap:30px; width: 100%; }
+      .triple-row .rankings-section { flex: 0 0 calc((100% - 60px) / 3); }
+    `;
+    document.head.appendChild(style);
+  })();
+  (function(){
+    function slugToTitle(slug){
+      return slug.replace(/_/g,' ').replace(/\b\w/g, c=>c.toUpperCase());
+    }
+
+    function panelClassForKey(key){
+      switch(String(key||'')){
+        case 'damage': return 'damage';
+        case 'healing': return 'healing';
+        case 'god_gamer_dps': return 'god-gamer-dps-section';
+        case 'god_gamer_healer': return 'god-gamer-healer-section';
+        case 'abilities': return 'abilities-section';
+        case 'mana_potions': return 'mana-potions-section';
+        case 'runes': return 'runes-section';
+        case 'windfury_totems': return 'windfury-section';
+        case 'interrupts': return 'interrupts-section';
+        case 'disarms': return 'disarms-section';
+        case 'sunder': return 'sunder-section';
+        case 'curse_recklessness': return 'curse-section curse-recklessness-section';
+        case 'curse_shadow': return 'curse-section curse-shadow-section';
+        case 'curse_elements': return 'curse-section curse-elements-section';
+        case 'faerie_fire': return 'curse-section faerie-fire-section';
+        case 'scorch': return 'scorch-section';
+        case 'demo_shout': return 'demo-shout-section';
+        case 'polymorph': return 'polymorph-section';
+        case 'power_infusion': return 'power-infusion-section';
+        case 'decurses': return 'decurses-section';
+        case 'void_damage': return 'void-damage-section';
+        case 'frost_resistance': return 'frost-resistance-section';
+        case 'world_buffs_copy': return 'world-buffs-section';
+        case 'too_low_damage': return 'too-low-damage-section';
+        case 'too_low_healing': return 'too-low-healing-section';
+        case 'attendance_streaks': return 'streak-section';
+        case 'guild_members': return 'guild-section';
+        case 'big_buyer': return 'big-buyer-section';
+        default: return '';
+      }
+    }
+
+    function lower(s){ return String(s||'').trim().toLowerCase(); }
+
+    function getCanonicalClass(className){
+      const c = lower(className);
+      if (c.includes('warrior')) return 'warrior';
+      if (c.includes('paladin')) return 'paladin';
+      if (c.includes('hunter')) return 'hunter';
+      if (c.includes('rogue')) return 'rogue';
+      if (c.includes('priest')) return 'priest';
+      if (c.includes('shaman')) return 'shaman';
+      if (c.includes('mage')) return 'mage';
+      if (c.includes('warlock')) return 'warlock';
+      if (c.includes('druid')) return 'druid';
+      return '';
+    }
+
+    function classIconUrl(cls){
+      const k = String(cls||'').toLowerCase();
+      const map = {
+        'warrior':'classicon_warrior','paladin':'classicon_paladin','hunter':'classicon_hunter',
+        'rogue':'classicon_rogue','priest':'classicon_priest','shaman':'classicon_shaman',
+        'mage':'classicon_mage','warlock':'classicon_warlock','druid':'classicon_druid'
+      };
+      const key = map[k] || null;
+      return key ? `https://wow.zamimg.com/images/wow/icons/medium/${key}.jpg` : null;
+    }
+
+    function detectTotemKey(row){
+      try {
+        const k = row && row.aux_json && (row.aux_json.item_key || row.aux_json['item_key']);
+        if (k) return String(k).toLowerCase();
+        const d = String((row.character_details_edited ?? row.character_details ?? row.character_details_original) || '').toLowerCase();
+        if (d.includes('grace')) return 'grace';
+        if (d.includes('strength')) return 'strength';
+        if (d.includes('tranquil') || d.includes('brilliance')) return 'tranquil';
+      } catch {}
+      return 'windfury';
+    }
+
+    function emptyStateHtml(msg){
+      return `<div class="rankings-empty"><p>${msg || 'No one qualify'}</p></div>`;
+    }
+
+    function isValidWoWName(name){
+      try {
+        const s = String(name||'');
+        if (/\d/.test(s)) return false;
+        if (/\s/.test(s)) return false;
+        return true;
+      } catch { return false; }
+    }
+
+    function applyFillPercentages(){
+      try {
+        const sections = document.querySelectorAll('.rankings-section');
+        sections.forEach(section => {
+          const items = Array.from(section.querySelectorAll('.ranking-item'));
+          if (!items.length) return;
+          const values = items.map(item => {
+            try {
+              const details = String(item.querySelector('.character-details')?.textContent || '').replace(/[,\s]/g,'');
+              const matches = details.match(/-?\d+/g);
+              if (!matches || !matches.length) return 0;
+              const val = parseInt(matches[matches.length-1], 10);
+              return isNaN(val) ? 0 : val;
+            } catch { return 0; }
+          });
+          const max = Math.max(1, ...values);
+          items.forEach((item, idx) => {
+            const v = values[idx] || 0;
+            const pct = Math.max(5, Math.round(v / max * 100));
+            const info = item.querySelector('.character-info');
+            if (info) info.style.setProperty('--fill-percentage', pct + '%');
+          });
+        });
+      } catch {}
+    }
+
+    function renderTotemsSection(section, rows){
+      const groups = { windfury: [], grace: [], strength: [], tranquil: [] };
+      (rows||[]).forEach(r=>{ const g=detectTotemKey(r); (groups[g]||(groups[g]=[])).push(r); });
+      const headerHtml = (title, iconUrl, typeKey) => `
+        <div class="totem-subheader">
+          <div class="left"><img src="${iconUrl}" alt="${title}" width="20" height="20"> <span>${title}</span></div>
+          <div class="right"><span class="totem-info-icon" data-info-key="${typeKey}" aria-label="Info" role="button" tabindex="0">?</span></div>
+        </div>`;
+      const iconForType = (k)=>{
+        switch(k){
+          case 'grace': return 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_invisibilitytotem.jpg';
+          case 'strength': return 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_earthbindtotem.jpg';
+          case 'tranquil': return 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_brilliance.jpg';
+          default: return 'https://wow.zamimg.com/images/wow/icons/large/spell_nature_windfury.jpg';
+        }
+      };
+      const titleForType = (k)=>{
+        switch(k){
+          case 'grace': return 'Grace of Air Totem';
+          case 'strength': return 'Strength of Earth Totem';
+          case 'tranquil': return 'Tranquil Air Totem';
+          default: return 'Windfury Totem';
+        }
+      };
+      const buildRow = (row, index)=>{
+        const clsName = String(row.character_class||'').toLowerCase();
+        const details = (row.character_details_edited ?? row.character_details ?? row.character_details_original) || '';
+        const rawPts = (row.point_value_edited ?? row.points ?? row.point_value_original) || 0;
+        const points = Math.round(Number(rawPts||0));
+        const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+        const iconUrlPub = row.aux_json && (row.aux_json.icon_url || row.aux_json['icon_url']);
+        const icon = iconUrlPub || classIconUrl(clsName);
+        return `
+          <div class="ranking-item" data-item-key="${detectTotemKey(row)}">
+            <div class="ranking-number">#${index+1}</div>
+            <div class="character-info ${clsName?('class-'+clsName):'class-unknown'}">
+              ${icon?`<img src="${icon}" class="spec-icon" alt="${clsName}" width="47" height="47">`:''}
+              <div class="character-name ${clsName?('class-'+clsName):''}">${row.character_name||''}</div>
+              <div class="character-details">${details}</div>
+            </div>
+            <div class="performance-amount"><span class="amount-value ${amtClass}">${points}</span></div>
+          </div>`;
+      };
+      const container = document.createElement('div');
+      container.className = 'rankings-list';
+      const order = ['windfury','grace','strength','tranquil'];
+      let renderedCount = 0;
+      order.forEach(key=>{
+        const arr = groups[key]||[];
+        if (!arr.length) return;
+        container.insertAdjacentHTML('beforeend', headerHtml(titleForType(key), iconForType(key), key));
+        const sorted = arr.slice().sort((a,b)=>((b.points||0)-(a.points||0)) || String(a.character_name||'').localeCompare(String(b.character_name||'')));
+        sorted.forEach((row, idx)=>{ container.insertAdjacentHTML('beforeend', buildRow(row, idx)); renderedCount++; });
+      });
+      if (renderedCount === 0) {
+        container.innerHTML = emptyStateHtml();
+      }
+      section.appendChild(container);
+    }
+
+    function getEventId(){
+      try{
+        const parts = window.location.pathname.split('/').filter(Boolean);
+        const idx = parts.indexOf('event');
+        if (idx>=0 && parts[idx+1]) return parts[idx+1];
+      }catch{}
+      return localStorage.getItem('activeEventSession');
+    }
+
+    function classIconUrl(cls){
+      const k = String(cls||'').toLowerCase();
+      const map = {
+        'warrior':'classicon_warrior','paladin':'classicon_paladin','hunter':'classicon_hunter',
+        'rogue':'classicon_rogue','priest':'classicon_priest','shaman':'classicon_shaman',
+        'mage':'classicon_mage','warlock':'classicon_warlock','druid':'classicon_druid'
+      };
+      const key = map[k] || null;
+      return key ? `https://wow.zamimg.com/images/wow/icons/medium/${key}.jpg` : null;
+    }
+
+    // Global map populated from published entries: name(lower) -> canonical class
+    let nameToClassMap = new Map();
+
+    function renderManualRewards(manualEntries){
+      try{
+        const section = document.getElementById('manual-rewards-section');
+        const rewardsEl = document.getElementById('manual-rewards-list-rewards');
+        const dedsEl = document.getElementById('manual-rewards-list-deductions');
+        const noneEl = document.getElementById('manual-no-entries');
+        if (!section || !rewardsEl || !dedsEl) return;
+        const items = (Array.isArray(manualEntries) ? manualEntries : []).filter(e=> isValidWoWName(e.character_name));
+        if (items.length === 0){
+          section.style.display='block';
+          rewardsEl.innerHTML='';
+          dedsEl.innerHTML='';
+          if (noneEl) noneEl.style.display='block';
+          return;
+        }
+        if (noneEl) noneEl.style.display='none';
+        // Split rewards/deductions (enrich class from nameToClassMap when missing)
+        const positives = [];
+        const negatives = [];
+        items.forEach(e=>{
+          const pts = Math.round(Number(e.points||0));
+          const isGold = !!(e.aux_json && (e.aux_json.is_gold===true || e.aux_json.is_gold==='true'));
+          const nm = e.character_name || '';
+          const clsResolved = (e.character_class||'') ? getCanonicalClass(e.character_class) : (nameToClassMap.get(lower(nm)) || '');
+          const row = {
+            name: nm,
+            cls: clsResolved,
+            details: e.character_details || '',
+            pts,
+            isGold
+          };
+          if (pts < 0) negatives.push(row); else positives.push(row);
+        });
+        const itemHtml = (row, index)=>{
+          const amtClass = row.pts>0 ? 'positive' : row.pts<0 ? 'negative' : 'zero';
+          const goldClass = row.isGold ? ' gold-amount' : '';
+          const icon = classIconUrl(row.cls);
+          return `
+            <div class="ranking-item">
+              <div class="ranking-position">#${index+1}</div>
+              <div class="character-info ${row.cls?('class-'+row.cls):'class-unknown'}">
+                ${icon?`<img src="${icon}" class="spec-icon" alt="${row.cls}" width="47" height="47">`:''}
+                <div class="character-name ${row.cls?('class-'+row.cls):''}">${row.name}</div>
+                <div class="character-details">${row.details||''}</div>
+              </div>
+              <div class="performance-amount"><span class="amount-value ${amtClass}${goldClass}">${row.pts>0?('+'+row.pts):row.pts}</span></div>
+            </div>`;
+        };
+        rewardsEl.innerHTML = positives.map((r,i)=>itemHtml(r,i)).join('');
+        dedsEl.innerHTML = negatives.map((r,i)=>itemHtml(r,i)).join('');
+        section.style.display='block';
+      }catch(e){ console.warn('[VIEWER] renderManualRewards failed', e); }
+    }
+
+    // Helper: apply background fill percentages per section
+    function applyFillPercentages(){
+      try {
+        const sections = document.querySelectorAll('.rankings-section');
+        sections.forEach(section => {
+          const items = Array.from(section.querySelectorAll('.ranking-item'));
+          if (!items.length) return;
+          const cls = section.className;
+          const has = (k)=> cls.includes(k);
+          let extractor = null;
+          let cap100 = false;
+          let fixedMax = null;
+          let forceAll100 = false;
+          let sortDesc = false;
+          if (has('damage')) extractor = (item)=> extractLastInt(item);
+          else if (has('healing')) extractor = (item)=> extractLastInt(item);
+          else if (has('too-low-damage-section')) extractor = (item)=> extractLastInt(item);
+          else if (has('too-low-healing-section')) extractor = (item)=> extractLastInt(item);
+          else if (has('guild-section')) forceAll100 = true;
+          else if (has('streak-section')) { extractor = (item)=> extractLastInt(item); fixedMax = 15; sortDesc = true; }
+          else if (has('interrupts-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
+          else if (has('curse-recklessness-section') || has('curse-elements-section') || has('curse-shadow-section') || has('faerie-fire-section')) { extractor = (item)=> extractPercent(item); cap100 = true; }
+          else if (has('mana-potions-section')) extractor = (item)=> extractLastInt(item);
+          else if (has('runes-section')) extractor = (item)=> extractLastInt(item);
+          else if (has('rocket-helmet-section')) forceAll100 = true;
+          else if (has('sunder-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
+          else if (has('disarms-section')) extractor = (item)=> extractLastInt(item);
+          else if (has('windfury-section')) extractor = null;
+          if (forceAll100) { items.forEach(item => { const info=item.querySelector('.character-info'); if (info) info.style.setProperty('--fill-percentage','100%'); }); return; }
+          if (!extractor) return;
+          const values = items.map(item => { try { return extractor(item); } catch { return 0; } });
+          let max = fixedMax != null ? fixedMax : Math.max(1, ...values);
+          if (sortDesc) {
+            try {
+              const list = section.querySelector('.rankings-list');
+              const tuples = items.map((el, i)=>({ el, v: values[i]||0 }));
+              tuples.sort((a,b)=> (b.v - a.v));
+              tuples.forEach((t, i)=>{
+                list.appendChild(t.el);
+                const num = t.el.querySelector('.ranking-number'); if (num) num.textContent = `#${i+1}`;
+                let pct = 0;
+                if (cap100) pct = Math.min(100, Math.round(t.v));
+                else pct = Math.round((t.v / max) * 100);
+                pct = Math.max(5, Math.min(100, pct));
+                const info = t.el.querySelector('.character-info');
+                if (info) info.style.setProperty('--fill-percentage', pct + '%');
+              });
+              return;
+            } catch {}
+          }
+          items.forEach((item, idx) => {
+            const v = values[idx] || 0;
+            let pct = 0;
+            if (cap100) pct = Math.min(100, Math.round(v));
+            else pct = Math.round((v / max) * 100);
+            pct = Math.max(5, Math.min(100, pct));
+            const info = item.querySelector('.character-info');
+            if (info) info.style.setProperty('--fill-percentage', pct + '%');
+          });
+        });
+      } catch {}
+    }
+
+    function extractLastInt(item){
+      const details = String(item.querySelector('.character-details')?.textContent || '');
+      // Remove percent tokens to avoid picking them for non-% panels
+      const cleaned = details.replace(/\d+(?:\.\d+)?\s*%/g, ' ');
+      // Find last number with optional K/M/B suffix
+      const re = /(-?\d[\d,]*(?:\.\d+)?)(?:\s*([kmbKMB]))?/g;
+      let match, lastNum = null, lastSuf = null;
+      while ((match = re.exec(cleaned)) !== null) {
+        lastNum = match[1];
+        lastSuf = match[2] || null;
+      }
+      if (!lastNum) return 0;
+      const base = parseFloat(String(lastNum).replace(/[,]/g, ''));
+      if (isNaN(base)) return 0;
+      let mul = 1;
+      if (lastSuf) {
+        const s = lastSuf.toLowerCase();
+        if (s === 'k') mul = 1e3; else if (s === 'm') mul = 1e6; else if (s === 'b') mul = 1e9;
+      }
+      return base * mul;
+    }
+
+    function extractPercent(item){
+      const details = String(item.querySelector('.character-details')?.textContent || '');
+      const m = details.match(/(\d+(?:\.\d+)?)%/);
+      if (!m) return 0;
+      const val = parseFloat(m[1]);
+      return isNaN(val) ? 0 : val;
+    }
+
+    async function load(){
+      const eventId = getEventId();
+      if (!eventId){
+        document.getElementById('loading').style.display='none';
+        document.getElementById('view-subtitle').textContent = 'No event selected';
+        return;
+      }
+      try { localStorage.setItem('activeEventSession', eventId); } catch {}
+      // Update raid bar links via top-bar.js if available
+      try { if (typeof updateRaidBar === 'function') setTimeout(()=>updateRaidBar(), 0); } catch {}
+      const res = await fetch(`/api/raidlogs/published/${eventId}`);
+      const data = await res.json();
+      console.log('[VIEWER] Published fetch', data);
+      document.getElementById('loading').style.display='none';
+      let header = data && data.header ? data.header : null;
+      let entries = Array.isArray(data && data.entries) ? data.entries : [];
+      // Build name -> class map from published entries
+      try {
+        const votes = new Map(); // name -> Map(class->count)
+        (entries||[]).forEach(r=>{
+          const nm = lower(r.character_name||'');
+          const cls = getCanonicalClass(r.character_class||'');
+          if (!nm || !cls) return;
+          const m = votes.get(nm) || new Map();
+          m.set(cls, (m.get(cls)||0)+1);
+          votes.set(nm, m);
+        });
+        nameToClassMap = new Map();
+        votes.forEach((m, nm)=>{
+          let bestCls = '', bestCnt = -1;
+          m.forEach((cnt, cls)=>{ if (cnt>bestCnt) { bestCnt = cnt; bestCls = cls; } });
+          if (bestCls) nameToClassMap.set(nm, bestCls);
+        });
+      } catch {}
+      // Fallback: if no published header, attempt to read current snapshot entries
+      if (!header) {
+        try {
+          const res2 = await fetch(`/api/rewards-snapshot/${eventId}`);
+          if (res2.ok) {
+            const d2 = await res2.json();
+            if (d2 && d2.success && Array.isArray(d2.data) && d2.data.length) {
+              entries = d2.data;
+              header = { event_id: eventId, version: null, published: false };
+              console.warn('[VIEWER] No published header; showing current snapshot entries instead');
+            }
+          }
+        } catch {}
+      }
+      if (!header){
+        document.getElementById('view-subtitle').textContent = 'No published data yet';
+        return;
+      }
+      document.getElementById('content').style.display='block';
+
+      const h = header;
+      // Header cards
+      const durMin = Number(h.raid_duration_minutes);
+      if (Number.isFinite(durMin) && durMin >= 0){
+        const hours = Math.floor(durMin/60);
+        const minutes = durMin % 60;
+        document.getElementById('raid-duration-value').textContent = hours>0 ? `${hours}h ${minutes}m` : `${durMin}m`;
+      }
+      const bosses = Number(h.bosses_killed);
+      if (Number.isFinite(bosses)){
+        document.getElementById('bosses-killed-value').textContent = bosses;
+      }
+      if (String(h.last_boss||'').length){
+        document.getElementById('last-boss-value').textContent = h.last_boss;
+        document.getElementById('last-boss-detail').textContent = 'Final boss defeated';
+      }
+      if (String(h.wow_logs_url||'').length){
+        const btn = document.getElementById('wow-logs-button');
+        btn.disabled = false;
+        btn.onclick = ()=> window.open(h.wow_logs_url, '_blank');
+        document.getElementById('wow-logs-detail').textContent = 'View detailed logs';
+      }
+      if (String(h.rpb_archive_url||'').length){
+        const btn = document.getElementById('rpb-archive-button');
+        btn.disabled = false;
+        btn.onclick = ()=> window.open(h.rpb_archive_url, '_blank');
+        document.getElementById('rpb-archive-detail').textContent = 'Archive available';
+      }
+
+      // Panels
+      const panelsDiv = document.getElementById('panels');
+      // Extract manual entries and render at top
+      const manual = (entries||[]).filter(r=> String(r.panel_key||'') === 'manual_points');
+      renderManualRewards(manual);
+        const otherEntries = (entries||[]).filter(r=> String(r.panel_key||'') !== 'manual_points').filter(r=> isValidWoWName(r.character_name));
+      const byPanel = {};
+      otherEntries.forEach(r=>{ (byPanel[r.panel_key]=byPanel[r.panel_key]||{name:r.panel_name, rows:[]}).rows.push(r); });
+
+      // First row: God Gamer DPS and Healer
+      const godKeys = ['god_gamer_dps','god_gamer_healer'];
+      const godRow = document.createElement('div');
+      godRow.className = 'rankings-container god-gamer-row';
+      godKeys.forEach((key)=>{
+        const obj = byPanel[key] || { name: slugToTitle(key), rows: [] };
+        const section = document.createElement('div');
+        const cls = panelClassForKey(key);
+        section.className = 'rankings-section' + (cls? (' '+cls) : '');
+        const header = document.createElement('div');
+        header.className = 'section-header';
+        const h2 = document.createElement('h2');
+        h2.textContent = obj.name || slugToTitle(key);
+        header.appendChild(h2);
+        section.appendChild(header);
+        const list = document.createElement('div');
+        list.className = 'rankings-list';
+        const rows = (obj.rows||[]).slice();
+        if (!rows.length) {
+          list.innerHTML = emptyStateHtml();
+        } else {
+          rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+          rows.forEach((row, idx)=>{
+            const item = document.createElement('div');
+            item.className = 'ranking-item';
+            const clsName = (row.character_class||'').toString().toLowerCase();
+            const details = (row.character_details_edited != null ? row.character_details_edited : (row.character_details != null ? row.character_details : (row.character_details_original != null ? row.character_details_original : '')));
+            const rawPts = (row.point_value_edited != null ? row.point_value_edited : (row.points != null ? row.points : (row.point_value_original != null ? row.point_value_original : 0)));
+            const points = Math.round(Number(rawPts||0));
+            const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+            const iconUrlPub = row.aux_json && (row.aux_json.icon_url || row.aux_json['icon_url']);
+            const icon = iconUrlPub || classIconUrl(clsName);
+            item.innerHTML = `
+              <div class=\"ranking-number\">#${idx+1}</div>
+              <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                  <div class=\"character-name ${clsName?('class-'+clsName):''}\">${row.character_name||''}</div>
+                  <div class=\"character-details\">${details}</div>
+                </div>
+                <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
+            list.appendChild(item);
+          });
+        }
+        section.appendChild(list);
+        godRow.appendChild(section);
+        delete byPanel[key];
+      });
+      panelsDiv.appendChild(godRow);
+
+      // Second row: Damage Dealers, Healers, Totems
+      const tripleKeys = ['damage','healing','windfury_totems'];
+      const tripleRow = document.createElement('div');
+      tripleRow.className = 'rankings-container triple-row';
+      tripleKeys.forEach((key)=>{
+        const obj = byPanel[key] || { name: slugToTitle(key), rows: [] };
+        const section = document.createElement('div');
+        const cls = panelClassForKey(key);
+        section.className = 'rankings-section' + (cls? (' '+cls) : '');
+        const header = document.createElement('div');
+        header.className = 'section-header';
+        const h2 = document.createElement('h2');
+        h2.textContent = obj.name || slugToTitle(key);
+        header.appendChild(h2);
+        section.appendChild(header);
+        if (key === 'windfury_totems') {
+          renderTotemsSection(section, obj.rows || []);
+        } else {
+          const list = document.createElement('div');
+          list.className = 'rankings-list';
+          const rows = (obj.rows||[]).slice();
+          if (!rows.length) {
+            list.innerHTML = emptyStateHtml();
+          } else {
+            rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            rows.forEach((row, idx)=>{
+              const item = document.createElement('div');
+              item.className = 'ranking-item';
+              const clsName = (row.character_class||'').toString().toLowerCase();
+              const details = (row.character_details_edited != null ? row.character_details_edited : (row.character_details != null ? row.character_details : (row.character_details_original != null ? row.character_details_original : '')));
+              const rawPts = (row.point_value_edited != null ? row.point_value_edited : (row.points != null ? row.points : (row.point_value_original != null ? row.point_value_original : 0)));
+              const points = Math.round(Number(rawPts||0));
+              const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+              const iconUrlPub2 = row.aux_json && (row.aux_json.icon_url || row.aux_json['icon_url']);
+              const icon = iconUrlPub2 || classIconUrl(clsName);
+              item.innerHTML = `
+                <div class=\"ranking-number\">#${idx+1}</div>
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                  <div class=\"character-name ${clsName?('class-'+clsName):''}\">${row.character_name||''}</div>
+                  <div class=\"character-details\">${details}</div>
+                </div>
+                <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
+              list.appendChild(item);
+            });
+          }
+          section.appendChild(list);
+        }
+        tripleRow.appendChild(section);
+        delete byPanel[key];
+      });
+      if (tripleRow.children.length > 0) panelsDiv.appendChild(tripleRow);
+
+      // Third row: Top Shaman Healers, Top Priest Healers, Top Druid Healer
+      (function(){
+        const keys = ['shaman_healers','priest_healers','druid_healers'];
+        const row = document.createElement('div');
+        row.className = 'rankings-container triple-row';
+        keys.forEach((key)=>{
+          const obj = byPanel[key] || { name: slugToTitle(key), rows: [] };
+          const section = document.createElement('div');
+          const cls = panelClassForKey(key);
+          section.className = 'rankings-section' + (cls? (' '+cls) : '');
+          const header = document.createElement('div');
+          header.className = 'section-header';
+          const h2 = document.createElement('h2');
+          h2.textContent = obj.name || slugToTitle(key);
+          header.appendChild(h2);
+          section.appendChild(header);
+          const list = document.createElement('div');
+          list.className = 'rankings-list';
+          const rows = (obj.rows||[]).slice();
+          if (!rows.length) {
+            list.innerHTML = emptyStateHtml();
+          } else {
+            rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            rows.forEach((rowItem, idx)=>{
+              const item = document.createElement('div');
+              item.className = 'ranking-item';
+              const clsName = (rowItem.character_class||'').toString().toLowerCase();
+              const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
+              const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
+              const points = Math.round(Number(rawPts||0));
+              const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+              const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
+              const icon = iconUrlPub || classIconUrl(clsName);
+              item.innerHTML = `
+                <div class=\"ranking-number\">#${idx+1}</div>
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                  <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
+                  <div class=\"character-details\">${details}</div>
+                </div>
+                <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
+              list.appendChild(item);
+            });
+          }
+          section.appendChild(list);
+          row.appendChild(section);
+          delete byPanel[key];
+        });
+        panelsDiv.appendChild(row);
+      })();
+
+      // Fourth row: Too Low Damage, Too Low Healing
+      (function(){
+        const keys = ['too_low_damage','too_low_healing'];
+        const row = document.createElement('div');
+        row.className = 'rankings-container god-gamer-row';
+        keys.forEach((key)=>{
+          const obj = byPanel[key] || { name: slugToTitle(key), rows: [] };
+          const section = document.createElement('div');
+          const cls = panelClassForKey(key);
+          section.className = 'rankings-section' + (cls? (' '+cls) : '');
+          const header = document.createElement('div');
+          header.className = 'section-header';
+          const h2 = document.createElement('h2');
+          h2.textContent = obj.name || slugToTitle(key);
+          header.appendChild(h2);
+          section.appendChild(header);
+          const list = document.createElement('div');
+          list.className = 'rankings-list';
+          const rows = (obj.rows||[]).slice();
+          if (!rows.length) {
+            list.innerHTML = emptyStateHtml();
+          } else {
+            rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            rows.forEach((rowItem, idx)=>{
+              const item = document.createElement('div');
+              item.className = 'ranking-item';
+              const clsName = (rowItem.character_class||'').toString().toLowerCase();
+              const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
+              const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
+              const points = Math.round(Number(rawPts||0));
+              const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+              const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
+              const icon = iconUrlPub || classIconUrl(clsName);
+              item.innerHTML = `
+                <div class=\"ranking-number\">#${idx+1}</div>
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                  <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
+                  <div class=\"character-details\">${details}</div>
+                </div>
+                <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
+              list.appendChild(item);
+            });
+          }
+          section.appendChild(list);
+          row.appendChild(section);
+          delete byPanel[key];
+        });
+        panelsDiv.appendChild(row);
+      })();
+
+      // Fifth row: Guild Members, Attendance Streak Champions
+      (function(){
+        const keys = ['guild_members','attendance_streaks'];
+        const row = document.createElement('div');
+        row.className = 'rankings-container god-gamer-row';
+        keys.forEach((key)=>{
+          const obj = byPanel[key] || { name: slugToTitle(key), rows: [] };
+          const section = document.createElement('div');
+          const cls = panelClassForKey(key);
+          section.className = 'rankings-section' + (cls? (' '+cls) : '');
+          const header = document.createElement('div');
+          header.className = 'section-header';
+          const h2 = document.createElement('h2');
+          h2.textContent = obj.name || slugToTitle(key);
+          header.appendChild(h2);
+          section.appendChild(header);
+          const list = document.createElement('div');
+          list.className = 'rankings-list';
+          const rows = (obj.rows||[]).slice();
+          if (!rows.length) {
+            list.innerHTML = emptyStateHtml();
+          } else {
+            rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            rows.forEach((rowItem, idx)=>{
+              const item = document.createElement('div');
+              item.className = 'ranking-item';
+              const clsName = (rowItem.character_class||'').toString().toLowerCase();
+              const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
+              const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
+              const points = Math.round(Number(rawPts||0));
+              const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+              const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
+              const icon = iconUrlPub || classIconUrl(clsName);
+              item.innerHTML = `
+                <div class=\"ranking-number\">#${idx+1}</div>
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                  <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
+                  <div class=\"character-details\">${details}</div>
+                </div>
+                <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
+              list.appendChild(item);
+            });
+          }
+          section.appendChild(list);
+          row.appendChild(section);
+          delete byPanel[key];
+        });
+        panelsDiv.appendChild(row);
+      })();
+
+      // Sixth row: Engineering & Holywater, Interrupted spells, World Buffs
+      (function(){
+        const keys = ['abilities','interrupts','world_buffs_copy'];
+        const row = document.createElement('div');
+        row.className = 'rankings-container triple-row';
+        keys.forEach((key)=>{
+          const obj = byPanel[key] || { name: slugToTitle(key), rows: [] };
+          const section = document.createElement('div');
+          const cls = panelClassForKey(key);
+          section.className = 'rankings-section' + (cls? (' '+cls) : '');
+          const header = document.createElement('div');
+          header.className = 'section-header';
+          const h2 = document.createElement('h2');
+          h2.textContent = obj.name || slugToTitle(key);
+          header.appendChild(h2);
+          section.appendChild(header);
+          const list = document.createElement('div');
+          list.className = 'rankings-list';
+          const rows = (obj.rows||[]).slice();
+          if (!rows.length) {
+            list.innerHTML = emptyStateHtml();
+          } else {
+            rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            rows.forEach((rowItem, idx)=>{
+              const item = document.createElement('div');
+              item.className = 'ranking-item';
+              const clsName = (rowItem.character_class||'').toString().toLowerCase();
+              const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
+              const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
+              const points = Math.round(Number(rawPts||0));
+              const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+              const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
+              const icon = iconUrlPub || classIconUrl(clsName);
+              item.innerHTML = `
+                <div class=\"ranking-number\">#${idx+1}</div>
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                  <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
+                  <div class=\"character-details\">${details}</div>
+                </div>
+                <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
+              list.appendChild(item);
+            });
+          }
+          section.appendChild(list);
+          row.appendChild(section);
+          delete byPanel[key];
+        });
+        panelsDiv.appendChild(row);
+      })();
+
+      // Seventh row: Curse Recklessness, Curse of the Elements, Curse of Shadow
+      (function(){
+        const keys = ['curse_recklessness','curse_elements','curse_shadow'];
+        const row = document.createElement('div');
+        row.className = 'rankings-container triple-row';
+        keys.forEach((key)=>{
+          const obj = byPanel[key] || { name: slugToTitle(key), rows: [] };
+          const section = document.createElement('div');
+          const cls = panelClassForKey(key);
+          section.className = 'rankings-section' + (cls? (' '+cls) : '');
+          const header = document.createElement('div');
+          header.className = 'section-header';
+          const h2 = document.createElement('h2');
+          h2.textContent = obj.name || slugToTitle(key);
+          header.appendChild(h2);
+          section.appendChild(header);
+          const list = document.createElement('div');
+          list.className = 'rankings-list';
+          const rows = (obj.rows||[]).slice();
+          if (!rows.length) {
+            list.innerHTML = emptyStateHtml();
+          } else {
+            rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            rows.forEach((rowItem, idx)=>{
+              const item = document.createElement('div');
+              item.className = 'ranking-item';
+              const clsName = (rowItem.character_class||'').toString().toLowerCase();
+              const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
+              const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
+              const points = Math.round(Number(rawPts||0));
+              const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+              const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
+              const icon = iconUrlPub || classIconUrl(clsName);
+              item.innerHTML = `
+                <div class=\"ranking-number\">#${idx+1}</div>
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                  <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
+                  <div class=\"character-details\">${details}</div>
+                </div>
+                <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
+              list.appendChild(item);
+            });
+          }
+          section.appendChild(list);
+          row.appendChild(section);
+          delete byPanel[key];
+        });
+        panelsDiv.appendChild(row);
+      })();
+
+      
+
+      // Eighth row: Faerie Fire, Decurses, Demoralizing Shout
+      (function(){
+        const keys = ['faerie_fire','decurses','demo_shout'];
+        const row = document.createElement('div');
+        row.className = 'rankings-container triple-row';
+        keys.forEach((key)=>{
+          const obj = byPanel[key] || { name: slugToTitle(key), rows: [] };
+          const section = document.createElement('div');
+          const cls = panelClassForKey(key);
+          section.className = 'rankings-section' + (cls? (' '+cls) : '');
+          const header = document.createElement('div');
+          header.className = 'section-header';
+          const h2 = document.createElement('h2');
+          h2.textContent = obj.name || slugToTitle(key);
+          header.appendChild(h2);
+          section.appendChild(header);
+          const list = document.createElement('div');
+          list.className = 'rankings-list';
+          const rows = (obj.rows||[]).slice();
+          if (!rows.length) {
+            list.innerHTML = emptyStateHtml();
+          } else {
+            rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            rows.forEach((rowItem, idx)=>{
+              const item = document.createElement('div');
+              item.className = 'ranking-item';
+              const clsName = (rowItem.character_class||'').toString().toLowerCase();
+              const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
+              const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
+              const points = Math.round(Number(rawPts||0));
+              const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+              const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
+              const icon = iconUrlPub || classIconUrl(clsName);
+              item.innerHTML = `
+                <div class=\"ranking-number\">#${idx+1}</div>
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                  <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
+                  <div class=\"character-details\">${details}</div>
+                </div>
+                <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
+              list.appendChild(item);
+            });
+          }
+          section.appendChild(list);
+          row.appendChild(section);
+          delete byPanel[key];
+        });
+        panelsDiv.appendChild(row);
+      })();
+
+      // Ninth row: Major Mana Potions, Dark or Demonic runes, Goblin Rocket Helmet
+      (function(){
+        const keys = ['mana_potions','runes','rocket_helmet'];
+        const row = document.createElement('div');
+        row.className = 'rankings-container triple-row';
+        keys.forEach((key)=>{
+          const obj = byPanel[key] || { name: slugToTitle(key), rows: [] };
+          const section = document.createElement('div');
+          const cls = panelClassForKey(key);
+          section.className = 'rankings-section' + (cls? (' '+cls) : '');
+          const header = document.createElement('div');
+          header.className = 'section-header';
+          const h2 = document.createElement('h2');
+          h2.textContent = obj.name || slugToTitle(key);
+          header.appendChild(h2);
+          section.appendChild(header);
+          const list = document.createElement('div');
+          list.className = 'rankings-list';
+          const rows = (obj.rows||[]).slice();
+          if (!rows.length) {
+            list.innerHTML = emptyStateHtml();
+          } else {
+            rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            rows.forEach((rowItem, idx)=>{
+              const item = document.createElement('div');
+              item.className = 'ranking-item';
+              const clsName = (rowItem.character_class||'').toString().toLowerCase();
+              const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
+              const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
+              const points = Math.round(Number(rawPts||0));
+              const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+              const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
+              const icon = iconUrlPub || classIconUrl(clsName);
+              item.innerHTML = `
+                <div class=\"ranking-number\">#${idx+1}</div>
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                  <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
+                  <div class=\"character-details\">${details}</div>
+                </div>
+                <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
+              list.appendChild(item);
+            });
+          }
+          section.appendChild(list);
+          row.appendChild(section);
+          delete byPanel[key];
+        });
+        panelsDiv.appendChild(row);
+      })();
+
+      // Tenth row: Sunder Armor, Scorch, Polymorph
+      (function(){
+        const keys = ['sunder','scorch','polymorph'];
+        const row = document.createElement('div');
+        row.className = 'rankings-container triple-row';
+        keys.forEach((key)=>{
+          const obj = byPanel[key] || { name: slugToTitle(key), rows: [] };
+          const section = document.createElement('div');
+          const cls = panelClassForKey(key);
+          section.className = 'rankings-section' + (cls? (' '+cls) : '');
+          const header = document.createElement('div');
+          header.className = 'section-header';
+          const h2 = document.createElement('h2');
+          h2.textContent = obj.name || slugToTitle(key);
+          header.appendChild(h2);
+          section.appendChild(header);
+          const list = document.createElement('div');
+          list.className = 'rankings-list';
+          const rows = (obj.rows||[]).slice();
+          if (!rows.length) {
+            list.innerHTML = emptyStateHtml();
+          } else {
+            rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            rows.forEach((rowItem, idx)=>{
+              const item = document.createElement('div');
+              item.className = 'ranking-item';
+              const clsName = (rowItem.character_class||'').toString().toLowerCase();
+              const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
+              const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
+              const points = Math.round(Number(rawPts||0));
+              const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+              const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
+              const icon = iconUrlPub || classIconUrl(clsName);
+              item.innerHTML = `
+                <div class=\"ranking-number\">#${idx+1}</div>
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                  <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
+                  <div class=\"character-details\">${details}</div>
+                </div>
+                <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
+              list.appendChild(item);
+            });
+          }
+          section.appendChild(list);
+          row.appendChild(section);
+          delete byPanel[key];
+        });
+        panelsDiv.appendChild(row);
+      })();
+
+      // Eleventh row: Disarmed enemies, Avoidable Void Damage
+      (function(){
+        const keys = ['disarms','void_damage'];
+        const row = document.createElement('div');
+        row.className = 'rankings-container god-gamer-row';
+        keys.forEach((key)=>{
+          const obj = byPanel[key] || { name: (key==='void_damage' ? 'Avoidable Void Damage' : slugToTitle(key)), rows: [] };
+          const section = document.createElement('div');
+          const cls = panelClassForKey(key);
+          section.className = 'rankings-section' + (cls? (' '+cls) : '');
+          const header = document.createElement('div');
+          header.className = 'section-header';
+          const h2 = document.createElement('h2');
+          h2.textContent = obj.name || (key==='void_damage' ? 'Avoidable Void Damage' : slugToTitle(key));
+          header.appendChild(h2);
+          section.appendChild(header);
+          const list = document.createElement('div');
+          list.className = 'rankings-list';
+          const rows = (obj.rows||[]).slice();
+          if (!rows.length) {
+            list.innerHTML = (key==='void_damage') ? emptyStateHtml('No players took avoidable void damage!') : emptyStateHtml();
+          } else {
+            rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            rows.forEach((rowItem, idx)=>{
+              const item = document.createElement('div');
+              item.className = 'ranking-item';
+              const clsName = (rowItem.character_class||'').toString().toLowerCase();
+              const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
+              const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
+              const points = Math.round(Number(rawPts||0));
+              const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+              const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
+              const icon = iconUrlPub || classIconUrl(clsName);
+              item.innerHTML = `
+                <div class="ranking-number">#${idx+1}</div>
+                <div class="character-info ${clsName?('class-'+clsName):'class-unknown'}">
+                  ${icon?`<img src="${icon}" class="spec-icon" alt="${clsName}" width="47" height="47">`:''}
+                  <div class="character-name ${clsName?('class-'+clsName):''}">${rowItem.character_name||''}</div>
+                  <div class="character-details">${details}</div>
+                </div>
+                <div class="performance-amount"><span class="amount-value ${amtClass}">${points}</span></div>`;
+              list.appendChild(item);
+            });
+          }
+          section.appendChild(list);
+          row.appendChild(section);
+          delete byPanel[key];
+        });
+        panelsDiv.appendChild(row);
+      })();
+
+      // Twelfth row: Power Infusion, Frost Resistance, Big Buyer Bonus
+      (function(){
+        const keys = ['power_infusion','frost_resistance','big_buyer'];
+        const row = document.createElement('div');
+        row.className = 'rankings-container triple-row';
+        keys.forEach((key)=>{
+          const obj = byPanel[key] || { name: slugToTitle(key), rows: [] };
+          const section = document.createElement('div');
+          const cls = panelClassForKey(key);
+          section.className = 'rankings-section' + (cls? (' '+cls) : '');
+          const header = document.createElement('div');
+          header.className = 'section-header';
+          const h2 = document.createElement('h2');
+          h2.textContent = obj.name || slugToTitle(key);
+          header.appendChild(h2);
+          section.appendChild(header);
+          const list = document.createElement('div');
+          list.className = 'rankings-list';
+          const rows = (obj.rows||[]).slice();
+          if (!rows.length) {
+            list.innerHTML = emptyStateHtml();
+          } else {
+            rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            rows.forEach((rowItem, idx)=>{
+              const item = document.createElement('div');
+              item.className = 'ranking-item';
+              const clsName = (rowItem.character_class||'').toString().toLowerCase();
+              const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
+              const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
+              const points = Math.round(Number(rawPts||0));
+              const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+              const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
+              const icon = iconUrlPub || classIconUrl(clsName);
+              item.innerHTML = `
+                <div class=\"ranking-number\">#${idx+1}</div>
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                  <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
+                  <div class=\"character-details\">${details}</div>
+                </div>
+                <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
+              list.appendChild(item);
+            });
+          }
+          section.appendChild(list);
+          row.appendChild(section);
+          delete byPanel[key];
+        });
+        panelsDiv.appendChild(row);
+      })();
+
+      // Remaining panels
+      Object.entries(byPanel).forEach(([key, obj])=>{
+        if (key === 'base') return; // hide Base panel visually
+        const section = document.createElement('div');
+        const cls = panelClassForKey(key);
+        section.className = 'rankings-section' + (cls? (' '+cls) : '');
+        const header = document.createElement('div');
+        header.className = 'section-header';
+        const h2 = document.createElement('h2');
+        h2.textContent = obj.name || slugToTitle(key);
+        header.appendChild(h2);
+        section.appendChild(header);
+        const list = document.createElement('div');
+        list.className = 'rankings-list';
+        obj.rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+        obj.rows.forEach((row, idx)=>{
+          const item = document.createElement('div');
+          item.className = 'ranking-item';
+          const clsName = (row.character_class||'').toString().toLowerCase();
+          // Prefer edited values when present; fall back to original
+          const details = (row.character_details_edited != null ? row.character_details_edited : (row.character_details != null ? row.character_details : (row.character_details_original != null ? row.character_details_original : '')));
+          const rawPts = (row.point_value_edited != null ? row.point_value_edited : (row.points != null ? row.points : (row.point_value_original != null ? row.point_value_original : 0)));
+          const points = Math.round(Number(rawPts||0));
+          const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+          const icon = classIconUrl(clsName);
+          const iconUrl = row.aux_json && (row.aux_json.icon_url || row.aux_json['icon_url']) ? String(row.aux_json.icon_url || row.aux_json['icon_url']) : '';
+          item.innerHTML = `
+            <div class="ranking-number">#${idx+1}</div>
+            <div class="character-info ${clsName?('class-'+clsName):'class-unknown'}">
+              ${icon?`<img src="${icon}" class="spec-icon" alt="${clsName}" width="43" height="43">`:''}
+              <div class="character-name ${clsName?('class-'+clsName):''}">${row.character_name||''}</div>
+              <div class="character-details">${details}</div>
+            </div>
+            <div class="performance-amount"><span class="amount-value ${amtClass}">${points}</span></div>`;
+          list.appendChild(item);
+        });
+        section.appendChild(list);
+        panelsDiv.appendChild(section);
+      });
+      // Apply background fill percentages per panel rules
+      applyFillPercentages();
+    }
+    load();
+  })();
+  </script>
+  <script src="/top-bar.js?v=frsync-3"></script>
+</body>
+</html>
+

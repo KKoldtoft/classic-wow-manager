@@ -72,43 +72,6 @@
             <a class="join-link" href="https://discord.gg/U3vUpcFtjR" target="_blank" rel="noopener noreferrer">Join 1Principles discord</a>
         </div>
         <h2 id="lootManagementTitle" style="display:none;">Loot Management</h2>
-        
-        <!-- Import section (Management only) -->
-        <div id="import-section" class="import-section" style="display: none;">
-            <h3>Import Gargul Loot Data</h3>
-            <p>Import loot data from Gargul string format. Data will be associated with the current active event.</p>
-            
-            <div class="import-container">
-                <div class="import-options">
-                    <label class="checkbox-container">
-                        <input type="checkbox" id="expandExisting" />
-                        <span class="checkmark"></span>
-                        Expand existing list of items (instead of replacing)
-                    </label>
-                </div>
-                
-                <div class="import-input-container">
-                    <textarea 
-                        id="gargulInput" 
-                        placeholder="Paste your Gargul loot string here...&#10;&#10;Example:&#10;Item,Player,Gold,Wowheadlink&#10;Splinter of Atiesh;Chatgpt;2200;https://classic.wowhead.com/item=22726;https://wow.zamimg.com/images/wow/icons/large/inv_qiraj_jewelblessed.jpg"
-                        rows="8"
-                    ></textarea>
-                </div>
-                
-                <div class="import-actions">
-                    <button id="importButton" class="import-btn">
-                        <i class="fas fa-download"></i>
-                        Import Loot Data
-                    </button>
-                    <button id="clearButton" class="clear-btn">
-                        <i class="fas fa-trash"></i>
-                        Clear Input
-                    </button>
-                </div>
-            </div>
-            
-            <div id="importStatus" class="import-status"></div>
-        </div>
 
         <!-- Loot display section -->
         <div id="loot-section" class="loot-section" style="display: block;">
@@ -151,6 +114,43 @@
                     <p>Loading loot data...</p>
                 </div>
             </div>
+        </div>
+
+        <!-- Import section (Management only) moved to bottom -->
+        <div id="import-section" class="import-section" style="display: none;">
+            <h3>Import Gargul Loot Data</h3>
+            <p>Import loot data from Gargul string format. Data will be associated with the current active event.</p>
+            
+            <div class="import-container">
+                <div class="import-options">
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="expandExisting" />
+                        <span class="checkmark"></span>
+                        Expand existing list of items (instead of replacing)
+                    </label>
+                </div>
+                
+                <div class="import-input-container">
+                    <textarea 
+                        id="gargulInput" 
+                        placeholder="Paste your Gargul loot string here...&#10;&#10;Example:&#10;Item,Player,Gold,Wowheadlink&#10;Splinter of Atiesh;Chatgpt;2200;https://classic.wowhead.com/item=22726;https://wow.zamimg.com/images/wow/icons/large/inv_qiraj_jewelblessed.jpg"
+                        rows="8"
+                    ></textarea>
+                </div>
+                
+                <div class="import-actions">
+                    <button id="importButton" class="import-btn">
+                        <i class="fas fa-download"></i>
+                        Import Loot Data
+                    </button>
+                    <button id="clearButton" class="clear-btn">
+                        <i class="fas fa-trash"></i>
+                        Clear Input
+                    </button>
+                </div>
+            </div>
+            
+            <div id="importStatus" class="import-status"></div>
         </div>
     </div>
 
