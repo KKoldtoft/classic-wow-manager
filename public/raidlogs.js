@@ -3080,7 +3080,7 @@ class RaidLogsManager {
                     return 'windfury';
                 };
                 const enriched = entries.map(e => {
-                    const itemKey = (e.aux_json && (e.aux_json.item_key || e.aux_json['item_key'])) || '';
+                    const itemKey = (e.aux_json && (e.aux_json.item_key || e.aux_json['item_key'] || e.aux_json.itemKeyAttr || e.aux_json['itemKeyAttr'])) || '';
                     const resolvedType = resolveType(itemKey);
                     const tk = canonicalKey(resolvedType);
                     const d = byNameType.get(`${lower(e.character_name)}::${tk}`) || {};
@@ -3090,6 +3090,8 @@ class RaidLogsManager {
                         character_class: 'Shaman',
                         // Prefer snapshot-declared type to avoid cross-type label pollution from dataset mapping
                         totem_type: resolvedType || d.totem_type || 'Windfury Totem',
+                        // carry icon_url through so published viewer can render spell icons
+                        aux_json: { icon_url: (e.aux_json && (e.aux_json.icon_url || e.aux_json['icon_url'])) || undefined },
                         group_attacks_avg: Number(d.group_attacks_avg||0),
                         group_attacks_total: Number(d.group_attacks_total||0),
                         group_attacks_members: d.group_attacks_members || [],

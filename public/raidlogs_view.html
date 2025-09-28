@@ -170,6 +170,7 @@
   })();
   (function(){
     function slugToTitle(slug){
+      if (String(slug) === 'windfury_totems') return 'Totems';
       return slug.replace(/_/g,' ').replace(/\b\w/g, c=>c.toUpperCase());
     }
 
@@ -259,6 +260,15 @@
       } catch { return false; }
     }
 
+    function normalizeSnapshotName(name){
+      try {
+        const raw = String(name||'').trim();
+        let s = raw.replace(/^[\s•\u2022\u00B7\-–—]+/, '');
+        s = s.replace(/\s*\((?:tank\s*)?group\s*\d*\)\s*$/i, '');
+        return s.trim();
+      } catch { return String(name||'').trim(); }
+    }
+
     function applyFillPercentages(){
       try {
         const sections = document.querySelectorAll('.rankings-section');
@@ -287,7 +297,12 @@
 
     function renderTotemsSection(section, rows){
       const groups = { windfury: [], grace: [], strength: [], tranquil: [] };
-      (rows||[]).forEach(r=>{ const g=detectTotemKey(r); (groups[g]||(groups[g]=[])).push(r); });
+      (rows||[]).forEach(r=>{
+        // Normalize name so grouped variants still render
+        r.character_name = normalizeSnapshotName(r.character_name);
+        const g=detectTotemKey(r);
+        (groups[g]||(groups[g]=[])).push(r);
+      });
       const headerHtml = (title, iconUrl, typeKey) => `
         <div class="totem-subheader">
           <div class="left"><img src="${iconUrl}" alt="${title}" width="20" height="20"> <span>${title}</span></div>
@@ -603,9 +618,15 @@
       // Extract manual entries and render at top
       const manual = (entries||[]).filter(r=> String(r.panel_key||'') === 'manual_points');
       renderManualRewards(manual);
-        const otherEntries = (entries||[]).filter(r=> String(r.panel_key||'') !== 'manual_points').filter(r=> isValidWoWName(r.character_name));
+        const otherEntries = (entries||[])
+          .filter(r=> String(r.panel_key||'') !== 'manual_points')
+          .filter(r=> isValidWoWName(normalizeSnapshotName(r.character_name)));
       const byPanel = {};
-      otherEntries.forEach(r=>{ (byPanel[r.panel_key]=byPanel[r.panel_key]||{name:r.panel_name, rows:[]}).rows.push(r); });
+      otherEntries.forEach(r=>{
+        const key = String(r.panel_key||'');
+        const name = (r.panel_name != null && String(r.panel_name).length) ? r.panel_name : slugToTitle(key);
+        (byPanel[key] = byPanel[key] || { name, rows: [] }).rows.push(r);
+      });
 
       // First row: God Gamer DPS and Healer
       const godKeys = ['god_gamer_dps','god_gamer_healer'];
