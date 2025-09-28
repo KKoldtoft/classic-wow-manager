@@ -182,15 +182,46 @@ class RaidLogsManager {
             }
             const publishBtn = document.getElementById('faa-publish');
             if (publishBtn && !publishBtn._wired) {
+                const iconEl = publishBtn.querySelector('i');
+                const updatePublishUi = (pub)=>{
+                    publishBtn.classList.remove('state-published','state-unpublished');
+                    if (pub) {
+                        publishBtn.classList.add('state-published');
+                        publishBtn.title = 'Unpublish data';
+                        publishBtn.innerHTML = `<i class="fas fa-cloud-upload-alt"></i> Unpublish data`;
+                    } else {
+                        publishBtn.classList.add('state-unpublished');
+                        publishBtn.title = 'Publish data';
+                        publishBtn.innerHTML = `<i class="fas fa-cloud-upload-alt"></i> Publish data`;
+                    }
+                };
+                // initial state from header if available
+                setTimeout(()=>{ try { updatePublishUi(!!(this.snapshotHeader && this.snapshotHeader.published)); } catch {} }, 0);
                 publishBtn.addEventListener('click', async () => {
                     if (!this.activeEventId) return;
-                    const ok = confirm('Publish current snapshot to public viewer?');
-                    if (!ok) return;
                     try {
-                        await this.lockSnapshotFromCurrentView();
-                        const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/publish`, { method: 'POST' });
-                        alert(res && res.ok ? 'Published!' : 'Publish failed');
-                    } catch (e) { console.error('Publish error', e); alert('Publish error. See console.'); }
+                        const currentlyPublished = !!(this.snapshotHeader && this.snapshotHeader.published);
+                        if (!currentlyPublished) {
+                            const ok = confirm('Publish current snapshot to public viewer?');
+                            if (!ok) return;
+                            await this.lockSnapshotFromCurrentView();
+                            const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/publish`, { method: 'POST' });
+                            if (res && res.ok) {
+                                this.snapshotHeader = this.snapshotHeader || {}; this.snapshotHeader.published = true;
+                                updatePublishUi(true);
+                                alert('Published!');
+                            } else alert('Publish failed');
+                        } else {
+                            const ok = confirm('Unpublish the current snapshot?');
+                            if (!ok) return;
+                            const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/unpublish`, { method: 'POST' });
+                            if (res && res.ok) {
+                                this.snapshotHeader = this.snapshotHeader || {}; this.snapshotHeader.published = false;
+                                updatePublishUi(false);
+                                alert('Unpublished');
+                            } else alert('Unpublish failed');
+                        }
+                    } catch (e) { console.error('Publish toggle error', e); alert('Error. See console.'); }
                 });
                 publishBtn._wired = true;
             }

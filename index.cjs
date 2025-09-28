@@ -12575,6 +12575,46 @@ app.post('/api/rewards-snapshot/:eventId/publish', requireManagement, async (req
   }
 });
 
+// Unpublish a snapshot: set published=false and clear timestamp/by
+app.post('/api/rewards-snapshot/:eventId/unpublish', requireManagement, async (req, res) => {
+  const { eventId } = req.params;
+  const userId = req.user?.id || null;
+  const userName = req.user?.username || req.user?.global_name || req.user?.display_name || 'unknown';
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    await client.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS published BOOLEAN DEFAULT FALSE`);
+    await client.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1`);
+    await client.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS published_at TIMESTAMP`);
+    await client.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS published_by_id TEXT`);
+    await client.query(`ALTER TABLE rewards_snapshot_events ADD COLUMN IF NOT EXISTS published_by_name TEXT`);
+    await client.query(
+      `INSERT INTO rewards_snapshot_events (event_id, locked_by_id, locked_by_name)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (event_id) DO NOTHING`,
+      [eventId, userId, userName]
+    );
+    await client.query(
+      `UPDATE rewards_snapshot_events
+         SET published = FALSE,
+             published_at = NULL,
+             published_by_id = NULL,
+             published_by_name = NULL,
+             version = COALESCE(version, 1)
+       WHERE event_id = $1`,
+      [eventId]
+    );
+    await client.query('COMMIT');
+    res.json({ success: true });
+  } catch (err) {
+    if (client) try { await client.query('ROLLBACK'); } catch (_) {}
+    res.status(500).json({ success:false, error: err && err.message ? err.message : String(err) });
+  } finally {
+    if (client) client.release();
+  }
+});
+
 // Public read: return published snapshot header + entries for event
 app.get('/api/raidlogs/published/:eventId', async (req, res) => {
   const { eventId } = req.params;

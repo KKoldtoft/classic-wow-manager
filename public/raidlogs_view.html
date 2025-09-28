@@ -65,6 +65,7 @@
     <nav class="floating-admin-actions" id="floating-admin-actions" style="display:none;">
       <div class="faa-buttons" id="faa-buttons-public">
         <button class="faa-btn" id="faa-switch-admin" title="Go to admin view"><i class="fas fa-user-shield"></i> Go to Admin view</button>
+        <button class="faa-btn state-unpublished" id="faa-publish-public" title="Publish data"><i class="fas fa-cloud-upload-alt"></i> Publish data</button>
         <button class="faa-btn" id="faa-upload-logs-view" title="Upload logs"><i class="fas fa-upload"></i> Upload logs</button>
       </div>
     </nav>
@@ -626,6 +627,32 @@
       document.getElementById('loading').style.display='none';
       let header = data && data.header ? data.header : null;
       let entries = Array.isArray(data && data.entries) ? data.entries : [];
+      // Wire publish/unpublish button visibility and state
+      try {
+        const btn = document.getElementById('faa-publish-public');
+        if (btn) {
+          const updateUi = (pub)=>{
+            btn.classList.remove('state-published','state-unpublished');
+            if (pub) { btn.classList.add('state-published'); btn.innerHTML = `<i class="fas fa-cloud-upload-alt"></i> Unpublish data`; btn.title='Unpublish data'; }
+            else { btn.classList.add('state-unpublished'); btn.innerHTML = `<i class="fas fa-cloud-upload-alt"></i> Publish data`; btn.title='Publish data'; }
+          };
+          updateUi(!!header);
+          btn.onclick = async ()=>{
+            try {
+              const eid = getEventId(); if (!eid) return;
+      if (!header) {
+                const ok = confirm('Publish current snapshot to public viewer?'); if (!ok) return;
+                const resp = await fetch(`/api/rewards-snapshot/${eid}/publish`, { method: 'POST' });
+                if (resp && resp.ok) { updateUi(true); location.reload(); } else alert('Publish failed');
+              } else {
+                const ok = confirm('Unpublish the current snapshot?'); if (!ok) return;
+                const resp = await fetch(`/api/rewards-snapshot/${eid}/unpublish`, { method: 'POST' });
+                if (resp && resp.ok) { updateUi(false); location.reload(); } else alert('Unpublish failed');
+              }
+            } catch(e){ alert('Action failed'); }
+          };
+          }
+        } catch {}
       // Build name -> class map from published entries
       try {
         const votes = new Map(); // name -> Map(class->count)
@@ -644,22 +671,11 @@
           if (bestCls) nameToClassMap.set(nm, bestCls);
         });
       } catch {}
-      // Fallback: if no published header, attempt to read current snapshot entries
-      if (!header) {
-        try {
-          const res2 = await fetch(`/api/rewards-snapshot/${eventId}`);
-          if (res2.ok) {
-            const d2 = await res2.json();
-            if (d2 && d2.success && Array.isArray(d2.data) && d2.data.length) {
-              entries = d2.data;
-              header = { event_id: eventId, version: null, published: false };
-              console.warn('[VIEWER] No published header; showing current snapshot entries instead');
-            }
-          }
-        } catch {}
-      }
+      // No fallback when not published: viewer must display nothing
       if (!header){
         document.getElementById('view-subtitle').textContent = 'No published data yet';
+        // hide content when unpublished and stop further rendering
+        try { document.getElementById('content').style.display='none'; } catch {}
         return;
       }
       document.getElementById('content').style.display='block';

@@ -2141,6 +2141,8 @@ body.stats .rankings-container .rankings-section {
     min-width: fit-content;
     z-index: 2;
 }
+.faa-btn.state-published { color: #22c55e; }
+.faa-btn.state-unpublished { color: #ef4444; }
 .faa-btn:first-child { border-radius: 8px 0 0 8px; }
 .faa-btn:last-child { border-radius: 0 8px 8px 0; border-right: none; }
 .faa-btn:only-child { border-radius: 8px; border-right: none; }
