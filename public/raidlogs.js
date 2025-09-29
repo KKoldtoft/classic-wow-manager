@@ -174,7 +174,15 @@ class RaidLogsManager {
         try {
             // Floating Admin Actions wiring (admin view)
             const faa = document.getElementById('floating-admin-actions');
-            if (faa) faa.style.display = 'block';
+            if (faa) {
+                // Only show for Management role
+                try {
+                    this.fetchCurrentUser().then((user)=>{
+                        const canManage = !!(user && user.hasManagementRole);
+                        faa.style.display = canManage ? 'block' : 'none';
+                    }).catch(()=>{ faa.style.display = 'none'; });
+                } catch { faa.style.display = 'none'; }
+            }
             const eid = this.activeEventId || localStorage.getItem('activeEventSession');
             const goPublic = document.getElementById('faa-switch-public');
             if (goPublic) {
@@ -327,6 +335,8 @@ class RaidLogsManager {
     }
     initializeLiveUpdates(){
         try {
+            // Temporarily disabled SSE
+            return;
             // Initialize reconnection state
             if (!this._sseReconnectAttempts) this._sseReconnectAttempts = 0;
             if (!this._sseBaseDelay) this._sseBaseDelay = 2000; // Start with 2 seconds

@@ -142,8 +142,16 @@
   (function(){
     // Wire floating admin actions (public view: switch to admin, and upload logs)
     try {
-      const faa = document.getElementById('floating-admin-actions');
-      if (faa) faa.style.display = 'block';
+    const faa = document.getElementById('floating-admin-actions');
+    if (faa) {
+      // Show only for users with management role
+      try {
+        fetch('/user').then(r=>r.json()).then(u=>{
+          const canManage = !!(u && u.hasManagementRole);
+          faa.style.display = canManage ? 'block' : 'none';
+        }).catch(()=>{ faa.style.display='none'; });
+      } catch { faa.style.display='none'; }
+    }
       const getEventId = () => {
         try { const parts = window.location.pathname.split('/').filter(Boolean); const idx = parts.indexOf('event'); if (idx>=0 && parts[idx+1]) return parts[idx+1]; } catch {}
         return localStorage.getItem('activeEventSession');

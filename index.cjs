@@ -68,8 +68,7 @@ let wclAccessToken = null;
 let wclTokenExpiresAt = 0; // epoch ms
 const reportMetaCache = new Map(); // key: `${apiUrl}::${reportCode}` -> { actorsById, abilitiesById, fetchedAt }
 
-// --- Live View shared state (in-memory) ---
-let activeLive = null; // { reportInput, startCursorMs, currentCursorMs, startedAt, startedBy, stats, buffers }
+// Live View feature removed
 
 async function getWclAccessToken() {
   if (!WCL_CLIENT_ID || !WCL_CLIENT_SECRET) {
@@ -329,6 +328,8 @@ function cleanupSSEConnection(res, topic, ip, heartbeat, idleTimer, maxIdleTimer
 }
 
 app.get('/api/updates/stream', (req, res) => {
+  // Temporarily disabled
+  return res.status(410).json({ error: 'SSE temporarily disabled' });
   if (!req.isAuthenticated || !req.isAuthenticated()) {
     // Allow anonymous read if desired; else enforce auth similar to other pages
     // return res.status(401).end();
@@ -493,6 +494,9 @@ migratePlayerConfirmedLogsTable();
 
     // Initialize rewards snapshot tables (entries + event header)
     initializeRewardsSnapshotTablesOnStartup();
+
+    // Initialize authentication/user tables for local role storage
+    initializeAuthTables();
   })
   .catch(err => {
     console.error('Error connecting to PostgreSQL database:', err.stack);
@@ -514,6 +518,37 @@ async function initializeEventsCacheTable() {
     console.log('✅ Events cache table initialized');
   } catch (error) {
     console.error('❌ Error creating events cache table:', error);
+  }
+}
+
+// Create local user and role tables for Discord-authenticated users
+async function initializeAuthTables() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS discord_users (
+        discord_id VARCHAR(32) PRIMARY KEY,
+        username TEXT,
+        discriminator TEXT,
+        avatar TEXT,
+        email TEXT,
+        last_login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS app_user_roles (
+        discord_id VARCHAR(32) REFERENCES discord_users(discord_id) ON DELETE CASCADE,
+        role_key TEXT NOT NULL,
+        granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        granted_by TEXT,
+        PRIMARY KEY (discord_id, role_key)
+      )`);
+
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_app_user_roles_role ON app_user_roles(role_key)`);
+    console.log('✅ Auth tables initialized (discord_users, app_user_roles)');
+  } catch (error) {
+    console.error('❌ Error creating auth tables:', error);
   }
 }
 
@@ -1286,74 +1321,31 @@ async function initializeRaidDurationsTable() {
     }
 }
 
-// Discord channel name cache and fetching
-const DISCORD_CHANNEL_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
-let discordChannelCache = new Map();
-let discordChannelCacheTime = 0;
-
-// Function to get Discord channel names directly from Discord API
-async function getDiscordChannelNames(guildId) {
-  const now = Date.now();
-  
-  // Check if we have valid cached data
-  if (discordChannelCache.size > 0 && (now - discordChannelCacheTime) < DISCORD_CHANNEL_CACHE_TTL) {
-    console.log('💾 Using cached Discord channel names');
-    return discordChannelCache;
-  }
-  
+// Channel name helpers: prefer database over live Discord API
+async function getChannelNameMapFromDb() {
   try {
-    console.log('🔄 Fetching fresh Discord channel names...');
-    console.log(`🤖 Bot token configured: ${process.env.DISCORD_BOT_TOKEN ? 'Yes' : 'No'}`);
-    
-    if (!process.env.DISCORD_BOT_TOKEN) {
-      console.log('⚠️ No bot token configured - cannot fetch channel names');
-      return new Map();
+    const res = await pool.query(`SELECT channel_id, channel_name FROM channel_filters WHERE channel_name IS NOT NULL AND channel_name <> ''`);
+    const map = new Map();
+    for (const row of res.rows) {
+      map.set(String(row.channel_id), String(row.channel_name));
     }
-    
-    const response = await axios.get(
-      `https://discord.com/api/v10/guilds/${guildId}/channels`,
-      {
-        headers: {
-          'Authorization': `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-          'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
-        },
-        timeout: 10000
-      }
-    );
-    
-    console.log(`📊 Discord API response: ${response.data.length} channels returned`);
-    
-    // Build channel mapping
-    const newChannelCache = new Map();
-    response.data.forEach(channel => {
-      if (channel.type === 0) { // Text channels only
-        newChannelCache.set(channel.id, channel.name);
-        if (newChannelCache.size <= 5) {
-          console.log(`📍 Channel mapping: ${channel.id} → ${channel.name}`);
-        }
-      }
-    });
-    
-    // Update cache
-    discordChannelCache = newChannelCache;
-    discordChannelCacheTime = now;
-    
-    console.log(`✅ Cached ${discordChannelCache.size} Discord channel names`);
-    return discordChannelCache;
-    
-  } catch (error) {
-    console.error('❌ Error fetching Discord channel names:', error.message);
-    console.error('❌ Full error:', error.response ? error.response.data : error);
-    
-    // Return existing cache if available, even if expired
-    if (discordChannelCache.size > 0) {
-      console.log('⚠️ Using stale Discord channel cache due to API error');
-      return discordChannelCache;
-    }
-    
-    console.log('🚫 No Discord channel names available - will use fallback format');
+    return map;
+  } catch (e) {
+    console.warn('⚠️ Could not load channel names from DB:', e.message);
     return new Map();
   }
+}
+
+async function upsertChannelName(channelId, channelName) {
+  try {
+    if (!channelId || !channelName) return;
+    await pool.query(`
+      INSERT INTO channel_filters (channel_id, channel_name, is_visible, updated_at)
+      VALUES ($1, $2, TRUE, CURRENT_TIMESTAMP)
+      ON CONFLICT (channel_id)
+      DO UPDATE SET channel_name = EXCLUDED.channel_name, updated_at = CURRENT_TIMESTAMP
+    `, [String(channelId), String(channelName)]);
+  } catch (_) {}
 }
 
 // Function to enrich events with Discord channel names (MUCH MORE RELIABLE)
@@ -1362,15 +1354,17 @@ async function enrichEventsWithDiscordChannelNames(events) {
   
   console.log(`🔄 Starting Discord channel enrichment for ${events.length} events`);
   
-  // Get channel names from Discord API
-  const channelNameMap = await getDiscordChannelNames(discordGuildId);
-  console.log(`📊 Discord API returned ${channelNameMap.size} channel mappings`);
+  // Get channel names from DB (no live Discord calls)
+  const channelNameMap = await getChannelNameMapFromDb();
+  console.log(`💾 DB provided ${channelNameMap.size} channel mappings`);
   
   // Debug: Show first few channel mappings
   const sampleChannels = Array.from(channelNameMap.entries()).slice(0, 3);
   console.log('📍 Sample channel mappings:', sampleChannels);
   
   // Apply channel names to events
+  let usedDbCount = 0;
+  let fallbackCount = 0;
   const enrichedEvents = events.map(event => {
     const channelId = event.channelId || event.channelID || event.channel_id || event.discordChannelId;
     
@@ -1380,6 +1374,7 @@ async function enrichEventsWithDiscordChannelNames(events) {
     }
     
     if (channelId && channelNameMap.has(channelId)) {
+      usedDbCount++;
       return {
         ...event,
         channelName: channelNameMap.get(channelId), // No # prefix here - frontend adds it
@@ -1388,14 +1383,16 @@ async function enrichEventsWithDiscordChannelNames(events) {
     }
     
     // Fallback for unknown channels - no # prefix
+    if (channelId && !channelNameMap.has(channelId)) fallbackCount++;
     return {
       ...event,
-      channelName: channelId ? `channel-${channelId.slice(-4)}` : null,
+      channelName: event.channelName || (channelId ? `channel-${channelId.slice(-4)}` : null),
       channelId: channelId || null
     };
   });
   
-  console.log(`🎯 Enriched ${enrichedEvents.length} events with Discord channel names`);
+  console.log(`🎯 Enriched ${enrichedEvents.length} events with channel names from DB or fallbacks`);
+  console.log(`   ↳ usedDbCount=${usedDbCount}, fallbackCount=${fallbackCount}`);
   return enrichedEvents;
 }
 
@@ -1473,7 +1470,7 @@ passport.use(new DiscordStrategy({
     clientID: process.env.DISCORD_CLIENT_ID,
     clientSecret: process.env.DISCORD_CLIENT_SECRET,
     callbackURL: `${process.env.APP_BASE_URL}/auth/discord/callback`,
-    scope: ['identify', 'guilds', 'guilds.members.read']
+    scope: ['identify']
 },
 (accessToken, refreshToken, profile, done) => {
     // Store the access token in the profile for later use
@@ -1495,7 +1492,27 @@ const HELPER_ROLE_NAME = (process.env.HELPER_ROLE_NAME || 'Helper');
 const MANAGEMENT_ROLE_ID = process.env.MANAGEMENT_ROLE_ID || null;
 const HELPER_ROLE_ID = process.env.HELPER_ROLE_ID || null;
 
-// Enhanced Discord API function with proper backoff for all error types
+// Local DB-backed role helpers (preferred)
+async function userHasAppRole(discordId, roleKey) {
+    try {
+        if (!discordId) return false;
+        const res = await pool.query(`SELECT 1 FROM app_user_roles WHERE discord_id = $1 AND role_key = $2 LIMIT 1`, [String(discordId), String(roleKey)]);
+        return res && res.rowCount > 0;
+    } catch (_) { return false; }
+}
+
+async function hasManagementRoleById(discordId) { return userHasAppRole(discordId, 'management'); }
+async function hasHelperRoleById(discordId) { return userHasAppRole(discordId, 'helper'); }
+
+async function getUserPermissionsFromDb(discordId) {
+    const [isMgmt, isHelper] = await Promise.all([
+        hasManagementRoleById(discordId),
+        hasHelperRoleById(discordId)
+    ]);
+    return { hasManagementRole: !!isMgmt, hasHelperRole: !!isHelper };
+}
+
+// Legacy Discord role-fetch helpers (no longer used)
 async function discordApiCallWithBackoff(url, options = {}, retryOptions = {}) {
     const maxRetries = retryOptions.maxRetries || 3;
     const baseDelay = retryOptions.baseDelay || 1000;
@@ -1823,7 +1840,7 @@ async function requireManagement(req, res, next) {
         return res.status(401).json({ message: 'Authentication required' });
     }
 
-    const hasRole = await hasManagementRole(req.user.accessToken);
+    const hasRole = await hasManagementRoleById(req.user.id);
     if (!hasRole) {
         return res.status(403).json({ message: 'Management role required' });
     }
@@ -1836,8 +1853,8 @@ async function requireRosterManager(req, res, next) {
     if (!req.isAuthenticated()) {
         return res.status(401).json({ message: 'Authentication required' });
     }
-    const isMgmt = await hasManagementRole(req.user.accessToken);
-    const isHelper = await hasHelperRole(req.user.accessToken);
+    const isMgmt = await hasManagementRoleById(req.user.id);
+    const isHelper = await hasHelperRoleById(req.user.id);
     if (!isMgmt && !isHelper) {
         return res.status(403).json({ message: 'Management or Helper role required' });
     }
@@ -1921,7 +1938,7 @@ app.get('/raidlogs_admin', async (req, res) => {
     return res.redirect('/');
   }
   try {
-    const ok = await hasManagementRole(req.user.accessToken);
+    const ok = await hasManagementRoleById(req.user.id);
     if (!ok) return res.status(403).send('Management role required');
   } catch {
     return res.status(403).send('Management role required');
@@ -1943,7 +1960,7 @@ app.get('/event/:eventId/raidlogs', async (req, res) => {
 app.get('/event/:eventId/raidlogs_admin', async (req, res) => {
   if (!req.isAuthenticated()) return res.redirect('/');
   try {
-    const ok = await hasManagementRole(req.user.accessToken);
+    const ok = await hasManagementRoleById(req.user.id);
     if (!ok) return res.status(403).send('Management role required');
   } catch { return res.status(403).send('Management role required'); }
   return res.sendFile(path.join(__dirname, 'public', 'raidlogs.html'));
@@ -1966,14 +1983,7 @@ app.get('/itemlog', (req, res) => {
 });
 
 // Minimal live view page
-app.get('/live', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'live.html'));
-});
-
-// Live host page (management controls)
-app.get('/livehost', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'livehost.html'));
-});
+// Live pages removed
 
 // Simple Discord test page
 app.get('/discordtest', (req, res) => {
@@ -2009,14 +2019,38 @@ app.get('/auth/discord/callback',
     failureRedirect: '/'
   }),
   (req, res) => {
-    // Prefer the OAuth state param as source of truth for return path
-    const state = typeof req.query.state === 'string' ? req.query.state : '';
-    let destination = '/';
-    try {
-      const decoded = decodeURIComponent(state || '');
-      if (decoded && decoded.startsWith('/')) destination = decoded;
-    } catch (_) {}
-    res.redirect(destination);
+    (async () => {
+      try {
+        // Upsert the authenticated Discord user locally
+        const u = req.user || {};
+        const discordId = String(u.id || '');
+        if (discordId) {
+          await pool.query(`
+            INSERT INTO discord_users (discord_id, username, discriminator, avatar, email, last_login_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (discord_id)
+            DO UPDATE SET
+              username = EXCLUDED.username,
+              discriminator = EXCLUDED.discriminator,
+              avatar = EXCLUDED.avatar,
+              email = EXCLUDED.email,
+              last_login_at = CURRENT_TIMESTAMP,
+              updated_at = CURRENT_TIMESTAMP
+          `, [discordId, u.username || null, u.discriminator || null, u.avatar || null, u.email || null]);
+        }
+      } catch (e) {
+        console.error('⚠️ Failed to upsert discord user:', e.message);
+      } finally {
+        // Prefer the OAuth state param as source of truth for return path
+        const state = typeof req.query.state === 'string' ? req.query.state : '';
+        let destination = '/';
+        try {
+          const decoded = decodeURIComponent(state || '');
+          if (decoded && decoded.startsWith('/')) destination = decoded;
+        } catch (_) {}
+        res.redirect(destination);
+      }
+    })();
   }
 );
 
@@ -2788,14 +2822,8 @@ app.get('/auth/logout', (req, res, next) => {
 app.get('/user', async (req, res) => {
   if (req.isAuthenticated()) {
     try {
-      // Optional: allow forcing a refresh of role caches via query param
-      if (String(req.query.refresh || '') === '1') {
-        clearRoleCachesForAccessToken(req.user.accessToken);
-        userInfoCache.delete(req.user.accessToken);
-      }
-      // Check if user has Management/Helper roles in one combined fetch
-      console.log(`👤 Checking permissions for user ${req.user.username}`);
-      const perms = await getUserPermissionsCombined(req.user.accessToken);
+      // Local DB roles only
+      const perms = await getUserPermissionsFromDb(req.user.id);
       const isManagement = !!(perms && perms.hasManagementRole);
       const isHelper = !!(perms && perms.hasHelperRole);
 
@@ -2815,7 +2843,6 @@ app.get('/user', async (req, res) => {
       });
     } catch (error) {
       console.error('Error fetching user permissions:', error);
-      // Fallback to basic user info if role fetching fails
       res.json({
         loggedIn: true,
         id: req.user.id,
@@ -2983,23 +3010,7 @@ app.get('/api/wcl/token-status', async (req, res) => {
   }
 });
 
-// Live session control and status
-app.get('/api/wcl/live/status', (req, res) => {
-  res.json({ active: !!activeLive, live: activeLive });
-});
-
-// Snapshot of current host aggregates for viewers to mirror
-app.get('/api/wcl/live/snapshot', (req, res) => {
-  if (!activeLive) return res.json({ active: false });
-  // Return a shallow copy to avoid accidental mutations
-  const snapshot = {
-    reportInput: activeLive.reportInput,
-    startCursorMs: activeLive.startCursorMs,
-    currentCursorMs: activeLive.currentCursorMs,
-    stats: activeLive.stats
-  };
-  res.json({ active: true, live: snapshot });
-});
+// Live API removed
 
 // Map of assigned characters for an event: name -> { class, spec, color, party_id, slot_id }
 app.get('/api/events/:eventId/assigned-characters', async (req, res) => {
@@ -3031,69 +3042,7 @@ app.get('/api/events/:eventId/assigned-characters', async (req, res) => {
   }
 });
 
-app.post('/api/wcl/live/start', async (req, res) => {
-  try {
-    if (!req.isAuthenticated()) return res.status(401).json({ error: 'Authentication required' });
-    const isMgmt = await hasManagementRole(req.user.accessToken);
-    if (!isMgmt) return res.status(403).json({ error: 'Management role required' });
-
-    const reportInput = String(req.body && req.body.report || '');
-    const reportCode = extractWclReportCode(reportInput);
-    if (!reportCode) return res.status(400).json({ error: 'Invalid report parameter' });
-    const startCursorMs = Math.max(0, Number(req.body && req.body.startCursorMs || 0));
-    const eventIdRaw = req.body && req.body.eventId ? String(req.body.eventId) : null;
-    let assignedSet = null;
-    let assignedColors = null; // name(lower) -> color hex
-    if (eventIdRaw) {
-      try {
-        const result = await pool.query(
-          `SELECT assigned_char_name, player_color FROM roster_overrides WHERE event_id = $1 AND assigned_char_name IS NOT NULL`,
-          [eventIdRaw]
-        );
-        assignedSet = new Set();
-        assignedColors = {};
-        for (const row of result.rows) {
-          const nm = String(row.assigned_char_name || '').toLowerCase();
-          if (!nm) continue;
-          assignedSet.add(nm);
-          if (row.player_color) assignedColors[nm] = row.player_color;
-        }
-      } catch (_) {}
-    }
-    activeLive = {
-      reportInput,
-      startCursorMs,
-      currentCursorMs: startCursorMs,
-      startedAt: Date.now(),
-      startedBy: { id: req.user.id, username: req.user.username },
-      eventId: eventIdRaw,
-      assignedSet,
-      assignedColors,
-      stats: {
-        totalBySource: {}, // name -> { dmg, heal, color }
-        encounter: { name: null, bySource: {} },
-        deaths: [], // [{ name, ts, color, lines: [{ts,type,source,ability,amount}], key }]
-        encounters: [] // [{ name, type: 'start'|'end', ts }]
-      },
-      buffers: {} // name -> [{ ts, type, source, ability, amount }]
-    };
-    res.json({ ok: true, live: activeLive });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to start live', details: String(err && err.message ? err.message : err) });
-  }
-});
-
-app.post('/api/wcl/live/stop', async (req, res) => {
-  try {
-    if (!req.isAuthenticated()) return res.status(401).json({ error: 'Authentication required' });
-    const isMgmt = await hasManagementRole(req.user.accessToken);
-    if (!isMgmt) return res.status(403).json({ error: 'Management role required' });
-    activeLive = null;
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to stop live', details: String(err && err.message ? err.message : err) });
-  }
-});
+// Live control endpoints removed
 
 // Fights listing for a report
 app.get('/api/wcl/fights', async (req, res) => {
@@ -4084,7 +4033,7 @@ app.get('/api/user/permissions', async (req, res) => {
   }
 
   try {
-    const isManagement = await hasManagementRole(req.user.accessToken);
+    const isManagement = await hasManagementRoleById(req.user.id);
 
     res.json({
       hasManagementRole: isManagement,
@@ -4312,7 +4261,7 @@ app.post('/api/assignments/:eventId/entry/accept', express.json(), async (req, r
   try {
     // Determine if acting user is manager
     let isManager = false;
-    try { isManager = await hasManagementRole(req.user.accessToken); } catch {}
+    try { isManager = await hasManagementRoleById(req.user.id); } catch {}
     // Verify ownership: character_name in roster_overrides for this event must have discord_user_id == acting user
     const ownerRes = await pool.query(
       `SELECT discord_user_id FROM roster_overrides WHERE event_id = $1 AND LOWER(assigned_char_name) = LOWER($2) LIMIT 1`,
@@ -4762,6 +4711,97 @@ app.get('/api/management/users', requireManagement, async (req, res) => {
   } catch (error) {
     console.error('Error fetching users:', error.stack);
     res.status(500).json({ message: 'Error fetching users from the database.' });
+  }
+});
+
+// Management-only: list app roles (management/helper)
+app.get('/api/management/app-roles', requireManagement, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT r.discord_id, r.role_key, u.username, u.discriminator
+      FROM app_user_roles r
+      LEFT JOIN discord_users u ON u.discord_id = r.discord_id
+      ORDER BY r.role_key, r.discord_id
+    `);
+    res.json({ ok: true, roles: rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e && e.message ? e.message : String(e) });
+  }
+});
+
+// Bootstrap endpoint: If no management users exist, allow the currently logged-in user to become management once
+app.post('/api/bootstrap/grant-management-to-self', async (req, res) => {
+  try {
+    if (!req.isAuthenticated || !req.isAuthenticated()) {
+      return res.status(401).json({ ok: false, error: 'Authentication required' });
+    }
+    const { rows } = await pool.query(`SELECT 1 FROM app_user_roles WHERE role_key = 'management' LIMIT 1`);
+    if (rows && rows.length > 0) {
+      return res.status(400).json({ ok: false, error: 'Management already exists' });
+    }
+    await pool.query(`
+      INSERT INTO app_user_roles (discord_id, role_key, granted_at, granted_by)
+      VALUES ($1, 'management', CURRENT_TIMESTAMP, $2)
+      ON CONFLICT (discord_id, role_key) DO NOTHING
+    `, [String(req.user.id), String(req.user.id)]);
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e && e.message ? e.message : String(e) });
+  }
+});
+
+// Management-only: grant a role to a user
+app.post('/api/management/app-roles/grant', requireManagement, express.json(), async (req, res) => {
+  const { discordId, roleKey } = req.body || {};
+  if (!discordId || !roleKey) return res.status(400).json({ ok: false, error: 'discordId and roleKey required' });
+  try {
+    // Ensure target user exists in discord_users to satisfy FK
+    await pool.query(`
+      INSERT INTO discord_users (discord_id, created_at, updated_at)
+      VALUES ($1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT (discord_id) DO NOTHING
+    `, [String(discordId)]);
+
+    await pool.query(`
+      INSERT INTO app_user_roles (discord_id, role_key, granted_at, granted_by)
+      VALUES ($1, $2, CURRENT_TIMESTAMP, $3)
+      ON CONFLICT (discord_id, role_key) DO NOTHING
+    `, [String(discordId), String(roleKey), String(req.user && req.user.id || '')]);
+    try { const c = await pool.connect(); await auditRoleChange(c, 'grant', discordId, roleKey, req.user && req.user.id); c.release(); } catch(_) {}
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e && e.message ? e.message : String(e) });
+  }
+});
+
+// Optional: audit role changes
+async function auditRoleChange(client, action, targetDiscordId, roleKey, actorDiscordId) {
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS role_audit (
+        id SERIAL PRIMARY KEY,
+        action TEXT NOT NULL,
+        discord_id TEXT NOT NULL,
+        role_key TEXT NOT NULL,
+        actor_discord_id TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`);
+    await client.query(`INSERT INTO role_audit (action, discord_id, role_key, actor_discord_id) VALUES ($1,$2,$3,$4)`, [action, String(targetDiscordId), String(roleKey), String(actorDiscordId||'')]);
+  } catch(_) {}
+}
+
+// Management-only: revoke a role from a user
+app.post('/api/management/app-roles/revoke', requireManagement, express.json(), async (req, res) => {
+  const { discordId, roleKey } = req.body || {};
+  if (!discordId || !roleKey) return res.status(400).json({ ok: false, error: 'discordId and roleKey required' });
+  try {
+    await pool.query(`
+      DELETE FROM app_user_roles WHERE discord_id = $1 AND role_key = $2
+    `, [String(discordId), String(roleKey)]);
+    try { const c = await pool.connect(); await auditRoleChange(c, 'revoke', discordId, roleKey, req.user && req.user.id); c.release(); } catch(_) {}
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e && e.message ? e.message : String(e) });
   }
 });
 
@@ -5322,7 +5362,7 @@ app.get('/api/debug/clear-cache', async (req, res) => {
     console.log('🧹 All caches cleared (guild roles + user member data)');
 
     // Check roles again with fresh data
-    const isManagement = await hasManagementRole(req.user.accessToken);
+    const isManagement = await hasManagementRoleById(req.user.id);
     
     res.json({
       message: 'All caches cleared and roles rechecked',
@@ -8197,7 +8237,7 @@ app.get('/api/admin/class-spec-mappings', async (req, res) => {
     if (!req.user) {
         return res.status(401).json({ success: false, message: 'Authentication required' });
     }
-    const hasRole = await hasManagementRole(req.user.accessToken);
+    const hasRole = await hasManagementRoleById(req.user.id);
     if (!hasRole) {
         return res.status(403).json({ success: false, message: 'Management role required' });
     }
@@ -15926,7 +15966,7 @@ app.get('/api/admin/channel-filters', async (req, res) => {
   }
 
   // Check if user has management role
-  const hasRole = await hasManagementRole(req.user.accessToken);
+  const hasRole = await hasManagementRoleById(req.user.id);
   if (!hasRole) {
     return res.status(403).json({ success: false, message: 'Management role required' });
   }
@@ -15949,8 +15989,8 @@ app.get('/api/admin/channel-filters', async (req, res) => {
 
     // Get both upcoming and completed events to find all channels with raids
     const [upcomingEventsResponse, historicEventsResponse] = await Promise.all([
-              fetchEventsFromAPI().then(events => enrichEventsWithDiscordChannelNames(events)),
-        getCachedHistoricEvents() || fetchHistoricEventsFromAPI().then(events => enrichHistoricEventsWithDiscordChannelNames(events))
+      fetchEventsFromAPI().then(events => enrichEventsWithDiscordChannelNames(events)),
+      (getCachedHistoricEvents() || fetchHistoricEventsFromAPI().then(events => enrichHistoricEventsWithDiscordChannelNames(events)))
     ]);
     
     // Filter to upcoming events only for upcoming
@@ -16009,7 +16049,7 @@ app.get('/api/admin/channel-filters', async (req, res) => {
     console.log(`📊 Extracted ${channelMap.size} unique channels from both upcoming and completed events`);
 
     // Get existing filter settings from database
-    const filterResult = await pool.query('SELECT channel_id, is_visible, is_nax, webhook_url FROM channel_filters');
+    const filterResult = await pool.query('SELECT channel_id, is_visible, is_nax, webhook_url, channel_name FROM channel_filters');
     const existingFilters = new Map();
     filterResult.rows.forEach(row => {
       existingFilters.set(row.channel_id, { is_visible: row.is_visible, is_nax: row.is_nax, webhook_url: row.webhook_url || null });
@@ -16020,6 +16060,7 @@ app.get('/api/admin/channel-filters', async (req, res) => {
       const existing = existingFilters.get(channel.channel_id);
       return {
         ...channel,
+        channel_name: (existing && existing.channel_name) ? existing.channel_name : channel.channel_name,
         raid_count: (channel.upcoming_count || 0) + (channel.historic_count || 0), // Total count
         is_visible: existing ? existing.is_visible : true, // Default to visible for new channels
         is_nax: existing ? !!existing.is_nax : false,
@@ -16030,9 +16071,12 @@ app.get('/api/admin/channel-filters', async (req, res) => {
     // Sort by channel name
     channels.sort((a, b) => (a.channel_name || '').localeCompare(b.channel_name || ''));
 
+    // Diagnostics: counts of DB names vs fallbacks for transparency
+    const diag = { total: channels.length, withName: channels.filter(c=>c.channel_name && c.channel_name.trim()).length };
     res.json({
       success: true,
-      channels: channels
+      channels: channels,
+      diagnostics: diag
     });
 
   } catch (error) {
@@ -16051,7 +16095,7 @@ app.post('/api/admin/channel-filters', async (req, res) => {
   }
 
   // Check if user has management role
-  const hasRole = await hasManagementRole(req.user.accessToken);
+  const hasRole = await hasManagementRoleById(req.user.id);
   if (!hasRole) {
     return res.status(403).json({ success: false, message: 'Management role required' });
   }
@@ -16118,6 +16162,68 @@ app.post('/api/admin/channel-filters', async (req, res) => {
       success: false,
       message: 'Error saving channel filter settings'
     });
+  }
+});
+
+// Admin: Refresh channel names by scanning stored events and upserting into channel_filters
+app.post('/api/admin/channel-names/refresh', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+
+  const isMgmt = await hasManagementRoleById(req.user.id);
+  if (!isMgmt) {
+    return res.status(403).json({ success: false, message: 'Management role required' });
+  }
+
+  let client;
+  try {
+    client = await pool.connect();
+
+    // Ensure table exists
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS channel_filters (
+        channel_id TEXT PRIMARY KEY,
+        channel_name TEXT,
+        is_visible BOOLEAN DEFAULT true,
+        is_nax BOOLEAN DEFAULT false,
+        webhook_url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Gather channel_id -> channel_name from cached Raid-Helper events
+    const rows = await client.query(`
+      SELECT DISTINCT 
+        (event_data->>'channelId') AS channel_id,
+        (event_data->>'channelName') AS channel_name
+      FROM raid_helper_events_cache
+      WHERE (event_data->>'channelId') IS NOT NULL AND (event_data->>'channelName') IS NOT NULL
+    `);
+
+    let upserts = 0;
+    for (const r of rows.rows) {
+      const channelId = (r.channel_id || '').trim();
+      const channelName = (r.channel_name || '').trim();
+      if (!channelId || !channelName) continue;
+      await client.query(`
+        INSERT INTO channel_filters (channel_id, channel_name, is_visible, updated_at)
+        VALUES ($1, $2, TRUE, CURRENT_TIMESTAMP)
+        ON CONFLICT (channel_id) DO UPDATE SET channel_name = EXCLUDED.channel_name, updated_at = CURRENT_TIMESTAMP
+      `, [channelId, channelName]);
+      upserts++;
+    }
+
+    // Clear events cache so admin list reflects updated names
+    try { await client.query('DELETE FROM events_cache WHERE cache_key = $1', [EVENTS_CACHE_KEY]); } catch (_){ }
+
+    res.json({ success: true, upserts });
+  } catch (error) {
+    console.error('Error refreshing channel names:', error);
+    res.status(500).json({ success: false, message: 'Error refreshing channel names' });
+  } finally {
+    if (client) client.release();
   }
 });
 
@@ -16198,7 +16304,7 @@ app.post('/api/loot/import', async (req, res) => {
   }
 
   // Check if user has management role
-  const hasRole = await hasManagementRole(req.user.accessToken);
+  const hasRole = await hasManagementRoleById(req.user.id);
   if (!hasRole) {
     return res.status(403).json({ success: false, message: 'Management role required' });
   }
@@ -18204,7 +18310,7 @@ app.get('/api/admin/channel-backgrounds', async (req, res) => {
     }
 
     // Check if user has management role
-    const hasRole = await hasManagementRole(req.user.accessToken);
+  const hasRole = await hasManagementRoleById(req.user.id);
     if (!hasRole) {
         return res.status(403).json({ success: false, message: 'Management role required' });
     }
@@ -18249,7 +18355,7 @@ app.post('/api/admin/channel-backgrounds/upload', upload.single('backgroundImage
     }
 
     // Check if user has management role
-    const hasRole = await hasManagementRole(req.user.accessToken);
+  const hasRole = await hasManagementRoleById(req.user.id);
     if (!hasRole) {
         return res.status(403).json({ success: false, message: 'Management role required' });
     }
@@ -18338,7 +18444,7 @@ app.delete('/api/admin/channel-backgrounds/:channelId', async (req, res) => {
     }
 
     // Check if user has management role
-    const hasRole = await hasManagementRole(req.user.accessToken);
+  const hasRole = await hasManagementRoleById(req.user.id);
     if (!hasRole) {
         return res.status(403).json({ success: false, message: 'Management role required' });
     }
@@ -18475,7 +18581,7 @@ app.post('/api/admin/background-blur', async (req, res) => {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    const hasRole = await hasManagementRole(req.user.accessToken);
+  const hasRole = await hasManagementRoleById(req.user.id);
     if (!hasRole) {
         return res.status(403).json({ success: false, message: 'Management role required' });
     }
@@ -18556,7 +18662,7 @@ app.post('/api/admin/background-darken', async (req, res) => {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    const hasRole = await hasManagementRole(req.user.accessToken);
+  const hasRole = await hasManagementRoleById(req.user.id);
     if (!hasRole) {
         return res.status(403).json({ success: false, message: 'Management role required' });
     }
@@ -18932,7 +19038,7 @@ app.get('/api/discord/voice-monitor/config', async (req, res) => {
 app.post('/api/discord/voice-monitor/config', async (req, res) => {
     try {
         if (!req.isAuthenticated || !req.isAuthenticated()) return res.status(401).json({ ok: false, error: 'Authentication required' });
-        const isMgmt = await hasManagementRole(req.user.accessToken);
+        const isMgmt = await hasManagementRoleById(req.user.id);
         if (!isMgmt) return res.status(403).json({ ok: false, error: 'Management role required' });
 
         const raw = String(req.body && req.body.channelId != null ? req.body.channelId : '');

@@ -557,16 +557,9 @@ function updateRaidNavigation(eventId) {
         lootLink.replaceWith(lootLink.cloneNode(true));
     }
 
-    // Update Live View link to carry the active event id via query param
-    if (liveViewLink) {
-        try {
-            const currentHref = liveViewLink.getAttribute('href') || '/live';
-            const url = new URL(currentHref, window.location.origin);
-            url.searchParams.set('event', eventId);
-            liveViewLink.href = url.pathname + url.search;
-        } catch (_) {
-            liveViewLink.href = `/live?event=${eventId}`;
-        }
+    // Remove Live View link if present
+    if (liveViewLink && liveViewLink.parentNode) {
+        liveViewLink.parentNode.removeChild(liveViewLink);
     }
 }
 

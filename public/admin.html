@@ -244,6 +244,12 @@
             <h2>Access Denied</h2>
             <p>You need to be logged in with Discord and have the "Management" role to access this panel.</p>
             <a href="/auth/discord?returnTo=%2Fadmin" class="btn">Login with Discord</a>
+            <div id="bootstrap-admin" style="display:none; margin-top:16px;">
+                <h3>First-time setup</h3>
+                <p>If no managers exist yet, you can grant yourself Management once.</p>
+                <button class="btn" onclick="bootstrapGrantSelf()">Grant me Management</button>
+                <div id="bootstrap-status" style="margin-top:8px;"></div>
+            </div>
         </div>
         
         <div id="management-content" style="display: none;">
@@ -260,6 +266,21 @@
                 <button class="btn danger" onclick="setupDatabase()">Setup Database</button>
                 <button class="btn" onclick="createTemplatesTable()">Create Templates Table</button>
                 <button class="btn danger" onclick="showManagementTools()">Management Tools</button>
+                <div style="margin-top:16px; padding-top:12px; border-top:1px solid #eee;"><h3 style="margin:0 0 8px 0;">App Roles (Management / Helper)</h3>
+                    <div id="roles-panel">
+                        <div id="roles-controls" style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
+                            <input id="roles-discord-id" type="text" placeholder="Discord ID" style="padding:6px 8px; width:200px;">
+                            <select id="roles-role-key" style="padding:6px 8px;">
+                                <option value="management">management</option>
+                                <option value="helper">helper</option>
+                            </select>
+                            <button class="btn" onclick="grantRole()">Grant</button>
+                            <button class="btn danger" onclick="revokeRole()">Revoke</button>
+                            <button class="btn" onclick="loadRoles()">Refresh</button>
+                        </div>
+                        <div id="roles-list" class="admin-table" style="overflow:auto; max-height:320px;"></div>
+                    </div>
+                </div>
                 <div id="management-data"></div>
             </div>
             
@@ -308,6 +329,9 @@
                     </button>
                     <button class="btn" onclick="saveChannelFilters()" id="save-filters-btn" style="display: none;">
                         <i class="fas fa-save"></i> Save Changes
+                    </button>
+                    <button class="btn" onclick="refreshChannelNamesOnce()" id="refresh-channel-names-btn" style="margin-left:8px;">
+                        <i class="fas fa-sync"></i> Refresh Channel Names (DB)
                     </button>
                 </div>
                 
@@ -490,10 +514,11 @@
 
         // Initialize the page
         document.addEventListener('DOMContentLoaded', async () => {
-            await checkUserPermissions();
+            await initAdminPage();
         });
 
-        async function checkUserPermissions() {
+        async function initAdminPage() {
+            document.getElementById('loading').style.display = 'block';
             try {
                 const response = await fetch('/user');
                 const user = await response.json();
@@ -507,8 +532,10 @@
                 showManagementContent(user);
                 
             } catch (error) {
-                console.error('Error checking permissions:', error);
-                showAccessDenied();
+                console.error('Error initializing admin page:', error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('access-denied').style.display = 'block';
+                try { maybeShowBootstrap(); } catch(_) {}
             }
         }
 
@@ -539,6 +566,30 @@
                 document.getElementById('rewards-section').style.display = 'block';
                 document.getElementById('channel-backgrounds-section').style.display = 'block';
                 document.getElementById('class-spec-mapping-section').style.display = 'block';
+                // Load roles list on enter
+                try { loadRoles(); } catch(_) {}
+            } else {
+                // Logged-in but not manager: show inline bootstrap helper (server enforces only-when-none-exist)
+                try {
+                    const mc = document.getElementById('management-content');
+                    if (mc && !document.getElementById('bootstrap-admin-inline')) {
+                        const div = document.createElement('div');
+                        div.id = 'bootstrap-admin-inline';
+                        div.className = 'permission-card management-section';
+                        div.style.display = 'block';
+                        div.innerHTML = '<h2>First-time setup</h2>'+
+                                        '<p>If no managers exist yet, you can grant yourself Management once.</p>'+
+                                        '<button class="btn" onclick="bootstrapGrantSelf()">Grant me Management</button>'+
+                                        '<div id="bootstrap-status-inline" style="margin-top:8px;"></div>';
+                        // Insert just after user-info block
+                        const userInfo = document.getElementById('user-info');
+                        if (userInfo && userInfo.parentNode === mc) {
+                            mc.insertBefore(div, userInfo.nextSibling);
+                        } else {
+                            mc.appendChild(div);
+                        }
+                    }
+                } catch(_) {}
             }
         }
 
@@ -1232,6 +1283,7 @@
 
                 if (response.ok && data.success) {
                     renderChannelFilters(data.channels);
+                    try { if (data.diagnostics) { console.log('Channel diagnostics:', data.diagnostics); } } catch(_) {}
                     saveBtn.style.display = 'inline-flex';
                 } else {
                     contentDiv.innerHTML = `<div class="access-denied">Error loading channels: ${data.message}</div>`;
@@ -1243,6 +1295,23 @@
                 loadBtn.disabled = false;
                 loadBtn.innerHTML = '<i class="fas fa-refresh"></i> Load Channels from Upcoming & Completed Raids';
             }
+        }
+
+        async function refreshChannelNamesOnce(){
+            const btn = document.getElementById('refresh-channel-names-btn');
+            if (btn){ btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...'; }
+            try {
+                const r = await fetch('/api/admin/channel-names/refresh', { method: 'POST' });
+                const j = await r.json();
+                if (r.ok && j && j.success){
+                    alert(`Refreshed channel names. Upserts: ${j.upserts||0}`);
+                    // Reload list to reflect names
+                    try { await loadChannelFilters(); } catch(_){ }
+                } else {
+                    alert('Failed to refresh channel names');
+                }
+            } catch (_){ alert('Network error'); }
+            finally { if (btn){ btn.disabled = false; btn.innerHTML = '<i class="fas fa-sync"></i> Refresh Channel Names (DB)'; } }
         }
 
         function renderChannelFilters(channels) {
@@ -3258,6 +3327,86 @@
             } catch (error) {
                 console.error('Error deleting background:', error);
                 alert('Network error occurred while deleting background.');
+            }
+        }
+
+        // --- Roles Panel ---
+        async function loadRoles(){
+            const list = document.getElementById('roles-list'); if (!list) return;
+            list.innerHTML = '<div class="loading">Loading roles...</div>';
+            try {
+                const r = await fetch('/api/management/app-roles');
+                const j = await r.json();
+                if (!r.ok || !j.ok){ list.innerHTML = '<p class="access-denied">Failed to load roles.</p>'; return; }
+                const rows = Array.isArray(j.roles)? j.roles:[];
+                if (rows.length === 0){ list.innerHTML = '<p>No roles assigned yet.</p>'; return; }
+                const html = [
+                    '<table class="admin-table"><thead><tr><th>Discord ID</th><th>User</th><th>Role</th></tr></thead><tbody>',
+                    ...rows.map(x=>`<tr><td><code>${x.discord_id}</code></td><td>${(x.username||'')}${x.discriminator?('#'+x.discriminator):''}</td><td>${x.role_key}</td></tr>`),
+                    '</tbody></table>'
+                ].join('');
+                list.innerHTML = html;
+            } catch(e){ list.innerHTML = '<p>Error loading roles.</p>'; }
+        }
+
+        async function grantRole(){
+            const idEl = document.getElementById('roles-discord-id');
+            const roleEl = document.getElementById('roles-role-key');
+            const discordId = (idEl && idEl.value || '').trim();
+            const roleKey = (roleEl && roleEl.value || '').trim();
+            if (!discordId){ alert('Enter Discord ID'); return; }
+            try{
+                const r = await fetch('/api/management/app-roles/grant',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ discordId, roleKey })});
+                const j = await r.json();
+                if (!r.ok || !j.ok){ alert('Grant failed'); return; }
+                loadRoles();
+            }catch(_){ alert('Grant failed'); }
+        }
+
+        async function revokeRole(){
+            const idEl = document.getElementById('roles-discord-id');
+            const roleEl = document.getElementById('roles-role-key');
+            const discordId = (idEl && idEl.value || '').trim();
+            const roleKey = (roleEl && roleEl.value || '').trim();
+            if (!discordId){ alert('Enter Discord ID'); return; }
+            try{
+                const r = await fetch('/api/management/app-roles/revoke',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ discordId, roleKey })});
+                const j = await r.json();
+                if (!r.ok || !j.ok){ alert('Revoke failed'); return; }
+                loadRoles();
+            }catch(_){ alert('Revoke failed'); }
+        }
+
+        async function maybeShowBootstrap(){
+            try{
+                // Probe if management exists by calling roles list unauthenticated (will 401). Instead, use a lightweight probe: server-only endpoint would be better, but reuse roles list guarded by try.
+                // We'll call a small probe endpoint by attempting the bootstrap POST with a dry-run pattern is not available, so ask server: we can infer by calling GET /user and if hasManagementRole false, show bootstrap; the server ensures only when no manager exists it will succeed.
+                const denied = document.getElementById('access-denied');
+                const boot = document.getElementById('bootstrap-admin');
+                if (!denied || !boot) return;
+                // If user is logged in (top-bar controls login), we still show bootstrap option — server enforces the rule about no existing managers.
+                boot.style.display = 'block';
+            }catch(_){}
+        }
+
+        async function bootstrapGrantSelf(){
+            const status = document.getElementById('bootstrap-status'); if (status) status.textContent = 'Granting...';
+            const status2 = document.getElementById('bootstrap-status-inline'); if (status2) status2.textContent = 'Granting...';
+            try {
+                const r = await fetch('/api/bootstrap/grant-management-to-self',{ method:'POST' });
+                const j = await r.json();
+                if (!r.ok || !j.ok){
+                    const msg = j && j.error ? j.error : 'Failed';
+                    status && (status.textContent = msg);
+                    status2 && (status2.textContent = msg);
+                    return;
+                }
+                status && (status.textContent = 'Granted. Reloading...');
+                status2 && (status2.textContent = 'Granted. Reloading...');
+                setTimeout(()=>{ window.location.reload(); }, 600);
+            } catch(e){
+                status && (status.textContent = 'Failed');
+                status2 && (status2.textContent = 'Failed');
             }
         }
     </script>
