@@ -413,6 +413,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    // Check if raidlogs are published for an event (controls Completed Raids link target)
+    async function fetchPublishedStatus(eventId, delay = 0) {
+        if (!eventId) return false;
+        if (publishedStatusCache.has(String(eventId))) {
+            return publishedStatusCache.get(String(eventId));
+        }
+
+        if (delay > 0) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            const res = await fetch(`/api/raidlogs/published/${eventId}`, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (!res.ok) {
+                publishedStatusCache.set(String(eventId), false);
+                return false;
+            }
+            const data = await res.json();
+            const isPublished = !!(data && data.success && data.header);
+            publishedStatusCache.set(String(eventId), isPublished);
+            return isPublished;
+        } catch (_) {
+            publishedStatusCache.set(String(eventId), false);
+            return false;
+        }
+    }
+
     async function fetchAndDisplayMyCharacters() {
         const myCharsContainer = document.getElementById('my-characters-list');
         if (!myCharsContainer) return; // Don't run if the container doesn't exist
@@ -519,6 +549,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let cachedAttendance = null;
     let cachedUpcoming = null;
     let cachedHistoric = null;
+    const publishedStatusCache = new Map();
 
     async function getCurrentUser() {
         if (cachedUser) return cachedUser;
@@ -1253,6 +1284,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     fetchEventDuration(eventId, delay);
                     fetchEventGoldPot(eventId, delay + 100); // Small additional delay
                     fetchEventBiggestItem(eventId, delay + 200); // Small additional delay
+
+                    // Update link target to raidlogs if published
+                    fetchPublishedStatus(eventId, delay + 50).then(isPublished => {
+                        if (isPublished) {
+                            eventDiv.href = `/event/${eventId}/raidlogs`;
+                        }
+                    });
                 } catch (renderError) {
                     console.error('Error rendering completed event:', renderError);
                 }
