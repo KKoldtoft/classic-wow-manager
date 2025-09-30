@@ -5,6 +5,8 @@ class GoldPotManager {
         this.allPlayers = [];
         this.filteredPlayers = [];
         this.currentEventId = null;
+      // Map: lowercase character name -> discord user id
+      this.nameToDiscordId = new Map();
         // Map: lowercase character name -> realm (server)
         this.nameToRealm = new Map();
         // Datasets for point computation
@@ -165,6 +167,8 @@ class GoldPotManager {
                 this.snapshotEntries = published.entries || [];
                 // Build players from snapshot rows
                 this.allPlayers = this.buildPlayersFromSnapshot(this.snapshotEntries);
+                // Build name -> discord id map from confirmed players for DMs
+                try { await this.fetchAndBuildNameToDiscordId(); } catch {}
                 // Compute totals and render
                 this.computeTotalsFromSnapshot(published.header || {});
                 this.renderSummaryAndList();
@@ -179,7 +183,26 @@ class GoldPotManager {
             console.error('Error loading gold pot data:', error);
             this.showError(error.message || 'Failed to load gold pot data');
         }
+
     }
+
+  async fetchAndBuildNameToDiscordId(){
+      try {
+          const res = await fetch(`/api/confirmed-logs/${this.currentEventId}/all-players`);
+          if (!res || !res.ok) return;
+          const data = await res.json();
+          const rows = Array.isArray(data && data.data) ? data.data : [];
+          const map = new Map();
+          rows.forEach(r => {
+              const nm = String(r && r.character_name || '').trim().toLowerCase();
+              const did = r && (r.discord_id || r.discord_user_id || r.character_discord_id);
+              if (nm && did) map.set(nm, String(did));
+          });
+          this.nameToDiscordId = map;
+          try { window.goldManager && (window.goldManager.nameToDiscordId = map); } catch {}
+      } catch {}
+  }
+    
 
     async fetchPublishedSnapshot(eventId){
         try{

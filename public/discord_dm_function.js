@@ -3,7 +3,7 @@
 // from a randomly selected player currently listed on the Gold page.
 
 (function(){
-    const TEST_DISCORD_USER_ID = '492023474437619732';
+    // Removed hardcoded test user; use real Discord IDs only
 
     function pickRandomPlayer(allPlayers){
         if (!Array.isArray(allPlayers) || allPlayers.length === 0) return null;
@@ -263,7 +263,8 @@
         const eventId = String(window.goldManager.currentEventId || '');
 
         const map = (window.goldManager && window.goldManager.nameToDiscordId) ? window.goldManager.nameToDiscordId : new Map();
-        const discordId = map.get(nameKey) || TEST_DISCORD_USER_ID;
+        const discordId = map.get(nameKey);
+        if (!discordId) { alert(`No Discord ID on record for ${name}. Skipping.`); return; }
         const payload = {
             userId: discordId,
             playerName: name,
@@ -395,6 +396,7 @@
     function populateOverlayList(listWrap){
         const mgr = window.goldManager;
         const players = (mgr && Array.isArray(mgr.allPlayers)) ? mgr.allPlayers.slice() : [];
+        const idMap = (mgr && mgr.nameToDiscordId) ? mgr.nameToDiscordId : new Map();
         players.sort((a,b)=> String(a.character_name||'').localeCompare(String(b.character_name||'')));
         listWrap.innerHTML = '';
         players.forEach(p => {
@@ -408,6 +410,13 @@
             const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = true; cb.className = 'dm-select';
             const name = document.createElement('div'); name.textContent = String(p.character_name||'');
             const status = document.createElement('div'); status.textContent = 'pending'; status.style.color = '#9ca3af'; status.style.textAlign = 'right'; status.className = 'dm-status';
+            const nameKey = String(p.character_name||'').trim().toLowerCase();
+            const hasId = !!idMap.get(nameKey);
+            if (!hasId) {
+                status.textContent = 'no discord id';
+                status.style.color = '#f59e0b';
+                cb.checked = false; cb.disabled = true;
+            }
             row.dataset.playerName = String(p.character_name||'');
             row.appendChild(cb); row.appendChild(name); row.appendChild(status);
             listWrap.appendChild(row);
@@ -416,7 +425,7 @@
 
     function wireSelectAll(cbAll, listWrap){
         cbAll.addEventListener('change', () => {
-            listWrap.querySelectorAll('input.dm-select').forEach(cb => { cb.checked = cbAll.checked; });
+            listWrap.querySelectorAll('input.dm-select:not(:disabled)').forEach(cb => { cb.checked = cbAll.checked; });
         });
     }
 
@@ -450,7 +459,13 @@
                 }
             } catch {}
             const map = (window.goldManager && window.goldManager.nameToDiscordId) ? window.goldManager.nameToDiscordId : new Map();
-            const discordId = map.get(nameKey) || TEST_DISCORD_USER_ID;
+            const discordId = map.get(nameKey);
+            if (!discordId) {
+                const statusEl = row.querySelector('.dm-status');
+                if (statusEl) { statusEl.textContent = 'no discord id'; statusEl.style.color = '#f59e0b'; }
+                await new Promise(r => setTimeout(r, Math.max(150, delayMs)));
+                continue;
+            }
             const payload = {
                 userId: discordId,
                 playerName: name,
