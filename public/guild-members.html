@@ -393,7 +393,8 @@
                     
                     populateFilters();
                     updateStats();
-                    renderTable();
+                    // Default sort: most recently online first (Online, 1 day, 2 days...)
+                    sortTable('last_online_days');
                     
                     loading.style.display = 'none';
                     content.style.display = 'block';
