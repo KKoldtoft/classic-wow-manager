@@ -16125,9 +16125,13 @@ app.post('/api/admin/channel-filters', async (req, res) => {
     await pool.query(`ALTER TABLE channel_filters ADD COLUMN IF NOT EXISTS is_nax BOOLEAN DEFAULT false`);
     await pool.query(`ALTER TABLE channel_filters ADD COLUMN IF NOT EXISTS webhook_url TEXT`);
 
-    // Clear events cache so changes take effect immediately
-    await pool.query('DELETE FROM events_cache WHERE cache_key = $1', [EVENTS_CACHE_KEY]);
-    console.log('🗑️ Cleared events cache due to channel filter update');
+    // Clear events caches so changes take effect immediately (upcoming + historic variants)
+    try {
+      await pool.query('DELETE FROM events_cache WHERE cache_key = ANY($1)', [[EVENTS_CACHE_KEY, HISTORIC_EVENTS_CACHE_KEY, HISTORIC_24M_EVENTS_CACHE_KEY]]);
+      console.log('🗑️ Cleared upcoming and historic events caches due to channel filter update');
+    } catch (_) {
+      // No-op; cache table may not exist yet
+    }
 
     // Update each filter setting
     for (const filter of filters) {
@@ -16193,30 +16197,59 @@ app.post('/api/admin/channel-names/refresh', async (req, res) => {
       )
     `);
 
-    // Gather channel_id -> channel_name from cached Raid-Helper events
-    const rows = await client.query(`
-      SELECT DISTINCT 
-        (event_data->>'channelId') AS channel_id,
-        (event_data->>'channelName') AS channel_name
-      FROM raid_helper_events_cache
-      WHERE (event_data->>'channelId') IS NOT NULL AND (event_data->>'channelName') IS NOT NULL
-    `);
-
     let upserts = 0;
-    for (const r of rows.rows) {
-      const channelId = (r.channel_id || '').trim();
-      const channelName = (r.channel_name || '').trim();
-      if (!channelId || !channelName) continue;
-      await client.query(`
-        INSERT INTO channel_filters (channel_id, channel_name, is_visible, updated_at)
-        VALUES ($1, $2, TRUE, CURRENT_TIMESTAMP)
-        ON CONFLICT (channel_id) DO UPDATE SET channel_name = EXCLUDED.channel_name, updated_at = CURRENT_TIMESTAMP
-      `, [channelId, channelName]);
-      upserts++;
-    }
 
-    // Clear events cache so admin list reflects updated names
-    try { await client.query('DELETE FROM events_cache WHERE cache_key = $1', [EVENTS_CACHE_KEY]); } catch (_){ }
+    // 1) Gather channel_id -> channel_name from cached single-event table (if present)
+    try {
+      const rows = await client.query(`
+        SELECT DISTINCT 
+          (event_data->>'channelId') AS channel_id,
+          (event_data->>'channelName') AS channel_name
+        FROM raid_helper_events_cache
+        WHERE (event_data->>'channelId') IS NOT NULL AND (event_data->>'channelName') IS NOT NULL
+      `);
+      for (const r of rows.rows) {
+        const channelId = (r.channel_id || '').trim();
+        const channelName = (r.channel_name || '').trim();
+        if (!channelId || !channelName) continue;
+        await client.query(`
+          INSERT INTO channel_filters (channel_id, channel_name, is_visible, updated_at)
+          VALUES ($1, $2, TRUE, CURRENT_TIMESTAMP)
+          ON CONFLICT (channel_id) DO UPDATE SET channel_name = EXCLUDED.channel_name, updated_at = CURRENT_TIMESTAMP
+        `, [channelId, channelName]);
+        upserts++;
+      }
+    } catch (_) {}
+
+    // 2) Also ingest from cached arrays in events_cache (upcoming + historic)
+    try {
+      const cacheRows = await client.query(`
+        SELECT events_data FROM events_cache WHERE cache_key = ANY($1)
+      `, [[EVENTS_CACHE_KEY, HISTORIC_EVENTS_CACHE_KEY, HISTORIC_24M_EVENTS_CACHE_KEY]]);
+      for (const row of cacheRows.rows) {
+        const data = row.events_data;
+        const events = Array.isArray(data) ? data : (typeof data === 'string' ? JSON.parse(data) : []);
+        if (!Array.isArray(events)) continue;
+        for (const ev of events) {
+          const channelId = (ev.channelId || ev.channelID || ev.channel_id || ev.discordChannelId || '').toString().trim();
+          const channelName = (ev.channelName || '').toString().trim();
+          if (!channelId || !channelName) continue;
+          // Ignore numeric-only or obvious ID echoes
+          if (/^\d+$/.test(channelName) || channelName === channelId) continue;
+          await client.query(`
+            INSERT INTO channel_filters (channel_id, channel_name, is_visible, updated_at)
+            VALUES ($1, $2, TRUE, CURRENT_TIMESTAMP)
+            ON CONFLICT (channel_id) DO UPDATE SET channel_name = EXCLUDED.channel_name, updated_at = CURRENT_TIMESTAMP
+          `, [channelId, channelName]);
+          upserts++;
+        }
+      }
+    } catch (_) {}
+
+    // Clear all related caches so UI reflects updated names (upcoming + historic variants)
+    try {
+      await client.query('DELETE FROM events_cache WHERE cache_key = ANY($1)', [[EVENTS_CACHE_KEY, HISTORIC_EVENTS_CACHE_KEY, HISTORIC_24M_EVENTS_CACHE_KEY]]);
+    } catch (_) {}
 
     res.json({ success: true, upserts });
   } catch (error) {
