@@ -14,6 +14,16 @@ const fs = require('fs');
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const WebSocket = require('ws');
+// Chat: Socket.IO (initialized after server listen)
+let attachChatIo = null;
+let setOutboundHandler = null;
+try {
+  const mod = require('./scripts/chat-socket.cjs');
+  attachChatIo = mod.createIo;
+  setOutboundHandler = mod.setOutboundHandler;
+} catch (_) { attachChatIo = null; setOutboundHandler = null; }
+let createDiscordBridge = null;
+try { createDiscordBridge = require('./scripts/chat-discord-bridge.cjs').createDiscordBridge; } catch (_) { createDiscordBridge = null; }
 const zlib = require('zlib');
 
 // --- Utility: timeout + retry wrapper for outbound HTTP (Discord/webhooks)
@@ -1874,6 +1884,12 @@ app.use(express.static('public'));
 // Serve the migration helper page
 app.get('/fix-rewards', (req, res) => {
     res.sendFile(path.join(__dirname, 'fix_heroku_rewards.html'));
+});
+
+// Explicit route for chat widget script to avoid SPA catch-all interference
+app.get('/widget/site-chat.js', (req, res) => {
+  res.type('application/javascript');
+  res.sendFile(path.join(__dirname, 'public', 'widget', 'site-chat.js'));
 });
 
 // Route to serve the Roster page for specific event IDs - HIGH PRIORITY
@@ -19116,12 +19132,12 @@ try {
 // This route will handle both the root path ('/') AND any other unmatched paths,
 // serving events.html. It MUST be the LAST route definition in your application.
 // BUT exclude API routes to avoid interfering with API endpoints.
-app.get('*', (req, res) => {
-  // Don't catch API routes
-  if (req.path.startsWith('/api/')) {
-    return res.status(404).json({ error: 'API endpoint not found' });
+app.get('*', (req, res, next) => {
+  // Let static assets, API routes, health checks, and Socket.IO pass through
+  if (req.path.startsWith('/api/') || req.path === '/healthz' || req.path.startsWith('/socket.io') || req.path.includes('.')) {
+    return next();
   }
-  res.sendFile(path.join(__dirname, 'public', 'events.html')); // Corrected path to events.html
+  res.sendFile(path.join(__dirname, 'public', 'events.html'));
 });
 
 // --- Server Start ---
@@ -19157,6 +19173,28 @@ const server = app.listen(PORT, () => {
 // Set server timeout to 5 minutes (300 seconds) for long-running operations
 server.timeout = 300000;
 
+// Attach Socket.IO for chat after server starts
+if (attachChatIo) {
+  (async () => {
+    try {
+      const { io } = await attachChatIo(server);
+      console.log('✅ Site chat Socket.IO initialized');
+      app.set('io', io);
+      if (createDiscordBridge && setOutboundHandler) {
+        const bridge = createDiscordBridge();
+        if (bridge && typeof bridge.start === 'function' && typeof bridge.sendToDiscord === 'function') {
+          await bridge.start();
+          setOutboundHandler(async (payload) => { await bridge.sendToDiscord(payload); });
+          console.log('✅ Discord bridge initialized');
+          try { console.log('[bridge] status', typeof bridge.getStatus === 'function' ? bridge.getStatus() : null); } catch(_) {}
+        }
+      }
+    } catch (err) {
+      console.error('❌ Failed to initialize Site chat Socket.IO:', err && err.message ? err.message : err);
+    }
+  })();
+}
+
 // --- Graceful Shutdown ---
 process.on('SIGINT', () => {
   console.log('Shutting down server...');
@@ -19176,201 +19214,79 @@ app.get('/healthz', async (req, res) => {
     await pool.query('SELECT 1');
     const dbMs = Date.now() - t0;
     const discordConfigured = !!process.env.DISCORD_BOT_TOKEN && !!process.env.DISCORD_GUILD_ID;
-    res.json({ ok: true, dbMs, discordConfigured });
+    const redisConfigured = !!process.env.REDIS_URL;
+    res.json({ ok: true, dbMs, discordConfigured, redisConfigured });
   } catch (err) {
     res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
   }
 });
 
-// --- Discord Gateway: Minimal Voice State Monitor ---
-const discordGatewayUrl = 'wss://gateway.discord.gg/?v=10&encoding=json';
-const discordBotToken = process.env.DISCORD_BOT_TOKEN;
-const discordGuildId = process.env.DISCORD_GUILD_ID;
-const DISCORD_STATUS = { ready: false, degraded: false, failures: 0, lastChangeAt: 0 };
-
-// voiceChannelId -> Map<userId, state>
-// state = { self_mute, self_deaf, mute, deaf, self_stream, self_video, suppress }
-const voiceStateMap = new Map();
-
-let ws;
-let heartbeatIntervalMs = null;
-let heartbeatTimer = null;
-let lastSeq = null;
-
-function startDiscordGateway() {
-    if (!discordBotToken || !discordGuildId) {
-        console.log('⚠️ Discord Gateway disabled (missing DISCORD_BOT_TOKEN or DISCORD_GUILD_ID)');
-        return;
+// --- Site Chat: Image upload endpoint (Cloudinary) ---
+try {
+  const chatImageStorage = new CloudinaryStorage({
+    cloudinary,
+    params: {
+      folder: 'site-chat',
+      resource_type: 'image'
     }
-
-    function send(op, d) {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ op, d, s: null, t: null }));
-        }
+  });
+  const chatImageUpload = multer({
+    storage: chatImageStorage,
+    limits: { fileSize: 200 * 1024 },
+    fileFilter: (req, file, cb) => {
+      try {
+        const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        if (!allowed.includes(String(file.mimetype || ''))) return cb(new Error('Invalid file type'));
+        return cb(null, true);
+      } catch (e) { return cb(e); }
     }
+  });
 
-    function identify() {
-        send(2, {
-            token: discordBotToken,
-            intents: (1 << 0) /* GUILDS */ | (1 << 7) /* GUILD_VOICE_STATES */,
-            properties: {
-                os: 'linux', browser: 'classic-wow-manager', device: 'classic-wow-manager'
-            }
-        });
+  app.post('/api/chat/upload', chatImageUpload.single('file'), (req, res) => {
+    try {
+      if (!req.isAuthenticated || !req.isAuthenticated()) return res.status(401).json({ ok: false, error: 'Not authenticated' });
+      const url = req && req.file && (req.file.path || req.file.url);
+      if (!url) return res.status(400).json({ ok: false, error: 'Upload failed' });
+      const thumbUrl = String(url).replace('/upload/', '/upload/f_auto,q_auto,w_256/');
+      res.json({ ok: true, url, thumbUrl });
+    } catch (err) {
+      res.status(400).json({ ok: false, error: err && err.message ? err.message : String(err) });
     }
-
-    function setupHeartbeat(interval) {
-        if (heartbeatTimer) clearInterval(heartbeatTimer);
-        heartbeatIntervalMs = interval;
-        heartbeatTimer = setInterval(() => {
-            send(1, lastSeq);
-        }, heartbeatIntervalMs);
-    }
-
-    function handleDispatch(t, d, s) {
-        lastSeq = s;
-        switch (t) {
-            case 'READY':
-                console.log('✅ Discord Gateway READY');
-                // Reset state on READY
-                voiceStateMap.clear();
-                break;
-            case 'GUILD_CREATE': {
-                // Seed voice states on initial guild create
-                if (d.id === discordGuildId && Array.isArray(d.voice_states)) {
-                    console.log(`📥 GUILD_CREATE for guild ${d.id}, seeding ${d.voice_states.length} voice states`);
-                    for (const vs of d.voice_states) {
-                        const userId = vs.user_id;
-                        const channelId = vs.channel_id;
-                        if (!channelId) continue;
-                        if (!voiceStateMap.has(channelId)) voiceStateMap.set(channelId, new Map());
-                        voiceStateMap.get(channelId).set(userId, {
-                            self_mute: !!vs.self_mute,
-                            self_deaf: !!vs.self_deaf,
-                            mute: !!vs.mute,
-                            deaf: !!vs.deaf,
-                            self_stream: !!vs.self_stream,
-                            self_video: !!vs.self_video,
-                            suppress: !!vs.suppress
-                        });
-                    }
-                    console.log('📊 Seeded channels:', Array.from(voiceStateMap.keys()));
-                }
-                break;
-            }
-            case 'VOICE_STATE_UPDATE': {
-                const userId = d.user_id;
-                const channelId = d.channel_id; // can be null
-
-                // Remove user from all channels in our map
-                for (const [vcId, users] of voiceStateMap.entries()) {
-                    if (users.has(userId)) users.delete(userId);
-                    if (users.size === 0) voiceStateMap.delete(vcId);
-                }
-
-                // Add to new channel if present and in our guild
-                if (channelId && d.guild_id === discordGuildId) {
-                    if (!voiceStateMap.has(channelId)) voiceStateMap.set(channelId, new Map());
-                    voiceStateMap.get(channelId).set(userId, {
-                        self_mute: !!d.self_mute,
-                        self_deaf: !!d.self_deaf,
-                        mute: !!d.mute,
-                        deaf: !!d.deaf,
-                        self_stream: !!d.self_stream,
-                        self_video: !!d.self_video,
-                        suppress: !!d.suppress
-                    });
-                }
-                if (d.guild_id === discordGuildId) {
-                    console.log(`🔄 VOICE_STATE_UPDATE user ${userId} -> channel ${channelId || 'left all'}`);
-                }
-                break;
-            }
-            case 'VOICE_SERVER_UPDATE':
-                // Not needed for presence listing
-                break;
-            case 'GUILD_DELETE':
-                if (d.id === discordGuildId) {
-                    voiceStateMap.clear();
-                }
-                break;
-        }
-    }
-
-    let consecutiveFailures = 0;
-    const maxFailuresBeforeDisable = 5;
-
-    function connect() {
-        console.log('🌐 Connecting to Discord Gateway...');
-        ws = new WebSocket(discordGatewayUrl);
-        ws.on('open', () => { console.log('🌐 Discord WS open'); DISCORD_STATUS.ready = true; DISCORD_STATUS.degraded = false; DISCORD_STATUS.failures = 0; DISCORD_STATUS.lastChangeAt = Date.now(); consecutiveFailures = 0; });
-        ws.on('message', (data) => {
-            try {
-                const payload = JSON.parse(data.toString());
-                const { op, d, s, t } = payload;
-                switch (op) {
-                    case 10: // Hello
-                        console.log('👋 Discord Hello received; starting heartbeat');
-                        setupHeartbeat(d.heartbeat_interval);
-                        identify();
-                        break;
-                    case 0: // Dispatch
-                        handleDispatch(t, d, s);
-                        break;
-                    case 11: // Heartbeat ACK
-                        // no-op
-                        break;
-                    case 7: // Reconnect
-                        ws.close();
-                        break;
-                }
-            } catch (e) {
-                console.error('Discord WS message error:', e);
-            }
-        });
-        ws.on('close', () => {
-            console.log('🔌 Discord WS closed; retrying in 5s');
-            if (heartbeatTimer) clearInterval(heartbeatTimer);
-            consecutiveFailures += 1;
-            DISCORD_STATUS.ready = false; DISCORD_STATUS.failures = consecutiveFailures; DISCORD_STATUS.lastChangeAt = Date.now();
-            if (consecutiveFailures >= maxFailuresBeforeDisable) {
-                console.error('❌ Discord WS disabled after repeated failures');
-                DISCORD_STATUS.degraded = true;
-                return; // stop retrying until process restart
-            }
-            setTimeout(connect, 5000);
-        });
-        ws.on('error', (err) => {
-            console.error('Discord WS error:', err);
-        });
-    }
-
-    connect();
+  });
+} catch (e) {
+  console.warn('⚠️ Chat upload endpoint not initialized:', e && e.message ? e.message : e);
 }
 
-startDiscordGateway();
-
-// Public status endpoint for Discord readiness/degradation
-app.get('/api/discord/status', (req, res) => {
-    try { res.json({ ok: true, ...DISCORD_STATUS }); } catch (err) { res.status(500).json({ ok: false, error: err?.message || String(err) }); }
-});
-
-// API to read current members in a given voice channel
-app.get('/api/discord/voice/:channelId', (req, res) => {
-    const { channelId } = req.params;
-    const users = voiceStateMap.get(channelId);
-    if (!users) return res.json({ ok: true, channelId, userIds: [], states: {} });
-    const userIds = Array.from(users.keys());
-    const states = {};
-    for (const [uid, st] of users.entries()) states[uid] = st;
-    res.json({ ok: true, channelId, userIds, states });
-});
-
-// Debug endpoint to inspect all tracked channels
-app.get('/api/discord/voice-debug', (req, res) => {
-    const all = {};
-    for (const [channelId, users] of voiceStateMap.entries()) {
-        all[channelId] = Array.from(users);
+// --- Basic identity endpoint for chat widget ---
+app.get('/api/auth/whoami', (req, res) => {
+  try {
+    if (!req.isAuthenticated || !req.isAuthenticated()) {
+      return res.status(401).json({ ok: false, error: 'Not authenticated' });
     }
-    res.json({ ok: true, channels: all });
+    const u = req.user || {};
+    const userId = String(u.id || '') || null;
+    const userName = u.global_name || u.username || 'Unknown';
+    const avatarUrl = u.avatar ? `https://cdn.discordapp.com/avatars/${userId}/${u.avatar}.png` : null;
+    const roles = [];
+    return res.json({ ok: true, userId, userName, avatarUrl, roles });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
+  }
 });
+
+// --- Admin toggle and user prefs (placeholders) ---
+let CHAT_ENABLED = true;
+app.get('/api/chat/config', (req, res) => {
+  try { res.json({ ok: true, enabled: !!CHAT_ENABLED, userDisabled: false }); } catch (err) { res.status(500).json({ ok: false, error: err?.message || String(err) }); }
+});
+
+app.post('/api/chat/config', requireManagement, express.json(), (req, res) => {
+  try { CHAT_ENABLED = !!(req.body && req.body.enabled); res.json({ ok: true, enabled: !!CHAT_ENABLED }); } catch (err) { res.status(500).json({ ok: false, error: err?.message || String(err) }); }
+});
+
+app.post('/api/chat/prefs', express.json(), (req, res) => {
+  // Placeholder: store per-user preference later
+  try { res.json({ ok: true }); } catch (err) { res.status(500).json({ ok: false, error: err?.message || String(err) }); }
+});
+
+// Voice monitor removed per request

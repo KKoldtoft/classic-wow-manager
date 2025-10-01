@@ -614,4 +614,65 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+
+	// Initialize site-wide chat widget (explicit init)
+	(function initSiteChatWidget() {
+		try {
+			let loaded = false;
+			const ensureScript = (src) => new Promise((resolve, reject) => {
+				// Avoid duplicate loads
+				if (document.querySelector(`script[src="${src}"]`)) return resolve();
+				const s = document.createElement('script');
+				s.src = src;
+				s.async = true;
+				s.onload = () => resolve();
+				s.onerror = (e) => reject(e);
+				(document.head || document.documentElement).appendChild(s);
+			});
+
+			const mount = async () => {
+				if (loaded) return; // idempotent
+				if (window.__SITE_CHAT_MOUNTED__) return;
+				loaded = true;
+				window.__SITE_CHAT_MOUNTED__ = true;
+				try {
+					if (!window.io) {
+						await ensureScript('https://cdn.socket.io/4.7.5/socket.io.min.js');
+					}
+					// Remove any prior widget scripts to avoid stale code
+					Array.from(document.querySelectorAll('script[src^="/widget/site-chat"],script[src*="/widget/site-chat"]')).forEach(n => { try { n.parentNode && n.parentNode.removeChild(n); } catch(_){} });
+					const ts = Date.now();
+					await ensureScript(`/widget/site-chat.js?v=${ts}`);
+					// Mark body to confirm stylesheet applied
+					try { document.body.classList.add('site-chat-mounted'); } catch(_){}
+					if (window.SiteChat && typeof window.SiteChat.init === 'function') {
+						window.SiteChat.init({
+							endpoints: {
+								whoAmI: '/api/auth/whoami',
+								chatSocketUrl: '/socket.io',
+								uploadUrl: '/api/chat/upload',
+								adminStateUrl: '/api/chat/config',
+								userPrefsUrl: '/api/chat/prefs'
+							}
+						});
+					}
+				} catch (e) {
+					console.warn('[SiteChat] init failed', e);
+				}
+			};
+
+			// Only mount for logged-in users and when server says enabled
+			Promise.resolve(getUserStatus()).then(async (user) => {
+				if (!user || !user.loggedIn) return; // require login
+				try {
+					const r = await fetch('/api/chat/config');
+					if (!r.ok) return;
+					const cfg = await r.json();
+					if (cfg && cfg.ok !== false && cfg.enabled && !cfg.userDisabled) {
+						mount();
+					}
+				} catch (_) {}
+			});
+		} catch (_) {}
+	})();
 }); 

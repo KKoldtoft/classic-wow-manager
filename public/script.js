@@ -500,9 +500,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     bottom.innerHTML = `
                         <div class="char-extra" data-char="${char.character_name}">
                             <div><span class="label">1P member:</span> <span class="extra-guild value">…</span></div>
-                            <div><span class="label">Current Naxx streak:</span> <span class="extra-streak value">…</span></div>
                             <div><span class="label">Last raid:</span> <span class="extra-last-raid value">…</span></div>
-                            <div><span class="label">Next raid:</span> <span class="extra-next-raid value">…</span></div>
                             <div><span class="label">Last item won:</span> <span class="extra-last-item value">…</span></div>
                         </div>
                     `;
@@ -674,15 +672,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const inGuild = !!(guildMembers || []).find(m => (m.character_name || '').toLowerCase() === (char.character_name || '').toLowerCase());
         container.querySelector('.extra-guild').textContent = inGuild ? 'Yes' : 'No';
 
-        // Current Naxx streak (from regular attendance streak per user)
-        let streakVal = '—';
-        try {
-            if (attendance && user && user.id) {
-                const playerRow = (attendance.players || []).find(p => p.discord_id === user.id);
-                if (playerRow && typeof playerRow.player_streak === 'number') streakVal = String(playerRow.player_streak);
-            }
-        } catch {}
-        container.querySelector('.extra-streak').textContent = streakVal;
+        // Removed: Current Naxx streak
 
         // Last raid (direct from backend using log_data with characterName + characterClass + discordId)
         let lastRaid = '—';
@@ -705,34 +695,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch {}
         container.querySelector('.extra-last-raid').textContent = lastRaid;
 
-        // Next raid (scan near-future upcoming events and check rosters for THIS CHARACTER; rate-limit to avoid API spam)
-        let nextRaid = '—';
-        try {
-            if (user && user.id && Array.isArray(upcoming)) {
-                // Sort upcoming by soonest
-                const nowSec = Math.floor(Date.now() / 1000);
-                const upcomingSorted = upcoming
-                    .filter(ev => (ev.startTime || 0) >= nowSec)
-                    .slice() // copy
-                    .sort((a,b) => (a.startTime || 0) - (b.startTime || 0))
-                    .slice(0, 4); // cap to first 4 to avoid API spam
-                for (let i = 0; i < upcomingSorted.length; i++) {
-                    const ev = upcomingSorted[i];
-                    const roster = await fetchRoster(getEventId(ev));
-                    if (!roster) continue;
-                    const inRaidDrop = Array.isArray(roster.raidDrop) && roster.raidDrop.some(p => isSameCharacter(p, char));
-                    const inBench = Array.isArray(roster.bench) && roster.bench.some(p => isSameCharacter(p, char));
-                    if (inRaidDrop || inBench) {
-                        const name = ev.channelName || ev.name || 'Upcoming raid';
-                        nextRaid = formatEventDisplay(name, ev.startTime);
-                        break;
-                    }
-                    // small delay between roster calls to avoid 429s
-                    await sleep(1000);
-                }
-            }
-        } catch {}
-        container.querySelector('.extra-next-raid').textContent = nextRaid;
+        // Removed: Next raid
 
         // Last item won (scan recent historic events for loot by this character)
         let lastItem = '—';
