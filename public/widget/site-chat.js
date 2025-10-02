@@ -478,6 +478,14 @@
         num.style.fontSize = '12px';
         num.style.color = '#9ca3af';
         num.style.marginLeft = '6px';
+        // Tooltip with full list of online users
+        try {
+          const names = enriched.map(u => (u && u.userName) ? String(u.userName) : 'Online user');
+          // Use newlines; most browsers render them in native tooltips
+          num.title = names.join('\n');
+          num.setAttribute('aria-label', names.join(', '));
+          num.style.cursor = 'help';
+        } catch(_) {}
         presenceWrap.appendChild(num);
       }
 
