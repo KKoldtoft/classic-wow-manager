@@ -9,7 +9,7 @@ const MESSAGE_KEY = (id) => `chat:msg:${id}`;
 const PRESENCE_KEY = (userId) => `chat:presence:${userId}`;
 
 const TTL_SECONDS = 4 * 60 * 60; // 4 hours
-const PRESENCE_TTL_SECONDS = 30; // 30s heartbeat
+const PRESENCE_TTL_SECONDS = 90; // extend TTL to reduce flicker; refreshed by client heartbeat
 const GLOBAL_LIST_CAP = 1000; // max ids kept
 const DEDUPE_TTL_SECONDS = 120; // 2 minutes to suppress duplicates
 

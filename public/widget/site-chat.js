@@ -374,6 +374,10 @@
       socket.on('connect', () => { try { console.log('[SiteChat] connected', socket.id); } catch (_) {} });
       socket.on('connect_error', (err) => { try { console.warn('[SiteChat] connect_error', err && (err.message || err)); } catch (_) {} });
       socket.on('disconnect', (reason) => { try { console.log('[SiteChat] disconnected', reason); } catch (_) {} });
+      // presence heartbeat to keep presence stable
+      try {
+        setInterval(() => { try { socket.emit('presence:heartbeat'); } catch(_){} }, 25000);
+      } catch(_){}
       function renderMessageRow(msg) {
         const isMine = msg && auth && String(msg.userId || '') === String(auth.userId || '');
         const row = document.createElement('div');

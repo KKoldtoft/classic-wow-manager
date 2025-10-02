@@ -87,6 +87,11 @@ async function createIo(server) {
         } catch(_){}
       });
 
+      // Heartbeat from client to refresh presence TTL
+      socket.on('presence:heartbeat', async () => {
+        try { await store.setPresence({ userId, userName, avatarUrl }); } catch(_) {}
+      });
+
       socket.on('disconnect', async () => {
         await store.clearPresence(userId);
         io.to('global').emit('presence:update', { usersOnline: await store.listPresence() });
