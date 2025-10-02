@@ -189,6 +189,7 @@ class RaidLogsManager {
                 goPublic.onclick = () => { window.location.href = eid ? `/event/${eid}/raidlogs` : '/raidlogs'; };
             }
             const publishBtn = document.getElementById('faa-publish');
+            const refreshBtn = document.getElementById('faa-refresh');
             if (publishBtn && !publishBtn._wired) {
                 const iconEl = publishBtn.querySelector('i');
                 const updatePublishUi = (pub)=>{
@@ -197,10 +198,12 @@ class RaidLogsManager {
                         publishBtn.classList.add('state-published');
                         publishBtn.title = 'Unpublish data';
                         publishBtn.innerHTML = `<i class="fas fa-cloud-upload-alt"></i> Unpublish data`;
+                        if (refreshBtn) refreshBtn.style.display = 'inline-flex';
                     } else {
                         publishBtn.classList.add('state-unpublished');
                         publishBtn.title = 'Publish data';
                         publishBtn.innerHTML = `<i class="fas fa-cloud-upload-alt"></i> Publish data`;
+                        if (refreshBtn) refreshBtn.style.display = 'none';
                     }
                 };
                 // initial state from header if available
@@ -232,6 +235,34 @@ class RaidLogsManager {
                     } catch (e) { console.error('Publish toggle error', e); alert('Error. See console.'); }
                 });
                 publishBtn._wired = true;
+            }
+            if (refreshBtn && !refreshBtn._wired) {
+                refreshBtn.addEventListener('click', async () => {
+                    if (!this.activeEventId) return;
+                    try {
+                        const ok = confirm('Refresh published logs? This will unpublish, rebuild from current view, and republish.');
+                        if (!ok) return;
+                        // Unpublish (safe even if already unpublished)
+                        try { await fetch(`/api/rewards-snapshot/${this.activeEventId}/unpublish`, { method: 'POST' }); } catch {}
+                        // Unlock to drop old snapshot rows
+                        try { await fetch(`/api/rewards-snapshot/${this.activeEventId}/unlock`, { method: 'POST' }); } catch {}
+                        // Relock from current UI state
+                        await this.lockSnapshotFromCurrentView();
+                        // Publish again
+                        const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/publish`, { method: 'POST' });
+                        if (res && res.ok) {
+                            this.snapshotHeader = this.snapshotHeader || {}; this.snapshotHeader.published = true;
+                            alert('Refreshed and republished!');
+                            // Notify viewers (SSE already broadcasts snapshot_published on server publish)
+                        } else {
+                            alert('Refresh failed during publish');
+                        }
+                    } catch (e) {
+                        console.error('Refresh error', e);
+                        alert('Error refreshing published logs. See console.');
+                    }
+                });
+                refreshBtn._wired = true;
             }
             const revertBtnTop = document.getElementById('faa-revert');
             if (revertBtnTop && !revertBtnTop._wired) {

@@ -11879,7 +11879,8 @@ app.get('/api/manual-rewards/:eventId', async (req, res) => {
             return res.json({ success: true, data: [] });
         }
         
-        // Get manual rewards/deductions for this event
+        // Ensure column exists then get manual rewards/deductions for this event
+        await client.query(`ALTER TABLE manual_rewards_deductions ADD COLUMN IF NOT EXISTS is_gold BOOLEAN DEFAULT FALSE`);
         const result = await client.query(`
             SELECT 
                 id,
@@ -11891,7 +11892,8 @@ app.get('/api/manual-rewards/:eventId', async (req, res) => {
                 created_by,
                 created_at,
                 updated_at,
-                icon_url
+                icon_url,
+                COALESCE(is_gold,false) AS is_gold
             FROM manual_rewards_deductions 
             WHERE event_id = $1 
             ORDER BY created_at ASC
@@ -11920,7 +11922,7 @@ app.get('/api/manual-rewards/:eventId', async (req, res) => {
 // Add manual reward/deduction entry
 app.post('/api/manual-rewards/:eventId', requireManagement, async (req, res) => {
     const { eventId } = req.params;
-    const { player_name, player_class, discord_id, description, points, icon_url } = req.body;
+    const { player_name, player_class, discord_id, description, points, icon_url, is_gold } = req.body;
     const createdBy = req.user?.id || 'unknown';
     
     console.log(`⚖️ [MANUAL REWARDS] Adding entry for event: ${eventId}, player: ${player_name}, points: ${points}`);
@@ -11952,13 +11954,15 @@ app.post('/api/manual-rewards/:eventId', requireManagement, async (req, res) => 
             });
         }
         
+        // Ensure column exists
+        await client.query(`ALTER TABLE manual_rewards_deductions ADD COLUMN IF NOT EXISTS is_gold BOOLEAN DEFAULT FALSE`);
         // Insert new entry
         const result = await client.query(`
             INSERT INTO manual_rewards_deductions 
-            (event_id, player_name, player_class, discord_id, description, points, created_by, icon_url)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            (event_id, player_name, player_class, discord_id, description, points, created_by, icon_url, is_gold)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *
-        `, [eventId, player_name, player_class || null, discord_id || null, description, points, createdBy, icon_url || null]);
+        `, [eventId, player_name, player_class || null, discord_id || null, description, points, createdBy, icon_url || null, !!is_gold]);
         
         const newEntry = result.rows[0];
         console.log(`✅ [MANUAL REWARDS] Created entry with ID: ${newEntry.id}`);
@@ -11985,7 +11989,7 @@ app.post('/api/manual-rewards/:eventId', requireManagement, async (req, res) => 
 // Update manual reward/deduction entry
 app.put('/api/manual-rewards/:eventId/:entryId', requireManagement, async (req, res) => {
     const { eventId, entryId } = req.params;
-    const { player_name, player_class, discord_id, description, points } = req.body;
+    const { player_name, player_class, discord_id, description, points, is_gold } = req.body;
     
     console.log(`⚖️ [MANUAL REWARDS] Updating entry ${entryId} for event: ${eventId}`);
     
@@ -12016,13 +12020,15 @@ app.put('/api/manual-rewards/:eventId/:entryId', requireManagement, async (req, 
             });
         }
         
+        // Ensure column exists
+        await client.query(`ALTER TABLE manual_rewards_deductions ADD COLUMN IF NOT EXISTS is_gold BOOLEAN DEFAULT FALSE`);
         // Update entry
         const result = await client.query(`
             UPDATE manual_rewards_deductions 
-            SET player_name = $1, player_class = $2, discord_id = $3, description = $4, points = $5, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $6 AND event_id = $7
+            SET player_name = $1, player_class = $2, discord_id = $3, description = $4, points = $5, is_gold = $6, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $7 AND event_id = $8
             RETURNING *
-        `, [player_name, player_class, discord_id, description, points, entryId, eventId]);
+        `, [player_name, player_class, discord_id, description, points, !!is_gold, entryId, eventId]);
         
         if (result.rows.length === 0) {
             return res.status(404).json({ 
@@ -12749,7 +12755,14 @@ app.post('/api/rewards-snapshot/:eventId/publish', requireManagement, async (req
           COALESCE(m.points,0)::int AS point_value_original,
           COALESCE(m.description,'') AS character_details_original,
           NULL::int AS primary_numeric_original,
-          jsonb_build_object('is_gold', COALESCE(m.is_gold,false)) AS aux_json
+          jsonb_build_object(
+            'is_gold',
+            CASE
+              WHEN m.is_gold IS TRUE THEN TRUE
+              WHEN m.description ILIKE '%[GOLD]%' THEN TRUE
+              ELSE FALSE
+            END
+          ) AS aux_json
         FROM manual_rewards_deductions m
         WHERE m.event_id = $1
       `, [eventId]);

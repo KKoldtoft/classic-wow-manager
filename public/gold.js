@@ -167,6 +167,8 @@ class GoldPotManager {
                 this.snapshotEntries = published.entries || [];
                 // Build players from snapshot rows
                 this.allPlayers = this.buildPlayersFromSnapshot(this.snapshotEntries);
+                // Ensure base-only participants also appear by merging confirmed players from logs
+                try { await this.enrichPlayersWithConfirmed(); } catch {}
                 // Build name -> discord id map from confirmed players for DMs
                 try { await this.fetchAndBuildNameToDiscordId(); } catch {}
                 // Compute totals and render
@@ -244,6 +246,44 @@ class GoldPotManager {
             out.push({ character_name: rec.character_name, character_class: bestCls });
         });
         return out;
+    }
+
+    // Merge confirmed participants (from logs/confirmations) so base-only players are included in published mode
+    async enrichPlayersWithConfirmed(){
+        try{
+            const [logRes, confRes] = await Promise.all([
+                fetch(`/api/log-data/${this.currentEventId}`).catch(()=>null),
+                fetch(`/api/confirmed-logs/${this.currentEventId}/all-players`).catch(()=>null)
+            ]);
+            const logJson = (logRes && logRes.ok) ? await logRes.json().catch(()=>null) : null;
+            const confJson = (confRes && confRes.ok) ? await confRes.json().catch(()=>null) : null;
+            const logRows = Array.isArray(logJson && logJson.data) ? logJson.data : [];
+            const confRows = Array.isArray(confJson && confJson.data) ? confJson.data : [];
+            const lower = s=>String(s||'').toLowerCase();
+            const classByName = new Map();
+            (logRows||[]).forEach(p=>{
+                const nm = lower(p && p.character_name);
+                const cls = p && p.character_class ? String(p.character_class) : 'Unknown';
+                if (nm) classByName.set(nm, cls);
+            });
+            const existing = new Set((this.allPlayers||[]).map(p=> lower(p && p.character_name)));
+            const toAdd = [];
+            (confRows||[]).forEach(r=>{
+                const raw = String(r && r.character_name || '').trim();
+                if (!raw) return;
+                const nm = this.normalizeSnapshotName(raw);
+                if (!this.isValidWoWName(nm)) return;
+                if (this.shouldIgnorePlayer(nm)) return;
+                const key = lower(nm);
+                if (existing.has(key)) return;
+                const cls = classByName.get(lower(raw)) || 'Unknown';
+                toAdd.push({ character_name: nm, character_class: cls });
+                existing.add(key);
+            });
+            if (toAdd.length){
+                this.allPlayers = (this.allPlayers||[]).concat(toAdd);
+            }
+        } catch {}
     }
 
     computeTotalsFromSnapshot(header){
