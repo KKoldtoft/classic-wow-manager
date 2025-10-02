@@ -77,6 +77,16 @@ async function createIo(server) {
       socket.on('typing:start', () => { io.to('global').emit('typing:start', { userId, userName }); });
       socket.on('typing:stop', () => { io.to('global').emit('typing:stop', { userId, userName }); });
 
+      // Moderation delete (server-initiated via REST will emit to room)
+      socket.on('message:delete', async (payload) => {
+        try {
+          const id = payload && payload.id;
+          if (!id) return;
+          await store.deleteMessage(id);
+          io.to('global').emit('message:delete', { id });
+        } catch(_){}
+      });
+
       socket.on('disconnect', async () => {
         await store.clearPresence(userId);
         io.to('global').emit('presence:update', { usersOnline: await store.listPresence() });

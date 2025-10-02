@@ -188,7 +188,7 @@
         .sc-row.mine { justify-content:flex-end; }
         .sc-row.theirs { justify-content:flex-start; }
         .sc-bubble { max-width:72%; padding:8px 12px; border-radius:14px; word-break: break-word; }
-        .sc-bubble.mine { background:#5865F2; color:#fff; outline: 1px solid #10b981; /* temp test marker */ }
+        .sc-bubble.mine { background:#5865F2; color:#fff; }
         .sc-bubble.theirs { background:#111827; color:#e5e7eb; }
         .sc-avatar { width:24px; height:24px; border-radius:50%; flex:0 0 24px; }
         `;
@@ -378,6 +378,7 @@
         const isMine = msg && auth && String(msg.userId || '') === String(auth.userId || '');
         const row = document.createElement('div');
         row.className = `sc-row ${isMine ? 'mine' : 'theirs'} sc-msg-in`;
+        if (msg && msg.id) { try { row.setAttribute('data-id', String(msg.id)); } catch(_){} }
         const avatarUrl = (msg && msg.avatarUrl) ? String(msg.avatarUrl) : 'https://cdn.discordapp.com/embed/avatars/0.png';
         const avatar = document.createElement('img');
         avatar.src = avatarUrl;
@@ -386,9 +387,6 @@
 
         const bubbleBox = document.createElement('div');
         bubbleBox.className = `sc-bubble ${isMine ? 'mine' : 'theirs'}`;
-        // TEMP TEST MARKER INLINE STYLES (remove after confirmation)
-        bubbleBox.style.outline = isMine ? '2px dashed #10b981' : '2px dashed #f59e0b';
-        bubbleBox.style.background = isMine ? '#5865F2' : '#111827';
 
         const nameEl = document.createElement('div');
         nameEl.textContent = String((msg && msg.userName) || 'User');
@@ -824,7 +822,16 @@
         messages.appendChild(renderMessageRow(m));
         messages.scrollTop = messages.scrollHeight;
       });
-      console.log('[SiteChat] styles test marker active for version', WIDGET_VERSION);
+      socket.on('message:delete', (p) => {
+        try {
+          const id = p && p.id;
+          if (!id) return;
+          const row = messages.querySelector(`[data-id="${CSS.escape(String(id))}"]`);
+          if (row && row.parentNode) row.parentNode.removeChild(row);
+          else addNotice('A message was removed by a manager.', '');
+        } catch(_){}
+      });
+      //
     }
   };
 })();

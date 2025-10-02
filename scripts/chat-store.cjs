@@ -127,9 +127,25 @@ async function listPresence() {
   }
 }
 
+async function deleteMessage(id) {
+  if (!id) return false;
+  try {
+    const client = await getRedisClient();
+    await client.del(MESSAGE_KEY(id));
+    // Also remove from list to avoid dangling ids
+    await client.lRem(GLOBAL_LIST_KEY, 0, id);
+    return true;
+  } catch (_) {
+    const idx = mem.messages.findIndex(m => m && m.id === id);
+    if (idx >= 0) mem.messages.splice(idx, 1);
+    return true;
+  }
+}
+
 module.exports = {
   addMessage,
   getRecentMessages,
+  deleteMessage,
   setPresence,
   clearPresence,
   listPresence,

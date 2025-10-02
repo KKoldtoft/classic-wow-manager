@@ -476,7 +476,7 @@ const pool = new Pool({
 let dbConnectionStatus = 'Connecting...';
 
 pool.connect()
-  .then(client => {
+  .then(async client => {
     console.log('Connected to PostgreSQL database!');
     dbConnectionStatus = 'Connected';
     client.release();
@@ -507,6 +507,9 @@ migratePlayerConfirmedLogsTable();
 
     // Initialize authentication/user tables for local role storage
     initializeAuthTables();
+    // Initialize polls tables and seed initial poll
+    await initializePollsTables();
+    await ensureInitialPoll();
   })
   .catch(err => {
     console.error('Error connecting to PostgreSQL database:', err.stack);
@@ -559,6 +562,83 @@ async function initializeAuthTables() {
     console.log('✅ Auth tables initialized (discord_users, app_user_roles)');
   } catch (error) {
     console.error('❌ Error creating auth tables:', error);
+  }
+}
+
+// Initialize simple polls tables for front-page voting
+async function initializePollsTables() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS polls (
+        poll_id VARCHAR(100) PRIMARY KEY,
+        question TEXT NOT NULL,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_by_id TEXT,
+        created_by_name TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS poll_options (
+        id SERIAL PRIMARY KEY,
+        poll_id VARCHAR(100) REFERENCES polls(poll_id) ON DELETE CASCADE,
+        option_key TEXT NOT NULL,
+        option_text TEXT NOT NULL,
+        sort_index INTEGER DEFAULT 0,
+        UNIQUE(poll_id, option_key)
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS poll_votes (
+        id SERIAL PRIMARY KEY,
+        poll_id VARCHAR(100) REFERENCES polls(poll_id) ON DELETE CASCADE,
+        voter_discord_id TEXT NOT NULL,
+        voter_username TEXT,
+        voter_discriminator TEXT,
+        voter_display_name TEXT,
+        option_key TEXT NOT NULL,
+        voted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        UNIQUE(poll_id, voter_discord_id)
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_poll_votes_poll ON poll_votes(poll_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_poll_votes_option ON poll_votes(poll_id, option_key)`);
+    console.log('✅ Polls tables initialized');
+  } catch (error) {
+    console.error('❌ Error creating polls tables:', error);
+  }
+}
+
+// Seed initial poll if it does not exist
+async function ensureInitialPoll() {
+  const pollId = 'orc_vote_monitor_setup_v1';
+  const question = 'When we are raiding, do you have a second monitor in clear view that you can use to keep assignments, live logs, or other relevant content visible?';
+  try {
+    const existing = await pool.query(`SELECT 1 FROM polls WHERE poll_id = $1 LIMIT 1`, [pollId]);
+    if (existing.rows.length > 0) return; // already exists
+    await pool.query(
+      `INSERT INTO polls (poll_id, question, is_active, created_by_id, created_by_name)
+       VALUES ($1,$2,TRUE,$3,$4)`,
+      [pollId, question, 'system', 'System']
+    );
+    const options = [
+      { key: 'multi_monitor', text: 'Yes, I have a multi-monitor setup' },
+      { key: 'second_monitor_bad', text: "Yes, but it's kind of shit" },
+      { key: 'second_monitor_non_wow', text: 'Yes, but I use it for something non-WoW related' },
+      { key: 'single_monitor', text: 'No, I only have one monitor' }
+    ];
+    let sort = 0;
+    for (const opt of options) {
+      await pool.query(
+        `INSERT INTO poll_options (poll_id, option_key, option_text, sort_index)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (poll_id, option_key) DO NOTHING`,
+        [pollId, opt.key, opt.text, sort++]
+      );
+    }
+    console.log(`✅ Seeded initial poll ${pollId}`);
+  } catch (error) {
+    console.error('❌ Error seeding initial poll:', error);
   }
 }
 
@@ -2140,6 +2220,94 @@ app.post('/api/discord/test/webhook', async (req, res) => {
     } catch (err) {
         return res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
     }
+});
+
+// --- Simple Polls API ---
+// Fetch poll with options and aggregate counts; also include myVote when authenticated
+app.get('/api/polls/:pollId', async (req, res) => {
+  const { pollId } = req.params;
+  let client;
+  try {
+    client = await pool.connect();
+    const pollRes = await client.query(`SELECT poll_id, question, is_active, created_at FROM polls WHERE poll_id = $1`, [pollId]);
+    if (pollRes.rows.length === 0) return res.status(404).json({ ok: false, error: 'Poll not found' });
+    const poll = pollRes.rows[0];
+    const optsRes = await client.query(`SELECT option_key, option_text, sort_index FROM poll_options WHERE poll_id = $1 ORDER BY sort_index, id`, [pollId]);
+    const countsRes = await client.query(`SELECT option_key, COUNT(*)::int AS count FROM poll_votes WHERE poll_id = $1 GROUP BY option_key`, [pollId]);
+    const countMap = new Map(countsRes.rows.map(r => [r.option_key, Number(r.count)||0]));
+    let myVote = null;
+    if (req.isAuthenticated && req.isAuthenticated()) {
+      const me = await client.query(`SELECT option_key FROM poll_votes WHERE poll_id = $1 AND voter_discord_id = $2 LIMIT 1`, [pollId, String(req.user.id)]);
+      if (me.rows.length > 0) myVote = me.rows[0].option_key;
+    }
+    res.json({ ok: true, poll: { id: poll.poll_id, question: poll.question, is_active: !!poll.is_active }, options: optsRes.rows.map(o => ({ key: o.option_key, text: o.option_text, count: countMap.get(o.option_key) || 0 })), myVote });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
+  } finally { if (client) client.release(); }
+});
+
+// Cast or change vote; requires authentication
+app.post('/api/polls/:pollId/vote', async (req, res) => {
+  const { pollId } = req.params;
+  const { optionKey } = req.body || {};
+  if (!req.isAuthenticated || !req.isAuthenticated()) {
+    return res.status(401).json({ ok: false, error: 'Login required' });
+  }
+  if (!optionKey || typeof optionKey !== 'string') {
+    return res.status(400).json({ ok: false, error: 'optionKey is required' });
+  }
+  let client;
+  try {
+    client = await pool.connect();
+    // Validate poll and option
+    const pollRes = await client.query(`SELECT poll_id, is_active FROM polls WHERE poll_id = $1`, [pollId]);
+    if (pollRes.rows.length === 0) return res.status(404).json({ ok: false, error: 'Poll not found' });
+    if (!pollRes.rows[0].is_active) return res.status(400).json({ ok: false, error: 'Poll is closed' });
+    const optRes = await client.query(`SELECT 1 FROM poll_options WHERE poll_id = $1 AND option_key = $2`, [pollId, optionKey]);
+    if (optRes.rows.length === 0) return res.status(400).json({ ok: false, error: 'Invalid optionKey' });
+
+    await client.query(`
+      INSERT INTO poll_votes (poll_id, voter_discord_id, voter_username, voter_discriminator, voter_display_name, option_key)
+      VALUES ($1,$2,$3,$4,$5,$6)
+      ON CONFLICT (poll_id, voter_discord_id)
+      DO UPDATE SET option_key = EXCLUDED.option_key, voted_at = NOW()
+    `, [
+      pollId,
+      String(req.user.id),
+      req.user.username || null,
+      req.user.discriminator || null,
+      (req.user.username ? `${req.user.username}#${req.user.discriminator||''}` : null),
+      optionKey
+    ]);
+
+    // Return updated tallies
+    const countsRes = await client.query(`SELECT option_key, COUNT(*)::int AS count FROM poll_votes WHERE poll_id = $1 GROUP BY option_key`, [pollId]);
+    const countMap = new Map(countsRes.rows.map(r => [r.option_key, Number(r.count)||0]));
+    const optsRes = await client.query(`SELECT option_key, option_text, sort_index FROM poll_options WHERE poll_id = $1 ORDER BY sort_index, id`, [pollId]);
+    res.json({ ok: true, myVote: optionKey, options: optsRes.rows.map(o => ({ key: o.option_key, text: o.option_text, count: countMap.get(o.option_key) || 0 })) });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
+  } finally { if (client) client.release(); }
+});
+
+// Remove current user's vote
+app.delete('/api/polls/:pollId/vote', async (req, res) => {
+  const { pollId } = req.params;
+  if (!req.isAuthenticated || !req.isAuthenticated()) {
+    return res.status(401).json({ ok: false, error: 'Login required' });
+  }
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query(`DELETE FROM poll_votes WHERE poll_id = $1 AND voter_discord_id = $2`, [pollId, String(req.user.id)]);
+    // Return updated tallies
+    const countsRes = await client.query(`SELECT option_key, COUNT(*)::int AS count FROM poll_votes WHERE poll_id = $1 GROUP BY option_key`, [pollId]);
+    const countMap = new Map(countsRes.rows.map(r => [r.option_key, Number(r.count)||0]));
+    const optsRes = await client.query(`SELECT option_key, option_text, sort_index FROM poll_options WHERE poll_id = $1 ORDER BY sort_index, id`, [pollId]);
+    res.json({ ok: true, myVote: null, options: optsRes.rows.map(o => ({ key: o.option_key, text: o.option_text, count: countMap.get(o.option_key) || 0 })) });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
+  } finally { if (client) client.release(); }
 });
 
 // Announce invites for the current event (test version posts a simple embed to a hard-coded webhook)
@@ -19287,6 +19455,25 @@ app.post('/api/chat/config', requireManagement, express.json(), (req, res) => {
 app.post('/api/chat/prefs', express.json(), (req, res) => {
   // Placeholder: store per-user preference later
   try { res.json({ ok: true }); } catch (err) { res.status(500).json({ ok: false, error: err?.message || String(err) }); }
+});
+
+// Chat moderation: delete message (Management only). Emits over Socket.IO to all clients
+app.post('/api/chat/mod/delete', requireManagement, express.json(), async (req, res) => {
+  try {
+    const id = req.body && req.body.id;
+    if (!id) return res.status(400).json({ ok: false, error: 'Missing id' });
+    try {
+      const store = require('./scripts/chat-store.cjs');
+      await store.deleteMessage(id);
+    } catch(_) {}
+    try {
+      const io = req.app.get('io');
+      if (io) io.of('/site-chat').to('global').emit('message:delete', { id, deletedBy: 'management' });
+    } catch(_) {}
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
+  }
 });
 
 // Voice monitor removed per request
