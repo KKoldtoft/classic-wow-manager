@@ -11,6 +11,7 @@ const PRESENCE_KEY = (userId) => `chat:presence:${userId}`;
 const TTL_SECONDS = 4 * 60 * 60; // 4 hours
 const PRESENCE_TTL_SECONDS = 30; // 30s heartbeat
 const GLOBAL_LIST_CAP = 1000; // max ids kept
+const DEDUPE_TTL_SECONDS = 120; // 2 minutes to suppress duplicates
 
 function generateId() {
   const ts = Date.now().toString(36);
@@ -27,6 +28,21 @@ const mem = {
 async function addMessage(message) {
   try {
     const client = await getRedisClient();
+    // Dedupe: hash by source/user/text/minute
+    try {
+      const basisTs = typeof message.createdAt === 'number' ? message.createdAt : Date.now();
+      const minuteBucket = Math.floor(basisTs / 60000);
+      const text = String(message && message.text || '').trim();
+      const src = String(message && message.source || 'site');
+      const uid = String(message && message.userId || '');
+      const hashInput = `${src}|${uid}|${text}|${minuteBucket}`;
+      const hash = crypto.createHash('sha1').update(hashInput).digest('base64url');
+      const dedupeKey = `chat:dedupe:${hash}`;
+      const ok = await client.set(dedupeKey, '1', { NX: true, EX: DEDUPE_TTL_SECONDS });
+      if (ok !== 'OK') {
+        return null; // duplicate
+      }
+    } catch (_) {}
     const id = message.id || generateId();
     const createdAt = typeof message.createdAt === 'number' ? message.createdAt : Date.now();
     const payload = { ...message, id, createdAt };

@@ -64,7 +64,9 @@ function createDiscordBridge() {
         attachments: (message.attachments && message.attachments.size > 0) ? Array.from(message.attachments.values()).map(a => ({ type: 'image', url: a.url, thumbUrl: a.proxyURL })) : null,
         source: 'discord'
       });
-      broadcastFromDiscord(payload);
+      if (payload) { // null means deduped
+        broadcastFromDiscord(payload);
+      }
     } catch (e) {
       try { console.warn('[bridge] messageCreate error', e?.message || e); } catch(_) {}
     }
