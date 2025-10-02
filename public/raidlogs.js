@@ -175,13 +175,8 @@ class RaidLogsManager {
             // Floating Admin Actions wiring (admin view)
             const faa = document.getElementById('floating-admin-actions');
             if (faa) {
-                // Only show for Management role
-                try {
-                    this.fetchCurrentUser().then((user)=>{
-                        const canManage = !!(user && user.hasManagementRole);
-                        faa.style.display = canManage ? 'block' : 'none';
-                    }).catch(()=>{ faa.style.display = 'none'; });
-                } catch { faa.style.display = 'none'; }
+                // Always show the admin actions bar; server will enforce permissions on actions
+                faa.style.display = 'block';
             }
             const eid = this.activeEventId || localStorage.getItem('activeEventSession');
             const goPublic = document.getElementById('faa-switch-public');
