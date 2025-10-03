@@ -1194,7 +1194,7 @@
         } else {
           const list = document.createElement('div');
           list.className = 'rankings-list';
-          const rows = (obj.rows||[]).slice();
+          let rows = (obj.rows||[]).slice();
           if (!rows.length) {
             list.innerHTML = emptyStateHtml();
           } else {
