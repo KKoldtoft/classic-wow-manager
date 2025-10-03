@@ -199,6 +199,14 @@
             const isPub = !!(data && data.header);
             if (!isPub) {
               const ok = confirm('Publish current snapshot to public viewer?'); if (!ok) return;
+              // Lock snapshot from engine to ensure entries exist for public view
+              try {
+                await fetch(`/api/rewards-snapshot/${eid}/lock`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ useEngine: true })
+                });
+              } catch {}
               const resp = await fetch(`/api/rewards-snapshot/${eid}/publish`, { method: 'POST' });
               if (resp && resp.ok) { updatePublishUi(true); location.reload(); } else alert('Publish failed');
             } else {
@@ -217,6 +225,14 @@
             if (!ok) return;
             // Unpublish then republish; viewer does not lock from UI so just unpublish/publish
             try { await fetch(`/api/rewards-snapshot/${eid}/unpublish`, { method: 'POST' }); } catch {}
+            // Lock from engine to make sure snapshot rows exist
+            try {
+              await fetch(`/api/rewards-snapshot/${eid}/lock`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ useEngine: true })
+              });
+            } catch {}
             const resp = await fetch(`/api/rewards-snapshot/${eid}/publish`, { method: 'POST' });
             if (resp && resp.ok) { updatePublishUi(true); alert('Refreshed and republished!'); location.reload(); }
             else alert('Refresh failed during publish');
