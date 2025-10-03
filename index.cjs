@@ -9429,19 +9429,30 @@ app.get('/api/void-damage/:eventId', async (req, res) => {
     try {
         client = await pool.connect();
         
-        // Query for void damage taken from specific abilities
+        // Query for void damage taken from specific abilities (robust matching and numeric parsing)
         const result = await client.query(`
+            WITH parsed AS (
+                SELECT 
+                    character_name,
+                    character_class,
+                    LOWER(ability_name) AS ability_name_lc,
+                    COALESCE(CAST(NULLIF(regexp_replace(ability_value, '[^0-9]', '', 'g'), '') AS INTEGER), 0) AS ability_value_int
+                FROM sheet_player_abilities
+                WHERE event_id = $1
+                  AND (
+                        ability_name ILIKE '%void blast%'
+                     OR ability_name ILIKE '%shadow fissure%'
+                     OR ability_name ILIKE '%void zone%'
+                  )
+            )
             SELECT 
                 character_name,
                 character_class,
-                SUM(CASE WHEN ability_name = 'Void Blast (Shadow Fissure)' THEN CAST(ability_value AS INTEGER) ELSE 0 END) as void_blast_damage,
-                SUM(CASE WHEN ability_name = 'Void Zone (Void Zone)' THEN CAST(ability_value AS INTEGER) ELSE 0 END) as void_zone_damage,
-                SUM(CAST(ability_value AS INTEGER)) as total_void_damage,
-                COUNT(*) as void_hits
-            FROM sheet_player_abilities 
-            WHERE event_id = $1 
-            AND (ability_name = 'Void Blast (Shadow Fissure)' OR ability_name = 'Void Zone (Void Zone)')
-            AND ability_value ~ '^[0-9]+$'
+                SUM(CASE WHEN ability_name_lc LIKE '%void blast%' OR ability_name_lc LIKE '%shadow fissure%' THEN ability_value_int ELSE 0 END) AS void_blast_damage,
+                SUM(CASE WHEN ability_name_lc LIKE '%void zone%' THEN ability_value_int ELSE 0 END) AS void_zone_damage,
+                SUM(ability_value_int) AS total_void_damage,
+                COUNT(*) AS void_hits
+            FROM parsed
             GROUP BY character_name, character_class
             ORDER BY total_void_damage DESC
         `, [eventId]);

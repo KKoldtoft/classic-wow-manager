@@ -142,6 +142,254 @@
   <script>
   // Viewer layout helpers to emulate admin sizing
   (function(){
+    // Panel info overlays (copied from admin behavior)
+    window.attachPanelInfoOverlay = function(section){
+      if (!section || section.__panelInfoAttached) return;
+      section.__panelInfoAttached = true;
+      try { section.style.position = section.style.position || 'relative'; } catch {}
+
+      const overlay = document.createElement('div');
+      overlay.className = 'panel-info-overlay';
+
+      // Default copy and per-panel content mapping
+      let infoTitle = 'Panel Details';
+      let infoSubtitle = '';
+      let infoBody = 'Detailed explanation is missing for this panel';
+      let infoList = null;
+
+      const has = (cls) => section.classList.contains(cls);
+
+      if (has('sunder-section')) {
+        infoTitle = 'Sunder Armor Points';
+        infoSubtitle = 'Points are awarded based on each DPS warrior\'s use of Sunder Armor compared to the raid average.';
+        infoBody = '';
+        infoList = [
+          '<strong>Less than 25% of the average</strong>: -20 points',
+          '<strong>25–49% of the average</strong>: -15 points',
+          '<strong>50–74% of the average</strong>: -10 points',
+          '<strong>75–89% of the average</strong>: -5 points',
+          '<strong>90–109% of the average</strong>: 0 points',
+          '<strong>110–124% of the average</strong>: +5 points',
+          '<strong>125% or more of the average</strong>: +10 points'
+        ];
+      } else if (has('windfury-section')) {
+        infoTitle = 'Totems Points — How this panel works';
+        infoSubtitle = 'We know this is complicated, but the short version is: keep Windfury up, weave in Grace of Air, and cast Strength of Earth when it helps — do that and you\'ll earn lots of points.' + '<br><br>' + 'Below is a quick overview of how each totem earns points. For details per player, hover the text under a name to see who contributed to the average, who was excluded, and the exact numbers.';
+        infoBody = '<strong>Party average</strong>: Warriors only; anyone below 50% of the top Warrior in your party is excluded from the average and shown in red in the hover list. The Tank group is labeled "(Tank group)".';
+        infoList = [
+          '<strong>Windfury Totem (WF)</strong>: Your party\'s average "extra WF attacks" (Warriors only) is compared to the raid baseline. Tiers: <em><75%</em>=0 pts, <em>75–99%</em>=10 pts, <em>100–125%</em>=15 pts, <em>>125%</em>=20 pts. Tank group has half the normal requirement; very low Warriors (below 50% of the party\'s top Warrior) are excluded from the average (still shown in red).',
+          '<strong>Grace of Air Totem</strong>: To qualify, drop ≥10 totems and have party WF average ≥75% of baseline (Tank group: half requirement). Points = +1 per 10 totems, up to 20.',
+          '<strong>Strength of Earth Totem</strong>: To qualify, drop ≥10 totems and have party WF average ≥75% of baseline (Tank group: half requirement). Points = +1 per 10 totems, up to 10.',
+          '<strong>Tranquil Air Totem</strong>: No WF requirement. Points = +1 per 10 totems, up to 5.'
+        ];
+      } else if (has('rocket-helmet-section')) {
+        infoTitle = 'Goblin Rocket Helmet';
+        infoBody = 'On Kel\'Thuzad in Naxxramas, you can earn 5 bonus points by using a Goblin Rocket Helmet to stun an add during Phase 3.';
+      } else if (has('interrupts-section')) {
+        infoTitle = 'Interrupted spells';
+        infoSubtitle = 'Ranked by points (1 pt per 2 interrupts, max 5)';
+        infoBody = 'We count how many enemy casts you interrupted. Every 2 interrupts = 1 point, capped at 5 points. Tooltip shows your total interrupts.';
+      } else if (has('disarms-section')) {
+        infoTitle = 'Disarmed enemies';
+        infoSubtitle = 'Ranked by points (1 pt per 3 disarms, max 5)';
+        infoBody = 'We count how many Disarms you used. Every 3 disarms = 1 point, capped at 5 points. Tooltip shows your total disarms.';
+      } else if (has('abilities-section')) {
+        infoTitle = 'Engineering & Holywater';
+        infoSubtitle = 'Calculated points (configurable)';
+        infoBody = 'Points = floor((Total used × Avg targets) ÷ N), capped at Max. Defaults: N=10, Max=20. We track Dense Dynamite, Goblin Sapper, and Stratholme Holy Water. Hover a name to see your breakdown and the exact calculation.';
+      } else if (has('runes-section')) {
+        infoTitle = 'Dark or Demonic runes';
+        infoBody = 'Points are awarded by usage: you gain points for every set of runes used based on the division in the header (e.g., 1 point per 2 runes), up to the panel\'s maximum. Hover a name to see your total Dark/Demonic runes and divisions.';
+      } else if (has('mana-potions-section')) {
+        infoTitle = 'Major Mana Potions';
+        infoBody = 'Points are awarded for potions used above the threshold shown in the header. Every N potions above the threshold = 1 point (see header for N), capped at the maximum. Hover a name to see your total potions and how many counted for points.';
+      } else if (has('streak-section')) {
+        infoTitle = 'Attendance Streak Champions';
+        infoBody = 'Points are awarded for consistent weekly attendance: 4 weeks = 3 pts, 5 = 6 pts, 6 = 9 pts, 7 = 12 pts, and 8+ weeks = 15 pts.';
+      } else if (has('guild-section')) {
+        infoTitle = 'Guild Members';
+        infoBody = 'Every confirmed guild member present in the raid earns a flat +10 points.';
+      } else if (has('god-gamer-dps-section')) {
+        infoTitle = 'God Gamer DPS';
+        infoSubtitle = 'Exceptional damage performance is rewarded as follows:';
+        infoBody = '';
+        infoList = [
+          '30 points if you are #1 on damage and exceed #2 by at least 250,000 damage.',
+          '20 points if you are #1 on damage and exceed #2 by at least 150,000 damage.'
+        ];
+      } else if (has('god-gamer-healer-section')) {
+        infoTitle = 'God Gamer HPS';
+        infoSubtitle = 'Exceptional healing performance is rewarded as follows:';
+        infoBody = '';
+        infoList = [
+          '20 points if you are #1 on healing and exceed #2 by at least 250,000 healing.',
+          '15 points if you are #1 on healing and exceed #2 by at least 150,000 healing.'
+        ];
+      } else if (has('curse-recklessness-section')) {
+        infoTitle = 'Curse of Recklessness';
+        infoSubtitle = 'Ranked by points (>70% uptime earns points)';
+        infoBody = 'We measure how long your Curse of Recklessness was active when it mattered. Maintain high uptime to earn points; below the threshold earns 0.';
+      } else if (has('curse-shadow-section')) {
+        infoTitle = 'Curse of Shadow';
+        infoSubtitle = 'Ranked by points (>70% uptime earns points)';
+        infoBody = 'Warlocks are credited when Curse of Shadow is maintained. Keep it up for most of the fight to earn points; low uptime earns 0.';
+      } else if (has('curse-elements-section')) {
+        infoTitle = 'Curse of the Elements';
+        infoSubtitle = 'Ranked by points (>70% uptime earns points)';
+        infoBody = 'We credit uptime for Curse of the Elements. Aim for strong, consistent uptime across encounters to earn points.';
+      } else if (has('faerie-fire-section')) {
+        infoTitle = 'Faerie Fire';
+        infoSubtitle = 'Ranked by points (>70% uptime earns points)';
+        infoBody = 'Druids (or other valid sources) earn points for keeping Faerie Fire up. The higher the uptime, the better.';
+      } else if (has('scorch-section')) {
+        infoTitle = 'Scorch';
+        infoSubtitle = 'Ranked by tiers (0–99: 0 pts, 100–199: 5 pts, 200+: 10 pts)';
+        infoBody = 'We count total Scorches applied. Hitting 100 grants points; 200+ grants the maximum.';
+      } else if (has('demo-shout-section')) {
+        infoTitle = 'Demoralizing Shout';
+        infoSubtitle = 'Ranked by tiers (0–99: 0 pts, 100–199: 5 pts, 200+: 10 pts)';
+        infoBody = 'We count the number of Demo Shouts used. Reach the thresholds to earn 5 or 10 points.';
+      } else if (has('polymorph-section')) {
+        infoTitle = 'Polymorph';
+        infoSubtitle = 'Ranked by points (1 pt per 2 polymorphs, max 5)';
+        infoBody = 'Polymorphs help crowd control. Every two successful casts award a point, up to five points total.';
+      } else if (has('power-infusion-section')) {
+        infoTitle = 'Power Infusion';
+        infoSubtitle = 'Ranked by points (1 pt per 2 infusions, max 10, excludes self-casts)';
+        infoBody = 'Priests earn points for buffing teammates with Power Infusion. Self-casts do not count.';
+      } else if (has('decurses-section')) {
+        infoTitle = 'Decurses';
+        infoSubtitle = 'Ranked by average-based points (vs raid average, -10 to +10)';
+        infoBody = 'We compare your decurse count against the raid average: every 3 above average adds points, every 3 below average deducts, within the -10 to +10 range.';
+      } else if (has('void-damage-section')) {
+        infoTitle = 'Avoidable Void Damage';
+        infoSubtitle = 'Penalties for standing in bad';
+        infoBody = 'Taking damage from Void Blast or Void Zone costs points. Avoid the effects to keep your score clean. The panel shows totals and a breakdown by source.';
+      } else if (has('big-buyer-section')) {
+        infoTitle = 'Big Buyer Bonus';
+        infoSubtitle = 'Top 3 spenders (≥25,000 gold) earn bonus points';
+        infoBody = 'The highest spenders receive extra points, up to 20, based on gold spent thresholds. Only purchases ≥ 25,000 gold qualify.';
+      } else if (has('damage')) {
+        infoTitle = 'Damage Dealers';
+        infoSubtitle = 'Rank-based points (configurable)';
+        infoBody = 'Points are awarded by rank using a configured points array. By default: 1st=80, 2nd=70, 3rd=55, then 40, 35, 30, 25, 20, 15, 10, 8, 6, 5, 4, 3. Players ranked beyond the configured list receive 0 points.';
+        infoList = null;
+      } else if (has('healing')) {
+        infoTitle = 'Healers';
+        infoSubtitle = 'Rank-based points (configurable)';
+        infoBody = 'Points are awarded by rank using a configured points array. By default: 1st=80, 2nd=65, 3rd=60, 4th=55, then 40, 35, 30, 20, 15, 10. Players beyond the configured list receive 0 points.';
+        infoList = null;
+      } else if (has('too-low-damage-section')) {
+        infoTitle = 'Too Low Damage';
+        infoSubtitle = 'Penalties based on DPS vs active fight time';
+        infoList = [
+          '&lt;150 DPS = -100',
+          '150–199.9 DPS = -50',
+          '200–249.9 DPS = -25'
+        ];
+        infoBody = 'Only primary-role DPS are considered. Support assignments may be excluded via primary role data.';
+      } else if (has('too-low-healing-section')) {
+        infoTitle = 'Too Low Healing';
+        infoSubtitle = 'Penalties based on HPS vs active fight time';
+        infoList = [
+          'Very low HPS incurs deductions (same scale as low DPS)'
+        ];
+        infoBody = 'Only primary-role Healers are considered. Support assignments may be excluded via primary role data.';
+      } else if (has('frost-resistance-section')) {
+        infoTitle = 'Frost Resistance';
+        infoSubtitle = 'This rule applies to Sapphiron and affects DPS players only. Insufficient frost resistance results in penalties:';
+        infoBody = '';
+        infoList = [
+          '<strong>Warriors, Rogues, Hunters</strong>',
+          '30 frost resistance',
+          '-10 points if below 80 frost resistance',
+          '',
+          '<strong>Mages, Warlocks</strong>',
+          '-5 points if below 150 frost resistance',
+          '-10 points if below 80 frost resistance',
+          '',
+          'Only frost resistance from items and enchants is counted. Class abilities, racial abilities, buffs, and consumables are not included — you are expected to use those in addition to the required gear.'
+        ];
+      } else if (has('world-buffs-section')) {
+        infoTitle = 'World Buffs';
+        infoBody = 'Points are deducted for missing key world buffs. Default: -10 per missing buff when below 4/6; thresholds may be configured.';
+      }
+
+      const parts = [];
+      parts.push('<div class="panel-info-overlay-content">');
+      parts.push(`<h4 class="panel-info-title">${infoTitle}</h4>`);
+      if (infoSubtitle) parts.push(`<p class="panel-info-subtitle">${infoSubtitle}</p>`);
+      if (Array.isArray(infoList) && infoList.length) {
+        parts.push('<ul class="panel-info-list">');
+        infoList.forEach(item => parts.push(`<li>${item}</li>`));
+        parts.push('</ul>');
+      }
+      if (infoBody) parts.push(`<p class="panel-info-body">${infoBody}</p>`);
+      parts.push('</div>');
+      overlay.innerHTML = parts.join('');
+      section.appendChild(overlay);
+
+      const closeX = document.createElement('div');
+      closeX.className = 'panel-info-close-x';
+      closeX.innerHTML = '<i class="fas fa-times-circle" aria-hidden="true"></i>';
+      try { closeX.setAttribute('title', 'Close'); } catch {}
+      overlay.appendChild(closeX);
+
+      const header = section.querySelector('.section-header');
+      if (!header) return;
+      header.style.position = header.style.position || 'relative';
+      const icon = document.createElement('div');
+      icon.className = 'panel-info-icon';
+      icon.textContent = '?';
+      header.appendChild(icon);
+
+      let timerId = null;
+      let lastX = 0, lastY = 0;
+      let isLocked = false;
+      const threshold = 3;
+      const delayMs = 1000;
+
+      const clearTimer = () => { if (timerId) { clearTimeout(timerId); timerId = null; } };
+      const showOverlayLocked = (locked) => {
+        if (locked) overlay.classList.add('locked'); else overlay.classList.remove('locked');
+        overlay.classList.add('show');
+      };
+      const startTimer = () => {
+        clearTimer();
+        timerId = setTimeout(() => { showOverlayLocked(false); }, delayMs);
+      };
+      const onEnter = (e) => {
+        if (isLocked) return;
+        lastX = e.clientX; lastY = e.clientY;
+        startTimer();
+      };
+      const onMove = (e) => {
+        if (isLocked) return;
+        const dx = Math.abs(e.clientX - lastX);
+        const dy = Math.abs(e.clientY - lastY);
+        if (dx > threshold || dy > threshold) {
+          lastX = e.clientX; lastY = e.clientY;
+          startTimer();
+        }
+      };
+      const hideOverlay = () => { overlay.classList.remove('show'); overlay.classList.remove('locked'); };
+
+      icon.addEventListener('mouseenter', onEnter);
+      icon.addEventListener('mousemove', onMove);
+      icon.addEventListener('mouseleave', () => { clearTimer(); if (!isLocked) hideOverlay(); });
+      icon.addEventListener('click', () => { clearTimer(); isLocked = true; showOverlayLocked(true); });
+      overlay.addEventListener('mouseleave', () => { if (!isLocked) hideOverlay(); });
+      overlay.addEventListener('click', () => { if (!isLocked) hideOverlay(); });
+      closeX.addEventListener('click', (e) => { e.stopPropagation(); isLocked = false; hideOverlay(); });
+    }
+
+    window.initializePanelInfoOverlays = function(){
+      try {
+        const sections = Array.from(document.querySelectorAll('.rankings-section'));
+        sections.forEach(section => window.attachPanelInfoOverlay(section));
+      } catch {}
+    }
+
     // Wire floating admin actions (public view: switch to admin, and upload logs)
     try {
     const faa = document.getElementById('floating-admin-actions');
@@ -258,6 +506,18 @@
       body.raidlogs-view .rankings-container .rankings-section { flex: 1 1 420px; }
       /* Viewer-specific icon sizing for all panels */
       body.raidlogs-view .rankings-section .spec-icon { width: 47px !important; height: 47px !important; }
+      /* Ensure header is positioned for overlay icon and has padding for the icon */
+      body.raidlogs-view .rankings-section .section-header { position: relative; padding-right: 32px; }
+      /* Panel info icon (top-right) */
+      body.raidlogs-view .rankings-section .section-header .panel-info-icon { position: absolute; top: 10px; right: 12px; width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25); color: #fff; font-size: 12px; line-height: 18px; text-align: center; cursor: help; transition: all .2s ease; z-index: 3; }
+      body.raidlogs-view .rankings-section .section-header .panel-info-icon:hover { background: rgba(0,0,0,0.5); transform: translateY(-1px); }
+      /* Panel dark overlay */
+      body.raidlogs-view .rankings-section .panel-info-overlay { position: absolute; inset: 0; background: rgba(11, 18, 32, 0.95); color: #f8fafc; display: flex; align-items: flex-start; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .35s ease; z-index: 50; padding: 20px; overflow: auto; }
+      body.raidlogs-view .rankings-section .panel-info-overlay.show { opacity: 1; pointer-events: auto; }
+      body.raidlogs-view .rankings-section .panel-info-overlay .panel-info-close-x { display: none; position: absolute; top: 10px; right: 12px; color: #f8fafc; font-size: 16px; cursor: pointer; z-index: 60; opacity: .85; background: transparent; border: none; }
+      body.raidlogs-view .rankings-section .panel-info-overlay.locked .panel-info-close-x { display: block; }
+      body.raidlogs-view .rankings-section .panel-info-overlay .panel-info-close-x:hover { opacity: 1; }
+      body.raidlogs-view .rankings-section .panel-info-overlay-content { max-width: 720px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 18px 20px; box-shadow: 0 10px 28px rgba(0,0,0,0.45); }
       /* God Gamer row spans full width with two equal panels */
       .god-gamer-row { display:flex; gap:30px; width: 100%; }
       .god-gamer-row .rankings-section { flex: 0 0 calc((100% - 30px) / 2); }
@@ -1467,6 +1727,8 @@
       });
       // Apply background fill percentages per panel rules
       applyFillPercentages();
+      // Attach panel info overlays and icons
+      initializePanelInfoOverlays();
     }
     load();
   })();
