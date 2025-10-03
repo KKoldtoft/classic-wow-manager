@@ -619,6 +619,15 @@
       } catch { return false; }
     }
 
+    // Hide explicit non-player entities in the public viewer
+    function shouldIgnoreViewerName(name){
+      try {
+        const n = String(name||'').toLowerCase().trim();
+        if (n === 'battle chicken' || n === 'zzoldhealing stream totem v') return true;
+        return /\b(zzold|totems?|wards?|traps?|dumm(?:y|ies)|battle\s*chicken)\b/i.test(n);
+      } catch { return false; }
+    }
+
     function normalizeSnapshotName(name){
       try {
         const raw = String(name||'').trim();
@@ -683,7 +692,7 @@
           default: return 'Windfury Totem';
         }
       };
-      const buildRow = (row, index)=>{
+      const buildRow = (row, index, pct)=>{
         const clsName = String(row.character_class||'').toLowerCase();
         const details = (row.character_details_edited ?? row.character_details ?? row.character_details_original) || '';
         const rawPts = (row.point_value_edited ?? row.points ?? row.point_value_original) || 0;
@@ -694,7 +703,7 @@
         return `
           <div class="ranking-item" data-item-key="${detectTotemKey(row)}">
             <div class="ranking-number">#${index+1}</div>
-            <div class="character-info ${clsName?('class-'+clsName):'class-unknown'}">
+            <div class="character-info ${clsName?('class-'+clsName):'class-unknown'}" style="--fill-percentage: ${pct || 100}%;">
               ${icon?`<img src="${icon}" class="spec-icon" alt="${clsName}" width="47" height="47">`:''}
               <div class="character-name ${clsName?('class-'+clsName):''}">${row.character_name||''}</div>
               <div class="character-details">${details}</div>
@@ -711,7 +720,22 @@
         if (!arr.length) return;
         container.insertAdjacentHTML('beforeend', headerHtml(titleForType(key), iconForType(key), key));
         const sorted = arr.slice().sort((a,b)=>((b.points||0)-(a.points||0)) || String(a.character_name||'').localeCompare(String(b.character_name||'')));
-        sorted.forEach((row, idx)=>{ container.insertAdjacentHTML('beforeend', buildRow(row, idx)); renderedCount++; });
+        // Compute relative fill percentages by last numeric value in details (fallback to points)
+        const values = sorted.map(r=>{
+          try{
+            const details = String((r.character_details_edited ?? r.character_details ?? r.character_details_original) || '');
+            // Prefer last numeric token (supports decimals)
+            const m = details.match(/(-?\d+(?:\.\d+)?)(?!.*-?\d)/);
+            if (m) return parseFloat(m[1]) || 0;
+          }catch{}
+          return Number(r.points||0) || 0;
+        });
+        const max = Math.max(1, ...values);
+        sorted.forEach((row, idx)=>{
+          const v = values[idx] || 0;
+          const pct = Math.max(5, Math.min(100, Math.round((v / max) * 100)));
+          container.insertAdjacentHTML('beforeend', buildRow(row, idx, pct)); renderedCount++; 
+        });
       });
       if (renderedCount === 0) {
         container.innerHTML = emptyStateHtml();
@@ -749,7 +773,9 @@
         const dedsEl = document.getElementById('manual-rewards-list-deductions');
         const noneEl = document.getElementById('manual-no-entries');
         if (!section || !rewardsEl || !dedsEl) return;
-        const items = (Array.isArray(manualEntries) ? manualEntries : []).filter(e=> isValidWoWName(e.character_name));
+        const items = (Array.isArray(manualEntries) ? manualEntries : [])
+          .map(e => { e.character_name = normalizeSnapshotName(e.character_name); return e; })
+          .filter(e=> isValidWoWName(e.character_name) && !shouldIgnoreViewerName(e.character_name));
         if (items.length === 0){
           section.style.display='block';
           rewardsEl.innerHTML='';
@@ -1072,10 +1098,21 @@
       // Extract manual entries and render at top
       const manual = (entries||[]).filter(r=> String(r.panel_key||'') === 'manual_points');
       renderManualRewards(manual);
-      const otherEntries = (entries||[])
+      let otherEntries = (entries||[])
           .filter(r=> String(r.panel_key||'') !== 'manual_points')
-          // Allow all names here; admin snapshot is the source of truth
-          .map(r => { r.character_name = normalizeSnapshotName(r.character_name); return r; });
+          .map(r => { r.character_name = normalizeSnapshotName(r.character_name); return r; })
+          .filter(r => isValidWoWName(r.character_name) && !shouldIgnoreViewerName(r.character_name));
+      // Adjust details text for Guild Members panel: strike-through "Cult Memeber" before "Guild Member"
+      otherEntries = otherEntries.map(r=>{
+        if (String(r.panel_key||'') === 'guild_members'){
+          const base = 'Guild Member';
+          const prefix = '<span style="text-decoration: line-through; opacity:.8; margin-right:6px;">Cult Memeber</span>';
+          const details = (r.character_details_edited ?? r.character_details ?? r.character_details_original) || '';
+          const out = `${prefix}${base}`;
+          r.character_details_edited = out;
+        }
+        return r;
+      });
       const byPanel = {};
       otherEntries.forEach(r=>{
         const key = String(r.panel_key||'');
@@ -1101,10 +1138,16 @@
         const list = document.createElement('div');
         list.className = 'rankings-list';
         const rows = (obj.rows||[]).slice();
-        if (!rows.length) {
+          if (!rows.length) {
           list.innerHTML = emptyStateHtml();
         } else {
-          rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            const isScorch = (key === 'scorch');
+            if (isScorch) {
+              const extract = (r)=>{ try{ const d=String((r.character_details_edited ?? r.character_details ?? r.character_details_original) || ''); const m=d.match(/(\d+)(?!.*\d)/); return m?parseInt(m[1],10):0; }catch{return 0;} };
+              rows.sort((a,b)=> (extract(b)-extract(a)) || String(a.character_name).localeCompare(String(b.character_name)));
+            } else {
+              rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            }
           rows.forEach((row, idx)=>{
             const item = document.createElement('div');
             item.className = 'ranking-item';
@@ -1155,7 +1198,42 @@
           if (!rows.length) {
             list.innerHTML = emptyStateHtml();
           } else {
-            rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            // For Decurses, fill by relative decurse count and sort by that count desc
+            const isDecurses = (key === 'decurses');
+            let sortedRows = rows.slice();
+            if (isDecurses) {
+              // Extract decurse count from details (last integer)
+              const extract = (r)=>{ try{ const d=String((r.character_details_edited ?? r.character_details ?? r.character_details_original) || ''); const m=d.match(/(\d+)(?!.*\d)/); return m?parseInt(m[1],10):0; }catch{return 0;} };
+              sortedRows.sort((a,b)=> (extract(b)-extract(a)) || String(a.character_name).localeCompare(String(b.character_name)));
+              const vals = sortedRows.map(extract); const max = Math.max(1, ...vals);
+              list.innerHTML = '';
+              sortedRows.forEach((row, idx)=>{
+                const item = document.createElement('div');
+                item.className = 'ranking-item';
+                const clsName = (row.character_class||'').toString().toLowerCase();
+                const details = (row.character_details_edited != null ? row.character_details_edited : (row.character_details != null ? row.character_details : (row.character_details_original != null ? row.character_details_original : '')));
+                const rawPts = (row.point_value_edited != null ? row.point_value_edited : (row.points != null ? row.points : (row.point_value_original != null ? row.point_value_original : 0)));
+                const points = Math.round(Number(rawPts||0));
+                const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+                const iconUrlPub = row.aux_json && (row.aux_json.icon_url || row.aux_json['icon_url']);
+                const icon = iconUrlPub || classIconUrl(clsName);
+                const v = vals[idx] || 0; const pct = Math.max(5, Math.min(100, Math.round((v / max) * 100)));
+                item.innerHTML = `
+                  <div class="ranking-number">#${idx+1}</div>
+                  <div class="character-info ${clsName?('class-'+clsName):'class-unknown'}" style="--fill-percentage: ${pct}%">
+                    ${icon?`<img src="${icon}" class="spec-icon" alt="${clsName}" width="47" height="47">`:''}
+                    <div class="character-name ${clsName?('class-'+clsName):''}">${row.character_name||''}</div>
+                    <div class="character-details">${details}</div>
+                  </div>
+                  <div class="performance-amount"><span class="amount-value ${amtClass}">${points}</span></div>`;
+                list.appendChild(item);
+              });
+              section.appendChild(list);
+              row.appendChild(section);
+              delete byPanel[key];
+              return;
+            }
+            rows = sortedRows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
             rows.forEach((row, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';
@@ -1205,7 +1283,13 @@
           if (!rows.length) {
             list.innerHTML = emptyStateHtml();
           } else {
-            rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            const isPolymorph = (key === 'polymorph');
+            if (isPolymorph) {
+              const extract = (r)=>{ try{ const d=String((r.character_details_edited ?? r.character_details ?? r.character_details_original) || ''); const m=d.match(/(\d+)(?!.*\d)/); return m?parseInt(m[1],10):0; }catch{return 0;} };
+              rows.sort((a,b)=> (extract(b)-extract(a)) || String(a.character_name).localeCompare(String(b.character_name)));
+            } else {
+              rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            }
             rows.forEach((rowItem, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';
