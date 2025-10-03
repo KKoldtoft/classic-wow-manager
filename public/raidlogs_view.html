@@ -796,9 +796,10 @@
       // Extract manual entries and render at top
       const manual = (entries||[]).filter(r=> String(r.panel_key||'') === 'manual_points');
       renderManualRewards(manual);
-        const otherEntries = (entries||[])
+      const otherEntries = (entries||[])
           .filter(r=> String(r.panel_key||'') !== 'manual_points')
-          .filter(r=> isValidWoWName(normalizeSnapshotName(r.character_name)));
+          // Allow all names here; admin snapshot is the source of truth
+          .map(r => { r.character_name = normalizeSnapshotName(r.character_name); return r; });
       const byPanel = {};
       otherEntries.forEach(r=>{
         const key = String(r.panel_key||'');

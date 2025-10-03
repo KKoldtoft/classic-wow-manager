@@ -3511,6 +3511,23 @@ class RaidLogsManager {
     async lockSnapshotFromCurrentView() {
         // Lock snapshot from the currently rendered view to preserve exact texts/icons
         try {
+            // Ensure panels have rendered (either populated or empty-state) before scraping
+            const waitForPanelsReady = async (timeoutMs = 6000) => {
+                const start = Date.now();
+                const containerIds = (this.panelConfigs || []).map(c => c.containerId).filter(Boolean);
+                const isReady = () => containerIds.every(id => {
+                    const el = document.getElementById(id);
+                    if (!el) return true; // if panel not present, don't block
+                    return !!(el.querySelector('.ranking-item') || el.querySelector('.rankings-empty'));
+                });
+                while ((Date.now() - start) < timeoutMs) {
+                    if (isReady()) return true;
+                    await new Promise(r => setTimeout(r, 150));
+                }
+                return false;
+            };
+            try { await waitForPanelsReady(); } catch {}
+
             const header = (()=>{
                 try{
                     const stats = this.raidStats && this.raidStats.stats ? this.raidStats.stats : null;
