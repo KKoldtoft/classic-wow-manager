@@ -7347,7 +7347,13 @@ class RaidLogsManager {
         // Allow special letters; disallow numbers and whitespace (multi-word)
         if (/\d/.test(raw)) return true;
         if (/\s/.test(raw)) return true;
-        const n = raw.toLowerCase();
+        const n = raw.toLowerCase().trim();
+        // Explicit exact-name filters
+        const explicit = new Set([
+            'battle chicken',
+            'zzoldhealing stream totem v'
+        ]);
+        if (explicit.has(n)) return true;
         // Filter common non-player entities by whole words so real names like "Warduro" don't match
         // Matches: zzOLD, totem/totems, ward/wards, trap/traps, dummy/dummies, battle chicken
         return /\b(zzold|totems?|wards?|traps?|dumm(?:y|ies)|battle\s*chicken)\b/i.test(n);

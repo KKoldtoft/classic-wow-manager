@@ -1448,7 +1448,13 @@ class GoldPotManager {
 
     shouldIgnorePlayer(name) {
         if (!name) return false;
-        const n = String(name).toLowerCase();
+        const n = String(name).toLowerCase().trim();
+        // Explicit exact-name filters
+        const explicit = new Set([
+            'battle chicken',
+            'zzoldhealing stream totem v'
+        ]);
+        if (explicit.has(n)) return true;
         // Do not exclude names containing 'ward' (e.g., 'Warduro'); only filter clear non-player entities
         return /(zzold|totem|trap|dummy|battle\s*chicken)/i.test(n);
     }

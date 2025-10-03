@@ -7,7 +7,13 @@ module.exports = function registerRewardsEngine(app, pool) {
   const nameKey = (s) => String(s || '').trim().toLowerCase();
   // Utility: ignore non-players consistently
   const shouldIgnorePlayer = (name) => {
-    const n = String(name || '').toLowerCase();
+    const n = String(name || '').toLowerCase().trim();
+    // Explicit exact-name filters
+    const explicit = new Set([
+      'battle chicken',
+      'zzoldhealing stream totem v'
+    ]);
+    if (explicit.has(n)) return true;
     return /(zzold|totem|trap|dummy|battle\s*chicken)/i.test(n);
   };
 
