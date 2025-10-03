@@ -5266,6 +5266,10 @@ class WoWLogsAnalyzer {
             clearInterval(progressTimer);
             this.completeStepWithProgressAnimation(2, 'RPB analysis completed successfully');
             console.log('✅ [WORKFLOW] Step 2 completed');
+            try {
+                const rpbSheetUrl = 'https://docs.google.com/spreadsheets/d/11Y9nIYRdxPsQivpQGaK1B0Mc-tbnCR45A1I4-RaKvyk/edit#gid=588029694';
+                this.setStepLink(2, 'Analyzed in:', rpbSheetUrl);
+            } catch {}
             
         } catch (error) {
             clearInterval(progressTimer);
@@ -5281,9 +5285,10 @@ class WoWLogsAnalyzer {
         
         try {
             // Call the archive function with the correct logUrl
-            await this.callArchiveFunction(logUrl);
+            const result = await this.callArchiveFunction(logUrl);
             
             this.updateWorkflowStep(5, 'completed', 'Archive created successfully', '✅');
+            try { this.setStepLink(5, 'Archived to:', (result && (result.url || result.backupUrl || result.archiveUrl)) || null); } catch {}
             console.log('✅ [WORKFLOW] Step 5 completed');
             
         } catch (error) {
@@ -5330,6 +5335,7 @@ class WoWLogsAnalyzer {
                 console.log('📥 [WORKFLOW] Step 8: Calling import function with retry URL:', retryArchiveUrl);
                 await this.callImportFunction(retryArchiveUrl, eventId);
                 this.updateWorkflowStep(8, 'completed', 'Data imported successfully', '✅');
+                try { this.setStepLink(8, 'Imported from:', retryArchiveUrl); } catch {}
                 console.log('✅ [WORKFLOW] Step 8 completed');
                 return;
             }
@@ -5339,6 +5345,7 @@ class WoWLogsAnalyzer {
             await this.callImportFunction(archiveUrl, eventId);
             
             this.updateWorkflowStep(8, 'completed', 'Data imported successfully', '✅');
+            try { this.setStepLink(8, 'Imported from:', archiveUrl); } catch {}
             console.log('✅ [WORKFLOW] Step 8 completed');
             
         } catch (error) {
@@ -5370,6 +5377,10 @@ class WoWLogsAnalyzer {
             clearInterval(progressTimer);
             this.completeStepWithProgressAnimation(3, 'World Buffs analysis completed');
             console.log('✅ [WORKFLOW] Step 3 completed');
+            try {
+                const worldBuffsSheetUrl = 'https://docs.google.com/spreadsheets/d/1CHAbsIbEF_2UiuX94438chTzW2gO7T0JgyhWIGTmkK8/edit';
+                this.setStepLink(3, 'Analyzed in:', worldBuffsSheetUrl);
+            } catch {}
             
         } catch (error) {
             clearInterval(progressTimer);
@@ -5410,6 +5421,7 @@ class WoWLogsAnalyzer {
             await this.storeWorldBuffsArchiveUrl(result, logUrl, this.workflowState.eventId);
             
             this.updateWorkflowStep(6, 'completed', 'World Buffs archive created', '✅');
+            try { this.setStepLink(6, 'Archived to:', (result && (result.backupUrl || result.archiveUrl || result.url)) || null); } catch {}
             console.log('✅ [WORKFLOW] Step 6 completed');
             
         } catch (error) {
@@ -5434,6 +5446,7 @@ class WoWLogsAnalyzer {
             await this.importWorldBuffsData(archiveUrl);
             
             this.updateWorkflowStep(9, 'completed', 'World Buffs data imported', '✅');
+            try { this.setStepLink(9, 'Imported from:', archiveUrl); } catch {}
             console.log('✅ [WORKFLOW] Step 9 completed');
             
         } catch (error) {
@@ -5463,6 +5476,10 @@ class WoWLogsAnalyzer {
             // Clear progress timer and complete the step
             clearInterval(progressTimer);
             this.completeStepWithProgressAnimation(4, 'Frost Resistance analysis completed');
+            try {
+                const frostResSheetUrl = 'https://docs.google.com/spreadsheets/d/1GF-0vKjP8qMwYgzfQd9zF1P7UpU8pcdEfikpyJT6Nx8/edit';
+                this.setStepLink(4, 'Analyzed in:', frostResSheetUrl);
+            } catch {}
             console.log('✅ [WORKFLOW] Step 4 completed');
             
         } catch (error) {
@@ -5510,6 +5527,7 @@ class WoWLogsAnalyzer {
             await this.storeFrostResArchiveUrl(result, logUrl, this.workflowState.eventId);
             
             this.updateWorkflowStep(7, 'completed', 'Frost Resistance archive created', '✅');
+            try { this.setStepLink(7, 'Archived to:', (result && (result.backupUrl || result.archiveUrl || result.url)) || null); } catch {}
             console.log('✅ [WORKFLOW] Step 7 completed');
             
         } catch (error) {
@@ -5542,6 +5560,7 @@ class WoWLogsAnalyzer {
             await this.importFrostResData(archiveUrl);
             
             this.updateWorkflowStep(10, 'completed', 'Frost Resistance data imported', '✅');
+            try { this.setStepLink(10, 'Imported from:', archiveUrl); } catch {}
             console.log('✅ [WORKFLOW] Step 10 completed');
             
         } catch (error) {
@@ -5806,6 +5825,23 @@ class WoWLogsAnalyzer {
         return timer;
     }
 
+    setStepLink(stepNumber, prefix, url) {
+        if (!url) return;
+        const content = document.querySelector(`#step${stepNumber}Progress .step-content`);
+        if (!content) return;
+        let box = content.querySelector('.step-link');
+        if (!box) {
+            box = document.createElement('div');
+            box.className = 'step-link';
+            box.style.marginTop = '6px';
+            content.appendChild(box);
+        }
+        box.innerHTML = `
+            <div style="padding:6px 8px; background: var(--secondary-bg, #2a2a2a); border: 1px solid var(--border-color, #3a3a3a); border-radius: 4px; color: var(--text-secondary, #bbb); font-size: 12px;">
+                ${prefix} <a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>
+            </div>
+        `;
+    }
     async completeStepWithProgressAnimation(stepNumber, completionMessage) {
         // Quickly animate to 100% if not already there
         this.updateWorkflowStepProgress(stepNumber, 100);

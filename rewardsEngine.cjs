@@ -408,7 +408,13 @@ module.exports = function registerRewardsEngine(app, pool) {
     sumDataset(byKey.curseShadowData, 'curse_shadow');
     sumDataset(byKey.curseElementsData, 'curse_elements');
     sumDataset(byKey.faerieFireData, 'faerie_fire');
-    sumDataset(byKey.scorchData, 'scorch');
+    // Scorch: include even if player not strictly in confirmed, to avoid misses from name mismatches
+    try {
+      (byKey.scorchData||[]).forEach(row => {
+        const nm = row.character_name || row.player_name; if (!nm) return;
+        addRow('scorch', nm, Number(row.points)||0);
+      });
+    } catch {}
     sumDataset(byKey.demoShoutData, 'demo_shout');
     sumDataset(byKey.polymorphData, 'polymorph');
     sumDataset(byKey.powerInfusionData, 'power_infusion');
@@ -496,10 +502,12 @@ module.exports = function registerRewardsEngine(app, pool) {
       }
     } catch {}
 
-    // Frost Resistance: DPS only
+    // Frost Resistance: rely on API-calculated points; include confirmed players; negative points are allowed
     try {
-      (byKey.frostResistanceData||[]).forEach(row=>{
-        const nm = nameKey(row.character_name||row.player_name||''); const pr = String(byKey.primaryRoles?.[nm]||'').toLowerCase(); if (pr!=='dps') return; addRow('frost_resistance', row.character_name||row.player_name, Number(row.points)||0);
+      (byKey.frostResistanceData||[]).forEach(row => {
+        const nm = row.character_name || row.player_name; if (!nm) return;
+        const k = nameKey(nm); if (!confirmed.has(k)) return;
+        addRow('frost_resistance', nm, Number(row.points)||0);
       });
     } catch {}
 

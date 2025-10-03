@@ -16946,7 +16946,7 @@ app.get('/api/big-buyer/:eventId', async (req, res) => {
         }
 
         // Sum spend per player for event, join to log_data to get class/discord when possible
-        const result = await client.query(`
+        let result = await client.query(`
             WITH spend AS (
                 SELECT 
                     li.player_name AS character_name,
@@ -16974,6 +16974,36 @@ app.get('/api/big-buyer/:eventId', async (req, res) => {
             ORDER BY spent_gold DESC, LOWER(character_name) ASC
             LIMIT 3;
         `, [eventId]);
+
+        // Fallback: if none meet threshold, return top 3 spenders with their amounts (points may be 0)
+        if (!result.rows || result.rows.length === 0) {
+            result = await client.query(`
+                WITH spend AS (
+                    SELECT 
+                        li.player_name AS character_name,
+                        SUM(COALESCE(li.gold_amount,0))::bigint AS spent_gold
+                    FROM loot_items li
+                    WHERE li.event_id = $1
+                    GROUP BY li.player_name
+                ), ranked AS (
+                    SELECT s.character_name,
+                           s.spent_gold,
+                           COALESCE(ld.character_class, 'Unknown') AS character_class,
+                           ld.discord_id
+                    FROM spend s
+                    LEFT JOIN LATERAL (
+                        SELECT ld.character_class, ld.discord_id
+                        FROM log_data ld
+                        WHERE ld.event_id = $1 AND LOWER(ld.character_name) = LOWER(s.character_name)
+                        LIMIT 1
+                    ) ld ON TRUE
+                )
+                SELECT *
+                FROM ranked
+                ORDER BY spent_gold DESC, LOWER(character_name) ASC
+                LIMIT 3;
+            `, [eventId]);
+        }
 
         // Compute points tier
         const tierPoints = (g) => {
