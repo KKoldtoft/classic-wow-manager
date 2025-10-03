@@ -5838,7 +5838,7 @@ class WoWLogsAnalyzer {
         }
         box.innerHTML = `
             <div style="padding:6px 8px; background: var(--secondary-bg, #2a2a2a); border: 1px solid var(--border-color, #3a3a3a); border-radius: 4px; color: var(--text-secondary, #bbb); font-size: 12px;">
-                ${prefix} <a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>
+                ${prefix} <a href="${url}" target="_blank" rel="noopener noreferrer" style="color:#fff; text-decoration: underline;">Click here to open document</a>
             </div>
         `;
     }

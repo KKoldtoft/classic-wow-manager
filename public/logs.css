@@ -1615,16 +1615,17 @@
 .role-source-legend {
     margin: 10px 0;
     padding: 10px;
-    background: #f8f9fa;
-    border-radius: 4px;
+    background: var(--card-bg, #1e1e1e);
+    border-radius: 6px;
     font-size: 12px;
-    border: 1px solid #dee2e6;
+    border: 1px solid var(--border-color, #333);
+    color: var(--text-primary, #e0e0e0);
 }
 
 .role-source-legend h4 {
     margin: 0 0 8px 0;
     font-size: 14px;
-    color: #495057;
+    color: var(--text-primary, #e0e0e0);
 }
 
 .legend-item {
@@ -1640,6 +1641,7 @@
     border-radius: 50%;
     margin-right: 5px;
     vertical-align: middle;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.35);
 }
 
 /* Replacement notice styling for rpb_import page */
@@ -1717,6 +1719,15 @@
     color: var(--text-secondary, #bbb);
     margin: 0 0 1.5rem 0;
     font-size: 0.95rem;
+}
+
+/* Step link box under workflow steps */
+.progress-steps .step-content .step-link a {
+    color: #fff;
+    text-decoration: underline;
+}
+.progress-steps .step-content .step-link {
+    color: var(--text-secondary, #bbb);
 }
 
 .workflow-input-container {
