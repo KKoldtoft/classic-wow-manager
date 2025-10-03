@@ -65,8 +65,10 @@
     <nav class="floating-admin-actions" id="floating-admin-actions" style="display:none;">
       <div class="faa-buttons" id="faa-buttons-public">
         <button class="faa-btn" id="faa-switch-admin" title="Go to admin view"><i class="fas fa-user-shield"></i> Go to Admin view</button>
-        <button class="faa-btn state-unpublished" id="faa-publish-public" title="Publish data"><i class="fas fa-cloud-upload-alt"></i> Publish data</button>
-        <button class="faa-btn" id="faa-upload-logs-view" title="Upload logs"><i class="fas fa-upload"></i> Upload logs</button>
+        <button class="faa-btn" id="faa-publish" title="Publish data"><i class="fas fa-cloud-upload-alt"></i> Publish data</button>
+        <button class="faa-btn" id="faa-refresh" title="Refresh published snapshot" style="display:none;"><i class="fas fa-sync-alt"></i> Refresh logs</button>
+        <button class="faa-btn" id="faa-revert" title="Revert to computed"><i class="fas fa-undo"></i> Revert to computed</button>
+        <button class="faa-btn" id="faa-upload-logs" title="Upload logs"><i class="fas fa-upload"></i> Upload logs</button>
       </div>
     </nav>
     <div class="page-header" style="display:none;">
@@ -159,8 +161,80 @@
       const eid = getEventId();
       const toAdmin = document.getElementById('faa-switch-admin');
       if (toAdmin) toAdmin.onclick = () => { const url = eid ? `/event/${eid}/raidlogs_admin` : '/raidlogs_admin'; window.location.href = url; };
-      const uploadBtn = document.getElementById('faa-upload-logs-view');
+      const uploadBtn = document.getElementById('faa-upload-logs');
       if (uploadBtn) uploadBtn.onclick = () => { const tgt = eid ? `/event/${eid}/logs` : '/logs'; window.location.href = tgt; };
+
+      // Publish/unpublish button mirrors admin behavior but reloads viewer after action
+      const publishBtn = document.getElementById('faa-publish');
+      const refreshBtn = document.getElementById('faa-refresh');
+      const revertBtn = document.getElementById('faa-revert');
+      const updatePublishUi = (pub)=>{
+        if (!publishBtn) return;
+        publishBtn.classList.remove('state-published','state-unpublished');
+        if (pub) {
+          publishBtn.classList.add('state-published');
+          publishBtn.title = 'Unpublish data';
+          publishBtn.innerHTML = `<i class="fas fa-cloud-upload-alt"></i> Unpublish data`;
+          if (refreshBtn) refreshBtn.style.display = 'inline-flex';
+        } else {
+          publishBtn.classList.add('state-unpublished');
+          publishBtn.title = 'Publish data';
+          publishBtn.innerHTML = `<i class="fas fa-cloud-upload-alt"></i> Publish data`;
+          if (refreshBtn) refreshBtn.style.display = 'none';
+        }
+      };
+      (async()=>{ try {
+        const res = await fetch(`/api/raidlogs/published/${eid}`);
+        if (res && res.ok) {
+          const data = await res.json();
+          const isPublished = !!(data && data.header);
+          updatePublishUi(isPublished);
+        }
+      } catch {} })();
+      if (publishBtn && !publishBtn._wired) {
+        publishBtn.addEventListener('click', async () => {
+          try {
+            const res = await fetch(`/api/raidlogs/published/${eid}`);
+            const data = res && res.ok ? await res.json() : null;
+            const isPub = !!(data && data.header);
+            if (!isPub) {
+              const ok = confirm('Publish current snapshot to public viewer?'); if (!ok) return;
+              const resp = await fetch(`/api/rewards-snapshot/${eid}/publish`, { method: 'POST' });
+              if (resp && resp.ok) { updatePublishUi(true); location.reload(); } else alert('Publish failed');
+            } else {
+              const ok = confirm('Unpublish the current snapshot?'); if (!ok) return;
+              const resp = await fetch(`/api/rewards-snapshot/${eid}/unpublish`, { method: 'POST' });
+              if (resp && resp.ok) { updatePublishUi(false); location.reload(); } else alert('Unpublish failed');
+            }
+          } catch { alert('Action failed'); }
+        });
+        publishBtn._wired = true;
+      }
+      if (refreshBtn && !refreshBtn._wired) {
+        refreshBtn.addEventListener('click', async () => {
+          try {
+            const ok = confirm('Refresh published logs? This will unpublish, rebuild from current view (admin), and republish.');
+            if (!ok) return;
+            // Unpublish then republish; viewer does not lock from UI so just unpublish/publish
+            try { await fetch(`/api/rewards-snapshot/${eid}/unpublish`, { method: 'POST' }); } catch {}
+            const resp = await fetch(`/api/rewards-snapshot/${eid}/publish`, { method: 'POST' });
+            if (resp && resp.ok) { updatePublishUi(true); alert('Refreshed and republished!'); location.reload(); }
+            else alert('Refresh failed during publish');
+          } catch { alert('Error refreshing published logs.'); }
+        });
+        refreshBtn._wired = true;
+      }
+      if (revertBtn && !revertBtn._wired) {
+        revertBtn.addEventListener('click', async () => {
+          try {
+            const ok = confirm('Revert to computed will clear the current snapshot. Proceed?');
+            if (!ok) return;
+            const resp = await fetch(`/api/rewards-snapshot/${eid}/unlock`, { method: 'POST' });
+            if (resp && resp.ok) { alert('Reverted to computed'); location.reload(); } else { alert('Failed to revert'); }
+          } catch { alert('Failed to revert'); }
+        });
+        revertBtn._wired = true;
+      }
     } catch {}
     const style = document.createElement('style');
     style.textContent = `

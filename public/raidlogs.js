@@ -203,6 +203,19 @@ class RaidLogsManager {
                 };
                 // initial state from header if available
                 setTimeout(()=>{ try { updatePublishUi(!!(this.snapshotHeader && this.snapshotHeader.published)); } catch {} }, 0);
+                // Also check server-published status to persist refresh visibility across reloads
+                (async()=>{ try {
+                    const evId = this.activeEventId || eid; if (!evId) return;
+                    const res = await fetch(`/api/raidlogs/published/${evId}`);
+                    if (res && res.ok) {
+                        const data = await res.json();
+                        const isPublished = !!(data && data.header);
+                        if (isPublished) {
+                            this.snapshotHeader = this.snapshotHeader || {}; this.snapshotHeader.published = true;
+                            updatePublishUi(true);
+                        }
+                    }
+                } catch {} })();
                 publishBtn.addEventListener('click', async () => {
                     if (!this.activeEventId) return;
                     try {
