@@ -775,7 +775,11 @@
         if (!section || !rewardsEl || !dedsEl) return;
         const items = (Array.isArray(manualEntries) ? manualEntries : [])
           .map(e => { e.character_name = normalizeSnapshotName(e.character_name); return e; })
-          .filter(e=> isValidWoWName(e.character_name) && !shouldIgnoreViewerName(e.character_name));
+          .filter(e=> {
+              // For published snapshots, trust the admin's curation - only filter out obvious non-players
+              if (!e.character_name || !String(e.character_name).trim()) return false;
+              return !shouldIgnoreViewerName(e.character_name);
+          });
         if (items.length === 0){
           section.style.display='block';
           rewardsEl.innerHTML='';
@@ -1101,7 +1105,12 @@
       let otherEntries = (entries||[])
           .filter(r=> String(r.panel_key||'') !== 'manual_points')
           .map(r => { r.character_name = normalizeSnapshotName(r.character_name); return r; })
-          .filter(r => isValidWoWName(r.character_name) && !shouldIgnoreViewerName(r.character_name));
+          .filter(r => {
+              // For published snapshots, trust the admin's curation - only filter out obvious non-players
+              // Don't filter by isValidWoWName as it's too strict (rejects spaces/digits)
+              if (!r.character_name || !String(r.character_name).trim()) return false;
+              return !shouldIgnoreViewerName(r.character_name);
+          });
       // Adjust details text for Guild Members panel: strike-through "Cult Memeber" before "Guild Member"
       otherEntries = otherEntries.map(r=>{
         if (String(r.panel_key||'') === 'guild_members'){
@@ -1569,9 +1578,15 @@
             list.innerHTML = emptyStateHtml();
           } else {
             rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
-            // Calculate fill percentages based on points
-            const pointsVals = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
-            const maxPts = Math.max(1, ...pointsVals);
+            // Calculate fill percentages: for Decurses, use decurse count (primary_numeric); otherwise use points
+            const isDecurses = (key === 'decurses');
+            const fillValues = rows.map(r => {
+              if (isDecurses && r.primary_numeric_original != null) {
+                return Math.max(0, Number(r.primary_numeric_original));
+              }
+              return Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0));
+            });
+            const maxVal = Math.max(1, ...fillValues);
             rows.forEach((rowItem, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';
@@ -1582,7 +1597,7 @@
               const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
               const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
               const icon = iconUrlPub || classIconUrl(clsName);
-              const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
+              const fillPct = Math.max(5, Math.min(100, Math.round((fillValues[idx] / maxVal) * 100)));
               item.innerHTML = `
                 <div class=\"ranking-number\">#${idx+1}</div>
                 <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}

@@ -294,7 +294,6 @@ class GoldPotManager {
         (this.allPlayers||[]).forEach(p=>{
             nameToPlayer.set(lower(p.character_name), { name: p.character_name, class: p.character_class, points: 0, gold: 0 });
         });
-        // Base points are already included in snapshot entries (panel_key='base'), so no need to add them here
         // Sum points by player across all panels using edited else original
         entries.forEach(r=>{
             const key = lower(this.normalizeSnapshotName(r.character_name||'')); if(!key) return;
@@ -303,6 +302,11 @@ class GoldPotManager {
             const pts = Number(r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0;
             v.points += pts;
         });
+        // Check if base points exist in snapshot; if not, add them
+        const hasBasePoints = entries.some(r => String(r.panel_key||'') === 'base');
+        if (!hasBasePoints) {
+            nameToPlayer.forEach(v => { v.points += 100; });
+        }
         // Manual gold payouts: add directly to player gold
         let manualGoldPayoutTotal = 0;
         entries.forEach(r=>{

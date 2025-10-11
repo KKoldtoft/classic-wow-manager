@@ -11576,9 +11576,14 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
         }
 
         // Compute baseline: average of each character's average extra attacks (use Windfury Totem entries with a valid group avg)
+        // Tank group (party 1) contributes at half weight since they have halved requirements
         const wfAverages = finalData
             .filter(e => String(e.totem_type).toLowerCase().includes('windfury') && Number.isFinite(e.group_attacks_avg))
-            .map(e => Number(e.group_attacks_avg));
+            .map(e => {
+                const avg = Number(e.group_attacks_avg);
+                // Tank group (party 1) has halved requirements, so contribute at half weight to baseline
+                return (e.party_id === 1 || String(e.party_id) === '1') ? (avg / 2) : avg;
+            });
         const baseline = wfAverages.length > 0 ? (wfAverages.reduce((s, v) => s + v, 0) / wfAverages.length) : 0;
         console.log(`🌀 [WINDFURY] Baseline average extra attacks: ${baseline}`);
 
@@ -11638,16 +11643,18 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
             }
             return Number(entry.points || 0) !== 0;
         }).sort((a, b) => {
-            const byPts = (Number(b.points || 0) - Number(a.points || 0));
-            if (byPts !== 0) return byPts;
             const aType = String(a.totem_type || '').toLowerCase();
             const bType = String(b.totem_type || '').toLowerCase();
             const aIsWf = aType.includes('windfury');
             const bIsWf = bType.includes('windfury');
+            // For Windfury totems, sort by extra attacks first, then by points
             if (aIsWf && bIsWf) {
                 const byAvg = (Number(b.group_attacks_avg || 0) - Number(a.group_attacks_avg || 0));
                 if (byAvg !== 0) return byAvg;
             }
+            // For all totem types, sort by points, then by totems used
+            const byPts = (Number(b.points || 0) - Number(a.points || 0));
+            if (byPts !== 0) return byPts;
             const byTot = (Number(b.totems_used || 0) - Number(a.totems_used || 0));
             if (byTot !== 0) return byTot;
             return String(a.character_name || '').localeCompare(String(b.character_name || ''));
