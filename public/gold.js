@@ -294,8 +294,7 @@ class GoldPotManager {
         (this.allPlayers||[]).forEach(p=>{
             nameToPlayer.set(lower(p.character_name), { name: p.character_name, class: p.character_class, points: 0, gold: 0 });
         });
-        // Base: every player gets +100 points
-        nameToPlayer.forEach(v => { v.points += 100; });
+        // Base points are already included in snapshot entries (panel_key='base'), so no need to add them here
         // Sum points by player across all panels using edited else original
         entries.forEach(r=>{
             const key = lower(this.normalizeSnapshotName(r.character_name||'')); if(!key) return;

@@ -12368,9 +12368,17 @@ app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, express.json(
                                 wfRows.forEach((row, idx) => {
                                     const type = String(row.totem_type||'').toLowerCase();
                                     let itemKey = 'windfury';
-                                    if (type.includes('grace')) itemKey = 'grace_of_air';
-                                    else if (type.includes('strength')) itemKey = 'strength_of_earth';
-                                    else if (type.includes('tranq')) itemKey = 'tranquil_air';
+                                    let detailsText = 'Windfury Totem';
+                                    if (type.includes('grace')) {
+                                        itemKey = 'grace_of_air';
+                                        detailsText = 'Grace of Air Totem';
+                                    } else if (type.includes('strength')) {
+                                        itemKey = 'strength_of_earth';
+                                        detailsText = 'Strength of Earth Totem';
+                                    } else if (type.includes('tranq')) {
+                                        itemKey = 'tranquil_air';
+                                        detailsText = 'Tranquil Air Totem';
+                                    }
                                     built.push({
                                         panel_key: panelKey,
                                         panel_name: panelName,
@@ -12379,7 +12387,7 @@ app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, express.json(
                                         character_class: row.character_class || null,
                                         ranking_number_original: Number.isFinite(idx+1) ? (idx+1) : null,
                                         point_value_original: Number(row.points)||0,
-                                        character_details_original: null,
+                                        character_details_original: detailsText,
                                         primary_numeric_original: null,
                                         aux_json: { item_key: itemKey }
                                     });
@@ -12387,7 +12395,7 @@ app.post('/api/rewards-snapshot/:eventId/lock', requireManagement, express.json(
                                 continue; // skip generic add for this panel
                             }
                         } catch (e) {
-                            console.warn('⚠️ [SNAPSHOT] Windfury per-type expand failed, falling back to engine rows');
+                            console.warn('⚠️ [SNAPSHOT] Windfury per-type expand failed, falling back to engine rows', e);
                         }
                     }
                     // Generic add for other panels (or fallback) with detail text

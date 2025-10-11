@@ -1106,7 +1106,7 @@
       otherEntries = otherEntries.map(r=>{
         if (String(r.panel_key||'') === 'guild_members'){
           const base = 'Guild Member';
-          const prefix = '<span style="text-decoration: line-through; opacity:.8; margin-right:6px;">Cult Memeber</span>';
+          const prefix = '<span style="text-decoration: line-through; opacity:.8; margin-right:6px; color: #000;">Cult Memeber</span>';
           const details = (r.character_details_edited ?? r.character_details ?? r.character_details_original) || '';
           const out = `${prefix}${base}`;
           r.character_details_edited = out;
@@ -1158,9 +1158,11 @@
             const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
             const iconUrlPub = row.aux_json && (row.aux_json.icon_url || row.aux_json['icon_url']);
             const icon = iconUrlPub || classIconUrl(clsName);
+            // God Gamers always show at 100% fill
+            const fillPct = 100;
             item.innerHTML = `
               <div class=\"ranking-number\">#${idx+1}</div>
-              <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+              <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
                   <div class=\"character-name ${clsName?('class-'+clsName):''}\">${row.character_name||''}</div>
                   <div class=\"character-details\">${details}</div>
                 </div>
@@ -1234,6 +1236,9 @@
               return;
             }
             rows = sortedRows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            // Calculate fill percentages based on points
+            const pointsValues = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
+            const maxPoints = Math.max(1, ...pointsValues);
             rows.forEach((row, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';
@@ -1244,9 +1249,10 @@
               const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
               const iconUrlPub2 = row.aux_json && (row.aux_json.icon_url || row.aux_json['icon_url']);
               const icon = iconUrlPub2 || classIconUrl(clsName);
+              const fillPct = Math.max(5, Math.min(100, Math.round((pointsValues[idx] / maxPoints) * 100)));
               item.innerHTML = `
                 <div class=\"ranking-number\">#${idx+1}</div>
-                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
                   <div class=\"character-name ${clsName?('class-'+clsName):''}\">${row.character_name||''}</div>
                   <div class=\"character-details\">${details}</div>
                 </div>
@@ -1290,6 +1296,9 @@
             } else {
               rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
             }
+            // Calculate fill percentages based on points
+            const pointsVals = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
+            const maxPts = Math.max(1, ...pointsVals);
             rows.forEach((rowItem, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';
@@ -1300,9 +1309,10 @@
               const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
               const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
               const icon = iconUrlPub || classIconUrl(clsName);
+              const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
               item.innerHTML = `
                 <div class=\"ranking-number\">#${idx+1}</div>
-                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
                   <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
                   <div class=\"character-details\">${details}</div>
                 </div>
@@ -1340,6 +1350,9 @@
             list.innerHTML = emptyStateHtml();
           } else {
             rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            // Calculate fill percentages based on points (for negative values, use absolute value for visual consistency)
+            const pointsVals = rows.map(r => Math.abs(Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
+            const maxPts = Math.max(1, ...pointsVals);
             rows.forEach((rowItem, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';
@@ -1350,9 +1363,10 @@
               const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
               const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
               const icon = iconUrlPub || classIconUrl(clsName);
+              const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
               item.innerHTML = `
                 <div class=\"ranking-number\">#${idx+1}</div>
-                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
                   <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
                   <div class=\"character-details\">${details}</div>
                 </div>
@@ -1390,6 +1404,10 @@
             list.innerHTML = emptyStateHtml();
           } else {
             rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            // Calculate fill percentages - Guild Members and Attendance all show as 100% or relative to their points
+            const isGuildMembers = (key === 'guild_members');
+            const pointsVals = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
+            const maxPts = Math.max(1, ...pointsVals);
             rows.forEach((rowItem, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';
@@ -1400,9 +1418,10 @@
               const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
               const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
               const icon = iconUrlPub || classIconUrl(clsName);
+              const fillPct = isGuildMembers ? 100 : Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
               item.innerHTML = `
                 <div class=\"ranking-number\">#${idx+1}</div>
-                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
                   <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
                   <div class=\"character-details\">${details}</div>
                 </div>
@@ -1440,6 +1459,9 @@
             list.innerHTML = emptyStateHtml();
           } else {
             rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            // Calculate fill percentages based on points
+            const pointsVals = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
+            const maxPts = Math.max(1, ...pointsVals);
             rows.forEach((rowItem, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';
@@ -1450,9 +1472,10 @@
               const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
               const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
               const icon = iconUrlPub || classIconUrl(clsName);
+              const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
               item.innerHTML = `
                 <div class=\"ranking-number\">#${idx+1}</div>
-                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
                   <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
                   <div class=\"character-details\">${details}</div>
                 </div>
@@ -1490,6 +1513,9 @@
             list.innerHTML = emptyStateHtml();
           } else {
             rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            // Calculate fill percentages based on points
+            const pointsVals = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
+            const maxPts = Math.max(1, ...pointsVals);
             rows.forEach((rowItem, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';
@@ -1500,9 +1526,10 @@
               const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
               const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
               const icon = iconUrlPub || classIconUrl(clsName);
+              const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
               item.innerHTML = `
                 <div class=\"ranking-number\">#${idx+1}</div>
-                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
                   <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
                   <div class=\"character-details\">${details}</div>
                 </div>
@@ -1542,6 +1569,9 @@
             list.innerHTML = emptyStateHtml();
           } else {
             rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            // Calculate fill percentages based on points
+            const pointsVals = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
+            const maxPts = Math.max(1, ...pointsVals);
             rows.forEach((rowItem, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';
@@ -1552,9 +1582,10 @@
               const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
               const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
               const icon = iconUrlPub || classIconUrl(clsName);
+              const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
               item.innerHTML = `
                 <div class=\"ranking-number\">#${idx+1}</div>
-                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
                   <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
                   <div class=\"character-details\">${details}</div>
                 </div>
@@ -1592,6 +1623,9 @@
             list.innerHTML = emptyStateHtml();
           } else {
             rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            // Calculate fill percentages based on points
+            const pointsVals = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
+            const maxPts = Math.max(1, ...pointsVals);
             rows.forEach((rowItem, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';
@@ -1602,9 +1636,10 @@
               const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
               const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
               const icon = iconUrlPub || classIconUrl(clsName);
+              const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
               item.innerHTML = `
                 <div class=\"ranking-number\">#${idx+1}</div>
-                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
                   <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
                   <div class=\"character-details\">${details}</div>
                 </div>
@@ -1642,6 +1677,9 @@
             list.innerHTML = emptyStateHtml();
           } else {
             rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            // Calculate fill percentages based on points
+            const pointsVals = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
+            const maxPts = Math.max(1, ...pointsVals);
             rows.forEach((rowItem, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';
@@ -1652,9 +1690,10 @@
               const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
               const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
               const icon = iconUrlPub || classIconUrl(clsName);
+              const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
               item.innerHTML = `
                 <div class=\"ranking-number\">#${idx+1}</div>
-                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
                   <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
                   <div class=\"character-details\">${details}</div>
                 </div>
@@ -1692,6 +1731,9 @@
             list.innerHTML = (key==='void_damage') ? emptyStateHtml('No players took avoidable void damage!') : emptyStateHtml();
           } else {
             rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            // Calculate fill percentages based on points (for negative values, use absolute value)
+            const pointsVals = rows.map(r => Math.abs(Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
+            const maxPts = Math.max(1, ...pointsVals);
             rows.forEach((rowItem, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';
@@ -1702,9 +1744,10 @@
               const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
               const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
               const icon = iconUrlPub || classIconUrl(clsName);
+              const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
               item.innerHTML = `
                 <div class="ranking-number">#${idx+1}</div>
-                <div class="character-info ${clsName?('class-'+clsName):'class-unknown'}">
+                <div class="character-info ${clsName?('class-'+clsName):'class-unknown'}" style="--fill-percentage: ${fillPct}%">
                   ${icon?`<img src="${icon}" class="spec-icon" alt="${clsName}" width="47" height="47">`:''}
                   <div class="character-name ${clsName?('class-'+clsName):''}">${rowItem.character_name||''}</div>
                   <div class="character-details">${details}</div>
@@ -1743,6 +1786,9 @@
             list.innerHTML = emptyStateHtml();
           } else {
             rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+            // Calculate fill percentages based on points
+            const pointsVals = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
+            const maxPts = Math.max(1, ...pointsVals);
             rows.forEach((rowItem, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';
@@ -1753,9 +1799,10 @@
               const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
               const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
               const icon = iconUrlPub || classIconUrl(clsName);
+              const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
               item.innerHTML = `
                 <div class=\"ranking-number\">#${idx+1}</div>
-                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
                   <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
                   <div class=\"character-details\">${details}</div>
                 </div>
@@ -1785,6 +1832,9 @@
         const list = document.createElement('div');
         list.className = 'rankings-list';
         obj.rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+        // Calculate fill percentages based on points
+        const pointsVals = obj.rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
+        const maxPts = Math.max(1, ...pointsVals);
         obj.rows.forEach((row, idx)=>{
           const item = document.createElement('div');
           item.className = 'ranking-item';
@@ -1796,9 +1846,10 @@
           const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
           const icon = classIconUrl(clsName);
           const iconUrl = row.aux_json && (row.aux_json.icon_url || row.aux_json['icon_url']) ? String(row.aux_json.icon_url || row.aux_json['icon_url']) : '';
+          const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
           item.innerHTML = `
             <div class="ranking-number">#${idx+1}</div>
-            <div class="character-info ${clsName?('class-'+clsName):'class-unknown'}">
+            <div class="character-info ${clsName?('class-'+clsName):'class-unknown'}" style="--fill-percentage: ${fillPct}%">
               ${icon?`<img src="${icon}" class="spec-icon" alt="${clsName}" width="43" height="43">`:''}
               <div class="character-name ${clsName?('class-'+clsName):''}">${row.character_name||''}</div>
               <div class="character-details">${details}</div>
