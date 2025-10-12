@@ -934,6 +934,56 @@
       try { localStorage.setItem('activeEventSession', eventId); } catch {}
       // Update raid bar links via top-bar.js if available
       try { if (typeof updateRaidBar === 'function') setTimeout(()=>updateRaidBar(), 0); } catch {}
+      
+      // First, try to fetch raid stats (available as soon as logs are uploaded, even if not published)
+      let statsAvailable = false;
+      try {
+        const statsRes = await fetch(`/api/raid-stats/${eventId}`);
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          if (statsData.success && statsData.data && statsData.data.stats) {
+            const stats = statsData.data.stats;
+            const rpb = statsData.data.rpb;
+            console.log('[VIEWER] Stats data available:', stats);
+            
+            // Show stats dashboard immediately if we have data
+            if (stats.totalTime || stats.bossesKilled || stats.lastBoss || stats.logUrl || rpb) {
+              statsAvailable = true;
+              document.getElementById('stats-dashboard').style.display = 'block';
+              
+              // Populate stat cards
+              if (stats.totalTime) {
+                const hours = Math.floor(stats.totalTime / 60);
+                const minutes = stats.totalTime % 60;
+                document.getElementById('raid-duration-value').textContent = hours > 0 ? `${hours}h ${minutes}m` : `${stats.totalTime}m`;
+              }
+              if (stats.bossesKilled) {
+                document.getElementById('bosses-killed-value').textContent = stats.bossesKilled;
+              }
+              if (stats.lastBoss) {
+                document.getElementById('last-boss-value').textContent = stats.lastBoss;
+                document.getElementById('last-boss-detail').textContent = 'Final boss defeated';
+              }
+              if (stats.logUrl) {
+                const btn = document.getElementById('wow-logs-button');
+                btn.disabled = false;
+                btn.onclick = () => window.open(stats.logUrl, '_blank');
+                document.getElementById('wow-logs-detail').textContent = 'View detailed logs';
+              }
+              if (rpb && rpb.archiveUrl) {
+                const btn = document.getElementById('rpb-archive-button');
+                btn.disabled = false;
+                btn.onclick = () => window.open(rpb.archiveUrl, '_blank');
+                document.getElementById('rpb-archive-detail').textContent = 'Archive available';
+              }
+            }
+          }
+        }
+      } catch (statsError) {
+        console.warn('[VIEWER] Could not fetch stats:', statsError);
+      }
+      
+      // Now fetch published data for the rest of the content
       const res = await fetch(`/api/raidlogs/published/${eventId}`);
       const data = await res.json();
       console.log('[VIEWER] Published fetch', data);
@@ -959,17 +1009,31 @@
           if (bestCls) nameToClassMap.set(nm, bestCls);
         });
       } catch {}
-      // No fallback when not published: viewer must display nothing
+      
+      // Handle display based on what data is available
       if (!header){
-        document.getElementById('view-subtitle').textContent = 'No published data yet';
-        // hide content when unpublished and stop further rendering
-        try { document.getElementById('content').style.display='none'; } catch {}
+        // No published data yet - show message and only stats if available
+        if (statsAvailable) {
+          const pageHeader = document.querySelector('.page-header');
+          if (pageHeader) pageHeader.style.display = 'block';
+          document.getElementById('view-subtitle').textContent = 'Stats available - logs not yet published';
+          document.getElementById('content').style.display='block'; // Show container for stats
+        } else {
+          document.getElementById('view-subtitle').textContent = 'No published data yet';
+          document.getElementById('content').style.display='none'; // Hide everything
+        }
+        // Don't render rankings/panels when not published
         return;
       }
+      
+      // Published data exists - show everything
+      const pageHeader = document.querySelector('.page-header');
+      if (pageHeader) pageHeader.style.display = 'block';
       document.getElementById('content').style.display='block';
+      document.getElementById('view-subtitle').textContent = 'Published snapshot';
 
       const h = header;
-      // Header cards
+      // Header cards from published data (will override stats data if present)
       const durMin = Number(h.raid_duration_minutes);
       if (Number.isFinite(durMin) && durMin >= 0){
         const hours = Math.floor(durMin/60);
