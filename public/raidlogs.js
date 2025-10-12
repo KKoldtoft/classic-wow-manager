@@ -75,6 +75,7 @@ class RaidLogsManager {
         this.scrollTimeout = null;
         this.manualRewardsData = [];
         this.playersData = [];
+        this.rosterPlayersData = []; // Roster-based player data for autocomplete fallback
         this.currentUser = null;
         this.isEditingEntry = false;
         this.editingEntryId = null;
@@ -7690,6 +7691,11 @@ class RaidLogsManager {
     initializeManualRewards() {
         console.log('⚖️ [MANUAL REWARDS] Initializing manual rewards functionality');
         
+        // Preload roster data for autocomplete (fallback when logs aren't uploaded)
+        if (!this.rosterPlayersData || this.rosterPlayersData.length === 0) {
+            this.buildRosterCache().catch(e => console.warn('⚠️ [MANUAL REWARDS] Failed to preload roster for autocomplete', e));
+        }
+        
         // Initialize event listeners for the form
         this.setupManualRewardsEventListeners();
     }
@@ -7700,7 +7706,7 @@ class RaidLogsManager {
         
         if (playerNameInput) {
             playerNameInput.addEventListener('input', (e) => {
-                try { this.handlePlayerSearch(e.target.value); } catch (err) { console.warn('⚠️ handlePlayerSearch missing, adding fallback', err); if (typeof this.handlePlayerSearch !== 'function') { this.handlePlayerSearch = (s)=>{ const dd=document.getElementById('player-dropdown'); if(!dd) return; const term=String(s||'').trim().toLowerCase(); if(!term){ dd.style.display='none'; return;} const src=Array.isArray(this.playersData)?this.playersData:[]; const matches=src.filter(p=>String(p.player_name||'').toLowerCase().includes(term)).slice(0,20); this.populatePlayerDropdown(matches); dd.style.display = matches.length ? 'block' : 'none'; }; this.handlePlayerSearch(e.target.value); } }
+                try { this.handlePlayerSearch(e.target.value); } catch (err) { console.warn('⚠️ handlePlayerSearch missing, adding fallback', err); if (typeof this.handlePlayerSearch !== 'function') { this.handlePlayerSearch = (s)=>{ const dd=document.getElementById('player-dropdown'); if(!dd) return; const term=String(s||'').trim().toLowerCase(); let src=Array.isArray(this.playersData)&&this.playersData.length>0?this.playersData:(Array.isArray(this.rosterPlayersData)?this.rosterPlayersData:[]); if(src.length===0&&(!this.rosterPlayersData||this.rosterPlayersData.length===0)){this.buildRosterCache().then(()=>{src=Array.isArray(this.rosterPlayersData)?this.rosterPlayersData:[];const matches=term?src.filter(p=>String(p.player_name||'').toLowerCase().includes(term)).slice(0,20):src.slice(0,20);this.populatePlayerDropdown(matches);dd.style.display=matches.length?'block':'none';});}else{const matches=term?src.filter(p=>String(p.player_name||'').toLowerCase().includes(term)).slice(0,20):src.slice(0,20); this.populatePlayerDropdown(matches); dd.style.display = matches.length ? 'block' : 'none';} }; this.handlePlayerSearch(e.target.value); } }
             });
             
             playerNameInput.addEventListener('keydown', (e) => {
@@ -7708,11 +7714,21 @@ class RaidLogsManager {
             });
             
             // Reposition dropdown on focus to handle edit mode vs add mode differences
+            // Also trigger search to show all players if input is empty
             playerNameInput.addEventListener('focus', () => {
                 setTimeout(() => {
                     const dropdown = document.getElementById('player-dropdown');
                     if (dropdown && dropdown.style.display === 'block') {
                         this.positionDropdown();
+                    }
+                    // Trigger autocomplete to show all available players on focus
+                    const currentValue = playerNameInput.value || '';
+                    if (currentValue.trim() === '' || dropdown.style.display === 'none') {
+                        try { 
+                            this.handlePlayerSearch(currentValue); 
+                        } catch (err) { 
+                            console.warn('⚠️ handlePlayerSearch on focus failed', err); 
+                        }
                     }
                 }, 50); // Small delay to ensure any form transformations are applied
             });
@@ -8245,13 +8261,30 @@ class RaidLogsManager {
         try {
             const res = await fetch(`/api/assignments/${this.activeEventId}/roster`);
             const data = await res.json();
-            if (!data || !data.success) { this.rosterMapByName = new Map(); return; }
+            if (!data || !data.success) { 
+                this.rosterMapByName = new Map(); 
+                this.rosterPlayersData = [];
+                return; 
+            }
             const roster = Array.isArray(data.roster) ? data.roster : [];
             this.rosterMapByName = new Map(roster.map(r => [String(r.character_name || '').toLowerCase(), r.class_name || null]));
+            
+            // Build roster-based player data for autocomplete (uses WoW character names, not Discord names)
+            this.rosterPlayersData = roster
+                .filter(r => r.character_name && String(r.character_name).trim())
+                .map(r => ({
+                    player_name: String(r.character_name).trim(),
+                    player_class: r.class_name || null,
+                    discord_id: r.discord_user_id || null,
+                    source: 'roster' // Mark as coming from roster for debugging
+                }));
+            
             console.log('👥 [ROSTER] Built roster map for class lookup. Size:', this.rosterMapByName.size);
+            console.log('👥 [ROSTER] Built roster players data for autocomplete. Count:', this.rosterPlayersData.length);
         } catch (e) {
             console.warn('⚠️ [ROSTER] Failed to build roster map', e);
             this.rosterMapByName = new Map();
+            this.rosterPlayersData = [];
         }
     }
 
