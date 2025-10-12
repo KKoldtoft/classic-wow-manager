@@ -61,14 +61,14 @@
     </div>
   </div>
   <div class="container">
-    <!-- Floating Admin Actions (Public view) -->
+    <!-- Floating Admin Actions (Public view) - Only "Go to Admin view" button visible -->
     <nav class="floating-admin-actions" id="floating-admin-actions" style="display:none;">
       <div class="faa-buttons" id="faa-buttons-public">
         <button class="faa-btn" id="faa-switch-admin" title="Go to admin view"><i class="fas fa-user-shield"></i> Go to Admin view</button>
-        <button class="faa-btn" id="faa-publish" title="Publish data"><i class="fas fa-cloud-upload-alt"></i> Publish data</button>
+        <button class="faa-btn" id="faa-publish" title="Publish data" style="display:none;"><i class="fas fa-cloud-upload-alt"></i> Publish data</button>
         <button class="faa-btn" id="faa-refresh" title="Refresh published snapshot" style="display:none;"><i class="fas fa-sync-alt"></i> Refresh logs</button>
-        <button class="faa-btn" id="faa-revert" title="Revert to computed"><i class="fas fa-undo"></i> Revert to computed</button>
-        <button class="faa-btn" id="faa-upload-logs" title="Upload logs"><i class="fas fa-upload"></i> Upload logs</button>
+        <button class="faa-btn" id="faa-revert" title="Revert to computed" style="display:none;"><i class="fas fa-undo"></i> Revert to computed</button>
+        <button class="faa-btn" id="faa-upload-logs" title="Upload logs" style="display:none;"><i class="fas fa-upload"></i> Upload logs</button>
       </div>
     </nav>
     <div class="page-header" style="display:none;">
@@ -412,93 +412,18 @@
       const uploadBtn = document.getElementById('faa-upload-logs');
       if (uploadBtn) uploadBtn.onclick = () => { const tgt = eid ? `/event/${eid}/logs` : '/logs'; window.location.href = tgt; };
 
-      // Publish/unpublish button mirrors admin behavior but reloads viewer after action
+      // Publish/unpublish/refresh/revert buttons are hidden on viewer page (only "Go to Admin view" is shown)
+      // Kept for reference but functionality disabled
       const publishBtn = document.getElementById('faa-publish');
       const refreshBtn = document.getElementById('faa-refresh');
       const revertBtn = document.getElementById('faa-revert');
       const updatePublishUi = (pub)=>{
-        if (!publishBtn) return;
-        publishBtn.classList.remove('state-published','state-unpublished');
-        if (pub) {
-          publishBtn.classList.add('state-published');
-          publishBtn.title = 'Unpublish data';
-          publishBtn.innerHTML = `<i class="fas fa-cloud-upload-alt"></i> Unpublish data`;
-          if (refreshBtn) refreshBtn.style.display = 'inline-flex';
-        } else {
-          publishBtn.classList.add('state-unpublished');
-          publishBtn.title = 'Publish data';
-          publishBtn.innerHTML = `<i class="fas fa-cloud-upload-alt"></i> Publish data`;
-          if (refreshBtn) refreshBtn.style.display = 'none';
-        }
+        // Disabled on viewer page - buttons are hidden
+        return;
       };
-      (async()=>{ try {
-        const res = await fetch(`/api/raidlogs/published/${eid}`);
-        if (res && res.ok) {
-          const data = await res.json();
-          const isPublished = !!(data && data.header);
-          updatePublishUi(isPublished);
-        }
-      } catch {} })();
-      if (publishBtn && !publishBtn._wired) {
-        publishBtn.addEventListener('click', async () => {
-          try {
-            const res = await fetch(`/api/raidlogs/published/${eid}`);
-            const data = res && res.ok ? await res.json() : null;
-            const isPub = !!(data && data.header);
-            if (!isPub) {
-              const ok = confirm('Publish current snapshot to public viewer?'); if (!ok) return;
-              // Lock snapshot from engine to ensure entries exist for public view
-              try {
-                await fetch(`/api/rewards-snapshot/${eid}/lock`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ useEngine: true })
-                });
-              } catch {}
-              const resp = await fetch(`/api/rewards-snapshot/${eid}/publish`, { method: 'POST' });
-              if (resp && resp.ok) { updatePublishUi(true); location.reload(); } else alert('Publish failed');
-            } else {
-              const ok = confirm('Unpublish the current snapshot?'); if (!ok) return;
-              const resp = await fetch(`/api/rewards-snapshot/${eid}/unpublish`, { method: 'POST' });
-              if (resp && resp.ok) { updatePublishUi(false); location.reload(); } else alert('Unpublish failed');
-            }
-          } catch { alert('Action failed'); }
-        });
-        publishBtn._wired = true;
-      }
-      if (refreshBtn && !refreshBtn._wired) {
-        refreshBtn.addEventListener('click', async () => {
-          try {
-            const ok = confirm('Refresh published logs? This will unpublish, rebuild from current view (admin), and republish.');
-            if (!ok) return;
-            // Unpublish then republish; viewer does not lock from UI so just unpublish/publish
-            try { await fetch(`/api/rewards-snapshot/${eid}/unpublish`, { method: 'POST' }); } catch {}
-            // Lock from engine to make sure snapshot rows exist
-            try {
-              await fetch(`/api/rewards-snapshot/${eid}/lock`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ useEngine: true })
-              });
-            } catch {}
-            const resp = await fetch(`/api/rewards-snapshot/${eid}/publish`, { method: 'POST' });
-            if (resp && resp.ok) { updatePublishUi(true); alert('Refreshed and republished!'); location.reload(); }
-            else alert('Refresh failed during publish');
-          } catch { alert('Error refreshing published logs.'); }
-        });
-        refreshBtn._wired = true;
-      }
-      if (revertBtn && !revertBtn._wired) {
-        revertBtn.addEventListener('click', async () => {
-          try {
-            const ok = confirm('Revert to computed will clear the current snapshot. Proceed?');
-            if (!ok) return;
-            const resp = await fetch(`/api/rewards-snapshot/${eid}/unlock`, { method: 'POST' });
-            if (resp && resp.ok) { alert('Reverted to computed'); location.reload(); } else { alert('Failed to revert'); }
-          } catch { alert('Failed to revert'); }
-        });
-        revertBtn._wired = true;
-      }
+      // Removed button state checks and event handlers for viewer page
+      // All buttons except "Go to Admin view" are hidden via display:none
+      // No functionality needed for hidden buttons
     } catch {}
     const style = document.createElement('style');
     style.textContent = `
@@ -1015,32 +940,7 @@
       document.getElementById('loading').style.display='none';
       let header = data && data.header ? data.header : null;
       let entries = Array.isArray(data && data.entries) ? data.entries : [];
-      // Wire publish/unpublish button visibility and state
-      try {
-        const btn = document.getElementById('faa-publish-public');
-        if (btn) {
-          const updateUi = (pub)=>{
-            btn.classList.remove('state-published','state-unpublished');
-            if (pub) { btn.classList.add('state-published'); btn.innerHTML = `<i class="fas fa-cloud-upload-alt"></i> Unpublish data`; btn.title='Unpublish data'; }
-            else { btn.classList.add('state-unpublished'); btn.innerHTML = `<i class="fas fa-cloud-upload-alt"></i> Publish data`; btn.title='Publish data'; }
-          };
-          updateUi(!!header);
-          btn.onclick = async ()=>{
-            try {
-              const eid = getEventId(); if (!eid) return;
-      if (!header) {
-                const ok = confirm('Publish current snapshot to public viewer?'); if (!ok) return;
-                const resp = await fetch(`/api/rewards-snapshot/${eid}/publish`, { method: 'POST' });
-                if (resp && resp.ok) { updateUi(true); location.reload(); } else alert('Publish failed');
-              } else {
-                const ok = confirm('Unpublish the current snapshot?'); if (!ok) return;
-                const resp = await fetch(`/api/rewards-snapshot/${eid}/unpublish`, { method: 'POST' });
-                if (resp && resp.ok) { updateUi(false); location.reload(); } else alert('Unpublish failed');
-              }
-            } catch(e){ alert('Action failed'); }
-          };
-          }
-        } catch {}
+      // Publish/unpublish button functionality removed from viewer page (buttons are hidden)
       // Build name -> class map from published entries
       try {
         const votes = new Map(); // name -> Map(class->count)
