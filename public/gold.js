@@ -671,6 +671,17 @@ class GoldPotManager {
             // Manual rewards (only confirmed) — exclude gold payouts from points
             (this.datasets.manualRewardsData||[]).forEach(e=>{ const key=String(e.player_name||'').toLowerCase(); if(!confirmedNames.has(key)) return; const isGold=!!(e&&(e.is_gold||/\[GOLD\]/i.test(String(e.description||'')))); if(isGold) return; const v=nameToPlayer.get(key); if(v) v.points+=(Number(e.points)||0); });
 
+            // Calculate manual gold payout total (for shared pot adjustment)
+            this.manualGoldPayoutTotal = 0;
+            (this.datasets.manualRewardsData||[]).forEach(e=>{
+                const key=String(e.player_name||'').toLowerCase();
+                if(!confirmedNames.has(key)) return;
+                const isGold=!!(e&&(e.is_gold||/\[GOLD\]/i.test(String(e.description||''))));
+                if(!isGold) return;
+                const amt=Number(e.points)||0;
+                if(amt>0) this.manualGoldPayoutTotal += amt;
+            });
+
             // God Gamer awards
             if (damageSorted.length>=2){ const diff=(parseInt(damageSorted[0].damage_amount)||0)-(parseInt(damageSorted[1].damage_amount)||0); let pts=0; if(diff>=250000)pts=30; else if(diff>=150000)pts=20; const key=String(damageSorted[0].character_name||'').toLowerCase(); const v=nameToPlayer.get(key); if(v) v.points+=pts; }
             if (healers.length>=2){ const diff=(parseInt(healers[0].healing_amount)||0)-(parseInt(healers[1].healing_amount)||0); let pts=0; if(diff>=250000)pts=20; else if(diff>=150000)pts=15; const key=String(healers[0].character_name||'').toLowerCase(); const v=nameToPlayer.get(key); if(v) v.points+=pts; }
