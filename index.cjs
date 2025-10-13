@@ -11631,6 +11631,8 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
         }
         
         // Apply visibility filters and sort AFTER recalculation
+        // RELAXED FILTERING: Show all totems that meet minimum usage thresholds
+        // This allows admin to see all data for publishing, even if points are 0
         const filteredData = finalData.filter(entry => {
             const typeLower = String(entry.totem_type || '').toLowerCase();
             if (typeLower.includes('windfury')) {
@@ -11638,10 +11640,11 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
                 return Number.isFinite(entry.group_attacks_avg) && Number(entry.group_attacks_avg) > 0;
             }
             if (typeLower.includes('grace of air') || typeLower.includes('strength of earth') || typeLower.includes('tranquil air')) {
-                // Keep standard threshold for non-Windfury types
-                return Number(entry.totems_used || 0) >= 10 && Number(entry.points || 0) > 0;
+                // Show if they placed at least 10 totems (regardless of points earned)
+                // This ensures all totem types are visible for admin review and publishing
+                return Number(entry.totems_used || 0) >= 10;
             }
-            return Number(entry.points || 0) !== 0;
+            return true; // Show all other types
         }).sort((a, b) => {
             const aType = String(a.totem_type || '').toLowerCase();
             const bType = String(b.totem_type || '').toLowerCase();

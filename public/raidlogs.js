@@ -3055,30 +3055,66 @@ class RaidLogsManager {
         this.displaySunderRankings(this.sunderData);
         }
         if (!this.snapshotLocked && this.engineResult) {
-            try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='curse_recklessness'); const rows=(p&&p.rows)||[]; this.displayCurseRankings(rows.map(r=>({character_name:r.name, character_class:this.resolveClassForName(r.name)||'Unknown', uptime:0, points:Number(r.points)||0}))); const sec=document.querySelector('.curse-recklessness-section'); if(sec) sec.classList.add('engine-synced'); } catch { this.displayCurseRankings(this.curseData); }
             const lower = s=>String(s||'').toLowerCase(); const clsFor=n=> (this.logData||[]).find(p=>lower(p.character_name)===lower(n))?.character_class || this.resolveClassForName(n) || 'Unknown';
             try {
                 const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='curse_recklessness');
-                const rows=(p&&p.rows)||[]; const rowsMap=new Map(rows.map(r=>[lower(r.name), r]));
-                const enriched=(this.curseData||[]).map(d=>{const row=rowsMap.get(lower(d.character_name)); const uptimePct = row?.character_details ? parseFloat(String(row.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : Number(d.uptime_percentage||d.uptime||0); return { character_name:d.character_name, character_class:clsFor(d.character_name), uptime_percentage:uptimePct, points: row ? Number(row.points)||0 : 0 };});
-                this.displayCurseRankings(enriched);
-                const sec=document.querySelector('.curse-recklessness-section'); if(sec) sec.classList.add('engine-synced');
+                const rows=(p&&p.rows)||[];
+                // Fallback: If engine has no data but API does, use API data directly
+                if (rows.length === 0 && (this.curseData||[]).length > 0) {
+                    console.log('[CURSE RECK] Engine panel empty, using API fallback data:', this.curseData);
+                    this.displayCurseRankings(this.curseData);
+                } else if (rows.length > 0) {
+                    const rowsMap=new Map(rows.map(r=>[lower(r.name), r]));
+                    const enriched=(this.curseData||[]).map(d=>{const row=rowsMap.get(lower(d.character_name)); const uptimePct = row?.character_details ? parseFloat(String(row.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : Number(d.uptime_percentage||d.uptime||0); return { character_name:d.character_name, character_class:clsFor(d.character_name), uptime_percentage:uptimePct, points: row ? Number(row.points)||0 : 0 };});
+                    this.displayCurseRankings(enriched);
+                    const sec=document.querySelector('.curse-recklessness-section'); if(sec) sec.classList.add('engine-synced');
+                }
             } catch { this.displayCurseRankings(this.curseData); }
             try {
                 const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='curse_shadow');
-                const rows=(p&&p.rows)||[]; const rowsMap=new Map(rows.map(r=>[lower(r.name), r]));
-                const enriched=(this.curseShadowData||[]).map(d=>{const row=rowsMap.get(lower(d.character_name)); const uptimePct = row?.character_details ? parseFloat(String(row.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : Number(d.uptime_percentage||d.uptime||0); return { character_name:d.character_name, character_class:clsFor(d.character_name), uptime_percentage:uptimePct, points: row ? Number(row.points)||0 : 0 };});
-                this.displayCurseShadowRankings(enriched);
-                const sec=document.querySelector('.curse-shadow-section'); if(sec) sec.classList.add('engine-synced');
+                const rows=(p&&p.rows)||[];
+                // Fallback: If engine has no data but API does, use API data directly
+                if (rows.length === 0 && (this.curseShadowData||[]).length > 0) {
+                    console.log('[CURSE SHADOW] Engine panel empty, using API fallback data:', this.curseShadowData);
+                    this.displayCurseShadowRankings(this.curseShadowData);
+                } else if (rows.length > 0) {
+                    const rowsMap=new Map(rows.map(r=>[lower(r.name), r]));
+                    const enriched=(this.curseShadowData||[]).map(d=>{const row=rowsMap.get(lower(d.character_name)); const uptimePct = row?.character_details ? parseFloat(String(row.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : Number(d.uptime_percentage||d.uptime||0); return { character_name:d.character_name, character_class:clsFor(d.character_name), uptime_percentage:uptimePct, points: row ? Number(row.points)||0 : 0 };});
+                    this.displayCurseShadowRankings(enriched);
+                    const sec=document.querySelector('.curse-shadow-section'); if(sec) sec.classList.add('engine-synced');
+                }
             } catch { this.displayCurseShadowRankings(this.curseShadowData); }
             try {
                 const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='curse_elements');
-                const rows=(p&&p.rows)||[]; const rowsMap=new Map(rows.map(r=>[lower(r.name), r]));
-                const enriched=(this.curseElementsData||[]).map(d=>{const row=rowsMap.get(lower(d.character_name)); const uptimePct = row?.character_details ? parseFloat(String(row.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : Number(d.uptime_percentage||d.uptime||0); return { character_name:d.character_name, character_class:clsFor(d.character_name), uptime_percentage:uptimePct, points: row ? Number(row.points)||0 : 0 };});
-                this.displayCurseElementsRankings(enriched);
-                const sec=document.querySelector('.curse-elements-section'); if(sec) sec.classList.add('engine-synced');
+                const rows=(p&&p.rows)||[];
+                // Fallback: If engine has no data but API does, use API data directly
+                if (rows.length === 0 && (this.curseElementsData||[]).length > 0) {
+                    console.log('[CURSE ELEMENTS] Engine panel empty, using API fallback data:', this.curseElementsData);
+                    this.displayCurseElementsRankings(this.curseElementsData);
+                } else if (rows.length > 0) {
+                    const rowsMap=new Map(rows.map(r=>[lower(r.name), r]));
+                    const enriched=(this.curseElementsData||[]).map(d=>{const row=rowsMap.get(lower(d.character_name)); const uptimePct = row?.character_details ? parseFloat(String(row.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : Number(d.uptime_percentage||d.uptime||0); return { character_name:d.character_name, character_class:clsFor(d.character_name), uptime_percentage:uptimePct, points: row ? Number(row.points)||0 : 0 };});
+                    this.displayCurseElementsRankings(enriched);
+                    const sec=document.querySelector('.curse-elements-section'); if(sec) sec.classList.add('engine-synced');
+                }
             } catch { this.displayCurseElementsRankings(this.curseElementsData); }
-            try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='faerie_fire'); const rows=(p&&p.rows)||[]; const map=new Map((this.faerieFireData||[]).map(d=>[lower(d.character_name), d])); const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; const uptimePct = r.character_details ? parseFloat(String(r.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : (Number(d.uptime_percentage)||0); return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0, uptime_percentage:uptimePct};}); this.displayFaerieFireRankings(enriched); const sec=document.querySelector('.faerie-fire-section'); if(sec) sec.classList.add('engine-synced'); } catch { this.displayFaerieFireRankings(this.faerieFireData); }
+            try { 
+                const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='faerie_fire'); 
+                const rows=(p&&p.rows)||[];
+                // Fallback: If engine has no data but API does, use API data directly
+                if (rows.length === 0 && (this.faerieFireData||[]).length > 0) {
+                    console.log('[FAERIE FIRE] Engine panel empty, using API fallback data:', this.faerieFireData);
+                    this.displayFaerieFireRankings(this.faerieFireData);
+                } else if (rows.length > 0) {
+                    const map=new Map((this.faerieFireData||[]).map(d=>[lower(d.character_name), d])); 
+                    const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; const uptimePct = r.character_details ? parseFloat(String(r.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : (Number(d.uptime_percentage)||0); return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0, uptime_percentage:uptimePct};}); 
+                    this.displayFaerieFireRankings(enriched); 
+                    const sec=document.querySelector('.faerie-fire-section'); if(sec) sec.classList.add('engine-synced');
+                }
+            } catch (err) { 
+                console.error('[FAERIE FIRE] Error in enrichment, falling back to API data:', err);
+                this.displayFaerieFireRankings(this.faerieFireData); 
+            }
             try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='scorch'); const rows=(p&&p.rows)||[]; const map=new Map((this.scorchData||[]).map(d=>[lower(d.character_name), d])); const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0};}); this.displayScorchRankings(enriched); const sec=document.querySelector('.scorch-section'); if(sec) sec.classList.add('engine-synced'); } catch { this.displayScorchRankings(this.scorchData); }
             try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='demo_shout'); const rows=(p&&p.rows)||[]; const map=new Map((this.demoShoutData||[]).map(d=>[lower(d.character_name), d])); const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0};}); this.displayDemoShoutRankings(enriched); const sec=document.querySelector('.demo-shout-section'); if(sec) sec.classList.add('engine-synced'); } catch { this.displayDemoShoutRankings(this.demoShoutData); }
             try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='polymorph'); const rows=(p&&p.rows)||[]; const map=new Map((this.polymorphData||[]).map(d=>[lower(d.character_name), d])); const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0};}); this.displayPolymorphRankings(enriched); const sec=document.querySelector('.polymorph-section'); if(sec) sec.classList.add('engine-synced'); } catch { this.displayPolymorphRankings(this.polymorphData); }

@@ -396,13 +396,17 @@ module.exports = function registerRewardsEngine(app, pool) {
     // Dataset panels
     sumDataset(byKey.abilitiesData, 'abilities');
     // Windfury totems (canonicalize to base player name by stripping group suffix)
+    console.log(`[ENGINE] Processing windfury data - total entries:${(byKey.windfuryData||[]).length}, types:`, (byKey.windfuryData||[]).map(r=>r.totem_type).filter((v,i,a)=>a.indexOf(v)===i));
     try {
       (byKey.windfuryData||[]).forEach(row => {
         let nm = row.character_name || row.player_name; if (!nm) return;
         // Strip any trailing parenthetical like "(Group 2)"
         const nmCanon = nm.replace(/\s*\([^)]*\)\s*$/, '').trim();
         const key = nameKey(nmCanon);
-        if (!confirmed.has(key)) return;
+        if (!confirmed.has(key)) {
+          console.log(`[ENGINE] Windfury: Skipping ${nmCanon} (not confirmed)`);
+          return;
+        }
         addRow('windfury_totems', nmCanon, Number(row.points)||0);
       });
     } catch {}
@@ -422,6 +426,7 @@ module.exports = function registerRewardsEngine(app, pool) {
       });
     };
     const panelDetails = new Map(); // Track character_details by panel
+    console.log(`[ENGINE] Processing curse/faerie fire data - curse:${(byKey.curseData||[]).length}, shadow:${(byKey.curseShadowData||[]).length}, elements:${(byKey.curseElementsData||[]).length}, faerie:${(byKey.faerieFireData||[]).length}`);
     sumDatasetWithDetails(byKey.curseData, 'curse_recklessness', 'uptime');
     sumDatasetWithDetails(byKey.curseShadowData, 'curse_shadow', 'uptime');
     sumDatasetWithDetails(byKey.curseElementsData, 'curse_elements', 'uptime');
@@ -592,6 +597,7 @@ module.exports = function registerRewardsEngine(app, pool) {
         return row;
       })
     }));
+    console.log(`[ENGINE] Built panels output - total panels:${panelsOut.length}, faerie_fire rows:${(panelsOut.find(p=>p.panel_key==='faerie_fire')?.rows||[]).length}, windfury_totems rows:${(panelsOut.find(p=>p.panel_key==='windfury_totems')?.rows||[]).length}`);
     const players = allPlayers;
 
     // Digest
