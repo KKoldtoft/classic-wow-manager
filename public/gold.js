@@ -313,15 +313,22 @@ class GoldPotManager {
             if (String(r.panel_key||'') !== 'manual_points') return;
             const aux = r.aux_json || {};
             const isGold = !!(aux.is_gold === true || aux.is_gold === 'true');
+            console.log(`[GOLD DEBUG SNAPSHOT] Manual entry for ${r.character_name}: aux_json=${JSON.stringify(aux)}, isGold=${isGold}, amt=${r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)}`);
             if (!isGold) return;
             const amt = Number(r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0;
             if (!(amt>0)) return;
             manualGoldPayoutTotal += amt;
+            console.log(`[GOLD DEBUG SNAPSHOT] Adding ${amt} to manualGoldPayoutTotal for ${r.character_name}, total now: ${manualGoldPayoutTotal}`);
             const key = lower(this.normalizeSnapshotName(r.character_name||''));
             if (!this.isValidWoWName(this.normalizeSnapshotName(r.character_name||''))) return;
-            const v = nameToPlayer.get(key); if (v) v.gold = Math.max(0, (Number(v.gold)||0) + amt);
+            const v = nameToPlayer.get(key); if (v) {
+                const oldGold = Number(v.gold)||0;
+                v.gold = Math.max(0, oldGold + amt);
+                console.log(`[GOLD DEBUG SNAPSHOT] Added ${amt} gold to ${r.character_name} (was ${oldGold}, now ${v.gold})`);
+            }
         });
         this.manualGoldPayoutTotal = manualGoldPayoutTotal;
+        console.log(`[GOLD DEBUG SNAPSHOT] Final manualGoldPayoutTotal: ${manualGoldPayoutTotal}`);
         // Totals and GPP from header
         let totalPointsAll = 0; nameToPlayer.forEach(v=>{ totalPointsAll += Math.max(0, Number(v.points)||0); });
         this.totalPointsAll = totalPointsAll;

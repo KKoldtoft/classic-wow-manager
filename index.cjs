@@ -11918,6 +11918,11 @@ app.get('/api/manual-rewards/:eventId', async (req, res) => {
         `, [eventId]);
         
         console.log(`⚖️ [MANUAL REWARDS] Found ${result.rows.length} manual entries for event: ${eventId}`);
+        if (result.rows.length > 0) {
+            result.rows.forEach(row => {
+                console.log(`  - ${row.player_name}: ${row.points} pts, is_gold=${row.is_gold}, description="${row.description}"`);
+            });
+        }
         
         res.json({ 
             success: true, 
@@ -11943,7 +11948,7 @@ app.post('/api/manual-rewards/:eventId', requireManagement, async (req, res) => 
     const { player_name, player_class, discord_id, description, points, icon_url, is_gold } = req.body;
     const createdBy = req.user?.id || 'unknown';
     
-    console.log(`⚖️ [MANUAL REWARDS] Adding entry for event: ${eventId}, player: ${player_name}, points: ${points}`);
+    console.log(`⚖️ [MANUAL REWARDS] Adding entry for event: ${eventId}, player: ${player_name}, points: ${points}, is_gold: ${is_gold}`);
     
     if (!player_name || !description || points === undefined || points === null) {
         return res.status(400).json({ 
@@ -11983,7 +11988,7 @@ app.post('/api/manual-rewards/:eventId', requireManagement, async (req, res) => 
         `, [eventId, player_name, player_class || null, discord_id || null, description, points, createdBy, icon_url || null, !!is_gold]);
         
         const newEntry = result.rows[0];
-        console.log(`✅ [MANUAL REWARDS] Created entry with ID: ${newEntry.id}`);
+        console.log(`✅ [MANUAL REWARDS] Created entry with ID: ${newEntry.id}, is_gold: ${newEntry.is_gold}`);
         
         try { broadcastUpdate('raidlogs', eventId, { type: 'manual_rewards_changed', id: newEntry.id, byUserId: createdBy }); } catch {}
         res.json({ 
@@ -12009,7 +12014,7 @@ app.put('/api/manual-rewards/:eventId/:entryId', requireManagement, async (req, 
     const { eventId, entryId } = req.params;
     const { player_name, player_class, discord_id, description, points, is_gold } = req.body;
     
-    console.log(`⚖️ [MANUAL REWARDS] Updating entry ${entryId} for event: ${eventId}`);
+    console.log(`⚖️ [MANUAL REWARDS] Updating entry ${entryId} for event: ${eventId}, is_gold: ${is_gold}`);
     
     if (!player_name || !description || points === undefined || points === null) {
         return res.status(400).json({ 
