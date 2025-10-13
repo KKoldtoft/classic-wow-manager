@@ -1563,7 +1563,8 @@
               }
               return Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0));
             });
-            const maxVal = Math.max(1, ...fillValues);
+            // For Faerie Fire uptime, use 100% as max (not relative to highest player)
+            const maxVal = isFaerieFire ? 100 : Math.max(1, ...fillValues);
             rows.forEach((rowItem, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';

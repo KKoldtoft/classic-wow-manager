@@ -6074,13 +6074,13 @@ class RaidLogsManager {
             return;
         }
 
-        // Get max uptime for percentage calculation
-        const maxUptime = Math.max(...playersWithUptime.map(p => p.uptime_percentage)) || 1;
+        // Use 100% as the max for uptime-based fill (not relative to highest player)
+        const maxUptime = 100;
 
         container.innerHTML = playersWithUptime.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            const fillPercentage = Math.max(5, (player.uptime_percentage / maxUptime) * 100); // Minimum 5% for visibility
+            const fillPercentage = Math.max(5, Math.min(100, player.uptime_percentage)); // Use actual uptime % (5-100%)
 
             const uptimeText = `${player.uptime_percentage.toFixed(1)}% uptime`;
             
