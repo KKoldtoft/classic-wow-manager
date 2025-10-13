@@ -545,11 +545,16 @@
     }
 
     // Hide explicit non-player entities in the public viewer
+    // This MUST match the backend shouldIgnorePlayer function exactly
     function shouldIgnoreViewerName(name){
       try {
-        const n = String(name||'').toLowerCase().trim();
-        if (n === 'battle chicken' || n === 'zzoldhealing stream totem v') return true;
-        return /\b(zzold|totems?|wards?|traps?|dumm(?:y|ies)|battle\s*chicken)\b/i.test(n);
+        const n = String(name || '').trim();
+        // Filter out names with spaces (e.g., "Windfury Totem", "Battle Chicken")
+        if (n.includes(' ')) return true;
+        // Exact match filter (case-insensitive)
+        const lower = n.toLowerCase();
+        const exactMatches = ['zzold', 'totem', 'trap', 'dummy', 'battlechicken'];
+        return exactMatches.includes(lower);
       } catch { return false; }
     }
 

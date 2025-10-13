@@ -2062,6 +2062,45 @@ app.get('/event/:eventId/raidlogs_admin', async (req, res) => {
   return res.sendFile(path.join(__dirname, 'public', 'raidlogs.html'));
 });
 
+// Debug table page (management only)
+app.get('/event/:eventId/debug-table', async (req, res) => {
+  if (!req.isAuthenticated()) return res.redirect('/');
+  try {
+    const ok = await hasManagementRoleById(req.user.id);
+    if (!ok) return res.status(403).send('Management role required');
+  } catch { return res.status(403).send('Management role required'); }
+  return res.sendFile(path.join(__dirname, 'public', 'debug-table.html'));
+});
+
+// API endpoint to fetch rewards_and_deductions_points table data
+app.get('/api/rewards-snapshot-table/:eventId', async (req, res) => {
+  if (!req.isAuthenticated()) return res.status(401).json({ error: 'Authentication required' });
+  try {
+    const ok = await hasManagementRoleById(req.user.id);
+    if (!ok) return res.status(403).json({ error: 'Management role required' });
+  } catch { return res.status(403).json({ error: 'Management role required' }); }
+  
+  const { eventId } = req.params;
+  try {
+    const result = await pool.query(
+      `SELECT * FROM rewards_and_deductions_points 
+       WHERE event_id = $1 
+       ORDER BY panel_key, ranking_number_original NULLS LAST, character_name`,
+      [eventId]
+    );
+    
+    res.json({
+      success: true,
+      eventId,
+      rowCount: result.rows.length,
+      data: result.rows
+    });
+  } catch (error) {
+    console.error('Error fetching rewards snapshot table:', error);
+    res.status(500).json({ error: 'Failed to fetch table data', details: error.message });
+  }
+});
+
 app.get('/stats', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'stats.html'));
 });
@@ -13504,8 +13543,9 @@ app.get('/api/sunder-data/:eventId', async (req, res) => {
                 color: color,
                 raw_value: row.ability_value
             };
-        }).filter(char => char.sunder_count > 0) // Only include characters who used sunder
-          .sort((a, b) => b.points - a.points || b.sunder_count - a.sunder_count); // Sort by points, then by count
+        })
+        // Removed filter for sunder_count > 0 - include all characters even with 0 sunders
+        .sort((a, b) => b.points - a.points || b.sunder_count - a.sunder_count); // Sort by points, then by count
         
         console.log(`⚔️ [SUNDER] Processed ${finalData.length} characters with sunder usage`);
         console.log(`⚔️ [SUNDER] Final data sample:`, finalData.slice(0, 2));

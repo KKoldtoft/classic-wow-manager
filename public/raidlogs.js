@@ -186,25 +186,24 @@ class RaidLogsManager {
             }
             const publishBtn = document.getElementById('faa-publish');
             const refreshBtn = document.getElementById('faa-refresh');
+            
+            // SIMPLIFIED PUBLISH BUTTON: Just toggles published flag
             if (publishBtn && !publishBtn._wired) {
-                const iconEl = publishBtn.querySelector('i');
                 const updatePublishUi = (pub)=>{
                     publishBtn.classList.remove('state-published','state-unpublished');
                     if (pub) {
                         publishBtn.classList.add('state-published');
                         publishBtn.title = 'Unpublish data';
                         publishBtn.innerHTML = `<i class="fas fa-cloud-upload-alt"></i> Unpublish data`;
-                        if (refreshBtn) refreshBtn.style.display = 'inline-flex';
                     } else {
                         publishBtn.classList.add('state-unpublished');
                         publishBtn.title = 'Publish data';
                         publishBtn.innerHTML = `<i class="fas fa-cloud-upload-alt"></i> Publish data`;
-                        if (refreshBtn) refreshBtn.style.display = 'none';
                     }
                 };
                 // initial state from header if available
                 setTimeout(()=>{ try { updatePublishUi(!!(this.snapshotHeader && this.snapshotHeader.published)); } catch {} }, 0);
-                // Also check server-published status to persist refresh visibility across reloads
+                // Also check server-published status
                 (async()=>{ try {
                     const evId = this.activeEventId || eid; if (!evId) return;
                     const res = await fetch(`/api/raidlogs/published/${evId}`);
@@ -221,57 +220,61 @@ class RaidLogsManager {
                     if (!this.activeEventId) return;
                     try {
                         const currentlyPublished = !!(this.snapshotHeader && this.snapshotHeader.published);
+                        
                         if (!currentlyPublished) {
-                            const ok = confirm('Publish current snapshot to public viewer?');
+                            // PUBLISH: Save if needed, then toggle published = true
+                            const ok = confirm('Publish current data to public viewer?\n\nThis will make the data visible on public pages.');
                             if (!ok) return;
-                            await this.lockSnapshotFromCurrentView();
+                            
+                            // If not in manual mode yet, save all panels first
+                            if (!this.snapshotLocked || !this.snapshotEntries || this.snapshotEntries.length === 0) {
+                                this.showSavingProgress('Saving all panels before publishing...');
+                                try {
+                                    await this.lockSnapshotFromCurrentView();
+                                    this.snapshotLocked = true;
+                                    this.updateModeBadge();
+                                } catch (error) {
+                                    this.hideSavingProgress();
+                                    console.error('Error saving panels:', error);
+                                    alert('Error saving panels. Please try again.');
+                                    return;
+                                }
+                                this.hideSavingProgress();
+                            }
+                            
+                            // Toggle published flag to true
                             const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/publish`, { method: 'POST' });
                             if (res && res.ok) {
-                                this.snapshotHeader = this.snapshotHeader || {}; this.snapshotHeader.published = true;
+                                this.snapshotHeader = this.snapshotHeader || {}; 
+                                this.snapshotHeader.published = true;
                                 updatePublishUi(true);
-                                alert('Published!');
-                            } else alert('Publish failed');
+                                alert('Published! Data is now visible on public pages.');
+                            } else {
+                                alert('Failed to publish. Please try again.');
+                            }
                         } else {
-                            const ok = confirm('Unpublish the current snapshot?');
+                            // UNPUBLISH: Just toggle published = false
+                            const ok = confirm('Unpublish and hide from public viewer?');
                             if (!ok) return;
                             const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/unpublish`, { method: 'POST' });
                             if (res && res.ok) {
-                                this.snapshotHeader = this.snapshotHeader || {}; this.snapshotHeader.published = false;
+                                this.snapshotHeader = this.snapshotHeader || {}; 
+                                this.snapshotHeader.published = false;
                                 updatePublishUi(false);
-                                alert('Unpublished');
-                            } else alert('Unpublish failed');
+                                alert('Unpublished! Data is now hidden from public pages.');
+                            } else {
+                                alert('Failed to unpublish. Please try again.');
+                            }
                         }
                     } catch (e) { console.error('Publish toggle error', e); alert('Error. See console.'); }
                 });
                 publishBtn._wired = true;
             }
-            if (refreshBtn && !refreshBtn._wired) {
-                refreshBtn.addEventListener('click', async () => {
-                    if (!this.activeEventId) return;
-                    try {
-                        const ok = confirm('Refresh published logs? This will unpublish, rebuild from current view, and republish.');
-                        if (!ok) return;
-                        // Unpublish (safe even if already unpublished)
-                        try { await fetch(`/api/rewards-snapshot/${this.activeEventId}/unpublish`, { method: 'POST' }); } catch {}
-                        // Unlock to drop old snapshot rows
-                        try { await fetch(`/api/rewards-snapshot/${this.activeEventId}/unlock`, { method: 'POST' }); } catch {}
-                        // Relock from current UI state
-                        await this.lockSnapshotFromCurrentView();
-                        // Publish again
-                        const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/publish`, { method: 'POST' });
-                        if (res && res.ok) {
-                            this.snapshotHeader = this.snapshotHeader || {}; this.snapshotHeader.published = true;
-                            alert('Refreshed and republished!');
-                            // Notify viewers (SSE already broadcasts snapshot_published on server publish)
-                        } else {
-                            alert('Refresh failed during publish');
-                        }
-                    } catch (e) {
-                        console.error('Refresh error', e);
-                        alert('Error refreshing published logs. See console.');
-                    }
-                });
-                refreshBtn._wired = true;
+            
+            // REFRESH BUTTON REMOVED - No longer needed with simplified workflow
+            // Manual edits after publishing now instantly reflect on public pages
+            if (refreshBtn) {
+                refreshBtn.style.display = 'none'; // Hide the refresh button
             }
             const revertBtnTop = document.getElementById('faa-revert');
             if (revertBtnTop && !revertBtnTop._wired) {
@@ -1112,6 +1115,13 @@ class RaidLogsManager {
     updateModeBadge() {
         const badge = document.getElementById('computed-manual-badge');
         if (!badge) return;
+        
+        // Determine current states
+        const isComputedMode = !this.snapshotLocked;
+        const isManualMode = this.snapshotLocked;
+        const isPublished = !!(this.snapshotHeader && this.snapshotHeader.published);
+        
+        // Update badge
         if (this.snapshotLocked) {
             badge.innerHTML = '<i class="fas fa-user-edit" style="margin-right:6px"></i> Manual mode';
             const by = this.snapshotLockedBy ? ` by ${this.snapshotLockedBy}` : '';
@@ -1143,30 +1153,50 @@ class RaidLogsManager {
                     }
                 }
             } catch {}
-
-            // Top banner for manual (engine manual)
-            try {
-                const top = document.getElementById('engineBannerTop');
-                if (top) {
-                    top.innerHTML = `<span class="pill manual">Engine manual</span> Using canonical rewards engine — <a href="/api/rewards/${this.activeEventId}/debug" target="_blank" rel="noopener noreferrer">debug</a>`;
-                    top.style.display = 'flex';
-                }
-            } catch {}
         } else {
-            if (this.engineResult && this.engineResult.mode === 'auto') {
-                const dbg = `<a href="/api/rewards/${this.activeEventId}/debug" target="_blank" rel="noopener noreferrer" style="margin-left:8px; text-decoration:underline;">debug</a>`;
-                badge.innerHTML = '<i class="fas fa-microchip" style="margin-right:6px"></i> Engine auto ' + dbg;
-                badge.title = 'Using canonical rewards engine (auto mode)';
-                try { const top=document.getElementById('engineBannerTop'); if(top){ top.innerHTML = `<span class="pill auto">Engine auto</span> Using canonical rewards engine — <a href="/api/rewards/${this.activeEventId}/debug" target="_blank" rel="noopener noreferrer">debug</a>`; top.style.display='flex'; } } catch {}
-            } else {
-                badge.innerHTML = '<i class="fas fa-microchip" style="margin-right:6px"></i> Computed mode';
-                badge.title = 'Live computed from logs and data sources';
-                try { const top=document.getElementById('engineBannerTop'); if(top){ top.innerHTML = `<span class=\"pill auto\">Legacy compute</span> Engine not in use`; top.style.display='flex'; } } catch {}
-            }
+            badge.innerHTML = '<i class="fas fa-microchip" style="margin-right:6px"></i> Computed mode';
+            badge.title = 'Live computed from logs and data sources';
             badge.classList.add('computed');
             badge.classList.remove('manual');
             const revertBtn = document.getElementById('mode-revert-btn');
             if (revertBtn) revertBtn.style.display = 'none';
+        }
+
+        // Update top banner with clear status indicators
+        try {
+            const top = document.getElementById('engineBannerTop');
+            if (top) {
+                const statusHTML = `
+                    <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-weight: 600;">Status:</span>
+                            <span style="padding: 4px 12px; border-radius: 4px; font-size: 13px; font-weight: 600; background: ${isComputedMode ? '#22c55e' : '#ef4444'}; color: white;">
+                                Computed Mode: ${isComputedMode ? 'TRUE' : 'FALSE'}
+                            </span>
+                            <span style="padding: 4px 12px; border-radius: 4px; font-size: 13px; font-weight: 600; background: ${isManualMode ? '#22c55e' : '#ef4444'}; color: white;">
+                                Manual Mode: ${isManualMode ? 'TRUE' : 'FALSE'}
+                            </span>
+                            <span style="padding: 4px 12px; border-radius: 4px; font-size: 13px; font-weight: 600; background: ${isPublished ? '#22c55e' : '#ef4444'}; color: white;">
+                                Published: ${isPublished ? 'TRUE' : 'FALSE'}
+                            </span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <a href="/event/${this.activeEventId}/debug-table" target="_blank" rel="noopener noreferrer" 
+                               style="padding: 4px 12px; background: #3b82f6; color: white; border-radius: 4px; text-decoration: none; font-size: 13px; font-weight: 600;">
+                                📊 View Database Table
+                            </a>
+                        </div>
+                    </div>
+                `;
+                top.innerHTML = statusHTML;
+                top.style.display = 'flex';
+                top.style.padding = '12px 20px';
+                top.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                top.style.borderRadius = '8px';
+                top.style.marginBottom = '20px';
+            }
+        } catch (e) {
+            console.error('Error updating status banner:', e);
         }
     }
 
@@ -3059,60 +3089,45 @@ class RaidLogsManager {
             try {
                 const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='curse_recklessness');
                 const rows=(p&&p.rows)||[];
-                // Fallback: If engine has no data but API does, use API data directly
-                if (rows.length === 0 && (this.curseData||[]).length > 0) {
-                    console.log('[CURSE RECK] Engine panel empty, using API fallback data:', this.curseData);
-                    this.displayCurseRankings(this.curseData);
-                } else if (rows.length > 0) {
-                    const rowsMap=new Map(rows.map(r=>[lower(r.name), r]));
-                    const enriched=(this.curseData||[]).map(d=>{const row=rowsMap.get(lower(d.character_name)); const uptimePct = row?.character_details ? parseFloat(String(row.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : Number(d.uptime_percentage||d.uptime||0); return { character_name:d.character_name, character_class:clsFor(d.character_name), uptime_percentage:uptimePct, points: row ? Number(row.points)||0 : 0 };});
-                    this.displayCurseRankings(enriched);
-                    const sec=document.querySelector('.curse-recklessness-section'); if(sec) sec.classList.add('engine-synced');
-                }
-            } catch { this.displayCurseRankings(this.curseData); }
+                const rowsMap=new Map(rows.map(r=>[lower(r.name), r]));
+                const enriched=(this.curseData||[]).map(d=>{const row=rowsMap.get(lower(d.character_name)); const uptimePct = row?.character_details ? parseFloat(String(row.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : Number(d.uptime_percentage||d.uptime||0); return { character_name:d.character_name, character_class:clsFor(d.character_name), uptime_percentage:uptimePct, points: row ? Number(row.points)||0 : 0 };});
+                this.displayCurseRankings(enriched);
+                const sec=document.querySelector('.curse-recklessness-section'); if(sec) sec.classList.add('engine-synced');
+            } catch (err) { 
+                console.error('[CURSE RECK] Error in enrichment:', err);
+                this.displayCurseRankings(this.curseData); 
+            }
             try {
                 const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='curse_shadow');
                 const rows=(p&&p.rows)||[];
-                // Fallback: If engine has no data but API does, use API data directly
-                if (rows.length === 0 && (this.curseShadowData||[]).length > 0) {
-                    console.log('[CURSE SHADOW] Engine panel empty, using API fallback data:', this.curseShadowData);
-                    this.displayCurseShadowRankings(this.curseShadowData);
-                } else if (rows.length > 0) {
-                    const rowsMap=new Map(rows.map(r=>[lower(r.name), r]));
-                    const enriched=(this.curseShadowData||[]).map(d=>{const row=rowsMap.get(lower(d.character_name)); const uptimePct = row?.character_details ? parseFloat(String(row.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : Number(d.uptime_percentage||d.uptime||0); return { character_name:d.character_name, character_class:clsFor(d.character_name), uptime_percentage:uptimePct, points: row ? Number(row.points)||0 : 0 };});
-                    this.displayCurseShadowRankings(enriched);
-                    const sec=document.querySelector('.curse-shadow-section'); if(sec) sec.classList.add('engine-synced');
-                }
-            } catch { this.displayCurseShadowRankings(this.curseShadowData); }
+                const rowsMap=new Map(rows.map(r=>[lower(r.name), r]));
+                const enriched=(this.curseShadowData||[]).map(d=>{const row=rowsMap.get(lower(d.character_name)); const uptimePct = row?.character_details ? parseFloat(String(row.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : Number(d.uptime_percentage||d.uptime||0); return { character_name:d.character_name, character_class:clsFor(d.character_name), uptime_percentage:uptimePct, points: row ? Number(row.points)||0 : 0 };});
+                this.displayCurseShadowRankings(enriched);
+                const sec=document.querySelector('.curse-shadow-section'); if(sec) sec.classList.add('engine-synced');
+            } catch (err) { 
+                console.error('[CURSE SHADOW] Error in enrichment:', err);
+                this.displayCurseShadowRankings(this.curseShadowData); 
+            }
             try {
                 const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='curse_elements');
                 const rows=(p&&p.rows)||[];
-                // Fallback: If engine has no data but API does, use API data directly
-                if (rows.length === 0 && (this.curseElementsData||[]).length > 0) {
-                    console.log('[CURSE ELEMENTS] Engine panel empty, using API fallback data:', this.curseElementsData);
-                    this.displayCurseElementsRankings(this.curseElementsData);
-                } else if (rows.length > 0) {
-                    const rowsMap=new Map(rows.map(r=>[lower(r.name), r]));
-                    const enriched=(this.curseElementsData||[]).map(d=>{const row=rowsMap.get(lower(d.character_name)); const uptimePct = row?.character_details ? parseFloat(String(row.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : Number(d.uptime_percentage||d.uptime||0); return { character_name:d.character_name, character_class:clsFor(d.character_name), uptime_percentage:uptimePct, points: row ? Number(row.points)||0 : 0 };});
-                    this.displayCurseElementsRankings(enriched);
-                    const sec=document.querySelector('.curse-elements-section'); if(sec) sec.classList.add('engine-synced');
-                }
-            } catch { this.displayCurseElementsRankings(this.curseElementsData); }
+                const rowsMap=new Map(rows.map(r=>[lower(r.name), r]));
+                const enriched=(this.curseElementsData||[]).map(d=>{const row=rowsMap.get(lower(d.character_name)); const uptimePct = row?.character_details ? parseFloat(String(row.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : Number(d.uptime_percentage||d.uptime||0); return { character_name:d.character_name, character_class:clsFor(d.character_name), uptime_percentage:uptimePct, points: row ? Number(row.points)||0 : 0 };});
+                this.displayCurseElementsRankings(enriched);
+                const sec=document.querySelector('.curse-elements-section'); if(sec) sec.classList.add('engine-synced');
+            } catch (err) { 
+                console.error('[CURSE ELEMENTS] Error in enrichment:', err);
+                this.displayCurseElementsRankings(this.curseElementsData); 
+            }
             try { 
                 const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='faerie_fire'); 
                 const rows=(p&&p.rows)||[];
-                // Fallback: If engine has no data but API does, use API data directly
-                if (rows.length === 0 && (this.faerieFireData||[]).length > 0) {
-                    console.log('[FAERIE FIRE] Engine panel empty, using API fallback data:', this.faerieFireData);
-                    this.displayFaerieFireRankings(this.faerieFireData);
-                } else if (rows.length > 0) {
-                    const map=new Map((this.faerieFireData||[]).map(d=>[lower(d.character_name), d])); 
-                    const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; const uptimePct = r.character_details ? parseFloat(String(r.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : (Number(d.uptime_percentage)||0); return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0, uptime_percentage:uptimePct};}); 
-                    this.displayFaerieFireRankings(enriched); 
-                    const sec=document.querySelector('.faerie-fire-section'); if(sec) sec.classList.add('engine-synced');
-                }
+                const map=new Map((this.faerieFireData||[]).map(d=>[lower(d.character_name), d])); 
+                const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; const uptimePct = r.character_details ? parseFloat(String(r.character_details).match(/(\d+(?:\.\d+)?)\s*%/)?.[1] || '0') : (Number(d.uptime_percentage)||0); return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0, uptime_percentage:uptimePct};}); 
+                this.displayFaerieFireRankings(enriched); 
+                const sec=document.querySelector('.faerie-fire-section'); if(sec) sec.classList.add('engine-synced');
             } catch (err) { 
-                console.error('[FAERIE FIRE] Error in enrichment, falling back to API data:', err);
+                console.error('[FAERIE FIRE] Error in enrichment:', err);
                 this.displayFaerieFireRankings(this.faerieFireData); 
             }
             try { const p=(this.engineResult.panels||[]).find(x=>x.panel_key==='scorch'); const rows=(p&&p.rows)||[]; const map=new Map((this.scorchData||[]).map(d=>[lower(d.character_name), d])); const enriched=rows.map(r=>{const d=map.get(lower(r.name))||{}; return {...d, character_name:r.name, character_class:clsFor(r.name), points:Number(r.points)||0};}); this.displayScorchRankings(enriched); const sec=document.querySelector('.scorch-section'); if(sec) sec.classList.add('engine-synced'); } catch { this.displayScorchRankings(this.scorchData); }
@@ -3398,15 +3413,36 @@ class RaidLogsManager {
         }
     }
     async onSavePanel(cfg, saveBtn) {
-        // If not yet locked, confirm and lock now
+        // If not yet locked, confirm and lock now (FIRST EDIT - AUTO-SAVE ALL PANELS)
         if (!this.snapshotLocked || !this.snapshotEntries || this.snapshotEntries.length === 0) {
-            const confirmed = confirm('Are you sure you want to edit this value? Once you manually edit a value, data is stored and no longer reflects live data.');
+            const confirmed = confirm('This is your first edit. All panel data will be saved to the database and switched to Manual Mode.\n\nOnce in Manual Mode, data no longer auto-updates from logs.\n\nContinue?');
             if (!confirmed) return;
-            // Collect current edits before locking because snapshot will re-render
-            const pendingUpdates = this.collectPanelEdits(cfg);
-            await this.lockSnapshotFromCurrentView();
-            // After locking, immediately persist the previously collected edits
-            await this.persistUpdates(pendingUpdates);
+            
+            // Show progress overlay
+            this.showSavingProgress('Saving all panels to database...');
+            
+            try {
+                // Collect current edits before locking because snapshot will re-render
+                const pendingUpdates = this.collectPanelEdits(cfg);
+                
+                // Save ALL panels to database
+                await this.lockSnapshotFromCurrentView();
+                
+                // After locking, immediately persist the previously collected edits
+                await this.persistUpdates(pendingUpdates);
+                
+                // Switch UI to manual mode
+                this.snapshotLocked = true;
+                this.updateModeBadge();
+                
+                this.hideSavingProgress();
+                alert('Successfully saved all panels! Now in Manual Mode.');
+            } catch (error) {
+                this.hideSavingProgress();
+                console.error('Error saving panels:', error);
+                alert('Error saving panels. Please try again.');
+                return;
+            }
         }
         const list = document.getElementById(cfg.containerId);
         if (!list) return;
@@ -3542,6 +3578,66 @@ class RaidLogsManager {
             } catch (e) {
                 console.warn('⚠️ [SNAPSHOT] Update failed', e);
             }
+        }
+    }
+
+    showSavingProgress(message = 'Saving...') {
+        // Create or show progress overlay
+        let overlay = document.getElementById('saving-progress-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'saving-progress-overlay';
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+            `;
+            
+            const progressBox = document.createElement('div');
+            progressBox.style.cssText = `
+                background: white;
+                padding: 30px 40px;
+                border-radius: 8px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                text-align: center;
+                min-width: 300px;
+            `;
+            
+            const spinner = document.createElement('div');
+            spinner.innerHTML = '<div style="border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px;"></div>';
+            
+            const messageEl = document.createElement('div');
+            messageEl.id = 'saving-progress-message';
+            messageEl.style.cssText = 'font-size: 16px; color: #333; font-weight: 500;';
+            messageEl.textContent = message;
+            
+            progressBox.appendChild(spinner);
+            progressBox.appendChild(messageEl);
+            overlay.appendChild(progressBox);
+            document.body.appendChild(overlay);
+            
+            // Add spinner animation
+            const style = document.createElement('style');
+            style.textContent = '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
+            document.head.appendChild(style);
+        } else {
+            overlay.style.display = 'flex';
+            const messageEl = document.getElementById('saving-progress-message');
+            if (messageEl) messageEl.textContent = message;
+        }
+    }
+
+    hideSavingProgress() {
+        const overlay = document.getElementById('saving-progress-overlay');
+        if (overlay) {
+            overlay.style.display = 'none';
         }
     }
 
@@ -5909,17 +6005,15 @@ class RaidLogsManager {
             return;
         }
 
-        // Get max uptime for percentage calculation
-        const maxUptime = Math.max(...playersWithUptime.map(p => Number(p.uptime_percentage||p.uptime||0))) || 1;
+        // Use 100% as the max for uptime-based fill (not relative to highest player)
+        const maxUptime = 100;
 
         container.innerHTML = playersWithUptime.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            let fillPercentage = (Number(player.uptime_percentage||player.uptime||0) / maxUptime) * 100;
-            if (index === 0) fillPercentage = 100;
-            fillPercentage = Math.max(5, Math.min(100, Math.round(fillPercentage)));
-
             const up = Number(player.uptime_percentage||player.uptime||0);
+            const fillPercentage = Math.max(5, Math.min(100, Math.round(up))); // Use actual uptime % (5-100%)
+
             const uptimeText = `${up.toFixed(1)}% uptime`;
             
             // Determine point color based on uptime threshold
@@ -5976,17 +6070,15 @@ class RaidLogsManager {
             return;
         }
 
-        // Get max uptime for percentage calculation
-        const maxUptime = Math.max(...playersWithUptime.map(p => Number(p.uptime_percentage||p.uptime||0))) || 1;
+        // Use 100% as the max for uptime-based fill (not relative to highest player)
+        const maxUptime = 100;
 
         container.innerHTML = playersWithUptime.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            let fillPercentage = (Number(player.uptime_percentage||player.uptime||0) / maxUptime) * 100;
-            if (index === 0) fillPercentage = 100;
-            fillPercentage = Math.max(5, Math.min(100, Math.round(fillPercentage)));
-
             const up = Number(player.uptime_percentage||player.uptime||0);
+            const fillPercentage = Math.max(5, Math.min(100, Math.round(up))); // Use actual uptime % (5-100%)
+
             const uptimeText = `${up.toFixed(1)}% uptime`;
             
             // Determine point color based on uptime threshold
@@ -6043,17 +6135,15 @@ class RaidLogsManager {
             return;
         }
 
-        // Get max uptime for percentage calculation
-        const maxUptime = Math.max(...playersWithUptime.map(p => Number(p.uptime_percentage||p.uptime||0))) || 1;
+        // Use 100% as the max for uptime-based fill (not relative to highest player)
+        const maxUptime = 100;
 
         container.innerHTML = playersWithUptime.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
-            let fillPercentage = (Number(player.uptime_percentage||player.uptime||0) / maxUptime) * 100;
-            if (index === 0) fillPercentage = 100;
-            fillPercentage = Math.max(5, Math.min(100, Math.round(fillPercentage)));
-
             const up = Number(player.uptime_percentage||player.uptime||0);
+            const fillPercentage = Math.max(5, Math.min(100, Math.round(up))); // Use actual uptime % (5-100%)
+
             const uptimeText = `${up.toFixed(1)}% uptime`;
             
             // Determine point color based on uptime threshold
@@ -7378,22 +7468,16 @@ class RaidLogsManager {
     }
 
     // Helpers to filter out non-player entities and resolve missing class
+    // This MUST match the backend shouldIgnorePlayer function exactly
     shouldIgnorePlayer(name) {
         if (!name) return false;
-        const raw = String(name||'');
-        // Allow special letters; disallow numbers and whitespace (multi-word)
-        if (/\d/.test(raw)) return true;
-        if (/\s/.test(raw)) return true;
-        const n = raw.toLowerCase().trim();
-        // Explicit exact-name filters
-        const explicit = new Set([
-            'battle chicken',
-            'zzoldhealing stream totem v'
-        ]);
-        if (explicit.has(n)) return true;
-        // Filter common non-player entities by whole words so real names like "Warduro" don't match
-        // Matches: zzOLD, totem/totems, ward/wards, trap/traps, dummy/dummies, battle chicken
-        return /\b(zzold|totems?|wards?|traps?|dumm(?:y|ies)|battle\s*chicken)\b/i.test(n);
+        const n = String(name).trim();
+        // Filter out names with spaces (e.g., "Windfury Totem", "Battle Chicken")
+        if (n.includes(' ')) return true;
+        // Exact match filter (case-insensitive)
+        const lower = n.toLowerCase();
+        const exactMatches = ['zzold', 'totem', 'trap', 'dummy', 'battlechicken'];
+        return exactMatches.includes(lower);
     }
 
     resolveClassForName(characterName) {

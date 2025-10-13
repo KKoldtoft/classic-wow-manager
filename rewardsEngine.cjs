@@ -3,18 +3,19 @@
 // Auto mode will be added subsequently.
 
 module.exports = function registerRewardsEngine(app, pool) {
-  // Utility: lower-case name key
+  // Utility: lower-case name key (preserves special characters like â, ô, etc.)
   const nameKey = (s) => String(s || '').trim().toLowerCase();
+  
   // Utility: ignore non-players consistently
+  // This MUST match the auto mode version exactly for consistency
   const shouldIgnorePlayer = (name) => {
-    const n = String(name || '').toLowerCase().trim();
-    // Explicit exact-name filters
-    const explicit = new Set([
-      'battle chicken',
-      'zzoldhealing stream totem v'
-    ]);
-    if (explicit.has(n)) return true;
-    return /(zzold|totem|trap|dummy|battle\s*chicken)/i.test(n);
+    const n = String(name || '').trim();
+    // Filter out names with spaces (e.g., "Windfury Totem", "Battle Chicken")
+    if (n.includes(' ')) return true;
+    // Exact match filter (case-insensitive)
+    const lower = n.toLowerCase();
+    const exactMatches = ['zzold', 'totem', 'trap', 'dummy', 'battlechicken'];
+    return exactMatches.includes(lower);
   };
 
   async function tableExists(client, tableName) {
@@ -311,11 +312,19 @@ module.exports = function registerRewardsEngine(app, pool) {
       else byKey[key] = Array.isArray(body?.data) ? body.data : (Array.isArray(body) ? body : []);
     }
 
-    const shouldIgnorePlayer = (name) => /(zzold|totem|trap|dummy|battle\s*chicken)/i.test(String(name||'').toLowerCase());
+    const shouldIgnorePlayer = (name) => {
+      const n = String(name || '').trim();
+      // Filter out names with spaces (these are usually non-player entities like "Windfury Totem")
+      if (n.includes(' ')) return true;
+      // Exact match filter for specific non-player entities
+      const lower = n.toLowerCase();
+      const exactMatches = ['zzold', 'totem', 'trap', 'dummy', 'battlechicken'];
+      return exactMatches.includes(lower);
+    };
     const nameKey = (s) => String(s||'').trim().toLowerCase();
 
-    // Assigned tanks from assignments panel
-    const assignedTanks = new Set();
+    // Assigned tanks from assignments panel (ONLY SKULL AND CROSS for sunder exclusion)
+    const mainTanks = new Set();
     try {
       const panels = Array.isArray(byKey.assignments?.panels) ? byKey.assignments.panels : [];
       const tankingPanel = panels.find(p => String(p.boss||'').toLowerCase()==='tanking' && (!p.wing || String(p.wing).trim()==='' || String(p.wing).toLowerCase()==='main'))
@@ -326,7 +335,8 @@ module.exports = function registerRewardsEngine(app, pool) {
           const nm = e?.character_name ? String(e.character_name).trim().toLowerCase() : '';
           return nm;
         };
-        ['skull','cross','square','moon'].forEach(m=>{ const k=pick(m); if (k) assignedTanks.add(k); });
+        // ONLY include Skull and Cross tanks for exclusion from Sunder Armor panel
+        ['skull','cross'].forEach(m=>{ const k=pick(m); if (k) mainTanks.add(k); });
       }
     } catch {}
 
@@ -341,7 +351,8 @@ module.exports = function registerRewardsEngine(app, pool) {
 
     // Panel accumulator
     const panels = new Map(); const ensurePanel = (k)=>{ if(!panels.has(k)) panels.set(k,new Map()); return panels.get(k); };
-    const addRow = (panelKey, nm, pts)=>{ if(!pts) return; const key=nameKey(nm); const m=ensurePanel(panelKey); m.set(key,(m.get(key)||0)+pts); };
+    // Changed: Allow 0 points (only filter out null/undefined) so we can show underperformers
+    const addRow = (panelKey, nm, pts)=>{ if(pts == null) return; const key=nameKey(nm); const m=ensurePanel(panelKey); m.set(key,(m.get(key)||0)+pts); };
 
     // Totals accumulator
     const totals = new Map(); const addPts=(nm,pts)=>{ const k=nameKey(nm); const cur=totals.get(k)||{name:nm,class:(allPlayers.find(p=>nameKey(p.name)===k)?.class||'Unknown'),points:0,gold:0}; cur.points+=Number(pts)||0; totals.set(k,cur); };
@@ -350,11 +361,11 @@ module.exports = function registerRewardsEngine(app, pool) {
     const basePanel = ensurePanel('base');
     allPlayers.forEach(p=>{ basePanel.set(nameKey(p.name), (basePanel.get(nameKey(p.name))||0) + 100); });
 
-    // Helper to sum array datasets into panel (confirmed players only)
+    // Helper to sum array datasets into panel (trust API data - no confirmed check)
     const sumDataset = (arr, panelKey) => {
       (arr||[]).forEach(row => {
         const nm = row.character_name || row.player_name; if (!nm) return;
-        const k = nameKey(nm); if (!confirmed.has(k)) return;
+        // Removed confirmed check - if API has data for a player, they were in the raid
         addRow(panelKey, nm, Number(row.points)||0);
       });
     };
@@ -402,11 +413,7 @@ module.exports = function registerRewardsEngine(app, pool) {
         let nm = row.character_name || row.player_name; if (!nm) return;
         // Strip any trailing parenthetical like "(Group 2)"
         const nmCanon = nm.replace(/\s*\([^)]*\)\s*$/, '').trim();
-        const key = nameKey(nmCanon);
-        if (!confirmed.has(key)) {
-          console.log(`[ENGINE] Windfury: Skipping ${nmCanon} (not confirmed)`);
-          return;
-        }
+        // Removed confirmed check - accept all windfury data from API
         addRow('windfury_totems', nmCanon, Number(row.points)||0);
       });
     } catch {}
@@ -414,11 +421,12 @@ module.exports = function registerRewardsEngine(app, pool) {
     sumDataset(byKey.runesData, 'runes');
     sumDataset(byKey.interruptsData, 'interrupts');
     sumDataset(byKey.disarmsData, 'disarms');
-    // Curses and Faerie Fire: include uptime percentage in character_details
+    // Curses and Faerie Fire: include uptime percentage in character_details (trust API data)
     const sumDatasetWithDetails = (arr, panelKey, detailsField = 'uptime') => {
       (arr||[]).forEach(row => {
         const nm = row.character_name || row.player_name; if (!nm) return;
-        const k = nameKey(nm); if (!confirmed.has(k)) return;
+        const k = nameKey(nm);
+        // Removed confirmed check - if API has data for a player, they were in the raid
         addRow(panelKey, nm, Number(row.points)||0);
         // Store details in a separate map for later use
         if (!panelDetails.has(panelKey)) panelDetails.set(panelKey, new Map());
@@ -444,7 +452,7 @@ module.exports = function registerRewardsEngine(app, pool) {
     sumDataset(byKey.decursesData, 'decurses');
     sumDataset(byKey.worldBuffsData, 'world_buffs_copy');
     sumDataset(byKey.voidDamageData, 'void_damage');
-    // Big Buyer: robust parse; add for confirmed players (matches legacy)
+    // Big Buyer: robust parse; accept all data from API
     try {
       let rows = Array.isArray(byKey.bigBuyerData) ? byKey.bigBuyerData : [];
       if (!rows.length) {
@@ -457,14 +465,14 @@ module.exports = function registerRewardsEngine(app, pool) {
       }
       (rows||[]).forEach(row => {
         const nm = row.character_name || row.player_name || row.name || row.buyer_name; if (!nm) return;
-        const k = nameKey(nm); if (!confirmed.has(k)) return;
+        // Removed confirmed check - accept all big buyer data from API
         const val = Number(row.points != null ? row.points : (row.value != null ? row.value : row.score)) || 0;
         if (!val) return;
         addRow('big_buyer', nm, val);
       });
     } catch {}
 
-    // Rocket Helmet (+5) — include for confirmed raid participants
+    // Rocket Helmet (+5) — include all players found with the helmet equipped
     const includeRocketHelmet = true;
     if (includeRocketHelmet) {
       try {
@@ -483,11 +491,12 @@ module.exports = function registerRewardsEngine(app, pool) {
           if(Array.isArray(node)) node.forEach(walk); else Object.values(node).forEach(walk);
         }
         if (wcl) walk(wcl);
-        Array.from(users).forEach(nm => { const k=nameKey(nm); if(confirmed.has(k)) addRow('rocket_helmet', nm, 5); });
+        // Removed confirmed check - accept all players with rocket helmet from WCL data
+        Array.from(users).forEach(nm => addRow('rocket_helmet', nm, 5));
       } catch {}
     }
 
-    // Sunder: compute from sunder_count relative to avg; exclude assigned tanks; confirmed only
+    // Sunder: compute from sunder_count relative to avg; exclude ONLY main tanks (Skull + Cross)
     try {
       const rows = Array.isArray(byKey.sunderData) ? byKey.sunderData : [];
       if (rows.length) {
@@ -495,7 +504,7 @@ module.exports = function registerRewardsEngine(app, pool) {
           const nm = nameKey(r.character_name || r.player_name || '');
           if (!nm) return false;
           if (!confirmed.has(nm)) return false;
-          if (assignedTanks.has(nm)) return false;
+          if (mainTanks.has(nm)) return false; // Only exclude Skull and Cross tanks
           return true;
         });
         if (eligible.length) {
@@ -516,9 +525,10 @@ module.exports = function registerRewardsEngine(app, pool) {
               const nm = r.character_name || r.player_name || '';
               const key = nameKey(nm);
               if (!confirmed.has(key)) return;
-              if (assignedTanks.has(key)) return;
+              if (mainTanks.has(key)) return; // Only exclude Skull and Cross tanks
               const pts = computePts(r.sunder_count);
-              if (pts) addRow('sunder', nm, pts);
+              // Award points even if pts is 0 (removed the "if (pts)" check)
+              addRow('sunder', nm, pts);
             });
           }
         }
@@ -559,14 +569,19 @@ module.exports = function registerRewardsEngine(app, pool) {
       }
     } catch {}
 
-    // Manual rewards: points vs gold (only add points for confirmed players; gold always reduces shared pot)
+    // Manual rewards: points vs gold (accept all manual entries; gold always reduces shared pot)
     let manualGoldPayoutTotal = 0;
     try {
       (byKey.manualRewardsData||[]).forEach(e=>{
         const isGold = !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||''))));
         const val = Number(e.points)||0; const nm = e.player_name; if (!nm) return;
-        if (isGold) { if (val>0) manualGoldPayoutTotal += val; }
-        else { const k = nameKey(nm); if (confirmed.has(k)) addRow('manual_points', nm, val); }
+        if (isGold) { 
+          if (val>0) manualGoldPayoutTotal += val; 
+        }
+        else { 
+          // Removed confirmed check - accept all manual points entries
+          addRow('manual_points', nm, val); 
+        }
       });
     } catch {}
 
