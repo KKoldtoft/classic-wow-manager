@@ -13975,9 +13975,17 @@ app.get('/api/faerie-fire-data/:eventId', async (req, res) => {
         const finalData = Array.from(byCharacter.values()).map(char => {
             // Calculate points based on threshold (inclusive - >= instead of >)
             const earnedPoints = char.uptime_percentage >= uptimeThreshold ? points : 0;
+            // Format uptime for display (e.g., "64%" or "64.5%")
+            const formattedUptime = char.uptime_percentage % 1 === 0 
+                ? `${char.uptime_percentage}%` 
+                : `${char.uptime_percentage.toFixed(1)}%`;
             return {
-                ...char,
-                points: earnedPoints
+                character_name: char.character_name,
+                character_class: char.character_class,
+                uptime_percentage: char.uptime_percentage,
+                uptime: formattedUptime, // Formatted string for display
+                points: earnedPoints,
+                raw_value: char.raw_value
             };
         }).filter(char => char.uptime_percentage >= 0) // Include all characters with valid uptime data
           .sort((a, b) => b.uptime_percentage - a.uptime_percentage); // Sort by uptime percentage descending

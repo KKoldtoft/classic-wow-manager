@@ -410,10 +410,22 @@ module.exports = function registerRewardsEngine(app, pool) {
     sumDataset(byKey.runesData, 'runes');
     sumDataset(byKey.interruptsData, 'interrupts');
     sumDataset(byKey.disarmsData, 'disarms');
-    sumDataset(byKey.curseData, 'curse_recklessness');
-    sumDataset(byKey.curseShadowData, 'curse_shadow');
-    sumDataset(byKey.curseElementsData, 'curse_elements');
-    sumDataset(byKey.faerieFireData, 'faerie_fire');
+    // Curses and Faerie Fire: include uptime percentage in character_details
+    const sumDatasetWithDetails = (arr, panelKey, detailsField = 'uptime') => {
+      (arr||[]).forEach(row => {
+        const nm = row.character_name || row.player_name; if (!nm) return;
+        const k = nameKey(nm); if (!confirmed.has(k)) return;
+        addRow(panelKey, nm, Number(row.points)||0);
+        // Store details in a separate map for later use
+        if (!panelDetails.has(panelKey)) panelDetails.set(panelKey, new Map());
+        panelDetails.get(panelKey).set(k, row[detailsField] || `${Number(row.uptime_percentage||0)}%`);
+      });
+    };
+    const panelDetails = new Map(); // Track character_details by panel
+    sumDatasetWithDetails(byKey.curseData, 'curse_recklessness', 'uptime');
+    sumDatasetWithDetails(byKey.curseShadowData, 'curse_shadow', 'uptime');
+    sumDatasetWithDetails(byKey.curseElementsData, 'curse_elements', 'uptime');
+    sumDatasetWithDetails(byKey.faerieFireData, 'faerie_fire', 'uptime');
     // Scorch: include even if player not strictly in confirmed, to avoid misses from name mismatches
     try {
       (byKey.scorchData||[]).forEach(row => {
@@ -564,8 +576,22 @@ module.exports = function registerRewardsEngine(app, pool) {
     const goldPerPoint = (adjusted>0 && totalPointsAll>0) ? (adjusted/totalPointsAll) : 0;
     totals.forEach(v=>{ v.gold = Math.floor(Math.max(0, v.points)*goldPerPoint); });
 
-    // Serialize panels
-    const panelsOut = Array.from(panels.entries()).map(([panel_key, m]) => ({ panel_key, rows: Array.from(m.entries()).map(([k, pts]) => ({ name: allPlayers.find(p=>nameKey(p.name)===k)?.name || k, points: Number(pts)||0 })) }));
+    // Serialize panels (include character_details for panels that have them)
+    const panelsOut = Array.from(panels.entries()).map(([panel_key, m]) => ({ 
+      panel_key, 
+      rows: Array.from(m.entries()).map(([k, pts]) => {
+        const row = { 
+          name: allPlayers.find(p=>nameKey(p.name)===k)?.name || k, 
+          points: Number(pts)||0 
+        };
+        // Add character_details if available for this panel
+        if (panelDetails.has(panel_key)) {
+          const details = panelDetails.get(panel_key).get(k);
+          if (details) row.character_details = details;
+        }
+        return row;
+      })
+    }));
     const players = allPlayers;
 
     // Digest
