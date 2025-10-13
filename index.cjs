@@ -13936,7 +13936,7 @@ app.get('/api/faerie-fire-data/:eventId', async (req, res) => {
         
         console.log(`🌟 [FAERIE FIRE] Using settings: threshold=${uptimeThreshold}%, points=${points}`);
         
-        // Query for "Faerie Fire (uptime% - overall: XX%)" usage
+        // Query for "Faerie Fire (uptime% - overall: XX%)" usage (both base and Feral versions)
         const result = await client.query(`
             SELECT 
                 character_name,
@@ -13945,28 +13945,39 @@ app.get('/api/faerie-fire-data/:eventId', async (req, res) => {
                 ability_value
             FROM sheet_player_abilities 
             WHERE event_id = $1 
-            AND ability_name LIKE 'Faerie Fire (uptime%% - overall: %)'
-            ORDER BY character_name
+            AND ability_name LIKE 'Faerie Fire%uptime%% - overall:%'
+            ORDER BY character_name, ability_name
         `, [eventId]);
         
         console.log(`🌟 [FAERIE FIRE] Found ${result.rows.length} faerie fire records for event: ${eventId}`);
         console.log(`🌟 [FAERIE FIRE] Raw data sample:`, result.rows.slice(0, 3));
         
         // Process and calculate points for each character
-        const finalData = result.rows.map(row => {
-            // Parse the uptime percentage from "133 (85%)" format - extract percentage from brackets
+        // Group by character name and use the HIGHEST uptime from all Faerie Fire variants
+        const byCharacter = new Map();
+        result.rows.forEach(row => {
+            const name = row.character_name;
+            // Parse the uptime percentage from "133 (85%)" format or just "0" - extract percentage from brackets
             const uptimeMatch = row.ability_value.toString().match(/\((\d+(?:\.\d+)?)%\)/);
             const uptimePercentage = uptimeMatch ? parseFloat(uptimeMatch[1]) : 0;
             
+            if (!byCharacter.has(name) || byCharacter.get(name).uptime_percentage < uptimePercentage) {
+                byCharacter.set(name, {
+                    character_name: row.character_name,
+                    character_class: row.character_class,
+                    uptime_percentage: uptimePercentage,
+                    ability_name: row.ability_name,
+                    raw_value: row.ability_value
+                });
+            }
+        });
+        
+        const finalData = Array.from(byCharacter.values()).map(char => {
             // Calculate points based on threshold (inclusive - >= instead of >)
-            const earnedPoints = uptimePercentage >= uptimeThreshold ? points : 0;
-            
+            const earnedPoints = char.uptime_percentage >= uptimeThreshold ? points : 0;
             return {
-                character_name: row.character_name,
-                character_class: row.character_class,
-                uptime_percentage: uptimePercentage,
-                points: earnedPoints,
-                raw_value: row.ability_value
+                ...char,
+                points: earnedPoints
             };
         }).filter(char => char.uptime_percentage >= 0) // Include all characters with valid uptime data
           .sort((a, b) => b.uptime_percentage - a.uptime_percentage); // Sort by uptime percentage descending
