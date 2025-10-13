@@ -295,10 +295,22 @@ class GoldPotManager {
             nameToPlayer.set(lower(p.character_name), { name: p.character_name, class: p.character_class, points: 0, gold: 0 });
         });
         // Sum points by player across all panels using edited else original
+        // Skip manual_points with is_gold flag as they're handled separately
         entries.forEach(r=>{
             const key = lower(this.normalizeSnapshotName(r.character_name||'')); if(!key) return;
             if (!this.isValidWoWName(this.normalizeSnapshotName(r.character_name||''))) return;
             const v = nameToPlayer.get(key); if(!v) return;
+            
+            // Check if this is a gold payout (manual_points with is_gold flag)
+            if (String(r.panel_key||'') === 'manual_points') {
+                const aux = r.aux_json || {};
+                const isGold = !!(aux.is_gold === true || aux.is_gold === 'true');
+                if (isGold) {
+                    console.log(`[GOLD DEBUG SNAPSHOT] Skipping gold entry in points calculation: ${r.character_name}, amt=${r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)}`);
+                    return; // Skip gold payouts in points calculation
+                }
+            }
+            
             const pts = Number(r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0;
             v.points += pts;
         });
@@ -307,24 +319,33 @@ class GoldPotManager {
         if (!hasBasePoints) {
             nameToPlayer.forEach(v => { v.points += 100; });
         }
-        // Manual gold payouts: add directly to player gold
+        // Manual rewards: process both points and gold
         let manualGoldPayoutTotal = 0;
         entries.forEach(r=>{
             if (String(r.panel_key||'') !== 'manual_points') return;
             const aux = r.aux_json || {};
             const isGold = !!(aux.is_gold === true || aux.is_gold === 'true');
-            console.log(`[GOLD DEBUG SNAPSHOT] Manual entry for ${r.character_name}: aux_json=${JSON.stringify(aux)}, isGold=${isGold}, amt=${r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)}`);
-            if (!isGold) return;
             const amt = Number(r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0;
-            if (!(amt>0)) return;
-            manualGoldPayoutTotal += amt;
-            console.log(`[GOLD DEBUG SNAPSHOT] Adding ${amt} to manualGoldPayoutTotal for ${r.character_name}, total now: ${manualGoldPayoutTotal}`);
+            console.log(`[GOLD DEBUG SNAPSHOT] Manual entry for ${r.character_name}: aux_json=${JSON.stringify(aux)}, isGold=${isGold}, amt=${amt}`);
+            
             const key = lower(this.normalizeSnapshotName(r.character_name||''));
             if (!this.isValidWoWName(this.normalizeSnapshotName(r.character_name||''))) return;
-            const v = nameToPlayer.get(key); if (v) {
-                const oldGold = Number(v.gold)||0;
-                v.gold = Math.max(0, oldGold + amt);
-                console.log(`[GOLD DEBUG SNAPSHOT] Added ${amt} gold to ${r.character_name} (was ${oldGold}, now ${v.gold})`);
+            const v = nameToPlayer.get(key);
+            if (!v) return;
+            
+            if (isGold) {
+                // Gold payout: add directly to player gold and track total
+                if (amt > 0) {
+                    manualGoldPayoutTotal += amt;
+                    console.log(`[GOLD DEBUG SNAPSHOT] Adding ${amt} to manualGoldPayoutTotal for ${r.character_name}, total now: ${manualGoldPayoutTotal}`);
+                    const oldGold = Number(v.gold)||0;
+                    v.gold = Math.max(0, oldGold + amt);
+                    console.log(`[GOLD DEBUG SNAPSHOT] Added ${amt} gold to ${r.character_name} (was ${oldGold}, now ${v.gold})`);
+                }
+            } else {
+                // Points-based reward: add to player points
+                v.points += amt;
+                console.log(`[GOLD DEBUG SNAPSHOT] Added ${amt} points to ${r.character_name}, total points now: ${v.points}`);
             }
         });
         this.manualGoldPayoutTotal = manualGoldPayoutTotal;
