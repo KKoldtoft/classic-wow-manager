@@ -478,7 +478,11 @@ class GoldPotManager {
                     else {
                         const arr = (json.data || json.settings || json) && (json.data || []);
                         if (key === 'manualRewardsData') {
-                            this.datasets[key] = (arr || []).map(e => ({ ...e, is_gold: !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||'')))) }));
+                            this.datasets[key] = (arr || []).map(e => {
+                                const isGold = !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||''))));
+                                console.log(`[GOLD DEBUG] Fetched manual reward: player=${e.player_name}, points=${e.points}, is_gold from DB=${e.is_gold}, has [GOLD] tag=${/\[GOLD\]/i.test(String(e.description||''))}, final isGold=${isGold}`);
+                                return { ...e, is_gold: isGold };
+                            });
                         } else {
                             this.datasets[key] = arr;
                         }
@@ -669,7 +673,15 @@ class GoldPotManager {
             (this.datasets.guildMembers||[]).forEach(r=>{ const key=String(r.character_name||'').toLowerCase(); const v=nameToPlayer.get(key); if(v) v.points+=10; });
 
             // Manual rewards (only confirmed) — exclude gold payouts from points
-            (this.datasets.manualRewardsData||[]).forEach(e=>{ const key=String(e.player_name||'').toLowerCase(); if(!confirmedNames.has(key)) return; const isGold=!!(e&&(e.is_gold||/\[GOLD\]/i.test(String(e.description||'')))); if(isGold) return; const v=nameToPlayer.get(key); if(v) v.points+=(Number(e.points)||0); });
+            (this.datasets.manualRewardsData||[]).forEach(e=>{
+                const key=String(e.player_name||'').toLowerCase();
+                if(!confirmedNames.has(key)) return;
+                const isGold=!!(e&&(e.is_gold||/\[GOLD\]/i.test(String(e.description||''))));
+                console.log(`[GOLD DEBUG] Manual reward for ${e.player_name}: points=${e.points}, is_gold=${e.is_gold}, description="${e.description}", isGold=${isGold}`);
+                if(isGold) return; // Skip adding to points if it's a gold payout
+                const v=nameToPlayer.get(key);
+                if(v) v.points+=(Number(e.points)||0);
+            });
 
             // Calculate manual gold payout total (for shared pot adjustment)
             this.manualGoldPayoutTotal = 0;
@@ -679,7 +691,10 @@ class GoldPotManager {
                 const isGold=!!(e&&(e.is_gold||/\[GOLD\]/i.test(String(e.description||''))));
                 if(!isGold) return;
                 const amt=Number(e.points)||0;
-                if(amt>0) this.manualGoldPayoutTotal += amt;
+                if(amt>0) {
+                    console.log(`[GOLD DEBUG] Adding ${amt} to manualGoldPayoutTotal for ${e.player_name}`);
+                    this.manualGoldPayoutTotal += amt;
+                }
             });
 
             // God Gamer awards
@@ -718,6 +733,7 @@ class GoldPotManager {
         let totalPointsAll=0; nameToPlayer.forEach(v=>{ totalPointsAll+=Math.max(0, v.points); }); this.totalPointsAll=totalPointsAll;
         const baseShared2 = Number(this.sharedGoldPot) || 0;
         const payout2 = Number(this.manualGoldPayoutTotal) || 0;
+        console.log(`[GOLD DEBUG] Base shared pot: ${baseShared2}, Manual gold payout total: ${payout2}, Adjusted: ${baseShared2 - payout2}`);
         const adjustedShared2 = Math.max(0, baseShared2 - payout2);
         this.sharedGoldPotAdjusted = adjustedShared2;
         const gpp=(adjustedShared2>0&&totalPointsAll>0)? adjustedShared2/totalPointsAll : 0; this.goldPerPoint=gpp; nameToPlayer.forEach(v=>{ const effPts=Math.max(0, v.points); v.gold=Math.floor(effPts*gpp); });
@@ -730,7 +746,12 @@ class GoldPotManager {
                 const isGold=!!(e&&(e.is_gold||/\[GOLD\]/i.test(String(e.description||''))));
                 if(!isGold) return;
                 const amt=Number(e.points)||0; if(!(amt>0)) return;
-                const v=nameToPlayer.get(key); if(v) v.gold = Math.max(0, (Number(v.gold)||0) + amt);
+                const v=nameToPlayer.get(key);
+                if(v) {
+                    const oldGold = Number(v.gold)||0;
+                    v.gold = Math.max(0, oldGold + amt);
+                    console.log(`[GOLD DEBUG] Added ${amt} gold directly to ${e.player_name} (was ${oldGold}, now ${v.gold})`);
+                }
             });
         } catch {}
         this.playerTotals=nameToPlayer;
