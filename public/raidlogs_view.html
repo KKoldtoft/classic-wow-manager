@@ -1486,9 +1486,15 @@
             list.innerHTML = emptyStateHtml();
           } else {
             rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
-            // Calculate fill percentages based on points
-            const pointsVals = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
-            const maxPts = Math.max(1, ...pointsVals);
+            // Calculate fill percentages based on uptime % for curses
+            const fillVals = rows.map(r => {
+              // Extract uptime percentage from character_details (e.g. "85%" or "85.5%")
+              const details = (r.character_details_edited != null ? r.character_details_edited : (r.character_details != null ? r.character_details : (r.character_details_original != null ? r.character_details_original : '')));
+              const match = String(details).match(/(\d+(?:\.\d+)?)\s*%/);
+              if (match) return Math.max(0, Number(match[1]));
+              return 0;
+            });
+            const maxVal = Math.max(1, ...fillVals);
             rows.forEach((rowItem, idx)=>{
               const item = document.createElement('div');
               item.className = 'ranking-item';
@@ -1499,7 +1505,7 @@
               const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
               const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
               const icon = iconUrlPub || classIconUrl(clsName);
-              const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
+              const fillPct = Math.max(5, Math.min(100, Math.round((fillVals[idx] / maxVal) * 100)));
               item.innerHTML = `
                 <div class=\"ranking-number\">#${idx+1}</div>
                 <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
@@ -1542,11 +1548,18 @@
             list.innerHTML = emptyStateHtml();
           } else {
             rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
-            // Calculate fill percentages: for Decurses, use decurse count (primary_numeric); otherwise use points
+            // Calculate fill percentages: for Decurses, use decurse count (primary_numeric); for Faerie Fire, use uptime %; otherwise use points
             const isDecurses = (key === 'decurses');
+            const isFaerieFire = (key === 'faerie_fire');
             const fillValues = rows.map(r => {
               if (isDecurses && r.primary_numeric_original != null) {
                 return Math.max(0, Number(r.primary_numeric_original));
+              }
+              if (isFaerieFire) {
+                // Extract uptime percentage from character_details (e.g. "85%" or "85.5%")
+                const details = (r.character_details_edited != null ? r.character_details_edited : (r.character_details != null ? r.character_details : (r.character_details_original != null ? r.character_details_original : '')));
+                const match = String(details).match(/(\d+(?:\.\d+)?)\s*%/);
+                if (match) return Math.max(0, Number(match[1]));
               }
               return Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0));
             });
