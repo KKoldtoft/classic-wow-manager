@@ -491,21 +491,21 @@
     function getIconForPanel(key){
       // Returns icon HTML (FontAwesome icon or WoW image) for each panel type
       // Matches the icons from raidlogs.html (admin page)
-      const iconStyle = 'width: 24px; height: 24px; margin-right: 8px;';
+      const iconStyle = 'width: 24px; height: 24px;';
       switch(String(key||'')){
         case 'god_gamer_dps': return '<i class="fas fa-crown"></i> ';
         case 'god_gamer_healer': return '<i class="fas fa-crown"></i> ';
-        case 'damage': return '<i class="fas fa-fire"></i> ';
-        case 'healing': return '<i class="fas fa-heart"></i> ';
-        case 'shaman_healers': return '<i class="fas fa-bolt"></i> ';
-        case 'priest_healers': return '<i class="fas fa-praying-hands"></i> ';
-        case 'druid_healers': return '<i class="fas fa-leaf"></i> ';
-        case 'too_low_damage': return '<i class="fas fa-arrow-down"></i> ';
-        case 'too_low_healing': return '<i class="fas fa-arrow-down"></i> ';
+        case 'damage': return `<img src="https://wow.zamimg.com/images/wow/icons/medium/ability_marksmanship.jpg" alt="Damage" style="${iconStyle}"> `;
+        case 'healing': return `<img src="https://wow.zamimg.com/images/wow/icons/medium/spell_holy_holybolt.jpg" alt="Healing" style="${iconStyle}"> `;
+        case 'shaman_healers': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_healingwavegreater.jpg" alt="Shaman Healers" style="${iconStyle}"> `;
+        case 'priest_healers': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_holy_renew.jpg" alt="Priest Healers" style="${iconStyle}"> `;
+        case 'druid_healers': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_resistnature.jpg" alt="Druid Healers" style="${iconStyle}"> `;
+        case 'too_low_damage': return `<img src="https://wow.zamimg.com/images/wow/icons/large/inv_sword_04.jpg" alt="Too Low Damage" style="${iconStyle}"> `;
+        case 'too_low_healing': return `<img src="https://wow.zamimg.com/images/wow/icons/large/inv_potion_49.jpg" alt="Too Low Healing" style="${iconStyle}"> `;
         case 'frost_resistance': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_frost_frostarmor.jpg" alt="Frost Resistance" style="${iconStyle}"> `;
         case 'world_buffs_copy': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_arcane_teleportorgrimmar.jpg" alt="World Buffs" style="${iconStyle}"> `;
-        case 'attendance_streaks': return '<i class="fas fa-fire"></i> ';
-        case 'guild_members': return '<i class="fas fa-shield-alt"></i> ';
+        case 'attendance_streaks': return `<img src="https://wow.zamimg.com/images/wow/icons/large/ability_hunter_beastcall.jpg" alt="Attendance Streaks" style="${iconStyle}"> `;
+        case 'guild_members': return `<img src="https://wow.zamimg.com/images/wow/icons/large/inv_shirt_guildtabard_01.jpg" alt="Guild Members" style="${iconStyle}"> `;
         case 'abilities': return `<img src="https://wow.zamimg.com/images/wow/icons/large/inv_misc_bomb_06.jpg" alt="Explosives" style="${iconStyle}"> `;
         case 'mana_potions': return `<img src="https://wow.zamimg.com/images/wow/icons/large/inv_potion_76.jpg" alt="Major Mana Potion" style="${iconStyle}"> `;
         case 'runes': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_sealofkings.jpg" alt="Dark/Demonic Runes" style="${iconStyle}"> `;
@@ -524,7 +524,7 @@
         case 'power_infusion': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_holy_powerinfusion.jpg" alt="Power Infusion" style="${iconStyle}"> `;
         case 'decurses': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_removecurse.jpg" alt="Remove Lesser Curse" style="${iconStyle}"> `;
         case 'void_damage': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_shadowwordpain.jpg" alt="Void Damage" style="${iconStyle}"> `;
-        case 'big_buyer': return '<i class="fas fa-coins"></i> ';
+        case 'big_buyer': return `<img src="https://wow.zamimg.com/images/wow/icons/large/inv_misc_bag_10.jpg" alt="Big Buyer" style="${iconStyle}"> `;
         default: return '';
       }
     }
@@ -760,6 +760,107 @@
       section.appendChild(container);
     }
 
+    function ensureTotemInfoTooltipSetup() {
+      if (window._totemInfoSetup) return;
+      window._totemInfoSetup = true;
+      const tip = document.createElement('div');
+      tip.id = 'totem-info-tooltip';
+      tip.className = 'totem-info-tooltip';
+      tip.style.display = 'none';
+      document.body.appendChild(tip);
+
+      const getText = (key) => {
+        const k = String(key||'').toLowerCase();
+        if (k === 'windfury') {
+          return (
+`Windfury Totem – how to earn points\n\n` +
+`We compare how many "extra Windfury attacks" your party gets on average to the overall baseline for the raid.\n` +
+`Your points depend on how your party's average stacks up against that baseline:\n` +
+`- Less than 75% of the baseline: 0 points\n` +
+`- 75% to 99% of the baseline: 10 points\n` +
+`- 100% to 125% of the baseline: 15 points\n` +
+`- Above 125% of the baseline: 20 points\n\n` +
+`In plain terms: keep Windfury up where your party can use it and make sure your melee are close enough to benefit. The better your party's extra attacks compared to everyone else, the more points you earn.`
+          );
+        }
+        if (k === 'grace') {
+          return (
+`Grace of Air Totem – how to earn points\n\n` +
+`First, you must meet BOTH conditions:\n` +
+`- Use at least 10 Grace of Air totems in the raid.\n` +
+`- Your party's average extra Windfury attacks is at least 75% of the Windfury baseline (same baseline used above).\n\n` +
+`If you meet those two, you earn points based on how many Grace of Air totems you placed:\n` +
+`- Every 10 totems = 1 point\n` +
+`- Capped at 20 points (so 200+ totems = 20 points)\n\n` +
+`In plain terms: make sure your Windfury performance is solid (at least the 75% minimum), then drop lots of Grace of Air to climb the point ladder.`
+          );
+        }
+        if (k === 'strength') {
+          return (
+`Strength of Earth Totem – how to earn points\n\n` +
+`First, you must meet BOTH conditions:\n` +
+`- Use at least 10 Strength of Earth totems in the raid.\n` +
+`- Your party's average extra Windfury attacks is at least 75% of the Windfury baseline (same baseline used above).\n\n` +
+`If you meet those two, you earn points based on how many Strength of Earth totems you placed:\n` +
+`- Every 10 totems = 1 point\n` +
+`- Capped at 10 points (so 100+ totems = 10 points)\n\n` +
+`In plain terms: qualify via Windfury baseline, then drop Strength of Earth consistently to rack up points.`
+          );
+        }
+        if (k === 'tranquil') {
+          return (
+`Tranquil Air Totem – how to earn points\n\n` +
+`Points here are purely about how many Tranquil Air totems you use.\n` +
+`- Every 10 totems = 1 point, up to a maximum of 5 points (so 50+ totems = 5 points).\n` +
+`- No Windfury performance check applies to Tranquil Air.`
+          );
+        }
+        return '';
+      };
+
+      let active = null;
+      const show = (el, e) => {
+        const key = el.getAttribute('data-info-key');
+        tip.innerHTML = `<pre>${getText(key)}</pre>`;
+        tip.style.display = 'block';
+        move(e);
+      };
+      const hide = () => { tip.style.display = 'none'; };
+      const move = (e) => {
+        const x = (e.pageX || (e.clientX + window.scrollX)) + 14;
+        const y = (e.pageY || (e.clientY + window.scrollY)) + 14;
+        tip.style.left = x + 'px';
+        tip.style.top = y + 'px';
+      };
+
+      document.addEventListener('mouseover', (e) => {
+        const t = e.target.closest('.totem-info-icon');
+        if (!t) return;
+        active = t;
+        show(t, e);
+      });
+      document.addEventListener('mousemove', (e) => { if (active) move(e); });
+      document.addEventListener('mouseout', (e) => {
+        if (e.target.closest('.totem-info-icon') !== active) return;
+        active = null;
+        hide();
+      });
+      document.addEventListener('focusin', (e) => {
+        const t = e.target.closest('.totem-info-icon');
+        if (!t) return;
+        active = t;
+        const rect = t.getBoundingClientRect();
+        show(t, { pageX: rect.right + window.scrollX, pageY: rect.bottom + window.scrollY });
+      });
+      document.addEventListener('focusout', (e) => {
+        if (!active) return;
+        const related = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.totem-info-icon');
+        if (related === active) return;
+        active = null;
+        hide();
+      });
+    }
+
     function getEventId(){
       try{
         const parts = window.location.pathname.split('/').filter(Boolean);
@@ -900,6 +1001,8 @@
           else if (has('interrupts-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
           else if (has('curse-recklessness-section') || has('curse-elements-section') || has('curse-shadow-section') || has('faerie-fire-section')) { extractor = (item)=> extractPercent(item); cap100 = true; sortDesc = true; }
           else if (has('mana-potions-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
+          else if (has('decurses-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
+          else if (has('demo-shout-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
           else if (has('runes-section')) return; // Runes section handles its own sorting and fill in the initial render
           else if (has('rocket-helmet-section')) forceAll100 = true;
           else if (has('sunder-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
@@ -1266,6 +1369,7 @@
         section.appendChild(header);
         if (key === 'windfury_totems') {
           renderTotemsSection(section, obj.rows || []);
+          ensureTotemInfoTooltipSetup();
         } else {
           const list = document.createElement('div');
           list.className = 'rankings-list';
