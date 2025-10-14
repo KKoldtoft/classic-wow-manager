@@ -458,6 +458,47 @@
       return slug.replace(/_/g,' ').replace(/\b\w/g, c=>c.toUpperCase());
     }
 
+    function getIconForPanel(key){
+      // Returns icon HTML (FontAwesome icon or WoW image) for each panel type
+      // Matches the icons from raidlogs.html (admin page)
+      const iconStyle = 'width: 24px; height: 24px; margin-right: 8px;';
+      switch(String(key||'')){
+        case 'god_gamer_dps': return '<i class="fas fa-crown"></i> ';
+        case 'god_gamer_healer': return '<i class="fas fa-crown"></i> ';
+        case 'damage': return '<i class="fas fa-fire"></i> ';
+        case 'healing': return '<i class="fas fa-heart"></i> ';
+        case 'shaman_healers': return '<i class="fas fa-bolt"></i> ';
+        case 'priest_healers': return '<i class="fas fa-praying-hands"></i> ';
+        case 'druid_healers': return '<i class="fas fa-leaf"></i> ';
+        case 'too_low_damage': return '<i class="fas fa-arrow-down"></i> ';
+        case 'too_low_healing': return '<i class="fas fa-arrow-down"></i> ';
+        case 'frost_resistance': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_frost_frostarmor.jpg" alt="Frost Resistance" style="${iconStyle}"> `;
+        case 'world_buffs_copy': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_arcane_teleportorgrimmar.jpg" alt="World Buffs" style="${iconStyle}"> `;
+        case 'attendance_streaks': return '<i class="fas fa-fire"></i> ';
+        case 'guild_members': return '<i class="fas fa-shield-alt"></i> ';
+        case 'abilities': return `<img src="https://wow.zamimg.com/images/wow/icons/large/inv_misc_bomb_06.jpg" alt="Explosives" style="${iconStyle}"> `;
+        case 'mana_potions': return `<img src="https://wow.zamimg.com/images/wow/icons/large/inv_potion_76.jpg" alt="Major Mana Potion" style="${iconStyle}"> `;
+        case 'runes': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_sealofkings.jpg" alt="Dark/Demonic Runes" style="${iconStyle}"> `;
+        case 'interrupts': return `<img src="https://wow.zamimg.com/images/wow/icons/large/ability_kick.jpg" alt="Interrupted spells" style="${iconStyle}"> `;
+        case 'disarms': return `<img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_disarm.jpg" alt="Disarmed enemies" style="${iconStyle}"> `;
+        case 'windfury_totems': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_windfury.jpg" alt="Totems" style="${iconStyle}"> `;
+        case 'sunder': return `<img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_sunder.jpg" alt="Sunder Armor" style="${iconStyle}"> `;
+        case 'rocket_helmet': return `<img src="https://wow.zamimg.com/images/wow/icons/large/inv_helmet_49.jpg" alt="Goblin Rocket Helmet" style="${iconStyle}"> `;
+        case 'curse_recklessness': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_unholystrength.jpg" alt="Curse of Recklessness" style="${iconStyle}"> `;
+        case 'curse_shadow': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_curseofachimonde.jpg" alt="Curse of Shadow" style="${iconStyle}"> `;
+        case 'curse_elements': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_chilltouch.jpg" alt="Curse of the Elements" style="${iconStyle}"> `;
+        case 'faerie_fire': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_faeriefire.jpg" alt="Faerie Fire" style="${iconStyle}"> `;
+        case 'scorch': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_fire_soulburn.jpg" alt="Scorch" style="${iconStyle}"> `;
+        case 'demo_shout': return `<img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_warcry.jpg" alt="Demoralizing Shout" style="${iconStyle}"> `;
+        case 'polymorph': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_polymorph.jpg" alt="Polymorph" style="${iconStyle}"> `;
+        case 'power_infusion': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_holy_powerinfusion.jpg" alt="Power Infusion" style="${iconStyle}"> `;
+        case 'decurses': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_removecurse.jpg" alt="Remove Lesser Curse" style="${iconStyle}"> `;
+        case 'void_damage': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_shadowwordpain.jpg" alt="Void Damage" style="${iconStyle}"> `;
+        case 'big_buyer': return '<i class="fas fa-coins"></i> ';
+        default: return '';
+      }
+    }
+
     function panelClassForKey(key){
       switch(String(key||'')){
         case 'damage': return 'damage';
@@ -649,17 +690,28 @@
         const arr = groups[key]||[];
         if (!arr.length) return;
         container.insertAdjacentHTML('beforeend', headerHtml(titleForType(key), iconForType(key), key));
-        const sorted = arr.slice().sort((a,b)=>((b.points||0)-(a.points||0)) || String(a.character_name||'').localeCompare(String(b.character_name||'')));
-        // Compute relative fill percentages by last numeric value in details (fallback to points)
-        const values = sorted.map(r=>{
+        
+        // Extract metric value (extra attacks for Windfury, totem count for others) for sorting
+        const extractMetric = (r) => {
           try{
             const details = String((r.character_details_edited ?? r.character_details ?? r.character_details_original) || '');
-            // Prefer last numeric token (supports decimals)
+            // Extract last numeric token (supports decimals)
             const m = details.match(/(-?\d+(?:\.\d+)?)(?!.*-?\d)/);
             if (m) return parseFloat(m[1]) || 0;
           }catch{}
           return Number(r.points||0) || 0;
+        };
+        
+        // Sort by actual metric value (highest first), then by name
+        const sorted = arr.slice().sort((a,b)=>{
+          const aVal = extractMetric(a);
+          const bVal = extractMetric(b);
+          if (bVal !== aVal) return bVal - aVal;
+          return String(a.character_name||'').localeCompare(String(b.character_name||''));
         });
+        
+        // Compute relative fill percentages by the same metric
+        const values = sorted.map(r => extractMetric(r));
         const max = Math.max(1, ...values);
         sorted.forEach((row, idx)=>{
           const v = values[idx] || 0;
@@ -813,7 +865,7 @@
           else if (has('interrupts-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
           else if (has('curse-recklessness-section') || has('curse-elements-section') || has('curse-shadow-section') || has('faerie-fire-section')) { extractor = (item)=> extractPercent(item); cap100 = true; sortDesc = true; }
           else if (has('mana-potions-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
-          else if (has('runes-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
+          else if (has('runes-section')) return; // Runes section handles its own sorting and fill in the initial render
           else if (has('rocket-helmet-section')) forceAll100 = true;
           else if (has('sunder-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
           else if (has('disarms-section')) { extractor = (item)=> extractLastInt(item); sortDesc = true; }
@@ -1110,7 +1162,7 @@
         const header = document.createElement('div');
         header.className = 'section-header';
         const h2 = document.createElement('h2');
-        h2.textContent = obj.name || slugToTitle(key);
+        h2.innerHTML = getIconForPanel(key) + (obj.name || slugToTitle(key));
         header.appendChild(h2);
         section.appendChild(header);
         const list = document.createElement('div');
@@ -1166,7 +1218,7 @@
         const header = document.createElement('div');
         header.className = 'section-header';
         const h2 = document.createElement('h2');
-        h2.textContent = obj.name || slugToTitle(key);
+        h2.innerHTML = getIconForPanel(key) + (obj.name || slugToTitle(key));
         header.appendChild(h2);
         section.appendChild(header);
         if (key === 'windfury_totems') {
@@ -1258,7 +1310,7 @@
           const header = document.createElement('div');
           header.className = 'section-header';
           const h2 = document.createElement('h2');
-          h2.textContent = obj.name || slugToTitle(key);
+          h2.innerHTML = getIconForPanel(key) + (obj.name || slugToTitle(key));
           header.appendChild(h2);
           section.appendChild(header);
           const list = document.createElement('div');
@@ -1318,7 +1370,7 @@
           const header = document.createElement('div');
           header.className = 'section-header';
           const h2 = document.createElement('h2');
-          h2.textContent = obj.name || slugToTitle(key);
+          h2.innerHTML = getIconForPanel(key) + (obj.name || slugToTitle(key));
           header.appendChild(h2);
           section.appendChild(header);
           const list = document.createElement('div');
@@ -1372,7 +1424,7 @@
           const header = document.createElement('div');
           header.className = 'section-header';
           const h2 = document.createElement('h2');
-          h2.textContent = obj.name || slugToTitle(key);
+          h2.innerHTML = getIconForPanel(key) + (obj.name || slugToTitle(key));
           header.appendChild(h2);
           section.appendChild(header);
           const list = document.createElement('div');
@@ -1427,7 +1479,7 @@
           const header = document.createElement('div');
           header.className = 'section-header';
           const h2 = document.createElement('h2');
-          h2.textContent = obj.name || slugToTitle(key);
+          h2.innerHTML = getIconForPanel(key) + (obj.name || slugToTitle(key));
           header.appendChild(h2);
           section.appendChild(header);
           const list = document.createElement('div');
@@ -1481,7 +1533,7 @@
           const header = document.createElement('div');
           header.className = 'section-header';
           const h2 = document.createElement('h2');
-          h2.textContent = obj.name || slugToTitle(key);
+          h2.innerHTML = getIconForPanel(key) + (obj.name || slugToTitle(key));
           header.appendChild(h2);
           section.appendChild(header);
           const list = document.createElement('div');
@@ -1543,7 +1595,7 @@
           const header = document.createElement('div');
           header.className = 'section-header';
           const h2 = document.createElement('h2');
-          h2.textContent = obj.name || slugToTitle(key);
+          h2.innerHTML = getIconForPanel(key) + (obj.name || slugToTitle(key));
           header.appendChild(h2);
           section.appendChild(header);
           const list = document.createElement('div');
@@ -1611,7 +1663,7 @@
           const header = document.createElement('div');
           header.className = 'section-header';
           const h2 = document.createElement('h2');
-          h2.textContent = obj.name || slugToTitle(key);
+          h2.innerHTML = getIconForPanel(key) + (obj.name || slugToTitle(key));
           header.appendChild(h2);
           section.appendChild(header);
           const list = document.createElement('div');
@@ -1620,30 +1672,82 @@
           if (!rows.length) {
             list.innerHTML = emptyStateHtml();
           } else {
-            rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
-            // Calculate fill percentages based on points
-            const pointsVals = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
-            const maxPts = Math.max(1, ...pointsVals);
-            rows.forEach((rowItem, idx)=>{
-              const item = document.createElement('div');
-              item.className = 'ranking-item';
-              const clsName = (rowItem.character_class||'').toString().toLowerCase();
-              const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
-              const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
-              const points = Math.round(Number(rawPts||0));
-              const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
-              const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
-              const icon = iconUrlPub || classIconUrl(clsName);
-              const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
-              item.innerHTML = `
-                <div class=\"ranking-number\">#${idx+1}</div>
-                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
-                  <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
-                  <div class=\"character-details\">${details}</div>
-                </div>
-                <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
-              list.appendChild(item);
-            });
+            // Runes panel: use actual rune count from details for sorting and fill
+            // Others: use points
+            const isRunes = (key === 'runes');
+            
+            const extractRuneCount = (r)=>{ 
+              try{ 
+                const d=String((r.character_details_edited ?? r.character_details ?? r.character_details_original) || ''); 
+                // Try to extract from "(X total)" first
+                let m = d.match(/\((\d+)\s+total\)/);
+                if (m) return parseInt(m[1], 10) || 0;
+                
+                // Otherwise sum "X Dark, Y Demonic" 
+                let total = 0;
+                const darkMatch = d.match(/(\d+)\s+Dark/);
+                const demonicMatch = d.match(/(\d+)\s+Demonic/);
+                if (darkMatch) total += parseInt(darkMatch[1], 10) || 0;
+                if (demonicMatch) total += parseInt(demonicMatch[1], 10) || 0;
+                return total;
+              }catch{return 0;} 
+            };
+            
+            if (isRunes) {
+              // Sort by rune count (highest first)
+              rows.sort((a,b)=> (extractRuneCount(b)-extractRuneCount(a)) || String(a.character_name).localeCompare(String(b.character_name)));
+              // Calculate fill percentages based on actual rune count
+              const runeCounts = rows.map(r => extractRuneCount(r));
+              const maxRunes = Math.max(1, ...runeCounts);
+              rows.forEach((rowItem, idx)=>{
+                const item = document.createElement('div');
+                item.className = 'ranking-item';
+                const clsName = (rowItem.character_class||'').toString().toLowerCase();
+                const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
+                const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
+                const points = Math.round(Number(rawPts||0));
+                const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+                const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
+                const icon = iconUrlPub || classIconUrl(clsName);
+                // Rank #1 gets 100%, others scale proportionally
+                let fillPct = (runeCounts[idx] / maxRunes) * 100;
+                if (idx === 0) fillPct = 100;
+                fillPct = Math.max(5, Math.min(100, Math.round(fillPct)));
+                item.innerHTML = `
+                  <div class=\"ranking-number\">#${idx+1}</div>
+                  <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                    ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                    <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
+                    <div class=\"character-details\">${details}</div>
+                  </div>
+                  <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
+                list.appendChild(item);
+              });
+            } else {
+              // Mana potions and Rocket Helmet: use points-based sorting and fill
+              rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+              const pointsVals = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
+              const maxPts = Math.max(1, ...pointsVals);
+              rows.forEach((rowItem, idx)=>{
+                const item = document.createElement('div');
+                item.className = 'ranking-item';
+                const clsName = (rowItem.character_class||'').toString().toLowerCase();
+                const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
+                const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
+                const points = Math.round(Number(rawPts||0));
+                const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+                const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
+                const icon = iconUrlPub || classIconUrl(clsName);
+                const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
+                item.innerHTML = `
+                  <div class=\"ranking-number\">#${idx+1}</div>
+                  <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                    ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                    <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
+                    <div class=\"character-details\">${details}</div>
+                  </div>
+                  <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
+                list.appendChild(item);
+              });
+            }
           }
           section.appendChild(list);
           row.appendChild(section);
@@ -1665,7 +1769,7 @@
           const header = document.createElement('div');
           header.className = 'section-header';
           const h2 = document.createElement('h2');
-          h2.textContent = obj.name || slugToTitle(key);
+          h2.innerHTML = getIconForPanel(key) + (obj.name || slugToTitle(key));
           header.appendChild(h2);
           section.appendChild(header);
           const list = document.createElement('div');
@@ -1674,30 +1778,71 @@
           if (!rows.length) {
             list.innerHTML = emptyStateHtml();
           } else {
-            rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
-            // Calculate fill percentages based on points
-            const pointsVals = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
-            const maxPts = Math.max(1, ...pointsVals);
-            rows.forEach((rowItem, idx)=>{
-              const item = document.createElement('div');
-              item.className = 'ranking-item';
-              const clsName = (rowItem.character_class||'').toString().toLowerCase();
-              const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
-              const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
-              const points = Math.round(Number(rawPts||0));
-              const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
-              const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
-              const icon = iconUrlPub || classIconUrl(clsName);
-              const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
-              item.innerHTML = `
-                <div class=\"ranking-number\">#${idx+1}</div>
-                <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
-                  <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
-                  <div class=\"character-details\">${details}</div>
-                </div>
-                <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
-              list.appendChild(item);
-            });
+            // For Scorch and Polymorph, use actual count from details for sorting and fill
+            // For Sunder, use points
+            const isScorch = (key === 'scorch');
+            const isPolymorph = (key === 'polymorph');
+            
+            const extractCount = (r)=>{ 
+              try{ 
+                const d=String((r.character_details_edited ?? r.character_details ?? r.character_details_original) || ''); 
+                const m=d.match(/(\d+)(?!.*\d)/); 
+                return m?parseInt(m[1],10):0; 
+              }catch{return 0;} 
+            };
+            
+            if (isScorch || isPolymorph) {
+              // Sort by count (highest first)
+              rows.sort((a,b)=> (extractCount(b)-extractCount(a)) || String(a.character_name).localeCompare(String(b.character_name)));
+              // Calculate fill percentages based on actual count
+              const countVals = rows.map(r => extractCount(r));
+              const maxCount = Math.max(1, ...countVals);
+              rows.forEach((rowItem, idx)=>{
+                const item = document.createElement('div');
+                item.className = 'ranking-item';
+                const clsName = (rowItem.character_class||'').toString().toLowerCase();
+                const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
+                const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
+                const points = Math.round(Number(rawPts||0));
+                const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+                const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
+                const icon = iconUrlPub || classIconUrl(clsName);
+                const fillPct = Math.max(5, Math.min(100, Math.round((countVals[idx] / maxCount) * 100)));
+                item.innerHTML = `
+                  <div class=\"ranking-number\">#${idx+1}</div>
+                  <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                    ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                    <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
+                    <div class=\"character-details\">${details}</div>
+                  </div>
+                  <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
+                list.appendChild(item);
+              });
+            } else {
+              // Sunder: use points-based sorting and fill
+              rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
+              const pointsVals = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
+              const maxPts = Math.max(1, ...pointsVals);
+              rows.forEach((rowItem, idx)=>{
+                const item = document.createElement('div');
+                item.className = 'ranking-item';
+                const clsName = (rowItem.character_class||'').toString().toLowerCase();
+                const details = (rowItem.character_details_edited != null ? rowItem.character_details_edited : (rowItem.character_details != null ? rowItem.character_details : (rowItem.character_details_original != null ? rowItem.character_details_original : '')));
+                const rawPts = (rowItem.point_value_edited != null ? rowItem.point_value_edited : (rowItem.points != null ? rowItem.points : (rowItem.point_value_original != null ? rowItem.point_value_original : 0)));
+                const points = Math.round(Number(rawPts||0));
+                const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
+                const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
+                const icon = iconUrlPub || classIconUrl(clsName);
+                const fillPct = Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
+                item.innerHTML = `
+                  <div class=\"ranking-number\">#${idx+1}</div>
+                  <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                    ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
+                    <div class=\"character-name ${clsName?('class-'+clsName):''}\">${rowItem.character_name||''}</div>
+                    <div class=\"character-details\">${details}</div>
+                  </div>
+                  <div class=\"performance-amount\"><span class=\"amount-value ${amtClass}\">${points}</span></div>`;
+                list.appendChild(item);
+              });
+            }
           }
           section.appendChild(list);
           row.appendChild(section);
@@ -1719,7 +1864,7 @@
           const header = document.createElement('div');
           header.className = 'section-header';
           const h2 = document.createElement('h2');
-          h2.textContent = obj.name || (key==='void_damage' ? 'Avoidable Void Damage' : slugToTitle(key));
+          h2.innerHTML = getIconForPanel(key) + (obj.name || (key==='void_damage' ? 'Avoidable Void Damage' : slugToTitle(key)));
           header.appendChild(h2);
           section.appendChild(header);
           const list = document.createElement('div');
@@ -1774,7 +1919,7 @@
           const header = document.createElement('div');
           header.className = 'section-header';
           const h2 = document.createElement('h2');
-          h2.textContent = obj.name || slugToTitle(key);
+          h2.innerHTML = getIconForPanel(key) + (obj.name || slugToTitle(key));
           header.appendChild(h2);
           section.appendChild(header);
           const list = document.createElement('div');
@@ -1824,7 +1969,7 @@
         const header = document.createElement('div');
         header.className = 'section-header';
         const h2 = document.createElement('h2');
-        h2.textContent = obj.name || slugToTitle(key);
+        h2.innerHTML = getIconForPanel(key) + (obj.name || slugToTitle(key));
         header.appendChild(h2);
         section.appendChild(header);
         const list = document.createElement('div');
