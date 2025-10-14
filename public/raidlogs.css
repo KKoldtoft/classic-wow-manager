@@ -428,6 +428,7 @@ body.stats .rankings-container .rankings-section {
 .character-info.class-priest { background: linear-gradient(to right, #FFFFFF var(--fill-percentage, 100%), rgba(255,255,255,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #FFFFFF; }
 
 .character-info.class-shaman { background: linear-gradient(to right, #0070DE var(--fill-percentage, 100%), rgba(0,112,222,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #0070DE; }
+.character-info.tank-border { box-shadow: inset 0 0 0 4px #C79C6E !important; }
 
 .character-info.class-mage { background: linear-gradient(to right, #69CCF0 var(--fill-percentage, 100%), rgba(105,204,240,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #69CCF0; }
 
@@ -1275,13 +1276,13 @@ body.stats .rankings-container .rankings-section {
 
 /* Spec icon styling for raid logs */
 .spec-icon {
-    width: 47px;
-    height: 47px;
+    width: 43px;
+    height: 43px;
     margin-right: 12px;
     flex-shrink: 0;
     vertical-align: middle;
     position: absolute;
-    left: 2px;
+    left: 4px;
     top: 50%;
     transform: translateY(-50%);
     border-radius: 5px;

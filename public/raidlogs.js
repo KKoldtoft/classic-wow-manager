@@ -5184,8 +5184,9 @@ class RaidLogsManager {
                         return `${avg} avg extra attacks (${total} total)`;
                     })();
                 const totemIcon = this.getTotemIconHtml(typeText) || this.getClassIconHtml(resolvedClass);
-                const groupText = (player.party_id === 1 || String(player.party_id) === '1') ? 'Tank group' : `Group ${Number(player.party_id)}`;
-                const groupLabel = (player.party_id != null && player.party_id !== undefined) ? ` <span class="group-label">(${groupText})</span>` : '';
+                const isTankGrp = (player.party_id === 1 || String(player.party_id) === '1');
+                const groupText = isTankGrp ? 'tank grp' : `Group ${Number(player.party_id)}`;
+                const groupLabel = (player.party_id != null && player.party_id !== undefined) ? ` <span class="group-label" style="color:#9aa0a6; font-weight:500;">(${groupText})</span>` : '';
                 // For Windfury rows, use custom tooltip; for others, no legacy title tooltip
                 const detailsAttr = isByTotems ? '' : ` data-wf-tooltip="${this._escapeAttr(this.buildWindfuryTooltipHtml(player))}"`;
                 return `
@@ -5193,7 +5194,7 @@ class RaidLogsManager {
                         <div class="ranking-position">
                             <span class="ranking-number">#${position}</span>
                         </div>
-                        <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-info class-${characterClass}${isTankGrp ? ' tank-border' : ''}" style="--fill-percentage: ${fillPercentage}%;">
                             <div class="character-name">
                                 ${totemIcon}${player.character_name}${groupLabel}
                             </div>

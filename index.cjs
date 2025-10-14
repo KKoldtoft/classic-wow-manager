@@ -11620,8 +11620,8 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
             .filter(e => String(e.totem_type).toLowerCase().includes('windfury') && Number.isFinite(e.group_attacks_avg))
             .map(e => {
                 const avg = Number(e.group_attacks_avg);
-                // Tank group (party 1) has halved requirements, so contribute at half weight to baseline
-                return (e.party_id === 1 || String(e.party_id) === '1') ? (avg / 2) : avg;
+                // Tank group (party 1) has 75% of the normal requirement, so contribute at 0.75 weight to baseline
+                return (e.party_id === 1 || String(e.party_id) === '1') ? (avg * 0.75) : avg;
             });
         const baseline = wfAverages.length > 0 ? (wfAverages.reduce((s, v) => s + v, 0) / wfAverages.length) : 0;
         console.log(`🌀 [WINDFURY] Baseline average extra attacks: ${baseline}`);
@@ -11643,20 +11643,20 @@ app.get('/api/windfury-data/:eventId', async (req, res) => {
             const typeLower = String(entry.totem_type || '').toLowerCase();
             if (typeLower.includes('windfury')) {
                 if (!baseline || avg <= 0) { entry.points = 0; continue; }
-                // Group 1 has halved requirements: use doubled avg for bracket comparison
-                const effAvg = (entry.party_id === 1 || String(entry.party_id) === '1') ? (avg * 2) : avg;
+                // Tank group has 75% requirement: scale avg by 1/0.75 for fair bracket comparison
+                const effAvg = (entry.party_id === 1 || String(entry.party_id) === '1') ? (avg * 1.3333333333) : avg;
                 const pct = effAvg / baseline;
                 if (pct < 0.75) entry.points = 0;
                 else if (pct <= 0.99) entry.points = 10;
                 else if (pct <= 1.25) entry.points = 15;
                 else entry.points = 20;
             } else if (typeLower.includes('grace of air')) {
-                const effAvg = (entry.party_id === 1 || String(entry.party_id) === '1') ? (avg * 2) : avg;
+                const effAvg = (entry.party_id === 1 || String(entry.party_id) === '1') ? (avg * 1.3333333333) : avg;
                 if (!baseline || effAvg < baseline * 0.75 || Number(entry.totems_used || 0) < 10) { entry.points = 0; continue; }
                 const pts = Math.min(20, Math.floor(Number(entry.totems_used) / 10));
                 entry.points = pts;
             } else if (typeLower.includes('strength of earth')) {
-                const effAvg = (entry.party_id === 1 || String(entry.party_id) === '1') ? (avg * 2) : avg;
+                const effAvg = (entry.party_id === 1 || String(entry.party_id) === '1') ? (avg * 1.3333333333) : avg;
                 if (!baseline || effAvg < baseline * 0.75 || Number(entry.totems_used || 0) < 10) { entry.points = 0; continue; }
                 const pts = Math.min(10, Math.floor(Number(entry.totems_used) / 10));
                 entry.points = pts;
