@@ -801,7 +801,7 @@ body.home .character-card .char-text { color: #000 !important; }
 .character-item-sub {
     position: relative;
     min-height: 36px;
-    margin-top: 0;
+    margin-top: 3px;
     padding: 6px 12px;
     border-radius: 0 0 8px 8px; /* top corners will be 0 via override below */
     border-top-left-radius: 0;
