@@ -880,7 +880,7 @@ body.home .character-card .char-text { color: #000 !important; }
     background: #060a1e;
     border: 1px solid #333;
     border-radius: 8px;
-    padding: 0px;
+    padding: 6px;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
     color: white;
