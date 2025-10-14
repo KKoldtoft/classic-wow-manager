@@ -151,10 +151,17 @@
       console.log('[VIEWER DEBUG] raidDrop:', data.raidDrop);
       console.log('[VIEWER DEBUG] bench:', data.bench);
       console.log('[VIEWER DEBUG] unmatchedPlayers:', data.unmatchedPlayers);
+      if (data.raidDrop && data.raidDrop[0]) {
+        console.log('[VIEWER DEBUG] First raidDrop item:', data.raidDrop[0]);
+        console.log('[VIEWER DEBUG] First raidDrop item keys:', Object.keys(data.raidDrop[0]));
+      }
       const map = new Map();
       const add = (arr)=>Array.isArray(arr)&&arr.forEach(p=>{
+        console.log('[VIEWER DEBUG] Processing player:', p);
         const k = String(p.assigned_char_name||p.player_name||'').toLowerCase();
-        if(k) map.set(k, Number(p.party_id||p.partyId||p.party||0));
+        const partyId = Number(p.party_id||p.partyId||p.party||0);
+        console.log('[VIEWER DEBUG] Extracted: name=', k, ', partyId=', partyId);
+        if(k) map.set(k, partyId);
       });
       add(data.raidDrop); add(data.bench); add(data.unmatchedPlayers);
       nameToPartyMap = map;
