@@ -86,10 +86,12 @@ class GoldPotManager {
             const faa = document.getElementById('floating-admin-actions');
             if (faa) faa.style.display = 'block';
             const eid = (()=>{ try{ const p=window.location.pathname.split('/').filter(Boolean); const i=p.indexOf('event'); return (i>=0&&p[i+1])?p[i+1]:localStorage.getItem('activeEventSession'); }catch{return localStorage.getItem('activeEventSession'); }})();
-            const toRaidlogs = document.getElementById('faa-gold-switch-view');
-            if (toRaidlogs) toRaidlogs.onclick = ()=>{ const url = eid ? `/event/${eid}/raidlogs` : '/raidlogs'; window.location.href = url; };
-            const upLogs = document.getElementById('faa-gold-upload-logs');
-            if (upLogs) upLogs.onclick = ()=>{ const target = eid ? `/event/${eid}/logs` : '/logs'; window.location.href = target; };
+            
+            // Go to Admin view button (links to raidlogs_admin)
+            const toAdminView = document.getElementById('faa-gold-admin-view');
+            if (toAdminView) toAdminView.onclick = ()=>{ const url = eid ? `/event/${eid}/raidlogs_admin` : '/raidlogs_admin'; window.location.href = url; };
+            
+            // Send gold cuts DM button
             const sendDM = document.getElementById('faa-gold-send-dm');
             if (sendDM && !sendDM._wired) {
                 sendDM.addEventListener('click', ()=>{
