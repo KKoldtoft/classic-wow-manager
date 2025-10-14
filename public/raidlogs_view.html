@@ -157,10 +157,9 @@
       }
       const map = new Map();
       const add = (arr)=>Array.isArray(arr)&&arr.forEach(p=>{
-        console.log('[VIEWER DEBUG] Processing player:', p);
-        const k = String(p.assigned_char_name||p.player_name||'').toLowerCase();
-        const partyId = Number(p.party_id||p.partyId||p.party||0);
-        console.log('[VIEWER DEBUG] Extracted: name=', k, ', partyId=', partyId);
+        const k = String(p.mainCharacterName||'').toLowerCase();
+        const partyId = Number(p.partyId||0);
+        console.log('[VIEWER DEBUG] Processing:', p.mainCharacterName, '→ party', partyId);
         if(k) map.set(k, partyId);
       });
       add(data.raidDrop); add(data.bench); add(data.unmatchedPlayers);
