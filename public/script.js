@@ -788,8 +788,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const raidDisplay = `${raidName}${dateStr}`;
                     
                     const iconHtml = item.iconLink ? 
-                        `<img src="${item.iconLink}" alt="${item.itemName}" class="item-icon-large" style="width: 60px; height: 60px; border-radius: 8px; margin-right: 12px; vertical-align: top;">` : 
-                        `<div style="width: 60px; height: 60px; background: #666; border-radius: 8px; margin-right: 12px; display: inline-block; vertical-align: top;"></div>`;
+                        `<img src="${item.iconLink}" alt="${item.itemName}" class="item-icon-large" style="width: 50px; height: 50px; border-radius: 8px; margin-right: 12px; vertical-align: top; position: relative; left: 3px; top: 3px;">` : 
+                        `<div style="width: 50px; height: 50px; background: #666; border-radius: 8px; margin-right: 12px; display: inline-block; vertical-align: top; position: relative; left: 5px; top: 5px;"></div>`;
                     
                     itemDiv.innerHTML = `
                         <div class="hall-of-fame-content">

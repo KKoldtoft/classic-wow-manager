@@ -743,14 +743,14 @@ body.has-raid-bar {
     gap: 8px; /* Spacing between character panels */
 }
 
-.character-card { list-style: none; border: 1px solid #333; border-radius: 8px; margin-bottom: 10px; }
+.character-card { list-style: none; border: 1px solid #333; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);}
 
 .character-item {
     position: relative;
     display: flex;
     align-items: center;
-    min-height: 70px;
-    padding: 5px 5px 5px 85px; /* room for 60x60 icon + spacing */
+    min-height: 35px;
+    padding: 5px 5px 5px 60px; /* room for 60x60 icon + spacing */
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -787,8 +787,8 @@ body.home .character-card .char-text { color: #000 !important; }
 
 /* Left class icon similar to raidlogs spec icon positioning */
 .class-icon {
-    width: 60px;
-    height: 60px;
+    width: 35px;
+    height: 35px;
     border-radius: 8px;
     position: absolute;
     left: 12px;
@@ -878,9 +878,9 @@ body.home .character-card .char-text { color: #000 !important; }
     display: flex;
     align-items: flex-start;
     background: #060a1e;
-    border: 2px solid #737373;
+    border: 1px solid #333;
     border-radius: 8px;
-    padding: 12px;
+    padding: 0px;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
     color: white;
@@ -929,7 +929,7 @@ body.home .character-card .char-text { color: #000 !important; }
 
 .item-icon-large {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    border: 2px solid #393939;
+    border: 0px solid #393939;
 }
 
 
