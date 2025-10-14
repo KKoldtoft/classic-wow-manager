@@ -140,27 +140,28 @@
   </div>
 
   <script>
+  // Party mapping for tank group detection in Totems panel (viewer) - GLOBAL SCOPE
+  let nameToPartyMap = new Map();
+  async function fetchRosterPartyMap(eventId){
+    try{
+      const res = await fetch(`/api/roster/${eventId}`);
+      if(!res.ok) return;
+      const data = await res.json();
+      const map = new Map();
+      const add = (arr)=>Array.isArray(arr)&&arr.forEach(p=>{
+        const k = String(p.assigned_char_name||p.player_name||'').toLowerCase();
+        if(k) map.set(k, Number(p.party_id||p.partyId||p.party||0));
+      });
+      add(data.raidDrop); add(data.bench); add(data.unmatchedPlayers);
+      nameToPartyMap = map;
+      console.log('[VIEWER DEBUG] Party map loaded:', Array.from(map.entries()));
+    }catch(err){
+      console.error('[VIEWER DEBUG] Failed to load party map:', err);
+    }
+  }
+  
   // Viewer layout helpers to emulate admin sizing
   (function(){
-    // Party mapping for tank group detection in Totems panel (viewer)
-    let nameToPartyMap = new Map();
-    async function fetchRosterPartyMap(eventId){
-      try{
-        const res = await fetch(`/api/roster/${eventId}`);
-        if(!res.ok) return;
-        const data = await res.json();
-        const map = new Map();
-        const add = (arr)=>Array.isArray(arr)&&arr.forEach(p=>{
-          const k = String(p.assigned_char_name||p.player_name||'').toLowerCase();
-          if(k) map.set(k, Number(p.party_id||p.partyId||p.party||0));
-        });
-        add(data.raidDrop); add(data.bench); add(data.unmatchedPlayers);
-        nameToPartyMap = map;
-        console.log('[VIEWER DEBUG] Party map loaded:', Array.from(map.entries()));
-      }catch(err){
-        console.error('[VIEWER DEBUG] Failed to load party map:', err);
-      }
-    }
     // Panel info overlays (copied from admin behavior)
     window.attachPanelInfoOverlay = function(section){
       if (!section || section.__panelInfoAttached) return;
@@ -1111,7 +1112,13 @@
       const pageHeader = document.querySelector('.page-header');
       if (pageHeader) pageHeader.style.display = 'block';
       // Fetch party mapping used by totems renderer (must await to populate before rendering)
-      try { await fetchRosterPartyMap(eventId); } catch {}
+      console.log('[VIEWER DEBUG] About to fetch party map for eventId:', eventId);
+      try { 
+        await fetchRosterPartyMap(eventId); 
+        console.log('[VIEWER DEBUG] Party map fetch complete, map size:', nameToPartyMap.size);
+      } catch (err) {
+        console.error('[VIEWER DEBUG] Party map fetch error:', err);
+      }
       document.getElementById('content').style.display='block';
       document.getElementById('view-subtitle').textContent = 'Published snapshot';
 
