@@ -142,6 +142,22 @@
   <script>
   // Viewer layout helpers to emulate admin sizing
   (function(){
+    // Party mapping for tank group detection in Totems panel (viewer)
+    let nameToPartyMap = new Map();
+    async function fetchRosterPartyMap(eventId){
+      try{
+        const res = await fetch(`/api/roster/${eventId}`);
+        if(!res.ok) return;
+        const data = await res.json();
+        const map = new Map();
+        const add = (arr)=>Array.isArray(arr)&&arr.forEach(p=>{
+          const k = String(p.assigned_char_name||p.player_name||'').toLowerCase();
+          if(k) map.set(k, Number(p.party_id||p.partyId||p.party||0));
+        });
+        add(data.raidDrop); add(data.bench); add(data.unmatchedPlayers);
+        nameToPartyMap = map;
+      }catch{}
+    }
     // Panel info overlays (copied from admin behavior)
     window.attachPanelInfoOverlay = function(section){
       if (!section || section.__panelInfoAttached) return;
@@ -671,12 +687,16 @@
         const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
         const iconUrlPub = row.aux_json && (row.aux_json.icon_url || row.aux_json['icon_url']);
         const icon = iconUrlPub || classIconUrl(clsName);
+        const nmKey = String(row.character_name||'').toLowerCase();
+        let partyId = null; try { if (nameToPartyMap && typeof nameToPartyMap.get === 'function') partyId = nameToPartyMap.get(nmKey); } catch {}
+        const isTankGrp = (partyId === 1 || String(partyId) === '1');
+        const grpLabel = isTankGrp ? ' <span class="group-label" style="color:#9aa0a6; font-weight:500;">(tank grp)</span>' : '';
         return `
           <div class="ranking-item" data-item-key="${detectTotemKey(row)}">
             <div class="ranking-number">#${index+1}</div>
-            <div class="character-info ${clsName?('class-'+clsName):'class-unknown'}" style="--fill-percentage: ${pct || 100}%;">
+            <div class="character-info ${clsName?('class-'+clsName):'class-unknown'}${isTankGrp ? ' tank-border' : ''}" style="--fill-percentage: ${pct || 100}%;">
               ${icon?`<img src="${icon}" class="spec-icon" alt="${clsName}" width="47" height="47">`:''}
-              <div class="character-name ${clsName?('class-'+clsName):''}">${row.character_name||''}</div>
+              <div class="character-name ${clsName?('class-'+clsName):''}">${row.character_name||''}${grpLabel}</div>
               <div class="character-details">${details}</div>
             </div>
             <div class="performance-amount"><span class="amount-value ${amtClass}">${points}</span></div>
@@ -1086,6 +1106,8 @@
       // Published data exists - show everything
       const pageHeader = document.querySelector('.page-header');
       if (pageHeader) pageHeader.style.display = 'block';
+      // Pre-fetch party mapping used by totems renderer (non-blocking)
+      try { fetchRosterPartyMap(eventId); } catch {}
       document.getElementById('content').style.display='block';
       document.getElementById('view-subtitle').textContent = 'Published snapshot';
 

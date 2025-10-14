@@ -9471,13 +9471,13 @@ app.get('/api/void-damage/:eventId', async (req, res) => {
         // Query for void damage taken from specific abilities (robust matching and numeric parsing)
         const result = await client.query(`
             WITH parsed AS (
-                SELECT 
-                    character_name,
-                    character_class,
+            SELECT 
+                character_name,
+                character_class,
                     LOWER(ability_name) AS ability_name_lc,
                     COALESCE(CAST(NULLIF(regexp_replace(ability_value, '[^0-9]', '', 'g'), '') AS INTEGER), 0) AS ability_value_int
-                FROM sheet_player_abilities
-                WHERE event_id = $1
+            FROM sheet_player_abilities 
+            WHERE event_id = $1 
                   AND (
                         ability_name ILIKE '%void blast%'
                      OR ability_name ILIKE '%shadow fissure%'
@@ -13545,7 +13545,7 @@ app.get('/api/sunder-data/:eventId', async (req, res) => {
             };
         })
         // Removed filter for sunder_count > 0 - include all characters even with 0 sunders
-        .sort((a, b) => b.points - a.points || b.sunder_count - a.sunder_count); // Sort by points, then by count
+          .sort((a, b) => b.points - a.points || b.sunder_count - a.sunder_count); // Sort by points, then by count
         
         console.log(`⚔️ [SUNDER] Processed ${finalData.length} characters with sunder usage`);
         console.log(`⚔️ [SUNDER] Final data sample:`, finalData.slice(0, 2));
@@ -14006,11 +14006,11 @@ app.get('/api/faerie-fire-data/:eventId', async (req, res) => {
             
             if (!byCharacter.has(name) || byCharacter.get(name).uptime_percentage < uptimePercentage) {
                 byCharacter.set(name, {
-                    character_name: row.character_name,
-                    character_class: row.character_class,
-                    uptime_percentage: uptimePercentage,
+                character_name: row.character_name,
+                character_class: row.character_class,
+                uptime_percentage: uptimePercentage,
                     ability_name: row.ability_name,
-                    raw_value: row.ability_value
+                raw_value: row.ability_value
                 });
             }
         });
