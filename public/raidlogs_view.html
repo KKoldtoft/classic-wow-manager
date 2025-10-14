@@ -147,6 +147,10 @@
       const res = await fetch(`/api/roster/${eventId}`);
       if(!res.ok) return;
       const data = await res.json();
+      console.log('[VIEWER DEBUG] Roster API response:', data);
+      console.log('[VIEWER DEBUG] raidDrop:', data.raidDrop);
+      console.log('[VIEWER DEBUG] bench:', data.bench);
+      console.log('[VIEWER DEBUG] unmatchedPlayers:', data.unmatchedPlayers);
       const map = new Map();
       const add = (arr)=>Array.isArray(arr)&&arr.forEach(p=>{
         const k = String(p.assigned_char_name||p.player_name||'').toLowerCase();
