@@ -156,7 +156,10 @@
         });
         add(data.raidDrop); add(data.bench); add(data.unmatchedPlayers);
         nameToPartyMap = map;
-      }catch{}
+        console.log('[VIEWER DEBUG] Party map loaded:', Array.from(map.entries()));
+      }catch(err){
+        console.error('[VIEWER DEBUG] Failed to load party map:', err);
+      }
     }
     // Panel info overlays (copied from admin behavior)
     window.attachPanelInfoOverlay = function(section){
@@ -691,6 +694,7 @@
         let partyId = null; try { if (nameToPartyMap && typeof nameToPartyMap.get === 'function') partyId = nameToPartyMap.get(nmKey); } catch {}
         const isTankGrp = (partyId === 1 || String(partyId) === '1');
         const grpLabel = isTankGrp ? ' <span class="group-label" style="color:#9aa0a6; font-weight:500;">(tank grp)</span>' : '';
+        console.log('[VIEWER DEBUG] Totem row:', row.character_name, '| nmKey:', nmKey, '| partyId:', partyId, '| isTankGrp:', isTankGrp);
         return `
           <div class="ranking-item" data-item-key="${detectTotemKey(row)}">
             <div class="ranking-number">#${index+1}</div>
