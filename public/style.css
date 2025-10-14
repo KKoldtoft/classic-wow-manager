@@ -929,7 +929,7 @@ body.home .character-card .char-text { color: #000 !important; }
 
 .item-icon-large {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    border: 0px solid #393939;
+    border: 1px solid #393939;
 }
 
 
