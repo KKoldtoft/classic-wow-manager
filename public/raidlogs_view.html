@@ -704,12 +704,12 @@
         const nmKey = String(row.character_name||'').toLowerCase();
         let partyId = null; try { if (nameToPartyMap && typeof nameToPartyMap.get === 'function') partyId = nameToPartyMap.get(nmKey); } catch {}
         const isTankGrp = (partyId === 1 || String(partyId) === '1');
-        const grpLabel = isTankGrp ? ' <span class="group-label" style="color:#9aa0a6; font-weight:500;">(tank grp)</span>' : '';
+        const grpLabel = isTankGrp ? ' <span class="group-label" style="color:#9aa0a6; font-weight:500; font-size:0.85em;">(tank grp)</span>' : '';
         console.log('[VIEWER DEBUG] Totem row:', row.character_name, '| nmKey:', nmKey, '| partyId:', partyId, '| isTankGrp:', isTankGrp);
         return `
           <div class="ranking-item" data-item-key="${detectTotemKey(row)}">
             <div class="ranking-number">#${index+1}</div>
-            <div class="character-info ${clsName?('class-'+clsName):'class-unknown'}${isTankGrp ? ' tank-border' : ''}" style="--fill-percentage: ${pct || 100}%;">
+            <div class="character-info ${clsName?('class-'+clsName):'class-unknown'}" style="--fill-percentage: ${pct || 100}%;">
               ${icon?`<img src="${icon}" class="spec-icon" alt="${clsName}" width="47" height="47">`:''}
               <div class="character-name ${clsName?('class-'+clsName):''}">${row.character_name||''}${grpLabel}</div>
               <div class="character-details">${details}</div>

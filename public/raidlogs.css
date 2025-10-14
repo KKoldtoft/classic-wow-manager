@@ -428,7 +428,6 @@ body.stats .rankings-container .rankings-section {
 .character-info.class-priest { background: linear-gradient(to right, #FFFFFF var(--fill-percentage, 100%), rgba(255,255,255,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #FFFFFF; }
 
 .character-info.class-shaman { background: linear-gradient(to right, #0070DE var(--fill-percentage, 100%), rgba(0,112,222,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #0070DE; }
-.character-info.tank-border { box-shadow: inset 0 0 0 4px #C79C6E !important; }
 
 .character-info.class-mage { background: linear-gradient(to right, #69CCF0 var(--fill-percentage, 100%), rgba(105,204,240,0.5) var(--fill-percentage, 100%)); box-shadow: inset 0 0 0 4px #69CCF0; }
 
@@ -596,7 +595,7 @@ body.stats .rankings-container .rankings-section {
 .rankings-section.windfury-section .character-name {
     color: #0070DE; /* shaman color */
 }
-.rankings-section.windfury-section .character-name .group-label { color: inherit; font-weight: 600; opacity: 0.9; }
+.rankings-section.windfury-section .character-name .group-label { color: inherit; font-weight: 500; opacity: 0.85; font-size: 0.85em; }
 
 /* Totem sub-sections within Totems panel */
 .totem-subheader {
