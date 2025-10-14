@@ -1106,8 +1106,8 @@
       // Published data exists - show everything
       const pageHeader = document.querySelector('.page-header');
       if (pageHeader) pageHeader.style.display = 'block';
-      // Pre-fetch party mapping used by totems renderer (non-blocking)
-      try { fetchRosterPartyMap(eventId); } catch {}
+      // Fetch party mapping used by totems renderer (must await to populate before rendering)
+      try { await fetchRosterPartyMap(eventId); } catch {}
       document.getElementById('content').style.display='block';
       document.getElementById('view-subtitle').textContent = 'Published snapshot';
 
