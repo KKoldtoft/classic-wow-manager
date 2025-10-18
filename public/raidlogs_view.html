@@ -728,7 +728,7 @@
         const grpLabel = isTankGrp ? ' <span class="group-label" style="color:#9aa0a6; font-weight:500; font-size:0.85em;">(tank grp)</span>' : '';
         // Get Windfury tooltip data from aux_json if available (only for windfury type)
         const wfTooltip = (totemType === 'windfury' && row.aux_json && row.aux_json.wf_tooltip) ? row.aux_json.wf_tooltip : '';
-        const tooltipAttr = wfTooltip ? ` data-wf-tooltip="${wfTooltip}"` : '';
+        const tooltipAttr = wfTooltip ? ` data-wf-tooltip="${escapeAttr(wfTooltip)}"` : '';
         if (totemType === 'windfury') {
           console.log('[VIEWER DEBUG] Windfury row:', row.character_name, '| has aux_json:', !!row.aux_json, '| has wf_tooltip:', !!(row.aux_json && row.aux_json.wf_tooltip), '| tooltip length:', wfTooltip.length);
           console.log('[VIEWER DEBUG] First 200 chars of tooltip:', wfTooltip.substring(0, 200));
