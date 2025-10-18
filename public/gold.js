@@ -35,8 +35,8 @@ class GoldPotManager {
           const raw = String(name||'').trim();
           // Remove leading bullet/marker characters
           let s = raw.replace(/^[\s•\u2022\u00B7\-–—]+/, '');
-          // Strip trailing parentheses that denote grouping e.g. (Group 1), (Tank group), (group2)
-          s = s.replace(/\s*\((?:tank\s*)?group\s*\d*\)\s*$/i, '');
+          // Strip trailing parentheses that denote grouping e.g. (Group 1), (Tank group), (tank grp), (group2)
+          s = s.replace(/\s*\((?:tank\s*)?gr(?:ou)?p\s*\d*\)\s*$/i, '');
           return s.trim();
       } catch { return String(name||'').trim(); }
   }
