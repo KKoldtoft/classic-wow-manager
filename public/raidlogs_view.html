@@ -703,24 +703,24 @@
           default: return 'Windfury Totem';
         }
       };
-      const buildRow = (row, index, pct)=>{
+      const buildRow = (row, index, pct, totemType)=>{
         const clsName = String(row.character_class||'').toLowerCase();
         const details = (row.character_details_edited ?? row.character_details ?? row.character_details_original) || '';
         const rawPts = (row.point_value_edited ?? row.points ?? row.point_value_original) || 0;
         const points = Math.round(Number(rawPts||0));
         const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
-        const iconUrlPub = row.aux_json && (row.aux_json.icon_url || row.aux_json['icon_url']);
-        const icon = iconUrlPub || classIconUrl(clsName);
+        // Use totem icon instead of class icon
+        const icon = iconForType(totemType);
         const nmKey = String(row.character_name||'').toLowerCase();
         let partyId = null; try { if (nameToPartyMap && typeof nameToPartyMap.get === 'function') partyId = nameToPartyMap.get(nmKey); } catch {}
         const isTankGrp = (partyId === 1 || String(partyId) === '1');
         const grpLabel = isTankGrp ? ' <span class="group-label" style="color:#9aa0a6; font-weight:500; font-size:0.85em;">(tank grp)</span>' : '';
         console.log('[VIEWER DEBUG] Totem row:', row.character_name, '| nmKey:', nmKey, '| partyId:', partyId, '| isTankGrp:', isTankGrp);
         return `
-          <div class="ranking-item" data-item-key="${detectTotemKey(row)}">
+          <div class="ranking-item" data-item-key="${totemType}">
             <div class="ranking-number">#${index+1}</div>
             <div class="character-info ${clsName?('class-'+clsName):'class-unknown'}" style="--fill-percentage: ${pct || 100}%;">
-              ${icon?`<img src="${icon}" class="spec-icon" alt="${clsName}" width="47" height="47">`:''}
+              ${icon?`<img src="${icon}" class="spec-icon" alt="${totemType}" width="47" height="47">`:''}
               <div class="character-name ${clsName?('class-'+clsName):''}">${row.character_name||''}${grpLabel}</div>
               <div class="character-details">${details}</div>
             </div>
@@ -761,7 +761,7 @@
         sorted.forEach((row, idx)=>{
           const v = values[idx] || 0;
           const pct = Math.max(5, Math.min(100, Math.round((v / max) * 100)));
-          container.insertAdjacentHTML('beforeend', buildRow(row, idx, pct)); renderedCount++; 
+          container.insertAdjacentHTML('beforeend', buildRow(row, idx, pct, key)); renderedCount++; 
         });
       });
       if (renderedCount === 0) {
