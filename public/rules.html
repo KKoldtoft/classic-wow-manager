@@ -140,7 +140,7 @@
 			<div class="rule-card">
 				<div class="rule-row">
 					<span class="rule-icon"><img src="https://wow.zamimg.com/images/wow/icons/large/inv_misc_bomb_06.jpg" alt="Engineering"/></span>
-					<div class="rule-text"><div class="rule-header">Engineering & Holywater</div><div class="rule-body">Points = (abilities used × avg targets) ÷ 10, up to +20 pts.</div></div>
+					<div class="rule-text"><div class="rule-header">Engineering & Holywater</div><div class="rule-body">Points = floor((abilities used × avg targets) ÷ 10), up to +20 pts.</div></div>
 				</div>
 			</div>
 
@@ -161,21 +161,21 @@
 			<div class="rule-card">
 				<div class="rule-row">
 					<span class="rule-icon"><img src="https://wow.zamimg.com/images/wow/icons/large/ability_kick.jpg" alt="Interrupts"/></span>
-					<div class="rule-text"><div class="rule-header">Interrupted Spells</div><div class="rule-body">+1 pt per interrupt, up to +5 pts.</div></div>
+					<div class="rule-text"><div class="rule-header">Interrupted Spells</div><div class="rule-body">+1 pt per 2 interrupts, up to +5 pts.</div></div>
 				</div>
 			</div>
 
 			<div class="rule-card">
 				<div class="rule-row">
 					<span class="rule-icon"><img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_disarm.jpg" alt="Disarms"/></span>
-					<div class="rule-text"><div class="rule-header">Disarmed Enemies</div><div class="rule-body">+1 pt per disarm, up to +5 pts.</div></div>
+					<div class="rule-text"><div class="rule-header">Disarmed Enemies</div><div class="rule-body">+1 pt per 3 disarms, up to +5 pts.</div></div>
 				</div>
 			</div>
 
 			<div class="rule-card">
 				<div class="rule-row">
 					<span class="rule-icon"><img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_sunder.jpg" alt="Sunder Armor"/></span>
-					<div class="rule-text"><div class="rule-header">Sunder Armor</div><div class="rule-body">Points by total sunders: &lt;50: -10 pts, 50–99: 0 pts, 100–119: +5 pts, 120+: +10 pts.</div></div>
+					<div class="rule-text"><div class="rule-header">Sunder Armor</div><div class="rule-body">Points vs raid average effective sunders: &lt;25% avg: -20; 25–49%: -15; 50–74%: -10; 75–89%: -5; 90–109%: 0; 110–124%: +5; ≥125%: +10.</div></div>
 				</div>
 			</div>
 
@@ -259,14 +259,78 @@
 			<div class="rule-card">
 				<div class="rule-row">
 					<span class="rule-icon"><img src="https://wow.zamimg.com/images/wow/icons/large/spell_arcane_teleportorgrimmar.jpg" alt="World Buffs"/></span>
-					<div class="rule-text"><div class="rule-header">World Buffs (Missing)</div><div class="rule-body">-10 pts per missing required buff below the event’s threshold (e.g., below 4–6 buffs). DMF inclusion may vary by raid.</div></div>
+					<div class="rule-text"><div class="rule-header">World Buffs (Missing)</div><div class="rule-body">Required buffs: 4 if not Naxx; 6 if Naxx. -10 pts per missing buff. DMF counts only if ≥10 players have it.</div></div>
 				</div>
 			</div>
 
 			<div class="rule-card">
 				<div class="rule-row">
 					<span class="rule-icon fa"><i class="fas fa-coins"></i></span>
-					<div class="rule-text"><div class="rule-header">Big Buyer Bonus</div><div class="rule-body">Top 3 spenders (≥25,000 gold) earn: 25k+: +5, 50k+: +10, 75k+: +15, 100k+: +20 pts. One reward per player.</div></div>
+					<div class="rule-text"><div class="rule-header">Big Buyer Bonus</div><div class="rule-body">Top 3 spenders (≥25,000 gold) can earn: 25k:+5, 50k:+10, 75k:+15, 100k:+20 pts (when configured). One reward per player.</div></div>
+				</div>
+			</div>
+
+			<!-- Added: Totems and supplemental awards to match live mechanics -->
+			<div class="rule-card">
+				<div class="rule-row">
+					<span class="rule-icon"><img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_windfury.jpg" alt="Totems"/></span>
+					<div class="rule-text"><div class="rule-header">Totems (Shaman)</div><div class="rule-body">Windfury: points vs group baseline of extra attacks (tank group has 75% requirement): &lt;75% baseline: 0; 75–99%: +10; 100–125%: +15; &gt;125%: +20. Grace/Strength: if group avg ≥75% baseline and ≥10 totems: +1 per 10 totems (Grace max +20; Strength max +10). Tranquil Air: +1 per 10 totems, max +5.</div></div>
+				</div>
+			</div>
+
+			<div class="rule-card">
+				<div class="rule-row">
+					<span class="rule-icon"><img src="https://wow.zamimg.com/images/wow/icons/large/classicon_shaman.jpg" alt="Shaman Healers"/></span>
+					<div class="rule-text"><div class="rule-header">Shaman Healers</div><div class="rule-body">Top 3 Shaman healers earn: 25 / 20 / 15 pts.</div></div>
+				</div>
+			</div>
+
+			<div class="rule-card">
+				<div class="rule-row">
+					<span class="rule-icon"><img src="https://wow.zamimg.com/images/wow/icons/large/classicon_priest.jpg" alt="Priest Healers"/></span>
+					<div class="rule-text"><div class="rule-header">Priest Healers</div><div class="rule-body">Top 2 Priest healers earn: 20 / 15 pts.</div></div>
+				</div>
+			</div>
+
+			<div class="rule-card">
+				<div class="rule-row">
+					<span class="rule-icon"><img src="https://wow.zamimg.com/images/wow/icons/large/classicon_druid.jpg" alt="Druid Healers"/></span>
+					<div class="rule-text"><div class="rule-header">Druid Healers</div><div class="rule-body">Top Druid healer earns: 15 pts.</div></div>
+				</div>
+			</div>
+
+			<div class="rule-card">
+				<div class="rule-row">
+					<span class="rule-icon fa"><i class="fas fa-calendar-check"></i></span>
+					<div class="rule-text"><div class="rule-header">Attendance Streaks</div><div class="rule-body">Consecutive attendance awards: 4=+3, 5=+6, 6=+9, 7=+12, 8+=+15 pts.</div></div>
+				</div>
+			</div>
+
+			<div class="rule-card">
+				<div class="rule-row">
+					<span class="rule-icon fa"><i class="fas fa-users"></i></span>
+					<div class="rule-text"><div class="rule-header">Guild Members</div><div class="rule-body">Confirmed guild members present earn a flat +10 pts.</div></div>
+				</div>
+			</div>
+
+			<div class="rule-card">
+				<div class="rule-row">
+					<span class="rule-icon fa"><i class="fas fa-exclamation-triangle"></i></span>
+					<div class="rule-text"><div class="rule-header">Too Low Damage</div><div class="rule-body">DPS penalties vs active fight time: &lt;150 DPS: -100; 150–199.9: -50; 200–249.9: -25.</div></div>
+				</div>
+			</div>
+
+			<div class="rule-card">
+				<div class="rule-row">
+					<span class="rule-icon fa"><i class="fas fa-exclamation-triangle"></i></span>
+					<div class="rule-text"><div class="rule-header">Too Low Healing</div><div class="rule-body">Healer penalties vs active fight time: &lt;85 HPS: -100; 85–99.9: -50; 100–124.9: -25.</div></div>
+				</div>
+			</div>
+
+			<div class="rule-card">
+				<div class="rule-row">
+					<span class="rule-icon"><img src="https://wow.zamimg.com/images/wow/icons/large/inv_helmet_49.jpg" alt="Goblin Rocket Helmet"/></span>
+					<div class="rule-text"><div class="rule-header">Goblin Rocket Helmet</div><div class="rule-body">+5 pts if wearing a Goblin Rocket Helmet during the raid.</div></div>
 				</div>
 			</div>
 		</div>

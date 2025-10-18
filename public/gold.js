@@ -600,15 +600,8 @@ class GoldPotManager {
             addMap(mapFromPanel('attendance_streaks'));
             addMap(mapFromPanel('guild_members'));
             addMap(mapFromPanel('big_buyer'));
-
-            // Manual rewards (only for confirmed players) — exclude gold payouts from points
-            (this.datasets.manualRewardsData||[]).forEach(e=>{
-                const k=String(e.player_name||'').toLowerCase();
-                if(!confirmedNames.has(k)) return;
-                const isGold = !!(e && (e.is_gold || /\[GOLD\]/i.test(String(e.description||''))));
-                if (isGold) return; // do not add to points
-                const p=nameToPlayer.get(k); if(p) p.points+=(Number(e.points)||0);
-            });
+            // Note: manual_points are already included in snapshot entries above, 
+            // so we don't need to add them again from manualRewardsData
         } else {
             // Computed mode: use datasets + derived awards
             const damagePoints = this.rewardSettings.damage?.points_array || [];

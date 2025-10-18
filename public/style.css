@@ -826,39 +826,39 @@ body.home .character-card .char-text { color: #000 !important; }
 
 /* WoW Class Background Colors for Character Panels */
 .character-item.class-warrior {
-    background: linear-gradient(135deg, #C79C6E, #A67C52);
+    background: linear-gradient(135deg, #C79C6E, #745435);
 }
 
 .character-item.class-paladin {
-    background: linear-gradient(135deg, #F58CBA, #E06B9A);
+    background: linear-gradient(135deg, #F58CBA, #c25581);
 }
 
 .character-item.class-hunter {
-    background: linear-gradient(135deg, #ABD473, #8FB356);
+    background: linear-gradient(135deg, #ABD473, #69853b);
 }
 
 .character-item.class-rogue {
-    background: linear-gradient(135deg, #FFF569, #E6DD4F);
+    background: linear-gradient(135deg, #FFF569, #c4bb41);
 }
 
 .character-item.class-priest {
-    background: linear-gradient(135deg, #FFFFFF, #E6E6E6);
+    background: linear-gradient(135deg, #FFFFFF, #a0a0a0);
 }
 
 .character-item.class-shaman {
-    background: linear-gradient(135deg, #0070DE, #005BB8);
+    background: linear-gradient(135deg, #0070DE, #014991);
 }
 
 .character-item.class-mage {
-    background: linear-gradient(135deg, #69CCF0, #4FB3D9);
+    background: linear-gradient(135deg, #69CCF0, #3788a9);
 }
 
 .character-item.class-warlock {
-    background: linear-gradient(135deg, #9482C9, #7A6BA8);
+    background: linear-gradient(135deg, #9482C9, #493d6d);
 }
 
 .character-item.class-druid {
-    background: linear-gradient(135deg, #FF7D0A, #E66A00);
+    background: linear-gradient(135deg, #FF7D0A, #b85600);
 }
 
 .character-item.class-unknown {
