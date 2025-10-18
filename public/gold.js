@@ -297,20 +297,15 @@ class GoldPotManager {
             nameToPlayer.set(lower(p.character_name), { name: p.character_name, class: p.character_class, points: 0, gold: 0 });
         });
         // Sum points by player across all panels using edited else original
-        // Skip manual_points with is_gold flag as they're handled separately
+        // Skip ALL manual_points as they're handled separately below
         entries.forEach(r=>{
             const key = lower(this.normalizeSnapshotName(r.character_name||'')); if(!key) return;
             if (!this.isValidWoWName(this.normalizeSnapshotName(r.character_name||''))) return;
             const v = nameToPlayer.get(key); if(!v) return;
             
-            // Check if this is a gold payout (manual_points with is_gold flag)
+            // Skip all manual_points entries - they're processed separately below
             if (String(r.panel_key||'') === 'manual_points') {
-                const aux = r.aux_json || {};
-                const isGold = !!(aux.is_gold === true || aux.is_gold === 'true');
-                if (isGold) {
-                    console.log(`[GOLD DEBUG SNAPSHOT] Skipping gold entry in points calculation: ${r.character_name}, amt=${r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)}`);
-                    return; // Skip gold payouts in points calculation
-                }
+                return;
             }
             
             const pts = Number(r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0;
