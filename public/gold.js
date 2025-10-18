@@ -600,8 +600,12 @@ class GoldPotManager {
             addMap(mapFromPanel('attendance_streaks'));
             addMap(mapFromPanel('guild_members'));
             addMap(mapFromPanel('big_buyer'));
-            addMap(mapFromPanel('manual_points'));
+            const manualPtsMap = mapFromPanel('manual_points');
+            console.log('[GOLD DEBUG] Snapshot mode: manual_points entries:', Array.from(manualPtsMap.entries()));
+            addMap(manualPtsMap);
             // Manual rewards are in the snapshot as manual_points panel
+            console.log('[GOLD DEBUG] Snapshot mode: Total snapshot entries:', this.snapshotEntries.length);
+            console.log('[GOLD DEBUG] Snapshot mode: Manual points entries:', this.snapshotEntries.filter(e => e.panel_key === 'manual_points'));
         } else {
             // Computed mode: use datasets + derived awards
             const damagePoints = this.rewardSettings.damage?.points_array || [];
