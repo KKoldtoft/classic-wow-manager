@@ -774,6 +774,7 @@
     }
 
     function ensureTotemInfoTooltipSetup() {
+      console.log('[VIEWER DEBUG] ensureTotemInfoTooltipSetup called, already setup?', !!window._totemInfoSetup);
       if (window._totemInfoSetup) return;
       window._totemInfoSetup = true;
       const tip = document.createElement('div');
@@ -781,6 +782,7 @@
       tip.className = 'totem-info-tooltip';
       tip.style.display = 'none';
       document.body.appendChild(tip);
+      console.log('[VIEWER DEBUG] Totem info tooltip element created and appended');
 
       const getText = (key) => {
         const k = String(key||'').toLowerCase();
@@ -846,9 +848,11 @@
         tip.style.top = y + 'px';
       };
 
+      console.log('[VIEWER DEBUG] Setting up totem info tooltip event listeners');
       document.addEventListener('mouseover', (e) => {
         const t = e.target.closest('.totem-info-icon');
         if (!t) return;
+        console.log('[VIEWER DEBUG] Totem info icon mouseover detected!', t);
         active = t;
         show(t, e);
       });
@@ -872,6 +876,7 @@
         active = null;
         hide();
       });
+      console.log('[VIEWER DEBUG] Totem info tooltip setup complete');
     }
 
     function ensureWindfuryMemberTooltipSetup() {

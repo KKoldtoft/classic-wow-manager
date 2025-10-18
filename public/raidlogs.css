@@ -2348,7 +2348,7 @@ body.raid-active .scroll-target {
 .manual-rewards-form .input-with-toggle input[type="number"] { padding-right: 70px; }
 .manual-rewards-form .inline-gold-toggle {
     position: absolute;
-    right: 10px;
+    right: 30px;
     top: 50%;
     transform: translateY(-50%);
     display: inline-flex;
@@ -2357,9 +2357,9 @@ body.raid-active .scroll-target {
     font-size: 12px;
     color: #cfcfcf;
     background: rgba(0,0,0,0.2);
-    border: 1px solid #3a3a3a;
+    border-left: 1px solid #3a3a3a;
     border-radius: 6px;
-    padding: 2px 6px;
+    padding: 7px 6px;
 }
 .manual-rewards-form .inline-gold-toggle input[type="checkbox"] {
     width: 14px;
