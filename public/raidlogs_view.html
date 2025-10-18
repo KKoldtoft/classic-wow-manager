@@ -871,6 +871,63 @@
       });
     }
 
+    function ensureWindfuryMemberTooltipSetup() {
+      if (window._wfMembersTipSetup) return;
+      window._wfMembersTipSetup = true;
+      const tip = document.createElement('div');
+      tip.id = 'wf-members-tooltip';
+      tip.className = 'wf-members-tooltip';
+      tip.style.display = 'none';
+      document.body.appendChild(tip);
+
+      let active = null;
+      const show = (el, e) => {
+        const raw = el.getAttribute('data-wf-tooltip') || '';
+        // raw stored escaped; decode entities for innerHTML
+        tip.innerHTML = raw
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&amp;/g, '&');
+        tip.style.display = 'block';
+        move(e);
+      };
+      const hide = () => { tip.style.display = 'none'; };
+      const move = (e) => {
+        const x = (e.pageX || (e.clientX + window.scrollX)) + 14;
+        const y = (e.pageY || (e.clientY + window.scrollY)) + 14;
+        tip.style.left = x + 'px';
+        tip.style.top = y + 'px';
+      };
+
+      document.addEventListener('mouseover', (e) => {
+        const t = e.target.closest('.character-details[data-wf-tooltip]');
+        if (!t) return;
+        active = t;
+        show(t, e);
+      });
+      document.addEventListener('mousemove', (e) => { if (active) move(e); });
+      document.addEventListener('mouseout', (e) => {
+        if (e.target.closest('.character-details[data-wf-tooltip]') !== active) return;
+        active = null;
+        hide();
+      });
+      document.addEventListener('focusin', (e) => {
+        const t = e.target.closest('.character-details[data-wf-tooltip]');
+        if (!t) return;
+        active = t;
+        const rect = t.getBoundingClientRect();
+        show(t, { pageX: rect.right + window.scrollX, pageY: rect.bottom + window.scrollY });
+      });
+      document.addEventListener('focusout', (e) => {
+        if (!active) return;
+        const related = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.character-details[data-wf-tooltip]');
+        if (related === active) return;
+        active = null;
+        hide();
+      });
+    }
+
     function getEventId(){
       try{
         const parts = window.location.pathname.split('/').filter(Boolean);
@@ -1380,6 +1437,7 @@
         if (key === 'windfury_totems') {
           renderTotemsSection(section, obj.rows || []);
           ensureTotemInfoTooltipSetup();
+          ensureWindfuryMemberTooltipSetup();
         } else {
           const list = document.createElement('div');
           list.className = 'rankings-list';
