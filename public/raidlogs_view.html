@@ -621,7 +621,8 @@
       try {
         const n = String(name || '').trim();
         // Filter out names with spaces (e.g., "Windfury Totem", "Battle Chicken")
-        if (n.includes(' ')) return true;
+        // but allow names ending with (tank grp)
+        if (n.includes(' ') && !n.endsWith('(tank grp)')) return true;
         // Exact match filter (case-insensitive)
         const lower = n.toLowerCase();
         const exactMatches = ['zzold', 'totem', 'trap', 'dummy', 'battlechicken'];
@@ -632,7 +633,9 @@
     function normalizeSnapshotName(name){
       try {
         const raw = String(name||'').trim();
-        let s = raw.replace(/^[\s•\u2022\u00B7\-–—]+/, '');
+        // Remove (tank grp) label if present
+        let s = raw.replace(/\s*\(tank grp\)\s*$/i, '');
+        s = s.replace(/^[\s•\u2022\u00B7\-–—]+/, '');
         s = s.replace(/\s*\((?:tank\s*)?group\s*\d*\)\s*$/i, '');
         return s.trim();
       } catch { return String(name||'').trim(); }
