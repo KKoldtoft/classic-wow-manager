@@ -593,7 +593,14 @@
     function detectTotemKey(row){
       try {
         const k = row && row.aux_json && (row.aux_json.item_key || row.aux_json['item_key']);
-        if (k) return String(k).toLowerCase();
+        if (k) {
+          const normalized = String(k).toLowerCase();
+          // Normalize backend's full names to short form
+          if (normalized.includes('grace')) return 'grace';
+          if (normalized.includes('strength')) return 'strength';
+          if (normalized.includes('tranquil')) return 'tranquil';
+          return normalized; // 'windfury' or fallback
+        }
         const d = String((row.character_details_edited ?? row.character_details ?? row.character_details_original) || '').toLowerCase();
         if (d.includes('grace')) return 'grace';
         if (d.includes('strength')) return 'strength';
@@ -1272,37 +1279,15 @@
       // Extract manual entries and render at top
       const manual = (entries||[]).filter(r=> String(r.panel_key||'') === 'manual_points');
       renderManualRewards(manual);
-      // Debug: Count totem entries before filtering
-      const totemsBefore = (entries||[]).filter(r=> String(r.panel_key||'') === 'windfury_totems');
-      console.log('[VIEWER DEBUG] Totem entries before filtering:', totemsBefore.length);
-      console.log('[VIEWER DEBUG] Totem entries by type:', totemsBefore.reduce((acc, e) => { 
-        let key = e.aux_json?.item_key || 'unknown';
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      }, {}));
-      
       let otherEntries = (entries||[])
           .filter(r=> String(r.panel_key||'') !== 'manual_points')
           .map(r => { r.character_name = normalizeSnapshotName(r.character_name); return r; })
           .filter(r => {
               // For published snapshots, trust the admin's curation - only filter out obvious non-players
               // Don't filter by isValidWoWName as it's too strict (rejects spaces/digits)
-              if (!r.character_name || !String(r.character_name).trim()) {
-                if (String(r.panel_key||'') === 'windfury_totems') {
-                  console.log('[VIEWER DEBUG] Filtered out (empty name):', r);
-                }
-                return false;
-              }
-              const shouldIgnore = shouldIgnoreViewerName(r.character_name);
-              if (shouldIgnore && String(r.panel_key||'') === 'windfury_totems') {
-                console.log('[VIEWER DEBUG] Filtered out (shouldIgnore):', r.character_name, '| aux_json:', r.aux_json);
-              }
-              return !shouldIgnore;
+              if (!r.character_name || !String(r.character_name).trim()) return false;
+              return !shouldIgnoreViewerName(r.character_name);
           });
-      
-      // Debug: Count totem entries after filtering
-      const totemsAfter = otherEntries.filter(r=> String(r.panel_key||'') === 'windfury_totems');
-      console.log('[VIEWER DEBUG] Totem entries after filtering:', totemsAfter.length);
       // Adjust details text for Guild Members panel: strike-through "Cult Memeber" before "Guild Member"
       otherEntries = otherEntries.map(r=>{
         if (String(r.panel_key||'') === 'guild_members'){
