@@ -984,6 +984,22 @@
       console.log('[VIEWER DEBUG] WF member tooltip setup complete');
     }
 
+    function setupGenericCharacterDetailsTooltips() {
+      // Add title tooltips to all character-details elements that don't have data-wf-tooltip
+      const allDetails = document.querySelectorAll('.character-details');
+      allDetails.forEach(el => {
+        // Skip if it already has wf-tooltip (those use custom tooltip)
+        if (el.hasAttribute('data-wf-tooltip')) return;
+        // Skip if it already has title
+        if (el.hasAttribute('title')) return;
+        // Add title attribute with the text content
+        const text = el.textContent || '';
+        if (text.trim()) {
+          el.setAttribute('title', text.trim());
+        }
+      });
+    }
+
     function getEventId(){
       try{
         const parts = window.location.pathname.split('/').filter(Boolean);
@@ -2278,6 +2294,8 @@
       applyFillPercentages();
       // Attach panel info overlays and icons
       initializePanelInfoOverlays();
+      // Add title tooltips to all character-details elements
+      setupGenericCharacterDetailsTooltips();
     }
     load();
   })();
