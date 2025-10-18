@@ -630,16 +630,18 @@ body.stats .rankings-container .rankings-section {
 
 /* Windfury member tooltip (per-character-details hover) */
 .wf-members-tooltip {
-    position: absolute; z-index: 9999; max-width: 360px;
+    position: absolute; z-index: 9999; width: 300px; max-width: 300px;
     background: #0b1220; color: #e5e7eb; border: 1px solid #1f2937;
     padding: 8px 10px; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.45);
     pointer-events: none; white-space: normal; font-size: 12px; line-height: 1.35;
+    box-sizing: border-box;
 }
+.wf-tip { max-width: 100%; }
 .wf-tip-title { font-weight: 700; margin-bottom: 6px; }
-.wf-row { display: flex; align-items: baseline; gap: 6px; }
-.wf-inc { color: #e5e7eb; }
-.wf-exc { color: #ef4444; font-weight: 600; }
-.wf-val { color: #93c5fd; margin-left: auto; }
+.wf-row { display: flex; align-items: baseline; gap: 6px; max-width: 100%; }
+.wf-inc { color: #e5e7eb; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-exc { color: #ef4444; font-weight: 600; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-val { color: #93c5fd; margin-left: auto; flex-shrink: 0; }
 .wf-exc + .wf-val, .wf-row .wf-exc ~ .wf-val { color: #ef4444; font-weight: 700; }
 .wf-note { margin-top: 6px; color: #cbd5e1; font-size: 11px; opacity: 0.85; }
 

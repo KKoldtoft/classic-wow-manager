@@ -703,6 +703,17 @@
           default: return 'Windfury Totem';
         }
       };
+      // Helper to escape HTML for attribute values
+      const escapeAttr = (str) => {
+        if (!str) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      };
+      
       const buildRow = (row, index, pct, totemType)=>{
         const clsName = String(row.character_class||'').toLowerCase();
         const details = (row.character_details_edited ?? row.character_details ?? row.character_details_original) || '';
@@ -720,6 +731,7 @@
         const tooltipAttr = wfTooltip ? ` data-wf-tooltip="${wfTooltip}"` : '';
         if (totemType === 'windfury') {
           console.log('[VIEWER DEBUG] Windfury row:', row.character_name, '| has aux_json:', !!row.aux_json, '| has wf_tooltip:', !!(row.aux_json && row.aux_json.wf_tooltip), '| tooltip length:', wfTooltip.length);
+          console.log('[VIEWER DEBUG] First 200 chars of tooltip:', wfTooltip.substring(0, 200));
         }
         console.log('[VIEWER DEBUG] Totem row:', row.character_name, '| nmKey:', nmKey, '| partyId:', partyId, '| isTankGrp:', isTankGrp);
         return `
