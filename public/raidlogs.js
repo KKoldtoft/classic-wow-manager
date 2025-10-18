@@ -4412,6 +4412,14 @@ class RaidLogsManager {
         const container = document.getElementById('shaman-healers-list');
         const section = container.closest('.rankings-section');
         
+        // Use full logData in computed mode to ensure all shamans with healing are found
+        const sourceList = (!this.snapshotLocked && !this.engineResult) ? 
+            (this.logData || []).filter(p => {
+                const healing = parseInt(p.healing_amount) || 0;
+                return healing > 0 && !this.shouldIgnorePlayer(p.character_name);
+            }).sort((a, b) => (parseInt(b.healing_amount) || 0) - (parseInt(a.healing_amount) || 0)) :
+            healers;
+        
         // Filter shamans and take top 3 (sorted by healing desc)
         const toNum = (v)=> {
             const raw = String(v==null?0:v).trim().toLowerCase();
@@ -4426,7 +4434,7 @@ class RaidLogsManager {
             const n = Number(digits);
             return Number.isFinite(n)?n:0;
         };
-        const shamanHealers = healers
+        const shamanHealers = sourceList
             .filter(player => {
                 const className = (player.character_class || '').toLowerCase();
                 return className.includes('shaman');
@@ -4482,6 +4490,14 @@ class RaidLogsManager {
         const container = document.getElementById('priest-healers-list');
         const section = container.closest('.rankings-section');
         
+        // Use full logData in computed mode to ensure all priests with healing are found
+        const sourceList = (!this.snapshotLocked && !this.engineResult) ? 
+            (this.logData || []).filter(p => {
+                const healing = parseInt(p.healing_amount) || 0;
+                return healing > 0 && !this.shouldIgnorePlayer(p.character_name);
+            }).sort((a, b) => (parseInt(b.healing_amount) || 0) - (parseInt(a.healing_amount) || 0)) :
+            healers;
+        
         // Filter priests and take top 2 (sorted by healing desc)
         const toNum = (v)=> {
             const raw = String(v==null?0:v).trim().toLowerCase();
@@ -4496,7 +4512,7 @@ class RaidLogsManager {
             const n = Number(digits);
             return Number.isFinite(n)?n:0;
         };
-        const priestHealers = healers
+        const priestHealers = sourceList
             .filter(player => {
                 const className = (player.character_class || '').toLowerCase();
                 return className.includes('priest');
@@ -4551,8 +4567,15 @@ class RaidLogsManager {
         const container = document.getElementById('druid-healers-list');
         const section = container.closest('.rankings-section');
         
-        // Filter druids and take top 1
-        const druidHealers = healers
+        // Filter druids - use full logData in computed mode to ensure all druids with healing are found
+        const sourceList = (!this.snapshotLocked && !this.engineResult) ? 
+            (this.logData || []).filter(p => {
+                const healing = parseInt(p.healing_amount) || 0;
+                return healing > 0 && !this.shouldIgnorePlayer(p.character_name);
+            }).sort((a, b) => (parseInt(b.healing_amount) || 0) - (parseInt(a.healing_amount) || 0)) :
+            healers;
+        
+        const druidHealers = sourceList
             .filter(player => {
                 const className = (player.character_class || '').toLowerCase();
                 return className.includes('druid');
