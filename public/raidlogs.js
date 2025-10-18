@@ -4412,11 +4412,12 @@ class RaidLogsManager {
         const container = document.getElementById('shaman-healers-list');
         const section = container.closest('.rankings-section');
         
-        // Use full logData in computed mode to ensure all shamans with healing are found
-        const sourceList = (!this.snapshotLocked && !this.engineResult) ? 
+        // When not in snapshot mode, use full logData to catch all shamans with healer role
+        const sourceList = !this.snapshotLocked ? 
             (this.logData || []).filter(p => {
-                const healing = parseInt(p.healing_amount) || 0;
-                return healing > 0 && !this.shouldIgnorePlayer(p.character_name);
+                const nameKey = String(p.character_name || '').trim().toLowerCase();
+                const primaryRole = this.primaryRoles ? String(this.primaryRoles[nameKey] || '').toLowerCase() : '';
+                return primaryRole === 'healer' && !this.shouldIgnorePlayer(p.character_name);
             }).sort((a, b) => (parseInt(b.healing_amount) || 0) - (parseInt(a.healing_amount) || 0)) :
             healers;
         
@@ -4490,11 +4491,12 @@ class RaidLogsManager {
         const container = document.getElementById('priest-healers-list');
         const section = container.closest('.rankings-section');
         
-        // Use full logData in computed mode to ensure all priests with healing are found
-        const sourceList = (!this.snapshotLocked && !this.engineResult) ? 
+        // When not in snapshot mode, use full logData to catch all priests with healer role
+        const sourceList = !this.snapshotLocked ? 
             (this.logData || []).filter(p => {
-                const healing = parseInt(p.healing_amount) || 0;
-                return healing > 0 && !this.shouldIgnorePlayer(p.character_name);
+                const nameKey = String(p.character_name || '').trim().toLowerCase();
+                const primaryRole = this.primaryRoles ? String(this.primaryRoles[nameKey] || '').toLowerCase() : '';
+                return primaryRole === 'healer' && !this.shouldIgnorePlayer(p.character_name);
             }).sort((a, b) => (parseInt(b.healing_amount) || 0) - (parseInt(a.healing_amount) || 0)) :
             healers;
         
@@ -4567,11 +4569,12 @@ class RaidLogsManager {
         const container = document.getElementById('druid-healers-list');
         const section = container.closest('.rankings-section');
         
-        // Filter druids - use full logData in computed mode to ensure all druids with healing are found
-        const sourceList = (!this.snapshotLocked && !this.engineResult) ? 
+        // Filter druids - when not in snapshot mode, use full logData to catch all druids with healer role
+        const sourceList = !this.snapshotLocked ? 
             (this.logData || []).filter(p => {
-                const healing = parseInt(p.healing_amount) || 0;
-                return healing > 0 && !this.shouldIgnorePlayer(p.character_name);
+                const nameKey = String(p.character_name || '').trim().toLowerCase();
+                const primaryRole = this.primaryRoles ? String(this.primaryRoles[nameKey] || '').toLowerCase() : '';
+                return primaryRole === 'healer' && !this.shouldIgnorePlayer(p.character_name);
             }).sort((a, b) => (parseInt(b.healing_amount) || 0) - (parseInt(a.healing_amount) || 0)) :
             healers;
         
