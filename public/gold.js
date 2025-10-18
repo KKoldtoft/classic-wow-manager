@@ -600,8 +600,8 @@ class GoldPotManager {
             addMap(mapFromPanel('attendance_streaks'));
             addMap(mapFromPanel('guild_members'));
             addMap(mapFromPanel('big_buyer'));
-            // Note: manual_points are already included in snapshot entries above, 
-            // so we don't need to add them again from manualRewardsData
+            addMap(mapFromPanel('manual_points'));
+            // Manual rewards are in the snapshot as manual_points panel
         } else {
             // Computed mode: use datasets + derived awards
             const damagePoints = this.rewardSettings.damage?.points_array || [];
