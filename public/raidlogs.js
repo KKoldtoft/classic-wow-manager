@@ -3721,6 +3721,8 @@ class RaidLogsManager {
                     } catch {}
                     const details = detailsEl ? norm(detailsEl.textContent||'') : '';
                     const pts = pointsEl ? Math.round(Number(pointsEl.textContent||0)) : 0;
+                    // Capture wf_tooltip attribute if present
+                    const wfTooltip = detailsEl && detailsEl.getAttribute ? detailsEl.getAttribute('data-wf-tooltip') : null;
                     entries.push({
                         panel_key: cfg.key,
                         panel_name: cfg.name,
@@ -3731,7 +3733,13 @@ class RaidLogsManager {
                         point_value_original: pts,
                         character_details_original: details || null,
                         primary_numeric_original: null,
-                        aux_json: (function(){ const o = {}; if (img && img.src) o.icon_url = img.src; if (itemKeyAttr) o.item_key = itemKeyAttr; return o; })()
+                        aux_json: (function(){ 
+                            const o = {}; 
+                            if (img && img.src) o.icon_url = img.src; 
+                            if (itemKeyAttr) o.item_key = itemKeyAttr; 
+                            if (wfTooltip) o.wf_tooltip = wfTooltip;
+                            return o; 
+                        })()
                     });
                 });
             });
