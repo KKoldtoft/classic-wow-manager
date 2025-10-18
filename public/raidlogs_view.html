@@ -838,12 +838,26 @@
         const key = el.getAttribute('data-info-key');
         tip.innerHTML = `<pre>${getText(key)}</pre>`;
         tip.style.display = 'block';
+        tip.style.width = '320px'; // Force explicit width
         move(e);
       };
       const hide = () => { tip.style.display = 'none'; };
       const move = (e) => {
-        const x = (e.pageX || (e.clientX + window.scrollX)) + 14;
-        const y = (e.pageY || (e.clientY + window.scrollY)) + 14;
+        let x = (e.pageX || (e.clientX + window.scrollX)) + 14;
+        let y = (e.pageY || (e.clientY + window.scrollY)) + 14;
+        
+        // Prevent tooltip from going off-screen
+        const tipRect = tip.getBoundingClientRect();
+        const viewportWidth = window.innerWidth + window.scrollX;
+        const viewportHeight = window.innerHeight + window.scrollY;
+        
+        if (x + tipRect.width > viewportWidth) {
+          x = viewportWidth - tipRect.width - 10;
+        }
+        if (y + tipRect.height > viewportHeight) {
+          y = viewportHeight - tipRect.height - 10;
+        }
+        
         tip.style.left = x + 'px';
         tip.style.top = y + 'px';
       };
@@ -880,6 +894,7 @@
     }
 
     function ensureWindfuryMemberTooltipSetup() {
+      console.log('[VIEWER DEBUG] ensureWindfuryMemberTooltipSetup called, already setup?', !!window._wfMembersTipSetup);
       if (window._wfMembersTipSetup) return;
       window._wfMembersTipSetup = true;
       const tip = document.createElement('div');
@@ -887,6 +902,7 @@
       tip.className = 'wf-members-tooltip';
       tip.style.display = 'none';
       document.body.appendChild(tip);
+      console.log('[VIEWER DEBUG] WF member tooltip element created and appended');
 
       let active = null;
       const show = (el, e) => {
@@ -898,19 +914,35 @@
           .replace(/&quot;/g, '"')
           .replace(/&amp;/g, '&');
         tip.style.display = 'block';
+        tip.style.width = '300px'; // Force explicit width
         move(e);
       };
       const hide = () => { tip.style.display = 'none'; };
       const move = (e) => {
-        const x = (e.pageX || (e.clientX + window.scrollX)) + 14;
-        const y = (e.pageY || (e.clientY + window.scrollY)) + 14;
+        let x = (e.pageX || (e.clientX + window.scrollX)) + 14;
+        let y = (e.pageY || (e.clientY + window.scrollY)) + 14;
+        
+        // Prevent tooltip from going off-screen
+        const tipRect = tip.getBoundingClientRect();
+        const viewportWidth = window.innerWidth + window.scrollX;
+        const viewportHeight = window.innerHeight + window.scrollY;
+        
+        if (x + tipRect.width > viewportWidth) {
+          x = viewportWidth - tipRect.width - 10;
+        }
+        if (y + tipRect.height > viewportHeight) {
+          y = viewportHeight - tipRect.height - 10;
+        }
+        
         tip.style.left = x + 'px';
         tip.style.top = y + 'px';
       };
 
+      console.log('[VIEWER DEBUG] Setting up WF member tooltip event listeners');
       document.addEventListener('mouseover', (e) => {
         const t = e.target.closest('.character-details[data-wf-tooltip]');
         if (!t) return;
+        console.log('[VIEWER DEBUG] WF member tooltip mouseover detected!', t);
         active = t;
         show(t, e);
       });
@@ -934,6 +966,7 @@
         active = null;
         hide();
       });
+      console.log('[VIEWER DEBUG] WF member tooltip setup complete');
     }
 
     function getEventId(){
