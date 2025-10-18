@@ -1081,7 +1081,7 @@ body.gold .auth-gate { background: #1a191e; border: 1px solid #555555; color: #e
 body.gold .gold-container .loading-indicator,
 body.gold .gold-container .error-display { background: #1a191e; border: 1px solid #555555; }
 body.gold .gold-content { background: linear-gradient(180deg, #0b1220, #1a2a45); border: 1px solid rgba(131, 168, 255, 0.18); }
-body.gold .summary .card { background:#0b1220; border:1px solid #555555 !important; }
+body.gold .summary .card { background:linear-gradient(180deg, #0b1220, #1a2a45); border:1px solid #555555 !important; }
 body.gold .summary .card h3 { color:#c9c9c9 !important; }
 body.gold .summary .card .value { color:#e8e8e8 !important; }
 body.gold .summary .card .tooltip { background:#0b1220; border:1px solid #333; color:#e8e8e8; }

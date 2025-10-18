@@ -7619,7 +7619,7 @@ class RaidLogsManager {
                 return `<div class="wf-row">${nameHtml}: <span class="wf-val">${Number(m.extra_attacks||0)}</span></div>`;
             }).join('');
             const tankNote = (player.party_id === 1 || String(player.party_id) === '1')
-                ? `<div class=\"wf-note\">* For tank group, requirements for extra attacks is 50% of dps groups.</div>`
+                ? `<div class=\"wf-note\">* For tank group, requirements for extra attacks is 75% of dps groups.</div>`
                 : '';
             return `<div class="wf-tip"><div class="wf-tip-title">Group extra attacks (avg ${avg})</div>${rows}${tankNote}</div>`;
         } catch (_) {
