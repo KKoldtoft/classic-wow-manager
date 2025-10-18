@@ -226,20 +226,11 @@ class RaidLogsManager {
                             const ok = confirm('Publish current data to public viewer?\n\nThis will make the data visible on public pages.');
                             if (!ok) return;
                             
-                            // If not in manual mode yet, save all panels first using engine mode
+                            // If not in manual mode yet, save all panels first by scraping the current view
                             if (!this.snapshotLocked || !this.snapshotEntries || this.snapshotEntries.length === 0) {
-                                this.showSavingProgress('Building snapshot from computed data...');
+                                this.showSavingProgress('Building snapshot from current view...');
                                 try {
-                                    // Use engine mode to build snapshot (ensures all panels are captured)
-                                    const res = await fetch(`/api/rewards-snapshot/${this.activeEventId}/lock`, {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ useEngine: true, entries: [] })
-                                    });
-                                    if (!res.ok) throw new Error('Lock failed');
-                                    await this.fetchSnapshotStatus();
-                                    await this.fetchSnapshotData();
-                                    this.applySnapshotOverlay();
+                                    await this.lockSnapshotFromCurrentView();
                                     this.snapshotLocked = true;
                                     this.updateModeBadge();
                                 } catch (error) {
