@@ -1279,6 +1279,19 @@
       // Extract manual entries and render at top
       const manual = (entries||[]).filter(r=> String(r.panel_key||'') === 'manual_points');
       renderManualRewards(manual);
+      // Debug: Check character_details fields
+      const sampleEntries = (entries||[]).filter(r=> String(r.panel_key||'') !== 'manual_points').slice(0, 10);
+      console.log('[VIEWER DEBUG] Sample entries - checking character_details fields:');
+      sampleEntries.forEach((e, i) => {
+        console.log(`Entry ${i} (${e.panel_key}):`, {
+          name: e.character_name,
+          details_original: e.character_details_original,
+          details: e.character_details,
+          details_edited: e.character_details_edited,
+          hasAnyDetails: !!(e.character_details_original || e.character_details || e.character_details_edited)
+        });
+      });
+      
       let otherEntries = (entries||[])
           .filter(r=> String(r.panel_key||'') !== 'manual_points')
           .map(r => { r.character_name = normalizeSnapshotName(r.character_name); return r; })
