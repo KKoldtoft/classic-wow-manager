@@ -2946,7 +2946,7 @@ body.raid-active .scroll-target {
 }
 
 .manual-rewards-section .amount-value {
-    font-size: 1.6em;
+    font-size: 1.3em;
     font-weight: 700;
     color: var(--text-primary, #e0e0e0);
 }
