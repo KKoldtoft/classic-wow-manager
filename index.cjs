@@ -4640,6 +4640,69 @@ app.post('/api/assignments/:eventId/save', requireRosterManager, express.json(),
   }
 });
 
+// Get Four Horsemen active tactics for an event (returns 'classic' or 'cleave')
+app.get('/api/assignments/:eventId/horsemen-tactics', async (req, res) => {
+  const { eventId } = req.params;
+  try {
+    // Ensure table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS event_horsemen_tactics (
+        event_id VARCHAR(100) PRIMARY KEY,
+        active_tactics VARCHAR(20) DEFAULT 'classic',
+        updated_by TEXT,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `);
+    
+    const result = await pool.query(
+      `SELECT active_tactics FROM event_horsemen_tactics WHERE event_id = $1`,
+      [eventId]
+    );
+    
+    const activeTactics = result.rows.length > 0 ? result.rows[0].active_tactics : 'classic';
+    res.json({ success: true, activeTactics });
+  } catch (error) {
+    console.error('Error getting horsemen tactics:', error);
+    res.status(500).json({ success: false, message: 'Failed to get tactics' });
+  }
+});
+
+// Set Four Horsemen active tactics for an event (management only)
+app.post('/api/assignments/:eventId/horsemen-tactics', requireManagement, express.json(), async (req, res) => {
+  const { eventId } = req.params;
+  const { activeTactics } = req.body || {};
+  
+  if (!activeTactics || !['classic', 'cleave'].includes(activeTactics)) {
+    return res.status(400).json({ success: false, message: 'Invalid tactics value' });
+  }
+  
+  try {
+    // Ensure table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS event_horsemen_tactics (
+        event_id VARCHAR(100) PRIMARY KEY,
+        active_tactics VARCHAR(20) DEFAULT 'classic',
+        updated_by TEXT,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `);
+    
+    const actingUserId = req.user?.id || null;
+    await pool.query(
+      `INSERT INTO event_horsemen_tactics (event_id, active_tactics, updated_by, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (event_id)
+       DO UPDATE SET active_tactics = EXCLUDED.active_tactics, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+      [eventId, activeTactics, actingUserId]
+    );
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error saving horsemen tactics:', error);
+    res.status(500).json({ success: false, message: 'Failed to save tactics' });
+  }
+});
+
 // Save or update a default strategy text (manager only)
 app.post('/api/assignments/defaults/save', requireManagement, express.json(), async (req, res) => {
   try {
@@ -7072,16 +7135,18 @@ app.post('/api/roster/:eventId/add-character', requireRosterManager, async (req,
             throw new Error('Position is already occupied');
         }
 
-        // Check for existing characters with same name and class (refuse creation)
+        // Check for existing characters with same discord_id, name, and class (refuse creation)
+        // With the new PRIMARY KEY (discord_id, character_name, class), the database will prevent duplicates
+        // But we check here first to provide a user-friendly error message
         const exactMatch = await client.query(
-            'SELECT character_name FROM players WHERE LOWER(character_name) = LOWER($1) AND class = $2',
-            [characterName, characterClass]
+            'SELECT character_name FROM players WHERE discord_id = $1 AND LOWER(character_name) = LOWER($2) AND class = $3',
+            [discordId, characterName, characterClass]
         );
 
         if (exactMatch.rows.length > 0) {
             return res.status(409).json({ 
                 error: 'EXACT_DUPLICATE',
-                message: `A character named "${characterName}" with class "${characterClass}" already exists. Please choose a different name or class.`
+                message: `You already have a character named "${characterName}" with class "${characterClass}". You can have multiple characters with the same name but different classes.`
             });
         }
 
@@ -7236,14 +7301,16 @@ app.post('/api/roster/:eventId/add-character/force', requireRosterManager, async
             throw new Error('Position is already occupied');
         }
 
-        // Still check for exact duplicates (same name + class) as these should never be allowed
+        // Still check for exact duplicates (same discord_id, name, and class) as these should never be allowed
+        // With the new PRIMARY KEY (discord_id, character_name, class), the database will prevent duplicates
+        // But we check here first to provide a user-friendly error message
         const exactMatch = await client.query(
-            'SELECT character_name FROM players WHERE LOWER(character_name) = LOWER($1) AND class = $2',
-            [characterName, characterClass]
+            'SELECT character_name FROM players WHERE discord_id = $1 AND LOWER(character_name) = LOWER($2) AND class = $3',
+            [discordId, characterName, characterClass]
         );
 
         if (exactMatch.rows.length > 0) {
-            throw new Error(`A character named "${characterName}" with class "${characterClass}" already exists. Cannot create duplicate.`);
+            throw new Error(`You already have a character named "${characterName}" with class "${characterClass}". You can have multiple characters with the same name but different classes.`);
         }
 
         // Continue with creation (bypassing name and Discord ID warnings)
@@ -7598,7 +7665,7 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 discord_id VARCHAR(255),
                 character_name VARCHAR(255),
                 class VARCHAR(50),
-                PRIMARY KEY (discord_id, character_name)
+                PRIMARY KEY (discord_id, character_name, class)
             )
         `);
         
@@ -11821,16 +11888,18 @@ app.post('/api/add-character', async (req, res) => {
     try {
         client = await pool.connect();
         
-        // Check if character already exists
+        // Check if character already exists for this discord user
+        // With the new PRIMARY KEY (discord_id, character_name, class), the database will prevent duplicates
+        // But we check here first to provide a user-friendly error message
         const existingPlayer = await client.query(
-            'SELECT discord_id FROM players WHERE LOWER(character_name) = LOWER($1) AND LOWER(class) = LOWER($2)',
-            [characterName, characterClass]
+            'SELECT discord_id FROM players WHERE discord_id = $1 AND LOWER(character_name) = LOWER($2) AND LOWER(class) = LOWER($3)',
+            [discordId, characterName, characterClass]
         );
         
         if (existingPlayer.rows.length > 0) {
             return res.status(409).json({ 
                 success: false, 
-                message: 'Character already exists',
+                message: `You already have a character named "${characterName}" with class "${characterClass}". You can have multiple characters with the same name but different classes.`,
                 existingDiscordId: existingPlayer.rows[0].discord_id
             });
         }

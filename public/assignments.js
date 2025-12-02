@@ -227,6 +227,11 @@
     const panelDiv = document.createElement('div');
     panelDiv.className = 'manual-rewards-section main-panel';
     panelDiv.dataset.panelBoss = String(boss || '').toLowerCase();
+    
+    // Hide Cleave tactics panel by default (toggle will show it)
+    if (String(boss || '').includes('(Cleave)')) {
+      panelDiv.style.display = 'none';
+    }
 
     const header = document.createElement('div');
     header.className = 'section-header assignment-header';
@@ -285,9 +290,22 @@
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754809667/30800_etmqmc.png';
       }
     }
+    // For Four Horsemen, add tactics toggle (Management only)
+    const isHorsePanel = String(boss || '').toLowerCase().includes('horse');
+    const isCleave = String(boss || '').includes('(Cleave)');
+    const tacticsToggleHtml = (isHorsePanel && canManage) ? `
+      <div class="tactics-toggle-wrap" style="display: flex; align-items: center; gap: 8px; margin-right: 12px;">
+        <span style="color: #e5e7eb; font-size: 14px; font-weight: 600;">Tactics:</span>
+        <button class="tactics-toggle-btn" data-current-tactics="${isCleave ? 'cleave' : 'classic'}" style="padding: 6px 12px; border-radius: 6px; background: ${isCleave ? '#8b5cf6' : '#3b82f6'}; color: white; border: none; cursor: pointer; font-weight: 600; font-size: 13px;">
+          ${isCleave ? 'Cleave' : 'Classic'}
+        </button>
+      </div>
+    ` : '';
+    
     header.innerHTML = `
       <h2><img src="${bossIconUrl}" alt="Boss" class="boss-icon"> ${headerTitle}</h2>
       <div class="assignments-actions" ${canManage ? '' : 'style="display:none;"'}>
+        ${tacticsToggleHtml}
         <button class="btn-add-defaults" title="Auto assign" data-panel-key="${dungeon}|${wing || ''}|${boss}"><i class="fas fa-magic"></i> Auto assign</button>
         <button class="btn-edit" title="Edit Panel" data-panel-key="${dungeon}|${wing || ''}|${boss}"><i class="fas fa-edit"></i> Edit</button>
         <button class="btn-save" style="display:none;" title="Save" data-panel-key="${dungeon}|${wing || ''}|${boss}"><i class="fas fa-save"></i> Save</button>
@@ -344,8 +362,14 @@
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756597753/Thaddius-mid2_rz7754.jpg';
       defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1756597753/Thaddius-full_ndtgba.png';
     } else if (panelKeyLower.includes('horse')) {
-      defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848571/4h_mid_gorjji.jpg';
-      defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848571/4h_full_o1bgfc.png';
+      // Use placeholder for Cleave tactics, specific image for Classic
+      if (panelKeyLower.includes('cleave')) {
+        defaultMid = 'https://placehold.co/1200x675?text=The+Four+Horsemen+Cleave';
+        defaultFull = panel.image_url_full || 'https://placehold.co/1200x675?text=The+Four+Horsemen+Cleave';
+      } else {
+        defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848571/4h_mid_gorjji.jpg';
+        defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755848571/4h_full_o1bgfc.png';
+      }
     } else if (panelKeyLower.includes('sapph')) {
       defaultMid = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755847769/Saph_mid_ix6tiz.jpg';
       defaultFull = panel.image_url_full || 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755847779/Saph_full_kwkgel.png';
@@ -1010,6 +1034,7 @@
 
     // Special section for The Four Horsemen: tanking rotation grid
     const isHorsemenPanel = String((boss || '')).toLowerCase().includes('horse');
+    const isCleavePanel = String(boss || '').includes('(Cleave)');
     let horseGridWrap = null;
     let horseGridState = null; // { tanksByRow: {1:[name],...}, acceptByRow: {1:'accept'|'decline'|''} }
     if (isHorsemenPanel) {
@@ -1046,7 +1071,9 @@
       }
       const initial = panel.horsemen_tanks || deriveHorseFromEntries(panel.entries);
       horseGridState = { tanksByRow: {}, acceptByRow: {} };
-      for (let r = 1; r <= 8; r++) {
+      // Cleave tactics uses only 4 tanks; Classic uses 8
+      const maxRows = isCleavePanel ? 4 : 8;
+      for (let r = 1; r <= maxRows; r++) {
         const arr = Array.isArray(initial[r]) ? initial[r] : [];
         horseGridState.tanksByRow[r] = [arr[0] || null];
       }
@@ -1109,7 +1136,10 @@
         const makeRow = (cells, idx, isHeader=false) => {
           const row = document.createElement('div');
           row.style.display = 'grid';
-          row.style.gridTemplateColumns = '220px repeat(4, 1fr) 70px';
+          // Cleave: 3 columns + status; Classic: 4 columns + status
+          row.style.gridTemplateColumns = isCleavePanel 
+            ? '220px repeat(3, 1fr) 70px'
+            : '220px repeat(4, 1fr) 70px';
           row.style.gap = '10px';
           if (isHeader) {
             row.style.background = 'rgba(0,0,0,0.25)';
@@ -1139,15 +1169,23 @@
         const iconSafe   = 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_bandage_12.jpg';
         const headerCell = (text) => { const d=document.createElement('div'); d.style.fontWeight='700'; d.style.color='#e5e7eb'; d.textContent=text; return d; };
 
-        // header row
-        const head = makeRow([
-          headerCell('Warriors / Marks'),
-          headerCell('1, 2 and 3'),
-          headerCell('4, 5 and 6'),
-          headerCell('7, 8 and 9'),
-          headerCell('10, 11 and 12'),
-          headerCell('')
-        ], 0, true);
+        // header row - different for Classic vs Cleave
+        const head = isCleavePanel 
+          ? makeRow([
+              headerCell('Tanks'),
+              headerCell('Start on'),
+              headerCell('Then go'),
+              headerCell('Then go'),
+              headerCell('')
+            ], 0, true)
+          : makeRow([
+              headerCell('Warriors / Marks'),
+              headerCell('1, 2 and 3'),
+              headerCell('4, 5 and 6'),
+              headerCell('7, 8 and 9'),
+              headerCell('10, 11 and 12'),
+              headerCell('')
+            ], 0, true);
         horseGridWrap.appendChild(head);
 
         function renderWarriorCell(rowIdx, onChangeCb) {
@@ -1259,22 +1297,39 @@
           const warriorCell = renderWarriorCell(rowIdx, () => { try { statusCell._rerender && statusCell._rerender(); } catch {} });
           return makeRow([ warriorCell, ...cellsForMarks, statusCell ], rowIdx);
         }
-        // Row 1: Mograine in col1; DPS in cols 2-4
-        rows.push(makeFullRow(1, [ bossMograine(), cellDps(), cellDps(), cellDps() ]));
-        // Row 2: DPS, Mograine, DPS, DPS
-        rows.push(makeFullRow(2, [ cellDps(), bossMograine(), cellDps(), cellDps() ]));
-        // Row 3: Thane, Thane, Mograine, DPS
-        rows.push(makeFullRow(3, [ bossThane(), bossThane(), bossMograine(), cellDps() ]));
-        // Row 4: DPS, DPS, DPS, Mograine
-        rows.push(makeFullRow(4, [ cellDps(), cellDps(), cellDps(), bossMograine() ]));
-        // Row 5: Blaumeux, Safe, Zeliek, Safe
-        rows.push(makeFullRow(5, [ bossBlaumeux(), cellSafe(), bossZeliek(), cellSafe() ]));
-        // Row 6: DPS, Blaumeux, Safe, Zeliek
-        rows.push(makeFullRow(6, [ cellDps(), bossBlaumeux(), cellSafe(), bossZeliek() ]));
-        // Row 7: Zeliek, Safe, Blaumeux, Safe
-        rows.push(makeFullRow(7, [ bossZeliek(), cellSafe(), bossBlaumeux(), cellSafe() ]));
-        // Row 8: DPS, Zeliek, Safe, Blaumeux
-        rows.push(makeFullRow(8, [ cellDps(), bossZeliek(), cellSafe(), bossBlaumeux() ]));
+        
+        // Helper for empty cells
+        const cellEmpty = () => { const d=document.createElement('div'); d.textContent='—'; d.style.color='#6b7280'; return d; };
+        
+        // Cleave tactics: only 4 tanks with specific assignments (3 columns: Start on, Then go, Then go)
+        if (isCleavePanel) {
+          // Tank 1: Skull - Start on Thane, Then go Blameaux
+          rows.push(makeFullRow(1, [ bossThane(), bossBlaumeux(), cellEmpty() ]));
+          // Tank 2: Cross - Start on Mograine, Then go Zeliek
+          rows.push(makeFullRow(2, [ bossMograine(), bossZeliek(), cellEmpty() ]));
+          // Tank 3: Moon - Start on Blameaux, Then go Safe Zone, Then go Zeliek
+          rows.push(makeFullRow(3, [ bossBlaumeux(), cellSafe(), bossZeliek() ]));
+          // Tank 4: Square - Start on Zeliek, Then go Safe Zone, Then go Blameaux
+          rows.push(makeFullRow(4, [ bossZeliek(), cellSafe(), bossBlaumeux() ]));
+        } else {
+          // Classic tactics: 8 tanks
+          // Row 1: Mograine in col1; DPS in cols 2-4
+          rows.push(makeFullRow(1, [ bossMograine(), cellDps(), cellDps(), cellDps() ]));
+          // Row 2: DPS, Mograine, DPS, DPS
+          rows.push(makeFullRow(2, [ cellDps(), bossMograine(), cellDps(), cellDps() ]));
+          // Row 3: Thane, Thane, Mograine, DPS
+          rows.push(makeFullRow(3, [ bossThane(), bossThane(), bossMograine(), cellDps() ]));
+          // Row 4: DPS, DPS, DPS, Mograine
+          rows.push(makeFullRow(4, [ cellDps(), cellDps(), cellDps(), bossMograine() ]));
+          // Row 5: Blaumeux, Safe, Zeliek, Safe
+          rows.push(makeFullRow(5, [ bossBlaumeux(), cellSafe(), bossZeliek(), cellSafe() ]));
+          // Row 6: DPS, Blaumeux, Safe, Zeliek
+          rows.push(makeFullRow(6, [ cellDps(), bossBlaumeux(), cellSafe(), bossZeliek() ]));
+          // Row 7: Zeliek, Safe, Blaumeux, Safe
+          rows.push(makeFullRow(7, [ bossZeliek(), cellSafe(), bossBlaumeux(), cellSafe() ]));
+          // Row 8: DPS, Zeliek, Safe, Blaumeux
+          rows.push(makeFullRow(8, [ cellDps(), bossZeliek(), cellSafe(), bossBlaumeux() ]));
+        }
 
         rows.forEach(r => horseGridWrap.appendChild(r));
       }
@@ -1762,6 +1817,66 @@
         const editBtn = header.querySelector('.btn-edit');
         const saveBtn = header.querySelector('.btn-save');
         const addDefaultsBtn = header.querySelector('.btn-add-defaults');
+        
+        // Tactics toggle for Four Horsemen (switches between Classic and Cleave)
+        const tacticsToggleBtn = header.querySelector('.tactics-toggle-btn');
+        if (tacticsToggleBtn) {
+          tacticsToggleBtn.addEventListener('click', async () => {
+            const currentTactics = tacticsToggleBtn.dataset.currentTactics;
+            const newTactics = currentTactics === 'classic' ? 'cleave' : 'classic';
+            const baseBossName = 'The Four Horsemen';
+            
+            // Find both panels in the container
+            const container = document.getElementById('assignments-container');
+            const classicPanel = Array.from(container.querySelectorAll('.manual-rewards-section')).find(
+              p => p.dataset.panelBoss === 'the four horsemen'
+            );
+            const cleavePanel = Array.from(container.querySelectorAll('.manual-rewards-section')).find(
+              p => p.dataset.panelBoss === 'the four horsemen (cleave)'
+            );
+            
+            // Check if both panels exist
+            if (!classicPanel || !cleavePanel) {
+              alert('Both Classic and Cleave tactics panels must exist. Please ensure both have been created.');
+              return;
+            }
+            
+            // Save the preference to the database
+            try {
+              const eventId = getActiveEventId();
+              const saveRes = await fetch(`/api/assignments/${eventId}/horsemen-tactics`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ activeTactics: newTactics })
+              });
+              
+              if (!saveRes.ok) {
+                throw new Error('Failed to save tactics preference');
+              }
+            } catch (err) {
+              console.error('Error saving tactics preference:', err);
+              alert('Failed to save tactics preference. Please try again.');
+              return;
+            }
+            
+            // Toggle visibility
+            if (newTactics === 'cleave') {
+              classicPanel.style.display = 'none';
+              cleavePanel.style.display = 'block';
+            } else {
+              classicPanel.style.display = 'block';
+              cleavePanel.style.display = 'none';
+            }
+            
+            // Update ALL toggle buttons (in both panels) to stay in sync
+            const allToggleBtns = container.querySelectorAll('.tactics-toggle-btn');
+            allToggleBtns.forEach(btn => {
+              btn.dataset.currentTactics = newTactics;
+              btn.textContent = newTactics === 'cleave' ? 'Cleave' : 'Classic';
+              btn.style.background = newTactics === 'cleave' ? '#8b5cf6' : '#3b82f6';
+            });
+          });
+        }
 
         // Add controls
         const controls = document.createElement('div');
@@ -2451,6 +2566,7 @@
               } catch {}
             } else if (bossKey.includes("horse")) {
               // The Four Horsemen – healer rotation
+              const isCleaveAssign = bossKey.includes("cleave");
               const isHealer = (r) => ['shaman','priest','druid'].includes(String(r.class_name||'').toLowerCase());
               // Order: shamans, priests, druids; then take up to 12 by group/slot
               const sortByGS = (a,b) => ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99));
@@ -2465,11 +2581,26 @@
                 { name: 'moon',  icon: icons.moon }
               ];
               for (let i=0;i<ordered.length;i++) {
-                const block = Math.floor(i/3); // 0..3
+                const block = Math.floor(i/3); // 0..3 (skull=0, cross=1, square=2, moon=3)
                 const posInBlock = (i%3)+1;    // 1..3
                 const raid = raidOrder[block] || raidOrder[raidOrder.length-1];
                 const r = ordered[i];
-                const text = `Start on ${raid.name} rotate on ${posInBlock}`;
+                
+                // Different text for Cleave tactics
+                let text;
+                if (isCleaveAssign) {
+                  // For Cleave: Square and Moon marks get special instructions
+                  if (raid.name === 'square' || raid.name === 'moon') {
+                    text = `Start on ${raid.name} and stay until you get replaced by other healers, shadow pot if you need to`;
+                  } else {
+                    // Skull and Cross follow the tank
+                    text = `Start on ${raid.name} and follow the tank`;
+                  }
+                } else {
+                  // Classic rotation
+                  text = `Start on ${raid.name} rotate on ${posInBlock}`;
+                }
+                
                 toAdd.push({ r, icon: raid.icon, text });
               }
               // Also populate tank grid from Main->Tanking panel (rows 1..8 map to tank indices 1..8)
@@ -2485,12 +2616,22 @@
                 };
                 if (isHorsemenPanel && typeof panelDiv._getHorseGridState === 'function') {
                   const state = panelDiv._getHorseGridState();
-                  // Map rows to tank indices with swap: row1<-tank3, row3<-tank1; others 1:1
-                  const indexMap = [null, 3, 2, 1, 4, 5, 6, 7, 8];
-                  for (let row=1; row<=8; row++) {
-                    const srcIdx = indexMap[row] ?? row;
-                    const t = getTankByIndex(srcIdx);
-                    state.tanksByRow[row] = [t ? t.character_name : null];
+                  // Cleave tactics: only 4 tanks from main tanking panel
+                  // Classic tactics: 8 tanks with swap mapping
+                  if (isCleaveAssign) {
+                    // For Cleave, just use the first 4 main tanks directly
+                    for (let row=1; row<=4; row++) {
+                      const t = getTankByIndex(row);
+                      state.tanksByRow[row] = [t ? t.character_name : null];
+                    }
+                  } else {
+                    // Classic: Map rows to tank indices with swap: row1<-tank3, row3<-tank1; others 1:1
+                    const indexMap = [null, 3, 2, 1, 4, 5, 6, 7, 8];
+                    for (let row=1; row<=8; row++) {
+                      const srcIdx = indexMap[row] ?? row;
+                      const t = getTankByIndex(srcIdx);
+                      state.tanksByRow[row] = [t ? t.character_name : null];
+                    }
                   }
                   if (typeof panelDiv._renderHorseGrid === 'function') panelDiv._renderHorseGrid(true);
                 }
@@ -4336,10 +4477,55 @@
             boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754993478/-16062_absih8.png',
             entries: []
           };
+          const fourHorsemenCleavePanel = {
+            dungeon: 'Naxxramas',
+            wing: 'Military',
+            boss: 'The Four Horsemen (Cleave)',
+            strategy_text: 'Cleave strategy: Tanks rotate between bosses while DPS cleaves them down together.',
+            image_url: 'https://placehold.co/1200x675?text=The+Four+Horsemen+Cleave',
+            video_url: 'https://www.youtube.com/embed/on_hgoa3k0k',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754993478/-16062_absih8.png',
+            entries: []
+          };
           container.innerHTML = '';
           container.appendChild(buildPanel(razPanel, user, roster));
           container.appendChild(buildPanel(gothikPanel, user, roster));
           container.appendChild(buildPanel(fourHorsemenPanel, user, roster));
+          container.appendChild(buildPanel(fourHorsemenCleavePanel, user, roster));
+          
+          // Load and apply the saved tactics preference for this event
+          (async () => {
+            try {
+              const eventId = getActiveEventId();
+              const res = await fetch(`/api/assignments/${eventId}/horsemen-tactics`);
+              const data = await res.json();
+              if (data.success && data.activeTactics) {
+                const activeTactics = data.activeTactics;
+                const classicPanel = container.querySelector('[data-panel-boss="the four horsemen"]');
+                const cleavePanel = container.querySelector('[data-panel-boss="the four horsemen (cleave)"]');
+                
+                // Apply visibility based on saved preference
+                if (activeTactics === 'cleave') {
+                  if (classicPanel) classicPanel.style.display = 'none';
+                  if (cleavePanel) cleavePanel.style.display = 'block';
+                } else {
+                  if (classicPanel) classicPanel.style.display = 'block';
+                  if (cleavePanel) cleavePanel.style.display = 'none';
+                }
+                
+                // Update all toggle buttons to reflect the saved state
+                const allToggleBtns = container.querySelectorAll('.tactics-toggle-btn');
+                allToggleBtns.forEach(btn => {
+                  btn.dataset.currentTactics = activeTactics;
+                  btn.textContent = activeTactics === 'cleave' ? 'Cleave' : 'Classic';
+                  btn.style.background = activeTactics === 'cleave' ? '#8b5cf6' : '#3b82f6';
+                });
+              }
+            } catch (err) {
+              console.error('Error loading horsemen tactics:', err);
+            }
+          })();
+          
           return;
         }
         if (wing === 'spider') {
@@ -4511,10 +4697,11 @@
           return av - bv;
         });
       } else if (wing === 'military') {
-        // Ensure Military Wing shows panels in order: Razuvious, Gothik, The Four Horsemen
+        // Ensure Military Wing shows panels in order: Razuvious, Gothik, The Four Horsemen (both Classic and Cleave)
         const hasRaz = toRender.some(p => String(p.boss || '').toLowerCase().includes('razu'));
         const hasGoth = toRender.some(p => String(p.boss || '').toLowerCase().includes('goth'));
-        const hasHorse = toRender.some(p => String(p.boss || '').toLowerCase().includes('four') || String(p.boss || '').toLowerCase().includes('horse'));
+        const hasHorseClassic = toRender.some(p => String(p.boss || '').toLowerCase() === 'the four horsemen');
+        const hasHorseCleave = toRender.some(p => String(p.boss || '').toLowerCase().includes('cleave') && String(p.boss || '').toLowerCase().includes('horse'));
         if (!hasRaz) {
           toRender.push({
             dungeon: 'Naxxramas',
@@ -4539,7 +4726,8 @@
             entries: []
           });
         }
-        if (!hasHorse) {
+        // Always ensure both Classic and Cleave tactics panels exist
+        if (!hasHorseClassic) {
           toRender.push({
             dungeon: 'Naxxramas',
             wing: 'Military',
@@ -4547,6 +4735,18 @@
             strategy_text: 'We nuke down and commit on Thane.\n\nHealer rotation starts on first mark and then healers all roather on every 3rd mark.',
             image_url: 'https://placehold.co/1200x675?text=The+Four+Horsemen',
             video_url: 'https://www.youtube.com/embed/nlKO8p3SMVw?controls=0&modestbranding=1&rel=0&iv_load_policy=3',
+            boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754993478/-16062_absih8.png',
+            entries: []
+          });
+        }
+        if (!hasHorseCleave) {
+          toRender.push({
+            dungeon: 'Naxxramas',
+            wing: 'Military',
+            boss: 'The Four Horsemen (Cleave)',
+            strategy_text: 'Cleave strategy: Tanks rotate between bosses while DPS cleaves them down together.',
+            image_url: 'https://placehold.co/1200x675?text=The+Four+Horsemen+Cleave',
+            video_url: 'https://www.youtube.com/embed/on_hgoa3k0k',
             boss_icon_url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754993478/-16062_absih8.png',
             entries: []
           });
@@ -4644,6 +4844,41 @@
       }
 
       toRender.forEach(p => container.appendChild(buildPanel(p, user, roster)));
+      
+      // Load and apply the saved tactics preference for Four Horsemen if we're on military wing
+      if (wing === 'military') {
+        (async () => {
+          try {
+            const eventId = getActiveEventId();
+            const res = await fetch(`/api/assignments/${eventId}/horsemen-tactics`);
+            const data = await res.json();
+            if (data.success && data.activeTactics) {
+              const activeTactics = data.activeTactics;
+              const classicPanel = container.querySelector('[data-panel-boss="the four horsemen"]');
+              const cleavePanel = container.querySelector('[data-panel-boss="the four horsemen (cleave)"]');
+              
+              // Apply visibility based on saved preference
+              if (activeTactics === 'cleave') {
+                if (classicPanel) classicPanel.style.display = 'none';
+                if (cleavePanel) cleavePanel.style.display = 'block';
+              } else {
+                if (classicPanel) classicPanel.style.display = 'block';
+                if (cleavePanel) cleavePanel.style.display = 'none';
+              }
+              
+              // Update all toggle buttons to reflect the saved state
+              const allToggleBtns = container.querySelectorAll('.tactics-toggle-btn');
+              allToggleBtns.forEach(btn => {
+                btn.dataset.currentTactics = activeTactics;
+                btn.textContent = activeTactics === 'cleave' ? 'Cleave' : 'Classic';
+                btn.style.background = activeTactics === 'cleave' ? '#8b5cf6' : '#3b82f6';
+              });
+            }
+          } catch (err) {
+            console.error('Error loading horsemen tactics:', err);
+          }
+        })();
+      }
 
       // AQ40: ensure Skeram and Bug Trio panels are present even if not saved yet
       if (wing === 'aq40') {
