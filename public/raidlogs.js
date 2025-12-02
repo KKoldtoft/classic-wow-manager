@@ -947,6 +947,8 @@ class RaidLogsManager {
             // Remove non-player entities across datasets
             this.sanitizeDatasets();
             this.displayRaidLogs();
+            // Display player mismatch warnings (roster vs logs comparison)
+            this.displayPlayerMismatchWarnings();
             this.renderPlayerPanelsContent();
             try { if (typeof this.displayManualRewards === 'function') this.displayManualRewards(); } catch {}
             // Recompute totals with all data loaded
@@ -8929,6 +8931,266 @@ class RaidLogsManager {
         } catch (e) {
             console.error('[SNAPSHOT] Diagnostic lock error', e);
         }
+    }
+
+    // ===== Player Mismatch Detection =====
+    
+    /**
+     * Collects all player names that appear on any panel (have points awarded or deducted).
+     * This includes damage/healing rankings, abilities, consumables, curses, manual rewards, etc.
+     */
+    collectPlayersOnPage() {
+        const normalizeName = (name) => String(name || '').toLowerCase().trim();
+        const pagePlayerNames = new Set();
+        
+        // Helper to add names from an array with a name field
+        const addFromArray = (arr, nameField = 'character_name') => {
+            if (!Array.isArray(arr)) return;
+            arr.forEach(item => {
+                const name = normalizeName(item[nameField] || item.character_name || item.player_name);
+                if (name && !this.shouldIgnorePlayer(name)) {
+                    pagePlayerNames.add(name);
+                }
+            });
+        };
+        
+        // Damage dealers (from logData filtered by role - those who appear in DPS panel)
+        const damageDealer = (this.logData || []).filter(player => {
+            const nameKey = String(player.character_name || '').trim().toLowerCase();
+            const primaryRole = this.primaryRoles ? String(this.primaryRoles[nameKey] || '').toLowerCase() : '';
+            const fallbackRole = (player.role_detected || '').toLowerCase();
+            const role = primaryRole || fallbackRole;
+            const damage = parseInt(player.damage_amount) || 0;
+            return (role === 'dps' || role === 'tank') && damage > 0;
+        });
+        addFromArray(damageDealer);
+        
+        // Healers (from logData filtered by role)
+        const healers = (this.logData || []).filter(player => {
+            const nameKey = String(player.character_name || '').trim().toLowerCase();
+            const primaryRole = this.primaryRoles ? String(this.primaryRoles[nameKey] || '').toLowerCase() : '';
+            const fallbackRole = (player.role_detected || '').toLowerCase();
+            const role = primaryRole || fallbackRole;
+            const healing = parseInt(player.healing_amount) || 0;
+            return role === 'healer' && healing > 0;
+        });
+        addFromArray(healers);
+        
+        // All the data panels that award points
+        addFromArray(this.abilitiesData);
+        addFromArray(this.manaPotionsData);
+        addFromArray(this.runesData);
+        addFromArray(this.interruptsData);
+        addFromArray(this.disarmsData);
+        addFromArray(this.sunderData);
+        addFromArray(this.curseData);
+        addFromArray(this.curseShadowData);
+        addFromArray(this.curseElementsData);
+        addFromArray(this.faerieFireData);
+        addFromArray(this.scorchData);
+        addFromArray(this.demoShoutData);
+        addFromArray(this.polymorphData);
+        addFromArray(this.powerInfusionData);
+        addFromArray(this.decursesData);
+        addFromArray(this.voidDamageData);
+        addFromArray(this.windfuryData);
+        addFromArray(this.worldBuffsData);
+        addFromArray(this.frostResistanceData);
+        addFromArray(this.playerStreaksData);
+        addFromArray(this.guildMembersData);
+        addFromArray(this.rocketHelmetData);
+        addFromArray(this.bigBuyerData);
+        
+        // Manual rewards (uses player_name)
+        addFromArray(this.manualRewardsData, 'player_name');
+        
+        console.log(`📊 [MISMATCH] Players appearing on page: ${pagePlayerNames.size}`);
+        return pagePlayerNames;
+    }
+    
+    /**
+     * Compares roster players vs combat log players vs page players to find mismatches.
+     * Returns arrays of player names that are missing from each source.
+     */
+    compareRosterVsCombatLogs() {
+        // Normalize name for comparison
+        const normalizeName = (name) => String(name || '').toLowerCase().trim();
+        
+        // Get roster player names (from roster_overrides via buildRosterCache)
+        const rosterNames = new Set(
+            (this.rosterPlayersData || [])
+                .map(p => normalizeName(p.player_name || p.character_name))
+                .filter(n => n && n.length > 0)
+        );
+        
+        // Get combat log player names (from log_data)
+        const logNames = new Set(
+            (this.logData || [])
+                .map(p => normalizeName(p.character_name))
+                .filter(n => n && n.length > 0 && !this.shouldIgnorePlayer(n))
+        );
+        
+        // Get players who appear on the page (have points)
+        const pageNames = this.collectPlayersOnPage();
+        
+        // Find mismatches
+        const missingInLogs = [...rosterNames]
+            .filter(name => !logNames.has(name))
+            .map(name => this.getOriginalCaseName(name, 'roster'));
+        
+        const missingInRoster = [...logNames]
+            .filter(name => !rosterNames.has(name))
+            .map(name => this.getOriginalCaseName(name, 'logs'));
+        
+        // Players in logs but NOT on the page (no points awarded/deducted)
+        const missingOnPage = [...logNames]
+            .filter(name => !pageNames.has(name))
+            .map(name => this.getOriginalCaseName(name, 'logs'));
+        
+        console.log(`🔍 [MISMATCH] Roster: ${rosterNames.size}, Logs: ${logNames.size}, Page: ${pageNames.size}`);
+        console.log(`🔍 [MISMATCH] Missing in logs: ${missingInLogs.length}, Missing in roster: ${missingInRoster.length}, Missing on page: ${missingOnPage.length}`);
+        
+        return {
+            missingInLogs,    // Players in roster but NOT in combat logs
+            missingInRoster,  // Players in combat logs but NOT in roster
+            missingOnPage,    // Players in combat logs but NOT on the page (no points)
+            rosterCount: rosterNames.size,
+            logCount: logNames.size,
+            pageCount: pageNames.size
+        };
+    }
+    
+    /**
+     * Get original case name from data source for display purposes.
+     */
+    getOriginalCaseName(normalizedName, source) {
+        if (source === 'roster') {
+            const found = (this.rosterPlayersData || []).find(
+                p => String(p.player_name || p.character_name || '').toLowerCase().trim() === normalizedName
+            );
+            return found ? (found.player_name || found.character_name) : this.capitalizeFirstLetter(normalizedName);
+        } else {
+            const found = (this.logData || []).find(
+                p => String(p.character_name || '').toLowerCase().trim() === normalizedName
+            );
+            return found ? found.character_name : this.capitalizeFirstLetter(normalizedName);
+        }
+    }
+    
+    /**
+     * Displays the player mismatch warnings in the UI.
+     */
+    displayPlayerMismatchWarnings() {
+        const container = document.getElementById('playerMismatchWarnings');
+        const logsColumn = document.getElementById('missing-in-logs');
+        const rosterColumn = document.getElementById('missing-in-roster');
+        const pageColumn = document.getElementById('missing-on-page');
+        const toggleBtn = document.getElementById('mismatch-toggle-btn');
+        const content = document.getElementById('mismatch-content');
+        
+        if (!container || !logsColumn || !rosterColumn || !pageColumn) {
+            console.warn('⚠️ [MISMATCH] Warning container elements not found');
+            return;
+        }
+        
+        // Make sure roster data is loaded before comparison
+        if (!this.rosterPlayersData || this.rosterPlayersData.length === 0) {
+            console.log('📋 [MISMATCH] Roster data not loaded yet, fetching...');
+            this.buildRosterCache().then(() => {
+                this._renderMismatchWarnings(container, logsColumn, rosterColumn, pageColumn, toggleBtn, content);
+            });
+        } else {
+            this._renderMismatchWarnings(container, logsColumn, rosterColumn, pageColumn, toggleBtn, content);
+        }
+    }
+    
+    /**
+     * Internal method to render the mismatch warnings after data is ready.
+     */
+    _renderMismatchWarnings(container, logsColumn, rosterColumn, pageColumn, toggleBtn, content) {
+        const { missingInLogs, missingInRoster, missingOnPage, rosterCount, logCount, pageCount } = this.compareRosterVsCombatLogs();
+        
+        // Hide if no mismatches
+        if (missingInLogs.length === 0 && missingInRoster.length === 0 && missingOnPage.length === 0) {
+            container.style.display = 'none';
+            console.log('✅ [MISMATCH] No mismatches found - all players match!');
+            return;
+        }
+        
+        container.style.display = 'block';
+        
+        // Update header with summary counts
+        const header = container.querySelector('.mismatch-header');
+        if (header) {
+            // Remove old summary if exists
+            const oldSummary = header.querySelector('.mismatch-summary');
+            if (oldSummary) oldSummary.remove();
+            
+            // Add summary counts
+            const summary = document.createElement('div');
+            summary.className = 'mismatch-summary';
+            summary.innerHTML = `
+                <span class="mismatch-count logs">${missingInLogs.length} missing in logs</span>
+                <span class="mismatch-count roster">${missingInRoster.length} missing in roster</span>
+                <span class="mismatch-count page">${missingOnPage.length} missing on page</span>
+            `;
+            header.insertBefore(summary, toggleBtn);
+        }
+        
+        // Missing in Logs (in roster but didn't show up in combat logs)
+        if (missingInLogs.length > 0) {
+            logsColumn.innerHTML = missingInLogs.map(name => `
+                <div class="mismatch-tag missing-in-logs">
+                    <span class="player-name">${this.escapeHtml(name)}</span>
+                    <span class="mismatch-label">Not in Logs</span>
+                </div>
+            `).join('');
+        } else {
+            logsColumn.innerHTML = '<div class="no-mismatch">All roster players found in logs</div>';
+        }
+        
+        // Missing in Roster (in combat logs but not in roster)
+        if (missingInRoster.length > 0) {
+            rosterColumn.innerHTML = missingInRoster.map(name => `
+                <div class="mismatch-tag missing-in-roster">
+                    <span class="player-name">${this.escapeHtml(name)}</span>
+                    <span class="mismatch-label">Not in Roster</span>
+                </div>
+            `).join('');
+        } else {
+            rosterColumn.innerHTML = '<div class="no-mismatch">All log players found in roster</div>';
+        }
+        
+        // Missing on Page (in combat logs but no points on the page)
+        if (missingOnPage.length > 0) {
+            pageColumn.innerHTML = missingOnPage.map(name => `
+                <div class="mismatch-tag missing-on-page">
+                    <span class="player-name">${this.escapeHtml(name)}</span>
+                    <span class="mismatch-label">No Points</span>
+                </div>
+            `).join('');
+        } else {
+            pageColumn.innerHTML = '<div class="no-mismatch">All log players have points</div>';
+        }
+        
+        // Setup toggle functionality
+        if (toggleBtn && content) {
+            toggleBtn.onclick = () => {
+                const isCollapsed = content.classList.toggle('collapsed');
+                toggleBtn.classList.toggle('collapsed', isCollapsed);
+            };
+        }
+        
+        console.log(`⚠️ [MISMATCH] Displayed warnings: ${missingInLogs.length} missing in logs, ${missingInRoster.length} missing in roster, ${missingOnPage.length} missing on page`);
+    }
+    
+    /**
+     * Helper to escape HTML for safe display.
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
 

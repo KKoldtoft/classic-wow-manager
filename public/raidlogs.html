@@ -77,6 +77,46 @@
         <div id="engineBannerTop" class="engine-banner" style="display:none; margin:12px 0;">
             <!-- Filled by raidlogs.js -->
         </div>
+        
+        <!-- Player Mismatch Warnings (Admin only) -->
+        <div id="playerMismatchWarnings" class="mismatch-warnings-container" style="display:none;">
+            <div class="mismatch-header">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>Player Roster Mismatches</span>
+                <button class="mismatch-toggle-btn" id="mismatch-toggle-btn" title="Toggle details">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+            </div>
+            <div class="mismatch-content" id="mismatch-content">
+                <div class="mismatch-grid">
+                    <div class="mismatch-column">
+                        <div class="mismatch-column-header">
+                            <i class="fas fa-clipboard-list"></i> In Roster, Missing in Logs
+                        </div>
+                        <div class="mismatch-tags" id="missing-in-logs">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                    <div class="mismatch-column">
+                        <div class="mismatch-column-header">
+                            <i class="fas fa-scroll"></i> In Logs, Missing in Roster
+                        </div>
+                        <div class="mismatch-tags" id="missing-in-roster">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                    <div class="mismatch-column">
+                        <div class="mismatch-column-header">
+                            <i class="fas fa-chart-bar"></i> In Logs, Missing on Page
+                        </div>
+                        <div class="mismatch-tags" id="missing-on-page">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
         <!-- Top controls: centered -->
         <div id="rl-top-controls" style="display:none;"></div>
         <div id="rl-auth-gate" class="auth-gate" style="display:none;">
