@@ -19845,17 +19845,28 @@ if (attachChatIo) {
       const { io } = await attachChatIo(server);
       console.log('✅ Site chat Socket.IO initialized');
       app.set('io', io);
-      if (createDiscordBridge && setOutboundHandler) {
-        const bridge = createDiscordBridge();
-        if (bridge && typeof bridge.start === 'function' && typeof bridge.sendToDiscord === 'function') {
-          await bridge.start();
-          setOutboundHandler(async (payload) => { await bridge.sendToDiscord(payload); });
-          console.log('✅ Discord bridge initialized');
-          try { console.log('[bridge] status', typeof bridge.getStatus === 'function' ? bridge.getStatus() : null); } catch(_) {}
-        }
-      }
     } catch (err) {
       console.error('❌ Failed to initialize Site chat Socket.IO:', err && err.message ? err.message : err);
+    }
+  })();
+}
+
+// Initialize Discord bridge separately (for voice tracking even if Socket.IO fails)
+if (createDiscordBridge) {
+  (async () => {
+    try {
+      const bridge = createDiscordBridge();
+      if (bridge && typeof bridge.start === 'function') {
+        await bridge.start();
+        // Set up text chat handler if available
+        if (setOutboundHandler && typeof bridge.sendToDiscord === 'function') {
+          setOutboundHandler(async (payload) => { await bridge.sendToDiscord(payload); });
+        }
+        console.log('✅ Discord bridge initialized');
+        try { console.log('[bridge] status', typeof bridge.getStatus === 'function' ? bridge.getStatus() : null); } catch(_) {}
+      }
+    } catch (err) {
+      console.error('❌ Failed to initialize Discord bridge:', err && err.message ? err.message : err);
     }
   })();
 }
