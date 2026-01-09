@@ -1,28 +1,48 @@
 // scripts/chat-discord-bridge.cjs
 // Minimal Discord bridge: mirror site messages to a channel; forward Discord messages into site chat
+// Also tracks voice state for the "Who is not in Discord?" feature
 
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const store = require('./chat-store.cjs');
 const { broadcastFromDiscord } = require('./chat-socket.cjs');
 
+// Global voice state map: channelId -> Map(userId -> { mute, deaf, selfMute, selfDeaf, streaming, video })
+const voiceStateMap = new Map();
+
+// Export for use by API endpoints
+function getVoiceStateMap() {
+  return voiceStateMap;
+}
+
 function createDiscordBridge() {
   const token = process.env.DISCORD_BOT_TOKEN;
   const guildId = process.env.DISCORD_GUILD_ID;
-  const channelId = process.env.DISCORD_CHANNEL_ID;
-  if (!token || !guildId || !channelId) {
-    console.log('[bridge] Discord bridge disabled (missing env)', {
+  const channelId = process.env.DISCORD_CHANNEL_ID; // Optional - only needed for text chat bridge
+  
+  // Token and guildId are required for voice tracking; channelId only needed for text chat
+  if (!token || !guildId) {
+    console.log('[bridge] Discord bridge disabled (missing required env)', {
       hasToken: !!token,
       hasGuildId: !!guildId,
       hasChannelId: !!channelId
     });
-    return { start: () => {}, sendToDiscord: async () => {} };
+    return { start: () => {}, sendToDiscord: async () => {}, getVoiceStateMap };
   }
+  
+  const textChatEnabled = !!channelId;
+  console.log('[bridge] Starting Discord bridge', { 
+    textChatEnabled, 
+    hasChannelId: !!channelId,
+    guildId 
+  });
 
   const client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.MessageContent
+      GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildVoiceStates,  // Required for voice state tracking
+      GatewayIntentBits.GuildMembers       // Required to have members in cache for voice states
     ],
     partials: [Partials.Channel, Partials.Message]
   });
@@ -31,18 +51,111 @@ function createDiscordBridge() {
   client.once('ready', async () => {
     ready = true;
     console.log(`[bridge] Discord bot ready as ${client.user?.tag || client.user?.id || 'bot'}`);
+    
+    // Only fetch text channel if text chat is enabled
+    if (textChatEnabled) {
+      try {
+        const ch = await client.channels.fetch(channelId);
+        if (!ch) {
+          console.warn('[bridge] target channel not found');
+        } else {
+          console.log('[bridge] target channel fetched', { id: ch.id, type: ch.type, isText: ch.isTextBased() });
+          if (process.env.CHAT_BRIDGE_DEBUG === '1' && ch.isTextBased()) {
+            try { await ch.send('Site chat bridge connected.'); console.log('[bridge] sent startup ping'); } catch (e) { console.warn('[bridge] startup ping failed', e?.message || e); }
+          }
+        }
+      } catch (e) {
+        console.warn('[bridge] channel fetch failed', e?.message || e);
+      }
+    } else {
+      console.log('[bridge] Text chat disabled (no DISCORD_CHANNEL_ID), voice tracking only');
+    }
+
+    // Initialize voice state from current guild voice channels
     try {
-      const ch = await client.channels.fetch(channelId);
-      if (!ch) {
-        console.warn('[bridge] target channel not found');
-      } else {
-        console.log('[bridge] target channel fetched', { id: ch.id, type: ch.type, isText: ch.isTextBased() });
-        if (process.env.CHAT_BRIDGE_DEBUG === '1' && ch.isTextBased()) {
-          try { await ch.send('Site chat bridge connected.'); console.log('[bridge] sent startup ping'); } catch (e) { console.warn('[bridge] startup ping failed', e?.message || e); }
+      let guild = client.guilds.cache.get(guildId);
+      if (!guild) {
+        console.log('[bridge] Guild not in cache, fetching...');
+        try {
+          guild = await client.guilds.fetch(guildId);
+        } catch (fetchErr) {
+          console.warn('[bridge] Failed to fetch guild:', fetchErr?.message || fetchErr);
         }
       }
+      
+      if (guild) {
+        console.log(`[bridge] Guild found: ${guild.name}, voice states in cache: ${guild.voiceStates.cache.size}`);
+        
+        // Get all voice states from the guild
+        guild.voiceStates.cache.forEach((voiceState) => {
+          if (voiceState.channelId && voiceState.member) {
+            const chId = voiceState.channelId;
+            if (!voiceStateMap.has(chId)) {
+              voiceStateMap.set(chId, new Map());
+            }
+            voiceStateMap.get(chId).set(voiceState.member.id, {
+              mute: !!voiceState.mute,
+              deaf: !!voiceState.deaf,
+              selfMute: !!voiceState.selfMute,
+              selfDeaf: !!voiceState.selfDeaf,
+              streaming: !!voiceState.streaming,
+              video: !!voiceState.selfVideo,
+              suppress: !!voiceState.suppress
+            });
+          }
+        });
+        console.log(`[bridge] Initialized voice state: ${voiceStateMap.size} channels tracked`);
+      } else {
+        console.warn('[bridge] Guild not found for voice tracking');
+      }
     } catch (e) {
-      console.warn('[bridge] channel fetch failed', e?.message || e);
+      console.warn('[bridge] Failed to initialize voice state:', e?.message || e);
+    }
+  });
+
+  // Track voice state changes
+  client.on('voiceStateUpdate', (oldState, newState) => {
+    try {
+      const userId = newState.member?.id || oldState.member?.id;
+      const userName = newState.member?.user?.username || oldState.member?.user?.username || 'unknown';
+      if (!userId) return;
+
+      // User left a channel
+      if (oldState.channelId && (!newState.channelId || oldState.channelId !== newState.channelId)) {
+        console.log(`[bridge] Voice: ${userName} (${userId}) left channel ${oldState.channelId}`);
+        const oldChannelUsers = voiceStateMap.get(oldState.channelId);
+        if (oldChannelUsers) {
+          oldChannelUsers.delete(userId);
+          if (oldChannelUsers.size === 0) {
+            voiceStateMap.delete(oldState.channelId);
+          }
+        }
+      }
+
+      // User joined or updated in a channel
+      if (newState.channelId) {
+        const isJoin = !oldState.channelId || oldState.channelId !== newState.channelId;
+        if (isJoin) {
+          console.log(`[bridge] Voice: ${userName} (${userId}) joined channel ${newState.channelId}`);
+        }
+        if (!voiceStateMap.has(newState.channelId)) {
+          voiceStateMap.set(newState.channelId, new Map());
+        }
+        voiceStateMap.get(newState.channelId).set(userId, {
+          mute: !!newState.mute,
+          deaf: !!newState.deaf,
+          selfMute: !!newState.selfMute,
+          selfDeaf: !!newState.selfDeaf,
+          streaming: !!newState.streaming,
+          video: !!newState.selfVideo,
+          suppress: !!newState.suppress
+        });
+        
+        // Log current state of all tracked channels
+        console.log(`[bridge] Voice state map now has ${voiceStateMap.size} channels tracked`);
+      }
+    } catch (e) {
+      console.warn('[bridge] voiceStateUpdate error:', e?.message || e);
     }
   });
 
@@ -77,7 +190,7 @@ function createDiscordBridge() {
   let sending = false;
   let backoffMs = 0;
   async function processQueue() {
-    if (sending) return;
+    if (sending || !textChatEnabled) return; // Skip if text chat disabled
     sending = true;
     try {
       while (queue.length > 0 && ready) {
@@ -143,9 +256,9 @@ function createDiscordBridge() {
     };
   }
 
-  return { start, sendToDiscord, getStatus };
+  return { start, sendToDiscord, getStatus, getVoiceStateMap };
 }
 
-module.exports = { createDiscordBridge };
+module.exports = { createDiscordBridge, getVoiceStateMap };
 
 

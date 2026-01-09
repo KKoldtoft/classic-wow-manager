@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Check - Who is not in Discord?</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        :root {
+            --bg: #f4f4f4;
+            --text: #333333;
+            --heading: #2c3e50;
+            --muted: #7f8c8d;
+            --panel-bg: #ffffff;
+            --border: #e5e7eb;
+            --online: #22c55e;
+            --missing: #ef4444;
+            --extra: #eab308;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0f1115;
+                --text: #e5e7eb;
+                --heading: #e5e7eb;
+                --muted: #a0aec0;
+                --panel-bg: #151922;
+                --border: #2a2f3a;
+            }
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .voice-check-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            color: var(--heading);
+        }
+
+        .header-info {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .event-info {
+            font-size: 0.9rem;
+            color: var(--muted);
+        }
+
+        .event-info strong {
+            color: var(--heading);
+        }
+
+        .stats-bar {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: var(--panel-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .stat-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .stat-dot.online { background: var(--online); }
+        .stat-dot.missing { background: var(--missing); }
+        .stat-dot.extra { background: var(--extra); }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--muted);
+        }
+
+        .stat-value {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        /* Column layout */
+        .columns-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+
+        .columns-container.cols-2 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .columns-container.cols-1 {
+            grid-template-columns: 1fr;
+            max-width: 500px;
+        }
+
+        .column {
+            min-width: 0;
+        }
+
+        .column.hidden {
+            display: none;
+        }
+
+        /* Responsive: stack on mobile */
+        @media (max-width: 1100px) {
+            .columns-container {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .columns-container.cols-1 {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 700px) {
+            .columns-container,
+            .columns-container.cols-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .column-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: var(--panel-bg);
+            border-radius: 10px 10px 0 0;
+            border: 1px solid var(--border);
+            border-bottom: none;
+        }
+
+        .column-header h2 {
+            margin: 0;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--heading);
+            flex: 1;
+        }
+
+        .column-header .column-count {
+            background: var(--border);
+            color: var(--muted);
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .column-header.online { border-top: 3px solid var(--online); }
+        .column-header.missing { border-top: 3px solid var(--missing); }
+        .column-header.extra { border-top: 3px solid var(--extra); }
+
+        .column-content {
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 0 0 10px 10px;
+            max-height: calc(100vh - 280px);
+            overflow-y: auto;
+        }
+
+        .player-list {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .player-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.1s;
+        }
+
+        .player-card:last-child {
+            border-bottom: none;
+        }
+
+        .player-card:hover {
+            background: rgba(255,255,255,0.03);
+        }
+
+        .player-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #374151;
+            flex-shrink: 0;
+            object-fit: cover;
+        }
+
+        .player-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .player-names {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .discord-name {
+            font-weight: 600;
+            color: var(--heading);
+        }
+
+        .character-name {
+            font-weight: 500;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        .discord-id {
+            font-size: 0.75rem;
+            color: var(--muted);
+            opacity: 0.7;
+        }
+
+        .player-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .status-icon {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+        }
+
+        .status-icon.online { background: var(--online); box-shadow: 0 0 8px var(--online); }
+        .status-icon.missing { background: var(--missing); box-shadow: 0 0 8px var(--missing); }
+        .status-icon.extra { background: var(--extra); box-shadow: 0 0 8px var(--extra); }
+
+        .voice-state-icons {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .voice-state-icons i {
+            font-size: 1rem;
+            color: var(--muted);
+        }
+
+        .voice-state-icons i.active {
+            color: #ef4444;
+        }
+
+        .discord-name {
+            font-size: 0.9rem;
+        }
+
+        .character-name {
+            font-size: 0.8rem;
+            padding: 1px 6px;
+        }
+
+        .discord-id {
+            font-size: 0.7rem;
+        }
+
+        .empty-column {
+            padding: 30px 20px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.85rem;
+        }
+
+        .empty-column i {
+            font-size: 1.5rem;
+            margin-bottom: 8px;
+            opacity: 0.5;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--muted);
+        }
+
+        .loading i {
+            font-size: 2rem;
+            margin-bottom: 12px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .error {
+            text-align: center;
+            padding: 40px;
+            color: var(--missing);
+        }
+
+        .refresh-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .refresh-btn:hover {
+            background: var(--panel-bg);
+            color: var(--heading);
+        }
+
+        .refresh-btn.refreshing i {
+            animation: spin 1s linear infinite;
+        }
+
+        .auto-refresh-indicator {
+            font-size: 0.75rem;
+            color: var(--muted);
+        }
+
+        .empty-section {
+            padding: 20px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        /* Class colors */
+        .class-warrior { background: rgba(199, 156, 110, 0.2); color: #C79C6E; }
+        .class-paladin { background: rgba(245, 140, 186, 0.2); color: #F58CBA; }
+        .class-hunter { background: rgba(171, 212, 115, 0.2); color: #ABD473; }
+        .class-rogue { background: rgba(255, 245, 105, 0.2); color: #FFF569; }
+        .class-priest { background: rgba(255, 255, 255, 0.2); color: #FFFFFF; }
+        .class-shaman { background: rgba(0, 112, 222, 0.2); color: #0070DE; }
+        .class-mage { background: rgba(105, 204, 240, 0.2); color: #69CCF0; }
+        .class-warlock { background: rgba(148, 130, 201, 0.2); color: #9482C9; }
+        .class-druid { background: rgba(255, 125, 10, 0.2); color: #FF7D0A; }
+        .class-death-knight { background: rgba(196, 30, 58, 0.2); color: #C41E3A; }
+    </style>
+    <script defer src="/top-bar.js"></script>
+    <script defer src="/voice-check.js"></script>
+    <link rel="icon" href="/images/1p_logo.png" />
+</head>
+<body>
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Home</a>
+                <div class="top-nav-dropdown">
+                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+                        Upcoming Raids <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="upcoming-raids-menu">
+                        <div class="dropdown-loading">Loading raids...</div>
+                    </div>
+                </div>
+                <a href="/guild-members" class="top-nav-link">Guild Members</a>
+                <a href="/attendance" class="top-nav-link">Regular Attendance</a>
+            </nav>
+        </div>
+        <div id="auth-container"></div>
+    </div>
+
+    <div class="voice-check-container">
+        <div class="header">
+            <h1><i class="fas fa-headset"></i> Who is not in Discord?</h1>
+            <div class="header-info">
+                <div class="event-info" id="event-info">Loading...</div>
+                <button class="refresh-btn" id="refresh-btn" title="Refresh now">
+                    <i class="fas fa-sync-alt"></i>
+                    <span>Refresh</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="stats-bar" id="stats-bar">
+            <div class="stat-item">
+                <div class="stat-dot online"></div>
+                <div>
+                    <div class="stat-value" id="stat-online">-</div>
+                    <div class="stat-label">Online</div>
+                </div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-dot missing"></div>
+                <div>
+                    <div class="stat-value" id="stat-missing">-</div>
+                    <div class="stat-label">Missing</div>
+                </div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-dot extra"></div>
+                <div>
+                    <div class="stat-value" id="stat-extra">-</div>
+                    <div class="stat-label">Not in Roster</div>
+                </div>
+            </div>
+            <div class="stat-item">
+                <div class="auto-refresh-indicator" id="refresh-indicator">
+                    Auto-refresh in <span id="countdown">--</span>s
+                </div>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="loading">
+                <i class="fas fa-spinner"></i>
+                <div>Loading voice check data...</div>
+            </div>
+        </div>
+
+        <!-- Column template (used by JS) -->
+        <template id="columns-template">
+            <div class="columns-container">
+                <div class="column" id="col-online">
+                    <div class="column-header online">
+                        <i class="fas fa-user-check" style="color: var(--online);"></i>
+                        <h2>In Voice</h2>
+                        <span class="column-count" id="count-online">0</span>
+                    </div>
+                    <div class="column-content">
+                        <div class="player-list" id="list-online"></div>
+                    </div>
+                </div>
+                <div class="column" id="col-missing">
+                    <div class="column-header missing">
+                        <i class="fas fa-user-times" style="color: var(--missing);"></i>
+                        <h2>Missing</h2>
+                        <span class="column-count" id="count-missing">0</span>
+                    </div>
+                    <div class="column-content">
+                        <div class="player-list" id="list-missing"></div>
+                    </div>
+                </div>
+                <div class="column" id="col-extra">
+                    <div class="column-header extra">
+                        <i class="fas fa-user-plus" style="color: var(--extra);"></i>
+                        <h2>Not in Roster</h2>
+                        <span class="column-count" id="count-extra">0</span>
+                    </div>
+                    <div class="column-content">
+                        <div class="player-list" id="list-extra"></div>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+</body>
+</html>

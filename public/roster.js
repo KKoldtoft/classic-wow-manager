@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const rosterGrid = document.getElementById('roster-grid');
     const rosterEventTitle = document.getElementById('roster-event-title');
     const compToolButton = document.getElementById('comp-tool-button');
+    const voiceSpyButton = document.getElementById('voice-spy-button');
     const revertButton = document.getElementById('revert-roster-button');
     const announceInvitesButton = document.getElementById('announce-invites-button');
     const autoAssignmentsButton = document.getElementById('auto-assignments-button');
@@ -36,6 +37,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (compToolButton) {
         compToolButton.href = `https://raid-helper.dev/raidplan/${eventId}`;
+    }
+
+    if (voiceSpyButton) {
+        voiceSpyButton.href = `/voice-check?eventId=${eventId}`;
     }
 
     // Custom modal for announce invites

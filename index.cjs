@@ -23,7 +23,31 @@ try {
   setOutboundHandler = mod.setOutboundHandler;
 } catch (_) { attachChatIo = null; setOutboundHandler = null; }
 let createDiscordBridge = null;
-try { createDiscordBridge = require('./scripts/chat-discord-bridge.cjs').createDiscordBridge; } catch (_) { createDiscordBridge = null; }
+let getVoiceStateMap = null;
+try { 
+  const bridgeModule = require('./scripts/chat-discord-bridge.cjs');
+  createDiscordBridge = bridgeModule.createDiscordBridge; 
+  getVoiceStateMap = bridgeModule.getVoiceStateMap;
+  console.log('[init] Discord bridge module loaded:', { 
+    hasCreateDiscordBridge: !!createDiscordBridge, 
+    hasGetVoiceStateMap: !!getVoiceStateMap 
+  });
+} catch (err) { 
+  console.error('[init] Failed to load Discord bridge module:', err?.message || err);
+  createDiscordBridge = null; 
+  getVoiceStateMap = null;
+}
+
+// Fallback voiceStateMap if bridge module not available
+const fallbackVoiceStateMap = new Map();
+
+// Helper to get the active voice state map
+function getActiveVoiceStateMap() {
+  if (getVoiceStateMap) {
+    try { return getVoiceStateMap(); } catch (_) {}
+  }
+  return fallbackVoiceStateMap;
+}
 const zlib = require('zlib');
 
 // --- Utility: timeout + retry wrapper for outbound HTTP (Discord/webhooks)
@@ -1998,6 +2022,10 @@ app.get('/players', (req, res) => {
 
 app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+app.get('/voice-check', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'voice-check.html'));
 });
 
 app.get('/guild-members', (req, res) => {
@@ -19234,6 +19262,8 @@ app.post('/api/fix-archive-url/:eventId', async (req, res) => {
 });
 
 // --- Discord identity/players caching for Voice Monitor ---
+const discordBotToken = process.env.DISCORD_BOT_TOKEN || null;
+const discordGuildId = process.env.DISCORD_GUILD_ID || '777268886939893821';
 const discordUserCache = new Map(); // userId -> { displayName, avatarUrl, cachedAt, expiresAt }
 const DISCORD_ID_TTL_MS = 45 * 60 * 1000; // 45 minutes
 let discordResolveCooldownUntil = 0; // epoch ms until which we avoid hitting Discord API
@@ -19333,15 +19363,24 @@ async function getCharactersByDiscordIds(ids, pool) {
 // API to read current members in a given voice channel
 app.get('/api/discord/voice/:channelId', (req, res) => {
     const { channelId } = req.params;
-    const users = voiceStateMap.get(channelId);
-    res.json({ ok: true, channelId, userIds: users ? Array.from(users) : [] });
+    const voiceStateMap = getActiveVoiceStateMap();
+    const channelUsers = voiceStateMap.get(channelId);
+    // channelUsers is Map(userId -> state) or undefined
+    const userIds = channelUsers ? Array.from(channelUsers.keys()) : [];
+    res.json({ ok: true, channelId, userIds });
 });
 
 // Debug endpoint to inspect all tracked channels
 app.get('/api/discord/voice-debug', (req, res) => {
+    const voiceStateMap = getActiveVoiceStateMap();
     const all = {};
     for (const [channelId, users] of voiceStateMap.entries()) {
-        all[channelId] = Array.from(users);
+        // users is a Map, so we convert to object with states
+        const usersObj = {};
+        for (const [userId, state] of users.entries()) {
+            usersObj[userId] = state;
+        }
+        all[channelId] = usersObj;
     }
     res.json({ ok: true, channels: all });
 });
@@ -19411,14 +19450,16 @@ app.get('/api/discord/voice-enriched/:channelId', async (req, res) => {
             return;
         }
 
-        const users = voiceStateMap.get(channelId);
-        const raw = users ? Array.from(users) : [];
+        const voiceStateMap = getActiveVoiceStateMap();
+        const channelUsers = voiceStateMap.get(channelId);
+        // channelUsers is Map(userId -> state) or undefined
         const ids = [];
         const states = {};
-        for (const item of raw) {
-            if (Array.isArray(item)) { const id = String(item[0]); ids.push(id); if (item[1] && typeof item[1] === 'object') states[id] = item[1]; }
-            else if (item && typeof item === 'object') { if (item.id) ids.push(String(item.id)); }
-            else if (typeof item === 'string' || typeof item === 'number') { ids.push(String(item)); }
+        if (channelUsers) {
+            for (const [userId, state] of channelUsers.entries()) {
+                ids.push(userId);
+                states[userId] = state || {};
+            }
         }
         const identityMap = {};
         for (const id of ids) identityMap[id] = await getDiscordUserIdentity(id);
@@ -19486,6 +19527,257 @@ app.post('/api/discord/voice-monitor/config', async (req, res) => {
         );
         res.json({ ok: true, channelId });
     } catch (err) {
+        res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
+    }
+});
+
+// === Voice Check Diagnostic API ===
+// Returns debug info about Discord bot and voice tracking status
+app.get('/api/voice-check/status', async (req, res) => {
+    try {
+        const voiceStateMap = getActiveVoiceStateMap();
+        const trackedChannels = [];
+        for (const [channelId, users] of voiceStateMap.entries()) {
+            trackedChannels.push({
+                channelId,
+                userCount: users.size,
+                userIds: Array.from(users.keys())
+            });
+        }
+        
+        res.json({
+            ok: true,
+            voiceStateMapSize: voiceStateMap.size,
+            trackedChannels,
+            hasGetVoiceStateMap: !!getVoiceStateMap,
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) {
+        res.json({
+            ok: false,
+            error: e?.message || String(e),
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// === Voice Check API: "Who is not in Discord?" ===
+// Combines roster data with voice channel presence
+app.get('/api/voice-check', async (req, res) => {
+    try {
+        // Get the configured voice channel ID (or use default)
+        let channelId = '1400574971994181783'; // Default voice channel
+        try {
+            const result = await pool.query('SELECT value FROM app_settings WHERE key = $1', ['voice_monitor_channel_id']);
+            if (result.rows && result.rows[0] && result.rows[0].value) {
+                channelId = String(result.rows[0].value);
+            }
+        } catch (_) {}
+
+        // Get channel name
+        let channelName = null;
+        try {
+            if (discordBotToken) {
+                const r = await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
+                    headers: { 'Authorization': `Bot ${discordBotToken}` }
+                });
+                if (r.ok) {
+                    const ch = await r.json();
+                    channelName = ch.name || null;
+                }
+            }
+        } catch (_) {}
+
+        // Get event ID from query param or find next upcoming event
+        let eventId = req.query.eventId;
+        let eventTitle = null;
+        let eventStartTime = null;
+
+        // Event ID must be provided by the client (from localStorage or URL)
+        if (!eventId) {
+            return res.json({ 
+                ok: true, 
+                channelId, 
+                channelName, 
+                eventId: null, 
+                eventTitle: null, 
+                roster: [], 
+                voice: [], 
+                combined: [],
+                message: 'No event selected. Please select an event from the roster page first.'
+            });
+        }
+
+        // Get event info if not already retrieved
+        if (!eventTitle) {
+            try {
+                const cachedResult = await pool.query(
+                    `SELECT events_data FROM events_cache WHERE cache_key = $1 AND expires_at > NOW()`,
+                    ['raid_helper_events']
+                );
+                if (cachedResult.rows.length > 0) {
+                    const eventsBlob = cachedResult.rows[0].events_data || {};
+                    const list = Array.isArray(eventsBlob.postedEvents) ? eventsBlob.postedEvents : (Array.isArray(eventsBlob) ? eventsBlob : []);
+                    const event = list.find(e => String(e.id) === String(eventId));
+                    if (event) {
+                        eventTitle = event.title || event.templateTitle || null;
+                        eventStartTime = event.startTime ? parseInt(event.startTime) * 1000 : null;
+                    }
+                }
+            } catch (_) {}
+        }
+
+        // Get roster for the event - first try local overrides, then fallback to Raid Helper API
+        let rosterPlayers = [];
+        let rosterSource = 'none';
+        
+        // Try local roster_overrides first
+        const rosterResult = await pool.query(
+            `SELECT discord_user_id, assigned_char_name, assigned_char_class, party_id, slot_id, player_color
+             FROM roster_overrides
+             WHERE event_id = $1 AND party_id IS NOT NULL`,
+            [eventId]
+        );
+        
+        if (rosterResult.rows.length > 0) {
+            rosterSource = 'database';
+            rosterPlayers = rosterResult.rows.map(row => ({
+                discordId: row.discord_user_id,
+                characterName: row.assigned_char_name,
+                characterClass: row.assigned_char_class,
+                partyId: row.party_id,
+                slotId: row.slot_id,
+                color: row.player_color
+            }));
+        } else {
+            // Fallback: fetch from Raid Helper API (roster hasn't been forked yet)
+            try {
+                const rosterData = await getRosterDataFromApi(eventId);
+                if (rosterData && Array.isArray(rosterData.raidDrop)) {
+                    rosterSource = 'raid-helper-api';
+                    // Enrich with database to get proper character names
+                    const enrichedRoster = await enrichRosterWithDbData(rosterData, pool);
+                    rosterPlayers = enrichedRoster.raidDrop
+                        .filter(p => p && p.userid && p.partyId !== undefined && p.partyId !== null)
+                        .map(p => ({
+                            discordId: p.userid,
+                            // Prefer mainCharacterName (from DB enrichment) over signup name
+                            characterName: p.mainCharacterName || p.name || null,
+                            characterClass: p.class || null,
+                            partyId: p.partyId,
+                            slotId: p.slotId,
+                            color: p.color || null
+                        }));
+                }
+            } catch (apiErr) {
+                console.warn('[VOICE-CHECK] Failed to fetch roster from Raid Helper API:', apiErr?.message || apiErr);
+            }
+        }
+        
+        const rosterDiscordIds = new Set(rosterPlayers.map(p => p.discordId).filter(Boolean));
+
+        // Get voice channel users
+        const voiceStateMap = getActiveVoiceStateMap();
+        const channelUsers = voiceStateMap.get(channelId);
+        const voiceUsers = [];
+        const voiceDiscordIds = new Set();
+
+        if (channelUsers) {
+            for (const [userId, state] of channelUsers.entries()) {
+                voiceDiscordIds.add(userId);
+                voiceUsers.push({
+                    discordId: userId,
+                    state: state || {}
+                });
+            }
+        }
+
+        // Resolve Discord identities for all users
+        const allDiscordIds = [...new Set([...rosterDiscordIds, ...voiceDiscordIds])];
+        const identityMap = {};
+        for (const id of allDiscordIds) {
+            identityMap[id] = await getDiscordUserIdentity(id);
+        }
+
+        // Build combined list
+        const combined = [];
+
+        // Add users in roster
+        for (const player of rosterPlayers) {
+            const inVoice = voiceDiscordIds.has(player.discordId);
+            const voiceUser = voiceUsers.find(v => v.discordId === player.discordId);
+            const identity = identityMap[player.discordId] || {};
+            combined.push({
+                discordId: player.discordId,
+                discordName: identity.displayName || null,
+                avatarUrl: identity.avatarUrl || 'https://cdn.discordapp.com/embed/avatars/0.png',
+                characterName: player.characterName,
+                characterClass: player.characterClass,
+                color: player.color,
+                partyId: player.partyId,
+                slotId: player.slotId,
+                inRoster: true,
+                inVoice: inVoice,
+                voiceState: voiceUser?.state || null,
+                status: inVoice ? 'online' : 'missing' // green vs red
+            });
+        }
+
+        // Add users in voice but NOT in roster
+        for (const voiceUser of voiceUsers) {
+            if (!rosterDiscordIds.has(voiceUser.discordId)) {
+                const identity = identityMap[voiceUser.discordId] || {};
+                combined.push({
+                    discordId: voiceUser.discordId,
+                    discordName: identity.displayName || null,
+                    avatarUrl: identity.avatarUrl || 'https://cdn.discordapp.com/embed/avatars/0.png',
+                    characterName: null,
+                    characterClass: null,
+                    color: null,
+                    partyId: null,
+                    slotId: null,
+                    inRoster: false,
+                    inVoice: true,
+                    voiceState: voiceUser.state || null,
+                    status: 'extra' // yellow - in voice but not in roster
+                });
+            }
+        }
+
+        // Sort: online first, then missing, then extra
+        const statusOrder = { online: 0, missing: 1, extra: 2 };
+        combined.sort((a, b) => {
+            const orderDiff = (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
+            if (orderDiff !== 0) return orderDiff;
+            // Secondary sort by character name or discord name
+            const nameA = (a.characterName || a.discordName || '').toLowerCase();
+            const nameB = (b.characterName || b.discordName || '').toLowerCase();
+            return nameA.localeCompare(nameB);
+        });
+
+        // Debug info - reuse voiceStateMap from above
+        const trackedChannels = Array.from(voiceStateMap.keys());
+        
+        res.json({
+            ok: true,
+            channelId,
+            channelName,
+            eventId,
+            eventTitle,
+            eventStartTime,
+            rosterCount: rosterPlayers.length,
+            voiceCount: voiceUsers.length,
+            onlineCount: combined.filter(p => p.status === 'online').length,
+            missingCount: combined.filter(p => p.status === 'missing').length,
+            extraCount: combined.filter(p => p.status === 'extra').length,
+            combined,
+            _debug: {
+                trackedVoiceChannels: trackedChannels,
+                rosterSource: rosterSource
+            }
+        });
+    } catch (err) {
+        console.error('❌ [VOICE-CHECK] Error:', err);
         res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
     }
 });
