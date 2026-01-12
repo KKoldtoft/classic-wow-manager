@@ -245,7 +245,7 @@
       } else if (bossKeyForIcon.includes('razu')) {
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754989023/182497_v3yeko.webp';
       } else if (bossKeyForIcon.includes('goth')) {
-        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754991352/336px-Gothik_the_Harvester_full_pxt0rf.jpg';
+        bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1768217339/25200_gkfm0m.webp';
       } else if (bossKeyForIcon.includes('horse')) {
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754993478/-16062_absih8.png';
       } else if (bossKeyForIcon.includes('heig')) {

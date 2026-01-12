@@ -1058,6 +1058,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (btnPanel) btnPanel.style.display = 'none';
                 if (benchContainer) benchContainer.style.display = 'none';
             } catch {}
+        } else {
+            // Show management-only buttons for management users
+            try {
+                const hostLiveBtn = document.getElementById('host-live-button');
+                if (hostLiveBtn) hostLiveBtn.style.display = '';
+            } catch {}
         }
 
         const response = await fetch('/api/specs');

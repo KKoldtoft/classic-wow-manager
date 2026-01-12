@@ -207,6 +207,22 @@
             border-radius: 6px;
             margin-bottom: 4px;
             font-size: 12px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .highlight-bar {
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            z-index: 0;
+            border-radius: 6px;
+        }
+
+        .highlight-item > *:not(.highlight-bar) {
+            position: relative;
+            z-index: 1;
         }
 
         .highlight-item:last-child {
@@ -276,6 +292,51 @@
             text-align: center;
             color: var(--text-dim);
             font-size: 12px;
+        }
+
+        /* Spore group styling */
+        .spore-group {
+            background: var(--bg-input);
+            border-radius: 6px;
+            margin-bottom: 8px;
+            padding: 10px;
+        }
+        
+        .spore-group-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+        
+        .spore-group-header .spore-number {
+            font-weight: 600;
+            color: #8fd19e;
+        }
+        
+        .spore-group-header .spore-time {
+            font-size: 10px;
+        }
+        
+        .spore-group-players {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+        
+        .spore-player {
+            background: rgba(143, 209, 158, 0.15);
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        
+        .loatheb-spores-panel .highlight-list {
+            max-height: 400px;
+            overflow-y: auto;
         }
 
         .charge-status-icon {
@@ -382,6 +443,36 @@
 
         .detail-label {
             color: var(--text-dim);
+        }
+
+        /* Player events list in detail modal */
+        .player-events-list {
+            max-height: 400px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .player-event-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 12px;
+            background: var(--bg-input);
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .player-event-item .event-time {
+            color: var(--text-dim);
+            font-family: monospace;
+            min-width: 60px;
+        }
+
+        .player-event-item .event-target,
+        .player-event-item .event-ability {
+            color: var(--text);
         }
 
         .detail-value {
@@ -753,36 +844,280 @@
             font-size: 13px;
         }
 
-        /* Host button for management */
-        .host-section {
+        /* Raid Info Panel */
+        .raid-info-panel {
             display: none;
-            text-align: center;
-            margin-bottom: 20px;
+            background: linear-gradient(135deg, rgba(18, 18, 26, 0.95), rgba(26, 26, 36, 0.9));
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-bottom: 24px;
+            overflow: hidden;
+            position: relative;
         }
 
-        .host-button {
-            display: inline-flex;
+        .raid-info-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #8b5cf6, #4a9eff, #22d3ee);
+        }
+
+        .raid-info-panel.active {
+            display: block;
+        }
+
+        .raid-info-content {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 20px;
+            padding: 20px;
+            align-items: center;
+        }
+
+        @media (max-width: 900px) {
+            .raid-info-content {
+                grid-template-columns: 1fr;
+                text-align: center;
+            }
+        }
+
+        .raid-info-dungeon {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .raid-info-dungeon-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 8px;
+            border: 2px solid var(--border);
+            object-fit: cover;
+        }
+
+        .raid-info-dungeon-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .raid-info-event-name {
+            font-size: 13px;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        .raid-info-details {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .raid-info-row {
+            display: flex;
             align-items: center;
             gap: 8px;
-            padding: 12px 24px;
-            background: linear-gradient(135deg, #5865F2, #4752C4);
-            color: #fff;
-            border: none;
+            font-size: 13px;
+        }
+
+        .raid-info-row i {
+            color: var(--text-dim);
+            width: 16px;
+            text-align: center;
+        }
+
+        .raid-info-row .label {
+            color: var(--text-dim);
+            min-width: 60px;
+        }
+
+        .raid-info-row .value {
+            color: var(--text);
+            font-weight: 500;
+        }
+
+        .raid-info-timer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 12px 20px;
+            background: rgba(74, 158, 255, 0.1);
+            border: 1px solid rgba(74, 158, 255, 0.2);
             border-radius: 8px;
+        }
+
+        .raid-info-timer-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-dim);
+            margin-bottom: 4px;
+        }
+
+        .raid-info-timer-value {
+            font-size: 28px;
+            font-weight: 600;
+            color: var(--accent);
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+        }
+
+        /* Boss Encounters Panel */
+        .boss-encounters-panel {
+            display: none;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+
+        .boss-encounters-panel.active {
+            display: block;
+        }
+
+        .boss-encounters-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .boss-encounters-header h3 {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        .boss-encounters-header h3 i {
+            margin-right: 8px;
+            color: var(--warning);
+        }
+
+        .boss-encounters-count {
+            background: rgba(251, 191, 36, 0.2);
+            color: var(--warning);
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 10px;
+        }
+
+        .boss-encounters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 16px;
+            padding: 20px;
+        }
+
+        .boss-encounter-card {
+            display: flex;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+            padding: 10px;
+            gap: 12px;
+        }
+
+        .boss-encounter-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .boss-encounter-card.kill {
+            border-color: rgba(74, 222, 128, 0.4);
+        }
+
+        .boss-encounter-card.wipe {
+            border-color: rgba(248, 113, 113, 0.4);
+        }
+
+        .boss-encounter-image {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            flex-shrink: 0;
+            background: #1a1a24;
+            border-radius: 8px;
+        }
+
+        .boss-encounter-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-width: 0;
+        }
+
+        .boss-encounter-name {
             font-size: 14px;
             font-weight: 600;
-            cursor: pointer;
-            text-decoration: none;
-            transition: transform 0.15s, box-shadow 0.15s;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 6px;
         }
 
-        .host-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(88, 101, 242, 0.4);
+        .boss-encounter-times {
+            font-size: 11px;
+            color: var(--text-dim);
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            margin-bottom: 4px;
         }
 
-        .host-button i {
-            font-size: 16px;
+        .boss-encounter-meta {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 6px;
+            flex-wrap: wrap;
+        }
+
+        .boss-encounter-duration {
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+
+        .boss-encounter-deaths {
+            font-size: 11px;
+            color: var(--error);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .boss-encounter-deaths i {
+            font-size: 10px;
+        }
+
+        .boss-encounter-result {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 4px;
+        }
+
+        .boss-encounter-result.kill {
+            background: rgba(74, 222, 128, 0.2);
+            color: var(--success);
+        }
+
+        .boss-encounter-result.wipe {
+            background: rgba(248, 113, 113, 0.2);
+            color: var(--error);
+        }
+
+        .boss-encounters-empty {
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 13px;
         }
     </style>
 </head>
@@ -844,20 +1179,46 @@
             <h1><span>LIVE</span> Analysis</h1>
         </div>
 
-        <!-- Host button (shown only to management users when no session active) -->
-        <div class="host-section" id="hostSection">
-            <a href="/livehost" target="_blank" class="host-button">
-                <i class="fas fa-broadcast-tower"></i>
-                Host a Live Event
-            </a>
-        </div>
-
         <div class="status-section">
             <div class="status-badge">
                 <div class="status-dot" id="statusDot"></div>
                 <span id="statusText">Connecting...</span>
             </div>
             <div class="viewer-count" id="viewerCount"></div>
+        </div>
+
+        <!-- Raid Info Panel -->
+        <div class="raid-info-panel" id="raidInfoPanel">
+            <div class="raid-info-content">
+                <div class="raid-info-dungeon">
+                    <img id="raidDungeonIcon" class="raid-info-dungeon-icon" src="https://res.cloudinary.com/duthjs0c3/image/upload/v1754809667/30800_etmqmc.png" alt="Dungeon">
+                    <div>
+                        <div class="raid-info-dungeon-name" id="raidDungeonName">Loading...</div>
+                        <div class="raid-info-event-name" id="raidEventName">--</div>
+                    </div>
+                </div>
+                <div class="raid-info-details">
+                    <div class="raid-info-row">
+                        <i class="fas fa-crown"></i>
+                        <span class="label">Host:</span>
+                        <span class="value" id="raidHostName">--</span>
+                    </div>
+                    <div class="raid-info-row">
+                        <i class="fas fa-skull"></i>
+                        <span class="label">Bosses:</span>
+                        <span class="value" id="raidBossCount">0 / 0</span>
+                    </div>
+                    <div class="raid-info-row">
+                        <i class="fas fa-users"></i>
+                        <span class="label">Viewers:</span>
+                        <span class="value" id="raidViewerCount">0</span>
+                    </div>
+                </div>
+                <div class="raid-info-timer">
+                    <div class="raid-info-timer-label">Raid Duration</div>
+                    <div class="raid-info-timer-value" id="raidTimer">0:00</div>
+                </div>
+            </div>
         </div>
 
         <!-- Damage & Healing Leaderboards -->
@@ -906,7 +1267,7 @@
             </div>
         </div>
 
-        <div class="highlights-grid" id="highlightsGrid">
+        <div class="highlights-grid" id="highlightsGrid" style="display: none;">
             <div class="highlight-panel">
                 <div class="highlight-header">
                     <h3><img class="panel-icon" src="https://wow.zamimg.com/images/wow/icons/large/spell_holy_powerwordshield.jpg" alt="">Shields on Tanks <span class="highlight-count" id="pwsCount">0</span></h3>
@@ -991,6 +1352,47 @@
                 <div class="highlight-list" id="disarmList">
                     <div class="highlight-empty">Waiting for data...</div>
                 </div>
+            </div>
+
+            <!-- Player Deaths Panel -->
+            <div class="highlight-panel">
+                <div class="highlight-header">
+                    <h3><img class="panel-icon" src="https://wow.zamimg.com/images/wow/icons/large/ability_rogue_feigndeath.jpg" alt="">Player Deaths <span class="highlight-count" id="deathsCount">0</span></h3>
+                </div>
+                <div class="highlight-list" id="deathsList">
+                    <div class="highlight-empty">Waiting for data...</div>
+                </div>
+            </div>
+            
+            <!-- Damage While Curse Up Panel (Mages) -->
+            <div class="highlight-panel">
+                <div class="highlight-header">
+                    <h3><img class="panel-icon" src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_curseofmannoroth.jpg" alt="">Damage While Curse Up <span class="highlight-count" id="curseDamageCount">0</span></h3>
+                </div>
+                <div class="highlight-list" id="curseDamageList">
+                    <div class="highlight-empty">Waiting for data...</div>
+                </div>
+            </div>
+            
+            <!-- Loatheb Spores Panel -->
+            <div class="highlight-panel loatheb-spores-panel">
+                <div class="highlight-header">
+                    <h3><img class="panel-icon" src="https://wow.zamimg.com/images/wow/icons/large/inv_mushroom_11.jpg" alt="">Loatheb Spores <span class="highlight-count" id="sporeCount">0</span></h3>
+                </div>
+                <div class="highlight-list spore-list" id="sporeList">
+                    <div class="highlight-empty">Waiting for data...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Boss Encounters Panel -->
+        <div class="boss-encounters-panel" id="bossEncountersPanel">
+            <div class="boss-encounters-header">
+                <h3><i class="fas fa-dragon"></i>Boss Encounters</h3>
+                <span class="boss-encounters-count" id="bossEncountersCount">0</span>
+            </div>
+            <div class="boss-encounters-grid" id="bossEncountersGrid">
+                <div class="boss-encounters-empty">Waiting for encounter data...</div>
             </div>
         </div>
     </div>
