@@ -2052,6 +2052,14 @@ app.get('/loot', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'loot.html'));
 });
 
+app.get('/livehost', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'livehost.html'));
+});
+
+app.get('/live', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'live.html'));
+});
+
 app.get('/history', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'history.html'));
 });
@@ -4271,6 +4279,2204 @@ app.get('/api/wcl/raw/report-meta/:eventId', async (req, res) => {
   }
 });
 
+// =============================================================================
+// LIVE HOST: SSE Streaming Import for WCL Events
+// =============================================================================
+
+// Create table for live session tracking
+async function ensureLiveSessionTable(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS wcl_live_sessions (
+      id SERIAL PRIMARY KEY,
+      session_id TEXT UNIQUE NOT NULL,
+      report_code TEXT NOT NULL,
+      api_url TEXT,
+      status TEXT DEFAULT 'importing',
+      total_events INTEGER DEFAULT 0,
+      last_cursor BIGINT DEFAULT 0,
+      report_end_time BIGINT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await client.query(`CREATE INDEX IF NOT EXISTS idx_wcl_live_sessions_report ON wcl_live_sessions(report_code);`);
+}
+
+// Table for caching highlights data for live viewers (avoids re-analyzing for each viewer)
+async function ensureLiveHighlightsTable(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS wcl_live_highlights (
+      id SERIAL PRIMARY KEY,
+      report_code TEXT NOT NULL,
+      highlight_type TEXT NOT NULL,
+      highlights JSONB NOT NULL,
+      version INTEGER DEFAULT 1,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(report_code, highlight_type)
+    );
+  `);
+  await client.query(`CREATE INDEX IF NOT EXISTS idx_wcl_live_highlights_report ON wcl_live_highlights(report_code);`);
+}
+
+// In-memory store for active live session (for real-time push to viewers)
+let activeLiveSession = null;
+const liveViewerConnections = new Set();
+
+// Broadcast highlights update to all connected viewers
+function broadcastHighlightsToViewers(data) {
+  for (const res of liveViewerConnections) {
+    try {
+      res.write(`event: highlights-update\ndata: ${JSON.stringify(data)}\n\n`);
+    } catch (_) {
+      liveViewerConnections.delete(res);
+    }
+  }
+}
+
+// Save highlights to cache table and broadcast to viewers
+async function saveAndBroadcastHighlights(reportCode, highlightType, highlights) {
+  try {
+    await pool.query(`
+      INSERT INTO wcl_live_highlights (report_code, highlight_type, highlights, version, updated_at)
+      VALUES ($1, $2, $3, 1, NOW())
+      ON CONFLICT (report_code, highlight_type) 
+      DO UPDATE SET highlights = $3, version = wcl_live_highlights.version + 1, updated_at = NOW()
+    `, [reportCode, highlightType, JSON.stringify(highlights)]);
+    
+    // Broadcast to connected viewers
+    broadcastHighlightsToViewers({
+      type: highlightType,
+      reportCode,
+      data: highlights,
+      timestamp: Date.now()
+    });
+  } catch (err) {
+    console.error(`[LIVE] Error saving/broadcasting ${highlightType}:`, err.message);
+  }
+}
+
+// Clear all highlights for a report
+async function clearHighlightsForReport(reportCode) {
+  try {
+    await pool.query('DELETE FROM wcl_live_highlights WHERE report_code = $1', [reportCode]);
+    broadcastHighlightsToViewers({ type: 'clear', reportCode, timestamp: Date.now() });
+  } catch (err) {
+    console.error('[LIVE] Error clearing highlights:', err.message);
+  }
+}
+
+// Analyze bloodrages from ALL events in database
+// Returns bad bloodrages (within 3s of trash combat ending, not during boss fights)
+async function analyzeBloodragesFromDB(reportCode, fights, meta) {
+  const COMBAT_GAP_MS = 3000; // 3 seconds of no damage = combat ended
+  const BAD_THRESHOLD_MS = 3000; // Flag if bloodrage within 3s of combat end
+  const MIN_COMBAT_DURATION_MS = 5000; // Ignore combat segments shorter than 5 seconds
+  
+  // Get all event pages for this report
+  const pagesResult = await pool.query(
+    'SELECT events FROM wcl_event_pages WHERE report_code = $1 ORDER BY start_time',
+    [reportCode]
+  );
+  
+  if (pagesResult.rows.length === 0) {
+    return { badBloodrages: [], totalBloodrages: 0, combatSegmentCount: 0, damageEventCount: 0 };
+  }
+  
+  // Extract all damage timestamps and bloodrage events
+  const damageTimestamps = [];
+  const bloodrageEvents = [];
+  
+  for (const row of pagesResult.rows) {
+    const events = typeof row.events === 'string' ? JSON.parse(row.events) : row.events;
+    for (const ev of events) {
+      const type = String(ev.type || '').toLowerCase();
+      
+      // Track ALL damage events for combat detection
+      if (type === 'damage' && ev.timestamp != null) {
+        damageTimestamps.push(ev.timestamp);
+      }
+      
+      // Track bloodrage casts
+      if (type === 'cast') {
+        const abilityId = ev.abilityGameID ?? ev.ability?.guid;
+        // Bloodrage ability ID is 2687
+        const abilityName = (abilityId != null && meta.abilitiesById && meta.abilitiesById[abilityId])
+          ? meta.abilitiesById[abilityId].name
+          : '';
+        if (abilityName.toLowerCase() === 'bloodrage' || abilityId === 2687) {
+          // Enrich with names
+          const enriched = { ...ev };
+          if (ev.sourceID != null && meta.actorsById && meta.actorsById[ev.sourceID]) {
+            enriched.sourceName = meta.actorsById[ev.sourceID].name;
+            enriched.sourceSubType = meta.actorsById[ev.sourceID].subType;
+          }
+          enriched.abilityName = abilityName || 'Bloodrage';
+          bloodrageEvents.push(enriched);
+        }
+      }
+    }
+  }
+  
+  console.log(`[ANALYSIS] Found ${damageTimestamps.length} damage events, ${bloodrageEvents.length} bloodrage casts`);
+  
+  if (damageTimestamps.length === 0 || bloodrageEvents.length === 0) {
+    return { 
+      badBloodrages: [], 
+      totalBloodrages: bloodrageEvents.length, 
+      combatSegmentCount: 0, 
+      damageEventCount: damageTimestamps.length 
+    };
+  }
+  
+  // Collect all damage events (not just timestamps) for detailed analysis
+  const allDamageEvents = [];
+  let metaHits = 0;
+  let metaMisses = 0;
+  
+  for (const row of pagesResult.rows) {
+    const events = typeof row.events === 'string' ? JSON.parse(row.events) : row.events;
+    for (const ev of events) {
+      const type = String(ev.type || '').toLowerCase();
+      if (type === 'damage' && ev.timestamp != null) {
+        // Enrich with names
+        const enriched = { ...ev };
+        
+        // Try both string and number keys for actor lookup
+        const sourceId = ev.sourceID;
+        const targetId = ev.targetID;
+        
+        if (sourceId != null && meta.actorsById) {
+          const actor = meta.actorsById[sourceId] || meta.actorsById[String(sourceId)];
+          if (actor) {
+            enriched.sourceName = actor.name;
+            metaHits++;
+          } else {
+            metaMisses++;
+          }
+        }
+        if (targetId != null && meta.actorsById) {
+          const actor = meta.actorsById[targetId] || meta.actorsById[String(targetId)];
+          if (actor) {
+            enriched.targetName = actor.name;
+          }
+        }
+        allDamageEvents.push(enriched);
+      }
+    }
+  }
+  
+  console.log(`[ANALYSIS] Meta lookup: ${metaHits} hits, ${metaMisses} misses. actorsById keys sample: ${Object.keys(meta.actorsById || {}).slice(0, 5).join(', ')}`);
+  
+  // Sort damage events by timestamp
+  allDamageEvents.sort((a, b) => a.timestamp - b.timestamp);
+  
+  // Detect combat segments with first/last damage event details
+  const combatSegments = [];
+  if (allDamageEvents.length > 0) {
+    let segmentStartIdx = 0;
+    let lastIdx = 0;
+    
+    for (let i = 1; i < allDamageEvents.length; i++) {
+      const gap = allDamageEvents[i].timestamp - allDamageEvents[lastIdx].timestamp;
+      if (gap > COMBAT_GAP_MS) {
+        // End current segment, start new one
+        combatSegments.push({ 
+          startTime: allDamageEvents[segmentStartIdx].timestamp,
+          endTime: allDamageEvents[lastIdx].timestamp,
+          firstDamage: {
+            sourceName: allDamageEvents[segmentStartIdx].sourceName || `#${allDamageEvents[segmentStartIdx].sourceID}`,
+            targetName: allDamageEvents[segmentStartIdx].targetName || `#${allDamageEvents[segmentStartIdx].targetID}`,
+            amount: allDamageEvents[segmentStartIdx].amount
+          },
+          lastDamage: {
+            sourceName: allDamageEvents[lastIdx].sourceName || `#${allDamageEvents[lastIdx].sourceID}`,
+            targetName: allDamageEvents[lastIdx].targetName || `#${allDamageEvents[lastIdx].targetID}`,
+            amount: allDamageEvents[lastIdx].amount
+          }
+        });
+        segmentStartIdx = i;
+      }
+      lastIdx = i;
+    }
+    // Add final segment
+    combatSegments.push({ 
+      startTime: allDamageEvents[segmentStartIdx].timestamp,
+      endTime: allDamageEvents[lastIdx].timestamp,
+      firstDamage: {
+        sourceName: allDamageEvents[segmentStartIdx].sourceName || `#${allDamageEvents[segmentStartIdx].sourceID}`,
+        targetName: allDamageEvents[segmentStartIdx].targetName || `#${allDamageEvents[segmentStartIdx].targetID}`,
+        amount: allDamageEvents[segmentStartIdx].amount
+      },
+      lastDamage: {
+        sourceName: allDamageEvents[lastIdx].sourceName || `#${allDamageEvents[lastIdx].sourceID}`,
+        targetName: allDamageEvents[lastIdx].targetName || `#${allDamageEvents[lastIdx].targetID}`,
+        amount: allDamageEvents[lastIdx].amount
+      }
+    });
+  }
+  
+  console.log(`[ANALYSIS] Detected ${combatSegments.length} combat segments from ${allDamageEvents.length} damage events`);
+  
+  // Debug: show first few segments
+  if (combatSegments.length > 0) {
+    console.log(`[ANALYSIS] First segment: start=${combatSegments[0].startTime}, end=${combatSegments[0].endTime}, firstDmg=${JSON.stringify(combatSegments[0].firstDamage)}`);
+    if (combatSegments.length > 1) {
+      console.log(`[ANALYSIS] Second segment: start=${combatSegments[1].startTime}, end=${combatSegments[1].endTime}`);
+    }
+    console.log(`[ANALYSIS] Last segment: start=${combatSegments[combatSegments.length-1].startTime}, end=${combatSegments[combatSegments.length-1].endTime}`);
+  }
+  
+  // Helper: Check if timestamp is during a BOSS encounter
+  function isDuringBossEncounter(timestamp) {
+    if (!fights || !Array.isArray(fights)) return false;
+    for (const fight of fights) {
+      // Only consider real boss encounters (encounterID > 0)
+      if (fight.encounterID && fight.encounterID > 0) {
+        if (timestamp >= fight.startTime && timestamp <= fight.endTime) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+  
+  // Check each bloodrage
+  const badBloodrages = [];
+  
+  for (const br of bloodrageEvents) {
+    // Skip if during a boss encounter
+    if (isDuringBossEncounter(br.timestamp)) {
+      continue;
+    }
+    
+    // Find which combat segment this bloodrage is in
+    for (let segIdx = 0; segIdx < combatSegments.length; segIdx++) {
+      const seg = combatSegments[segIdx];
+      if (br.timestamp >= seg.startTime && br.timestamp <= seg.endTime) {
+        // Skip combat segments that are too short (less than 5 seconds)
+        const combatDurationMs = seg.endTime - seg.startTime;
+        if (combatDurationMs < MIN_COMBAT_DURATION_MS) {
+          break; // Skip this bloodrage - combat too short to be meaningful
+        }
+        
+        const timeToCombatEnd = seg.endTime - br.timestamp;
+        if (timeToCombatEnd <= BAD_THRESHOLD_MS) {
+          // Get next combat segment info
+          const nextSeg = combatSegments[segIdx + 1] || null;
+          const outOfCombatDuration = nextSeg ? nextSeg.startTime - seg.endTime : null;
+          
+          badBloodrages.push({
+            timestamp: br.timestamp,
+            sourceName: br.sourceName || `#${br.sourceID}`,
+            sourceID: br.sourceID,
+            sourceSubType: br.sourceSubType, // Class info for color
+            abilityName: br.abilityName,
+            secondsBefore: Math.round(timeToCombatEnd / 1000),
+            combatStart: seg.startTime,
+            combatEnd: seg.endTime,
+            combatDuration: Math.round((seg.endTime - seg.startTime) / 1000),
+            firstDamage: seg.firstDamage,
+            lastDamage: seg.lastDamage,
+            outOfCombatDuration: outOfCombatDuration ? Math.round(outOfCombatDuration / 1000) : null,
+            nextCombatStart: nextSeg ? nextSeg.startTime : null,
+            nextCombatFirstDamage: nextSeg ? nextSeg.firstDamage : null
+          });
+        }
+        break; // Found the segment, no need to check others
+      }
+    }
+  }
+  
+  console.log(`[ANALYSIS] Found ${badBloodrages.length} bad bloodrages out of ${bloodrageEvents.length}`);
+  
+  // Debug: show first bad bloodrage data
+  if (badBloodrages.length > 0) {
+    console.log(`[ANALYSIS] First bad BR: timestamp=${badBloodrages[0].timestamp}, firstDamage=${JSON.stringify(badBloodrages[0].firstDamage)}, lastDamage=${JSON.stringify(badBloodrages[0].lastDamage)}, nextCombat=${badBloodrages[0].nextCombatStart}`);
+  }
+  
+  return {
+    badBloodrages,
+    totalBloodrages: bloodrageEvents.length,
+    combatSegmentCount: combatSegments.length,
+    damageEventCount: damageTimestamps.length
+  };
+}
+
+// Analyze charges from ALL events in database
+// Returns charges with info about whether target was hit by a tank first
+async function analyzeChargesFromDB(reportCode, tankNames, meta) {
+  const LOOKBACK_MS = 10000; // Check 10 seconds before charge for tank hits
+  
+  // Stunnable mobs - charging these is bad because tank can't reposition
+  const STUNNABLE_MOBS = [
+    'plagued ghoul',
+    'spirit of naxxramas',
+    'shade of naxxramas',
+    'necro knight',
+    'stitched spewer',
+    'zombie chow'
+  ];
+  
+  // Critters/mobs that are always safe to charge (ignore tank check)
+  const ALWAYS_OK_MOBS = [
+    'maggot',
+    'rat'
+  ];
+  
+  // Get all event pages for this report
+  const pagesResult = await pool.query(
+    'SELECT events FROM wcl_event_pages WHERE report_code = $1 ORDER BY start_time',
+    [reportCode]
+  );
+  
+  if (pagesResult.rows.length === 0) {
+    return { charges: [], totalCharges: 0 };
+  }
+  
+  // Collect all events
+  const allEvents = [];
+  for (const row of pagesResult.rows) {
+    const events = typeof row.events === 'string' ? JSON.parse(row.events) : row.events;
+    for (const ev of events) {
+      // Enrich with names and class info
+      const enriched = { ...ev };
+      if (ev.sourceID != null && meta.actorsById && meta.actorsById[ev.sourceID]) {
+        enriched.sourceName = meta.actorsById[ev.sourceID].name;
+        enriched.sourceSubType = meta.actorsById[ev.sourceID].subType;
+      }
+      if (ev.targetID != null && meta.actorsById && meta.actorsById[ev.targetID]) {
+        enriched.targetName = meta.actorsById[ev.targetID].name;
+      }
+      const abilityId = ev.abilityGameID ?? ev.ability?.guid;
+      if (abilityId != null && meta.abilitiesById && meta.abilitiesById[abilityId]) {
+        enriched.abilityName = meta.abilitiesById[abilityId].name;
+      }
+      allEvents.push(enriched);
+    }
+  }
+  
+  // Separate damage events and charge events
+  const damageEvents = allEvents.filter(ev => 
+    String(ev.type || '').toLowerCase() === 'damage' && 
+    ev.timestamp != null && 
+    ev.targetID != null
+  );
+  
+  const chargeEvents = allEvents.filter(ev => 
+    String(ev.type || '').toLowerCase() === 'cast' && 
+    String(ev.abilityName || '').toLowerCase() === 'charge'
+  );
+  
+  console.log(`[CHARGE ANALYSIS] Found ${chargeEvents.length} charges, ${damageEvents.length} damage events, ${tankNames.length} tanks: ${tankNames.join(', ')}`);
+  
+  // Sort damage events by timestamp for efficient lookback
+  damageEvents.sort((a, b) => a.timestamp - b.timestamp);
+  
+  // Build a map of targetID -> damage events for quick lookup
+  const damageByTargetId = new Map();
+  for (const dmg of damageEvents) {
+    if (!damageByTargetId.has(dmg.targetID)) {
+      damageByTargetId.set(dmg.targetID, []);
+    }
+    damageByTargetId.get(dmg.targetID).push(dmg);
+  }
+  
+  // Normalize tank names for comparison
+  const tankNamesLower = new Set(tankNames.map(n => String(n).toLowerCase()));
+  
+  // Analyze each charge
+  const analyzedCharges = [];
+  
+  for (const charge of chargeEvents) {
+    const chargeTargetId = charge.targetID;
+    const chargeTime = charge.timestamp;
+    
+    // Find damage events on the same targetID before the charge
+    const targetDamageEvents = damageByTargetId.get(chargeTargetId) || [];
+    
+    // Look for tank hits in the lookback window before the charge
+    let tankHitFirst = false;
+    let firstTankHit = null;
+    
+    for (const dmg of targetDamageEvents) {
+      // Only consider damage BEFORE the charge
+      if (dmg.timestamp >= chargeTime) continue;
+      
+      // Only consider damage within the lookback window
+      if (chargeTime - dmg.timestamp > LOOKBACK_MS) continue;
+      
+      // Check if the damage source is a tank
+      const sourceName = String(dmg.sourceName || '').toLowerCase();
+      if (tankNamesLower.has(sourceName)) {
+        tankHitFirst = true;
+        if (!firstTankHit || dmg.timestamp < firstTankHit.timestamp) {
+          firstTankHit = {
+            timestamp: dmg.timestamp,
+            sourceName: dmg.sourceName,
+            targetName: dmg.targetName,
+            abilityName: dmg.abilityName || 'Unknown',
+            amount: dmg.amount
+          };
+        }
+      }
+    }
+    
+    // Check if target is a stunnable mob or always-OK critter
+    const targetNameLower = String(charge.targetName || '').toLowerCase();
+    const isStunnableMob = STUNNABLE_MOBS.some(mob => targetNameLower.includes(mob));
+    const isCritter = ALWAYS_OK_MOBS.some(mob => targetNameLower.includes(mob));
+    
+    analyzedCharges.push({
+      timestamp: charge.timestamp,
+      sourceName: charge.sourceName || `#${charge.sourceID}`,
+      sourceID: charge.sourceID,
+      sourceSubType: charge.sourceSubType, // Class info for color
+      targetName: charge.targetName || `#${charge.targetID}`,
+      targetID: charge.targetID,
+      abilityName: charge.abilityName || 'Charge',
+      tankHitFirst: tankHitFirst || isCritter, // Critters count as "tank hit first"
+      firstTankHit,
+      isStunnableMob,
+      isCritter
+    });
+  }
+  
+  const badCharges = analyzedCharges.filter(c => (!c.tankHitFirst && !c.isCritter) || c.isStunnableMob).length;
+  console.log(`[CHARGE ANALYSIS] ${badCharges} charges on mobs not hit by tank first`);
+  
+  return {
+    charges: analyzedCharges,
+    totalCharges: chargeEvents.length,
+    badCharges
+  };
+}
+
+// Analyze spell interrupts from ALL events in database - aggregated by player
+async function analyzeInterruptsFromDB(reportCode, meta) {
+  const pagesResult = await pool.query(
+    'SELECT events FROM wcl_event_pages WHERE report_code = $1 ORDER BY start_time',
+    [reportCode]
+  );
+  
+  if (pagesResult.rows.length === 0) {
+    return { playerStats: [], totalInterrupts: 0 };
+  }
+  
+  const playerCounts = {}; // { sourceName: { count, sourceSubType, spells: {} } }
+  let totalInterrupts = 0;
+  
+  for (const row of pagesResult.rows) {
+    const events = typeof row.events === 'string' ? JSON.parse(row.events) : row.events;
+    for (const ev of events) {
+      const type = String(ev.type || '').toLowerCase();
+      if (type !== 'interrupt') continue;
+      
+      let sourceName = ev.sourceName;
+      let sourceSubType = ev.sourceSubType;
+      if (!sourceName && ev.sourceID != null && meta.actorsById && meta.actorsById[ev.sourceID]) {
+        sourceName = meta.actorsById[ev.sourceID].name;
+        sourceSubType = meta.actorsById[ev.sourceID].subType;
+      }
+      if (!sourceName) continue;
+      
+      if (!playerCounts[sourceName]) {
+        playerCounts[sourceName] = { count: 0, sourceSubType, spells: {} };
+      }
+      playerCounts[sourceName].count++;
+      totalInterrupts++;
+      
+      // Track which spells were interrupted
+      const interruptedAbilityId = ev.extraAbilityGameID ?? ev.ability?.guid;
+      let spellName = 'Unknown';
+      if (interruptedAbilityId != null && meta.abilitiesById && meta.abilitiesById[interruptedAbilityId]) {
+        spellName = meta.abilitiesById[interruptedAbilityId].name;
+      }
+      playerCounts[sourceName].spells[spellName] = (playerCounts[sourceName].spells[spellName] || 0) + 1;
+    }
+  }
+  
+  // Convert to sorted array
+  const playerStats = Object.entries(playerCounts)
+    .map(([name, data]) => ({
+      name,
+      count: data.count,
+      sourceSubType: data.sourceSubType,
+      topSpells: Object.entries(data.spells).sort((a, b) => b[1] - a[1]).slice(0, 3)
+    }))
+    .sort((a, b) => b.count - a.count);
+  
+  console.log(`[ANALYSIS] Found ${totalInterrupts} interrupts by ${playerStats.length} players`);
+  return { playerStats, totalInterrupts };
+}
+
+// Analyze decurses from ALL events in database - aggregated by player
+async function analyzeDecursesFromDB(reportCode, meta) {
+  const pagesResult = await pool.query(
+    'SELECT events FROM wcl_event_pages WHERE report_code = $1 ORDER BY start_time',
+    [reportCode]
+  );
+  
+  if (pagesResult.rows.length === 0) {
+    return { playerStats: [], totalDecurses: 0 };
+  }
+  
+  // Decurse spell IDs (Remove Curse variations)
+  const DECURSE_ABILITIES = ['remove curse', 'remove lesser curse', 'abolish poison'];
+  
+  const playerCounts = {}; // { sourceName: { count, sourceSubType, curses: {} } }
+  let totalDecurses = 0;
+  
+  for (const row of pagesResult.rows) {
+    const events = typeof row.events === 'string' ? JSON.parse(row.events) : row.events;
+    for (const ev of events) {
+      const type = String(ev.type || '').toLowerCase();
+      if (type !== 'dispel') continue;
+      
+      // Get the ability used
+      const abilityId = ev.abilityGameID ?? ev.ability?.guid;
+      let abilityName = '';
+      if (abilityId != null && meta.abilitiesById && meta.abilitiesById[abilityId]) {
+        abilityName = meta.abilitiesById[abilityId].name;
+      }
+      
+      // Check if it's a decurse ability
+      const abilityLower = abilityName.toLowerCase();
+      if (!DECURSE_ABILITIES.some(d => abilityLower.includes(d.split(' ')[0]))) {
+        if (!abilityLower.includes('remove') && !abilityLower.includes('curse')) continue;
+      }
+      
+      let sourceName = ev.sourceName;
+      let sourceSubType = ev.sourceSubType;
+      if (!sourceName && ev.sourceID != null && meta.actorsById && meta.actorsById[ev.sourceID]) {
+        sourceName = meta.actorsById[ev.sourceID].name;
+        sourceSubType = meta.actorsById[ev.sourceID].subType;
+      }
+      if (!sourceName) continue;
+      
+      if (!playerCounts[sourceName]) {
+        playerCounts[sourceName] = { count: 0, sourceSubType, curses: {} };
+      }
+      playerCounts[sourceName].count++;
+      totalDecurses++;
+      
+      // Track which curses were removed
+      const extraAbilityId = ev.extraAbilityGameID;
+      let curseName = 'Unknown';
+      if (extraAbilityId != null && meta.abilitiesById && meta.abilitiesById[extraAbilityId]) {
+        curseName = meta.abilitiesById[extraAbilityId].name;
+      }
+      playerCounts[sourceName].curses[curseName] = (playerCounts[sourceName].curses[curseName] || 0) + 1;
+    }
+  }
+  
+  // Convert to sorted array
+  const playerStats = Object.entries(playerCounts)
+    .map(([name, data]) => ({
+      name,
+      count: data.count,
+      sourceSubType: data.sourceSubType,
+      topCurses: Object.entries(data.curses).sort((a, b) => b[1] - a[1]).slice(0, 3)
+    }))
+    .sort((a, b) => b.count - a.count);
+  
+  console.log(`[ANALYSIS] Found ${totalDecurses} decurses by ${playerStats.length} players`);
+  return { playerStats, totalDecurses };
+}
+
+// Analyze effective Sunder Armor applications from ALL events in database - aggregated by player
+async function analyzeSundersFromDB(reportCode, meta) {
+  const pagesResult = await pool.query(
+    'SELECT events FROM wcl_event_pages WHERE report_code = $1 ORDER BY start_time',
+    [reportCode]
+  );
+  
+  if (pagesResult.rows.length === 0) {
+    return { playerStats: [], effectiveSunders: 0, totalSunders: 0 };
+  }
+  
+  const playerCounts = {}; // { sourceName: { effective, total, sourceSubType } }
+  let totalEffective = 0;
+  let totalCasts = 0;
+  
+  for (const row of pagesResult.rows) {
+    const events = typeof row.events === 'string' ? JSON.parse(row.events) : row.events;
+    for (const ev of events) {
+      const type = String(ev.type || '').toLowerCase();
+      
+      // Get ability name
+      const abilityId = ev.abilityGameID ?? ev.ability?.guid;
+      let abilityName = '';
+      if (abilityId != null && meta.abilitiesById && meta.abilitiesById[abilityId]) {
+        abilityName = meta.abilitiesById[abilityId].name;
+      }
+      
+      if (!abilityName.toLowerCase().includes('sunder armor')) continue;
+      
+      let sourceName = ev.sourceName;
+      let sourceSubType = ev.sourceSubType;
+      if (!sourceName && ev.sourceID != null && meta.actorsById && meta.actorsById[ev.sourceID]) {
+        sourceName = meta.actorsById[ev.sourceID].name;
+        sourceSubType = meta.actorsById[ev.sourceID].subType;
+      }
+      if (!sourceName) continue;
+      
+      if (!playerCounts[sourceName]) {
+        playerCounts[sourceName] = { effective: 0, total: 0, sourceSubType };
+      }
+      
+      // Count casts
+      if (type === 'cast') {
+        playerCounts[sourceName].total++;
+        totalCasts++;
+      }
+      
+      // Only count effective sunders (applydebuff = first stack, applydebuffstack = additional stacks)
+      if (type === 'applydebuff' || type === 'applydebuffstack') {
+        playerCounts[sourceName].effective++;
+        totalEffective++;
+      }
+    }
+  }
+  
+  // Convert to sorted array - only include players with effective sunders
+  const playerStats = Object.entries(playerCounts)
+    .filter(([name, data]) => data.effective > 0)
+    .map(([name, data]) => ({
+      name,
+      effective: data.effective,
+      total: data.total,
+      sourceSubType: data.sourceSubType
+    }))
+    .sort((a, b) => b.effective - a.effective);
+  
+  console.log(`[ANALYSIS] Found ${totalEffective} effective sunders out of ${totalCasts} casts by ${playerStats.length} players`);
+  return { 
+    playerStats, 
+    effectiveSunders: totalEffective,
+    totalSunders: totalCasts
+  };
+}
+
+// Analyze effective Scorch (Fire Vulnerability / Improved Scorch) applications - aggregated by player
+// Note: In Classic WoW, the debuff from Improved Scorch is spell ID 22959
+// The debuff is called "Fire Vulnerability" and stacks up to 5 times
+async function analyzeScorchesFromDB(reportCode, meta) {
+  const pagesResult = await pool.query(
+    'SELECT events FROM wcl_event_pages WHERE report_code = $1 ORDER BY start_time',
+    [reportCode]
+  );
+  
+  if (pagesResult.rows.length === 0) {
+    return { playerStats: [], effectiveScorches: 0, totalScorches: 0 };
+  }
+  
+  const playerCounts = {}; // { sourceName: { effective, total, sourceSubType } }
+  let totalEffective = 0;
+  let totalCasts = 0;
+  
+  // Fire Vulnerability spell IDs (from Classic WoW)
+  // 22959 = Fire Vulnerability (Improved Scorch debuff)
+  const FIRE_VULN_IDS = [22959, 12873, 12872, 12871, 12870, 12869];
+  
+  // Track all debuff names for debugging
+  const debugDebuffs = new Map(); // abilityId -> { name, count }
+  
+  for (const row of pagesResult.rows) {
+    const events = typeof row.events === 'string' ? JSON.parse(row.events) : row.events;
+    for (const ev of events) {
+      const type = String(ev.type || '').toLowerCase();
+      
+      // Get ability info
+      const abilityId = ev.abilityGameID ?? ev.ability?.guid;
+      let abilityName = '';
+      if (abilityId != null && meta.abilitiesById && meta.abilitiesById[abilityId]) {
+        abilityName = meta.abilitiesById[abilityId].name;
+      }
+      
+      const abilityLower = abilityName.toLowerCase();
+      
+      // Count Scorch casts
+      if (type === 'cast' && abilityLower === 'scorch') {
+        let sourceName = ev.sourceName;
+        let sourceSubType = ev.sourceSubType;
+        if (!sourceName && ev.sourceID != null && meta.actorsById && meta.actorsById[ev.sourceID]) {
+          sourceName = meta.actorsById[ev.sourceID].name;
+          sourceSubType = meta.actorsById[ev.sourceID].subType;
+        }
+        if (sourceName) {
+          if (!playerCounts[sourceName]) {
+            playerCounts[sourceName] = { effective: 0, total: 0, sourceSubType };
+          }
+          playerCounts[sourceName].total++;
+          totalCasts++;
+        }
+        continue;
+      }
+      
+      // Only track debuff applications
+      if (type !== 'applydebuff' && type !== 'applydebuffstack') continue;
+      
+      // Check if this is Fire Vulnerability by ID or name
+      const isFireVuln = FIRE_VULN_IDS.includes(abilityId) ||
+                         abilityLower.includes('fire vulnerability') || 
+                         abilityLower.includes('improved scorch');
+      
+      // Debug: track all debuff applications to see what's available
+      if (type === 'applydebuff' || type === 'applydebuffstack') {
+        const key = `${abilityId}`;
+        if (!debugDebuffs.has(key)) {
+          debugDebuffs.set(key, { name: abilityName, id: abilityId, count: 0 });
+        }
+        debugDebuffs.get(key).count++;
+      }
+      
+      if (!isFireVuln) continue;
+      
+      let sourceName = ev.sourceName;
+      let sourceSubType = ev.sourceSubType;
+      if (!sourceName && ev.sourceID != null && meta.actorsById && meta.actorsById[ev.sourceID]) {
+        sourceName = meta.actorsById[ev.sourceID].name;
+        sourceSubType = meta.actorsById[ev.sourceID].subType;
+      }
+      if (!sourceName) continue;
+      
+      if (!playerCounts[sourceName]) {
+        playerCounts[sourceName] = { effective: 0, total: 0, sourceSubType };
+      }
+      playerCounts[sourceName].effective++;
+      totalEffective++;
+    }
+  }
+  
+  // Convert to sorted array - only include players with effective scorches
+  const playerStats = Object.entries(playerCounts)
+    .filter(([name, data]) => data.effective > 0)
+    .map(([name, data]) => ({
+      name,
+      effective: data.effective,
+      total: data.total,
+      sourceSubType: data.sourceSubType
+    }))
+    .sort((a, b) => b.effective - a.effective);
+  
+  console.log(`[ANALYSIS] Found ${totalEffective} effective scorches out of ${totalCasts} casts by ${playerStats.length} mages`);
+  
+  // Debug: Show top debuff types if no fire vulns found
+  if (totalEffective === 0 && debugDebuffs.size > 0) {
+    const topDebuffs = Array.from(debugDebuffs.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+    console.log(`[ANALYSIS] Top debuff types found (no Fire Vulnerability detected):`);
+    for (const d of topDebuffs) {
+      console.log(`  - ID ${d.id}: "${d.name}" (${d.count} applications)`);
+    }
+  }
+  
+  return { 
+    playerStats, 
+    effectiveScorches: totalEffective,
+    totalScorches: totalCasts
+  };
+}
+
+// Analyze Disarm applications from ALL events in database - aggregated by player
+async function analyzeDisarmsFromDB(reportCode, meta) {
+  const pagesResult = await pool.query(
+    'SELECT events FROM wcl_event_pages WHERE report_code = $1 ORDER BY start_time',
+    [reportCode]
+  );
+  
+  if (pagesResult.rows.length === 0) {
+    return { playerStats: [], totalDisarms: 0 };
+  }
+  
+  const playerCounts = {}; // { sourceName: { count, sourceSubType, targets: {} } }
+  let totalDisarms = 0;
+  
+  for (const row of pagesResult.rows) {
+    const events = typeof row.events === 'string' ? JSON.parse(row.events) : row.events;
+    for (const ev of events) {
+      const type = String(ev.type || '').toLowerCase();
+      if (type !== 'applydebuff') continue;
+      
+      // Get ability name
+      const abilityId = ev.abilityGameID ?? ev.ability?.guid;
+      let abilityName = '';
+      if (abilityId != null && meta.abilitiesById && meta.abilitiesById[abilityId]) {
+        abilityName = meta.abilitiesById[abilityId].name;
+      }
+      
+      if (abilityName.toLowerCase() !== 'disarm') continue;
+      
+      let sourceName = ev.sourceName;
+      let sourceSubType = ev.sourceSubType;
+      if (!sourceName && ev.sourceID != null && meta.actorsById && meta.actorsById[ev.sourceID]) {
+        sourceName = meta.actorsById[ev.sourceID].name;
+        sourceSubType = meta.actorsById[ev.sourceID].subType;
+      }
+      if (!sourceName) continue;
+      
+      let targetName = ev.targetName;
+      if (!targetName && ev.targetID != null && meta.actorsById && meta.actorsById[ev.targetID]) {
+        targetName = meta.actorsById[ev.targetID].name;
+      }
+      
+      if (!playerCounts[sourceName]) {
+        playerCounts[sourceName] = { count: 0, sourceSubType, targets: {} };
+      }
+      playerCounts[sourceName].count++;
+      totalDisarms++;
+      
+      // Track targets
+      if (targetName) {
+        playerCounts[sourceName].targets[targetName] = (playerCounts[sourceName].targets[targetName] || 0) + 1;
+      }
+    }
+  }
+  
+  // Convert to sorted array
+  const playerStats = Object.entries(playerCounts)
+    .map(([name, data]) => ({
+      name,
+      count: data.count,
+      sourceSubType: data.sourceSubType,
+      topTargets: Object.entries(data.targets).sort((a, b) => b[1] - a[1]).slice(0, 3)
+    }))
+    .sort((a, b) => b.count - a.count);
+  
+  console.log(`[ANALYSIS] Found ${totalDisarms} disarms by ${playerStats.length} players`);
+  return { playerStats, totalDisarms };
+}
+
+// Fetch player stats directly from WCL API (exact numbers with class info)
+async function fetchPlayerStatsFromWCL(reportCode) {
+  try {
+    const token = await getWclAccessToken();
+    const apiUrl = 'https://vanilla.warcraftlogs.com/api/v2/client';
+    
+    // Fetch both damage and healing tables
+    // Note: WCL uses "DamageDone" but just "Healing" (not "HealingDone")
+    const query = `query($code: String!) {
+      reportData {
+        report(code: $code) {
+          damageTable: table(dataType: DamageDone, startTime: 0, endTime: 999999999)
+          healingTable: table(dataType: Healing, startTime: 0, endTime: 999999999)
+        }
+      }
+    }`;
+    
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ query, variables: { code: reportCode } })
+    });
+    
+    const data = await response.json();
+    
+    if (data.errors) {
+      throw new Error(data.errors[0].message);
+    }
+    
+    const damageTable = data?.data?.reportData?.report?.damageTable?.data;
+    const healingTable = data?.data?.reportData?.report?.healingTable?.data;
+    
+    // Get total time for DPS/HPS calculation (in milliseconds)
+    // WCL uses totalTime (total raid duration) for DPS/HPS, not per-player activeTime
+    const damageTotalTime = damageTable?.totalTime || 1;
+    const healingTotalTime = healingTable?.totalTime || 1;
+    
+    // Process damage entries - include DPS using totalTime to match WCL
+    const damage = (damageTable?.entries || [])
+      .filter(e => e.type && e.type !== 'Pet')
+      .map(e => ({
+        name: e.name,
+        amount: e.total,
+        // DPS = total damage / totalTime (to match WCL's calculation)
+        dps: e.total / (damageTotalTime / 1000),
+        class: e.type || 'Unknown',
+        percent: 0
+      }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 30);
+    
+    // Calculate percent relative to top
+    if (damage.length > 0) {
+      const topDamage = damage[0].amount;
+      for (const p of damage) {
+        p.percent = (p.amount / topDamage) * 100;
+      }
+    }
+    
+    // Process healing entries - include HPS using totalTime to match WCL
+    const healing = (healingTable?.entries || [])
+      .filter(e => e.type && e.type !== 'Pet')
+      .map(e => ({
+        name: e.name,
+        amount: e.total,
+        // HPS = total healing / totalTime (to match WCL's calculation)
+        hps: e.total / (healingTotalTime / 1000),
+        class: e.type || 'Unknown',
+        percent: 0
+      }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 15);
+    
+    if (healing.length > 0) {
+      const topHealing = healing[0].amount;
+      for (const p of healing) {
+        p.percent = (p.amount / topHealing) * 100;
+      }
+    }
+    
+    return { damage, healing };
+  } catch (err) {
+    console.error('[WCL] Failed to fetch player stats from API:', err.message);
+    throw err;
+  }
+}
+
+// Analyze player damage and healing stats from ALL events in database (fallback)
+async function analyzePlayerStatsFromDB(reportCode, meta) {
+  // Get all event pages for this report
+  const pagesResult = await pool.query(
+    'SELECT events FROM wcl_event_pages WHERE report_code = $1 ORDER BY start_time',
+    [reportCode]
+  );
+  
+  if (pagesResult.rows.length === 0) {
+    return { damage: [], healing: [] };
+  }
+  
+  // Aggregate damage and healing by source
+  const damageByPlayer = new Map();
+  const healingByPlayer = new Map();
+  
+  // Deduplicate events by creating a unique key for each
+  const seenEvents = new Set();
+  function getEventKey(ev) {
+    return `${ev.timestamp}-${ev.sourceID}-${ev.targetID}-${ev.type}-${ev.abilityGameID || ev.ability?.guid || ''}-${ev.amount || 0}`;
+  }
+  
+  let duplicateCount = 0;
+  
+  for (const row of pagesResult.rows) {
+    const events = typeof row.events === 'string' ? JSON.parse(row.events) : row.events;
+    
+    for (const ev of events) {
+      // Deduplicate events
+      const eventKey = getEventKey(ev);
+      if (seenEvents.has(eventKey)) {
+        duplicateCount++;
+        continue;
+      }
+      seenEvents.add(eventKey);
+      
+      const type = String(ev.type || '').toLowerCase();
+      let amount = ev.amount || 0;
+      
+      if (amount <= 0) continue;
+      
+      // Get source name
+      let sourceName = ev.sourceName;
+      if (!sourceName && ev.sourceID != null && meta.actorsById && meta.actorsById[ev.sourceID]) {
+        sourceName = meta.actorsById[ev.sourceID].name;
+      }
+      if (!sourceName) continue;
+      
+      // Only count player damage/healing (filter out pets, NPCs, etc.)
+      // Check if source is a player (has a player type in actors)
+      const sourceActor = ev.sourceID != null && meta.actorsById ? meta.actorsById[ev.sourceID] : null;
+      const isPlayer = sourceActor && (sourceActor.type === 'Player' || sourceActor.subType === 'Player');
+      
+      // If we can't determine, include it (better to have extra than miss players)
+      if (sourceActor && !isPlayer) continue;
+      
+      if (type === 'damage') {
+        // Check target - filter out friendly fire (same faction) and trivial targets
+        const targetActor = ev.targetID != null && meta.actorsById ? meta.actorsById[ev.targetID] : null;
+        
+        // Skip if target is a player (friendly fire)
+        if (targetActor && (targetActor.type === 'Player' || targetActor.subType === 'Player')) {
+          continue;
+        }
+        
+        // Skip critters and trivial mobs (Maggot, Rat, etc.)
+        const targetName = (ev.targetName || targetActor?.name || '').toLowerCase();
+        if (targetName === 'maggot' || targetName === 'rat' || targetName === 'roach' || 
+            targetName === 'spider' || targetName === 'frog' || targetName === 'larva' ||
+            targetName === 'beetle' || targetName === 'cockroach' || targetName === 'snake') {
+          continue;
+        }
+        
+        // Skip mind-controlled/friendly NPCs that don't count for rankings
+        // Death Knight Understudy - MC'd during Razuvious fight
+        if (targetName === 'death knight understudy') {
+          continue;
+        }
+        
+        // Subtract overkill - WoW Logs doesn't count damage beyond killing blow
+        const overkill = ev.overkill || 0;
+        const effectiveDamage = Math.max(0, amount - overkill);
+        
+        if (effectiveDamage <= 0) continue;
+        
+        const current = damageByPlayer.get(sourceName) || 0;
+        damageByPlayer.set(sourceName, current + effectiveDamage);
+      } else if (type === 'heal') {
+        // For healing, WCL 'amount' should already be effective healing (minus overheal)
+        const current = healingByPlayer.get(sourceName) || 0;
+        healingByPlayer.set(sourceName, current + amount);
+      } else if (type === 'absorbed') {
+        // Count absorbs as healing (shields like PW:S)
+        // The source of an absorb event is the shielder
+        const current = healingByPlayer.get(sourceName) || 0;
+        healingByPlayer.set(sourceName, current + amount);
+      } else if (type === 'healabsorbed') {
+        // Some absorbs might be logged as healabsorbed
+        const current = healingByPlayer.get(sourceName) || 0;
+        healingByPlayer.set(sourceName, current + amount);
+      }
+    }
+  }
+  
+  if (duplicateCount > 0) {
+    console.log(`[PLAYER STATS] Skipped ${duplicateCount} duplicate events`);
+  }
+  
+  // Convert to sorted arrays
+  const damageList = Array.from(damageByPlayer.entries())
+    .map(([name, amount]) => ({ name, amount }))
+    .sort((a, b) => b.amount - a.amount);
+  
+  const healingList = Array.from(healingByPlayer.entries())
+    .map(([name, amount]) => ({ name, amount }))
+    .sort((a, b) => b.amount - a.amount);
+  
+  // Calculate percentages relative to top player
+  const topDamage = damageList[0]?.amount || 1;
+  const topHealing = healingList[0]?.amount || 1;
+  
+  for (const player of damageList) {
+    player.percent = (player.amount / topDamage) * 100;
+  }
+  
+  for (const player of healingList) {
+    player.percent = (player.amount / topHealing) * 100;
+  }
+  
+  console.log(`[PLAYER STATS] ${damageList.length} damage dealers, ${healingList.length} healers`);
+  
+  return {
+    damage: damageList,
+    healing: healingList
+  };
+}
+
+// SSE endpoint: Streams import progress and events
+app.get('/api/wcl/stream-import', async (req, res) => {
+  const reportInput = String(req.query.report || '').trim();
+  const reportCode = extractWclReportCode(reportInput);
+  
+  if (!reportCode) {
+    return res.status(400).json({ error: 'Invalid report URL or code. Accepts full URL or just the report code (e.g., 4VxLvCnTtG8QryWb)' });
+  }
+  
+  // Use report code as session ID for idempotent re-imports
+  const sessionId = reportCode;
+  
+  const apiUrl = getWclApiUrlFromInput(reportInput);
+  
+  // Set up SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+  res.flushHeaders();
+  
+  // Helper to send SSE events
+  const sendEvent = (type, data) => {
+    try {
+      res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+    } catch (_) {}
+  };
+  
+  // Helper for safe pool queries (don't hold client)
+  const safeQuery = async (sql, params) => {
+    try {
+      return await pool.query(sql, params);
+    } catch (err) {
+      console.error('SSE query error:', err.message);
+      return null;
+    }
+  };
+  
+  let aborted = false;
+  
+  req.on('close', () => {
+    aborted = true;
+  });
+  
+  try {
+    // Ensure tables exist (one-time setup)
+    const setupClient = await pool.connect();
+    try {
+      await ensureWclIngestTables(setupClient);
+      await ensureLiveSessionTable(setupClient);
+      await ensureLiveHighlightsTable(setupClient);
+    } finally {
+      setupClient.release();
+    }
+    
+    // Set active live session for viewer connections
+    activeLiveSession = { sessionId, reportCode, startTime: Date.now() };
+    
+    // Clear existing event pages for this report to avoid duplicates on re-import
+    try {
+      const deleteResult = await pool.query(
+        'DELETE FROM wcl_event_pages WHERE report_code = $1',
+        [reportCode]
+      );
+      if (deleteResult.rowCount > 0) {
+        console.log(`[LIVE] Cleared ${deleteResult.rowCount} existing event pages for report ${reportCode}`);
+      }
+    } catch (clearErr) {
+      console.error('[LIVE] Error clearing old event pages:', clearErr.message);
+    }
+    
+    // Send initial connection event
+    sendEvent('connected', { sessionId, reportCode, status: 'starting' });
+    
+    // Notify any connected viewers that a new session started
+    broadcastHighlightsToViewers({ type: 'session-start', reportCode, timestamp: Date.now() });
+    
+    // Fetch report metadata first
+    sendEvent('progress', { phase: 'meta', message: 'Fetching report metadata...' });
+    
+    let meta = { actorsById: {}, abilitiesById: {} };
+    try {
+      meta = await fetchWclReportMeta({ reportCode, apiUrl });
+      // Store meta in DB
+      await safeQuery(`
+        INSERT INTO wcl_report_meta (report_code, api_url, actors_by_id, abilities_by_id, fetched_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (report_code)
+        DO UPDATE SET api_url = EXCLUDED.api_url,
+                      actors_by_id = EXCLUDED.actors_by_id,
+                      abilities_by_id = EXCLUDED.abilities_by_id,
+                      fetched_at = NOW();
+      `, [reportCode, apiUrl, JSON.stringify(meta.actorsById || {}), JSON.stringify(meta.abilitiesById || {})]);
+      sendEvent('meta', { actorCount: Object.keys(meta.actorsById).length, abilityCount: Object.keys(meta.abilitiesById).length });
+    } catch (err) {
+      sendEvent('warning', { message: 'Failed to fetch metadata, continuing without it' });
+    }
+    
+    if (aborted) { res.end(); return; }
+    
+    // Fetch fights to estimate total duration
+    sendEvent('progress', { phase: 'fights', message: 'Fetching fight list...' });
+    
+    let fights = [];
+    let reportMaxEnd = null;
+    let reportMinStart = null;
+    try {
+      fights = await fetchWclFights({ reportCode, apiUrl });
+      for (const f of fights || []) {
+        if (f && typeof f.endTime === 'number') {
+          reportMaxEnd = reportMaxEnd == null ? f.endTime : Math.max(reportMaxEnd, f.endTime);
+        }
+        if (f && typeof f.startTime === 'number') {
+          reportMinStart = reportMinStart == null ? f.startTime : Math.min(reportMinStart, f.startTime);
+        }
+      }
+      sendEvent('fights', { count: fights.length, startTime: reportMinStart, endTime: reportMaxEnd, fights: fights.map(f => ({ id: f.id, name: f.name, startTime: f.startTime, endTime: f.endTime, kill: f.kill })) });
+    } catch (err) {
+      sendEvent('warning', { message: 'Failed to fetch fights list' });
+    }
+    
+    if (aborted) { res.end(); return; }
+    
+    // Create/update session record
+    await safeQuery(`
+      INSERT INTO wcl_live_sessions (session_id, report_code, api_url, status, report_end_time)
+      VALUES ($1, $2, $3, 'importing', $4)
+      ON CONFLICT (session_id) DO UPDATE SET
+        status = 'importing',
+        report_end_time = EXCLUDED.report_end_time,
+        updated_at = NOW();
+    `, [sessionId, reportCode, apiUrl, reportMaxEnd]);
+    
+    // Start importing events
+    sendEvent('progress', { phase: 'importing', message: 'Starting event import...' });
+    
+    // Always start from the beginning for display purposes
+    // ON CONFLICT DO NOTHING will prevent duplicates in the database
+    let startCursor = 0;
+    if (reportMinStart && reportMinStart > 0) {
+      startCursor = Math.max(0, reportMinStart - 5000); // Start 5s before first fight
+    }
+    
+    // Check if we already have data (for informational purposes)
+    try {
+      const existing = await safeQuery(`
+        SELECT COUNT(*) as page_count, COALESCE(SUM(jsonb_array_length(events)), 0) as event_count
+        FROM wcl_event_pages 
+        WHERE report_code = $1
+      `, [reportCode]);
+      const pageCount = Number(existing?.rows?.[0]?.page_count || 0);
+      const eventCount = Number(existing?.rows?.[0]?.event_count || 0);
+      if (pageCount > 0) {
+        sendEvent('progress', { phase: 'refetching', message: `Found ${eventCount} cached events, fetching fresh data...` });
+      }
+    } catch (_) {}
+    
+    const windowMs = 60000; // 60 second pages for faster import
+    let lastCursor = startCursor;
+    let totalEvents = 0;
+    let pagesStored = 0;
+    let guard = 0;
+    const maxGuard = 50000; // Safety limit
+    
+    // Calculate estimated total for progress bar
+    const estimatedTotal = reportMaxEnd ? Math.ceil((reportMaxEnd - startCursor) / windowMs) : 100;
+    
+    console.log(`[LIVE] Starting event fetch loop: startCursor=${startCursor}, reportMaxEnd=${reportMaxEnd}, windowMs=${windowMs}`);
+    
+    while (!aborted && guard < maxGuard) {
+      const end = lastCursor + windowMs;
+      
+      let page;
+      try {
+        console.log(`[LIVE] Fetching page: cursor=${lastCursor}, end=${end}`);
+        page = await fetchWclEventsPage({ reportCode, startTime: lastCursor, endTime: end, apiUrl });
+        console.log(`[LIVE] Got page: events=${page.events?.length || 0}, nextPageTimestamp=${page.nextPageTimestamp}`);
+      } catch (err) {
+        console.error(`[LIVE] Fetch error:`, err.message);
+        sendEvent('error', { message: `Failed to fetch events: ${err.message}` });
+        break;
+      }
+      
+      const events = page.events || [];
+      const nextCursor = page.nextPageTimestamp != null ? page.nextPageTimestamp : end;
+      
+      // Store this page
+      if (events.length > 0) {
+        const storeResult = await safeQuery(`
+          INSERT INTO wcl_event_pages (event_id, report_code, start_time, end_time, next_cursor, events)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (event_id, report_code, start_time, end_time) DO NOTHING;
+        `, [sessionId, reportCode, lastCursor, end, nextCursor, JSON.stringify(events)]);
+        if (storeResult) pagesStored++;
+      }
+      
+      totalEvents += events.length;
+      
+      // Calculate progress
+      const progress = reportMaxEnd ? Math.min(100, Math.round(((lastCursor - startCursor) / (reportMaxEnd - startCursor)) * 100)) : Math.min(100, Math.round((pagesStored / estimatedTotal) * 100));
+      
+      // Enrich events with actor/ability names from metadata
+      // Helper to enrich a single event
+      const enrichEvent = (ev) => {
+        const enriched = { ...ev };
+        // Add source name
+        if (ev.sourceID != null && meta.actorsById[ev.sourceID]) {
+          enriched.sourceName = meta.actorsById[ev.sourceID].name;
+          enriched.sourceType = meta.actorsById[ev.sourceID].type;
+          enriched.sourceSubType = meta.actorsById[ev.sourceID].subType;
+        }
+        // Add target name
+        if (ev.targetID != null && meta.actorsById[ev.targetID]) {
+          enriched.targetName = meta.actorsById[ev.targetID].name;
+          enriched.targetType = meta.actorsById[ev.targetID].type;
+          enriched.targetSubType = meta.actorsById[ev.targetID].subType;
+        }
+        // Add ability name
+        const abilityId = ev.abilityGameID ?? ev.ability?.guid;
+        if (abilityId != null && meta.abilitiesById[abilityId]) {
+          enriched.abilityName = meta.abilitiesById[abilityId].name;
+          enriched.abilityType = meta.abilitiesById[abilityId].type;
+        }
+        return enriched;
+      };
+      
+      // Highlight abilities we want to track (case-insensitive)
+      const HIGHLIGHT_ABILITIES = ['power word: shield', 'bloodrage', 'charge', 'renew'];
+      
+      // Separate events into highlighted (send all) vs stream sample (send 50)
+      const highlightedEvents = [];
+      const otherEvents = [];
+      
+      for (const ev of events) {
+        const abilityId = ev.abilityGameID ?? ev.ability?.guid;
+        const abilityName = (abilityId != null && meta.abilitiesById[abilityId]) 
+          ? meta.abilitiesById[abilityId].name.toLowerCase() 
+          : '';
+        const type = String(ev.type || '').toLowerCase();
+        
+        // Check if this is a highlighted ability (cast or applybuff)
+        const isHighlight = (type === 'cast' || type === 'applybuff') && 
+                            HIGHLIGHT_ABILITIES.some(h => abilityName.includes(h));
+        
+        // Also include all damage events for combat detection
+        const isDamage = type === 'damage';
+        
+        if (isHighlight || isDamage) {
+          highlightedEvents.push(enrichEvent(ev));
+        } else {
+          otherEvents.push(ev);
+        }
+      }
+      
+      // Enrich sample of other events for stream display
+      const streamSample = otherEvents.slice(0, 50).map(enrichEvent);
+      
+      // Combine: all highlights + stream sample
+      const enrichedEvents = [...highlightedEvents, ...streamSample];
+      
+      // Send batch of events to client
+      sendEvent('events', { 
+        count: events.length, 
+        totalEvents,
+        cursor: lastCursor,
+        nextCursor,
+        progress,
+        pagesStored,
+        events: enrichedEvents,
+        highlightCount: highlightedEvents.length
+      });
+      
+      // Update session record periodically
+      if (pagesStored % 10 === 0) {
+        await safeQuery(`
+          UPDATE wcl_live_sessions 
+          SET total_events = $1, last_cursor = $2, updated_at = NOW()
+          WHERE session_id = $3
+        `, [totalEvents, lastCursor, sessionId]);
+      }
+      
+      // Stop conditions
+      if (nextCursor == null || nextCursor <= lastCursor) {
+        console.log(`[LIVE] Loop exit: no more pages (nextCursor=${nextCursor}, lastCursor=${lastCursor})`);
+        break;
+      }
+      
+      lastCursor = nextCursor;
+      
+      // Stop if we've passed the report end
+      if (reportMaxEnd != null && lastCursor >= (reportMaxEnd + 60000)) {
+        console.log(`[LIVE] Loop exit: passed report end (lastCursor=${lastCursor}, reportMaxEnd=${reportMaxEnd})`);
+        break;
+      }
+      
+      guard++;
+    }
+    
+    console.log(`[LIVE] Fetch loop complete: totalEvents=${totalEvents}, pagesStored=${pagesStored}, guard=${guard}`);
+    
+    // Update session as complete
+    await safeQuery(`
+      UPDATE wcl_live_sessions 
+      SET status = 'complete', total_events = $1, last_cursor = $2, updated_at = NOW()
+      WHERE session_id = $3
+    `, [totalEvents, lastCursor, sessionId]);
+    
+    // Send completion event
+    sendEvent('complete', { 
+      totalEvents, 
+      pagesStored, 
+      lastCursor,
+      reportCode,
+      sessionId,
+      message: 'Import complete! Analyzing bloodrages...'
+    });
+    
+    // Phase 2: Backend analysis of bad bloodrages
+    // This uses ALL events from the database for accurate combat detection
+    sendEvent('progress', { phase: 'analyzing', message: 'Analyzing all events for bad bloodrages...' });
+    
+    try {
+      const analysisResult = await analyzeBloodragesFromDB(reportCode, fights, meta);
+      const bloodrageData = {
+        badBloodrages: analysisResult.badBloodrages,
+        totalBloodrages: analysisResult.totalBloodrages,
+        combatSegments: analysisResult.combatSegmentCount,
+        damageEvents: analysisResult.damageEventCount
+      };
+      sendEvent('bloodrage-analysis', bloodrageData);
+      
+      // Save to cache and broadcast to live viewers
+      await saveAndBroadcastHighlights(reportCode, 'bloodrages', bloodrageData);
+      
+      console.log(`[LIVE] Bloodrage analysis complete: ${analysisResult.badBloodrages.length} bad out of ${analysisResult.totalBloodrages}`);
+    } catch (analysisErr) {
+      console.error('[LIVE] Bloodrage analysis error:', analysisErr.message);
+      sendEvent('warning', { message: 'Bloodrage analysis failed: ' + analysisErr.message });
+    }
+    
+    // Phase 2c: Player stats from WCL API (exact numbers with class info)
+    sendEvent('progress', { phase: 'analyzing', message: 'Fetching damage and healing stats from WCL...' });
+    try {
+      const playerStats = await fetchPlayerStatsFromWCL(reportCode);
+      const playerStatsData = {
+        damage: playerStats.damage, // Top 30 damage
+        healing: playerStats.healing // Top 15 healers
+      };
+      sendEvent('player-stats', playerStatsData);
+      // Save to cache for live page
+      await saveAndBroadcastHighlights(reportCode, 'playerstats', playerStatsData);
+      console.log(`[LIVE] Player stats from WCL: ${playerStats.damage.length} damage dealers, ${playerStats.healing.length} healers`);
+    } catch (statsErr) {
+      console.error('[LIVE] WCL Player stats error:', statsErr.message);
+      sendEvent('warning', { message: 'Player stats fetch failed: ' + statsErr.message });
+    }
+    
+    // Phase 2b: Charge analysis (if tank names provided)
+    const tankNamesParam = String(req.query.tanks || '').trim();
+    const tankNames = tankNamesParam ? tankNamesParam.split(',').map(n => n.trim()).filter(Boolean) : [];
+    
+    if (tankNames.length > 0) {
+      sendEvent('progress', { phase: 'analyzing', message: 'Analyzing charges...' });
+      try {
+        const chargeResult = await analyzeChargesFromDB(reportCode, tankNames, meta);
+        const chargeData = {
+          charges: chargeResult.charges,
+          totalCharges: chargeResult.totalCharges,
+          badCharges: chargeResult.badCharges
+        };
+        sendEvent('charge-analysis', chargeData);
+        
+        // Save to cache and broadcast to live viewers
+        await saveAndBroadcastHighlights(reportCode, 'charges', chargeData);
+        
+        console.log(`[LIVE] Charge analysis complete: ${chargeResult.badCharges} bad out of ${chargeResult.totalCharges}`);
+      } catch (chargeErr) {
+        console.error('[LIVE] Charge analysis error:', chargeErr.message);
+        sendEvent('warning', { message: 'Charge analysis failed: ' + chargeErr.message });
+      }
+    }
+    
+    // Phase 2d: Interrupts analysis
+    sendEvent('progress', { phase: 'analyzing', message: 'Analyzing interrupts...' });
+    try {
+      const interruptResult = await analyzeInterruptsFromDB(reportCode, meta);
+      const interruptData = {
+        playerStats: interruptResult.playerStats,
+        totalInterrupts: interruptResult.totalInterrupts
+      };
+      sendEvent('interrupt-analysis', interruptData);
+      await saveAndBroadcastHighlights(reportCode, 'interrupts', interruptData);
+      console.log(`[LIVE] Interrupt analysis complete: ${interruptResult.totalInterrupts} by ${interruptResult.playerStats.length} players`);
+    } catch (err) {
+      console.error('[LIVE] Interrupt analysis error:', err.message);
+    }
+    
+    // Phase 2e: Decurses analysis
+    sendEvent('progress', { phase: 'analyzing', message: 'Analyzing decurses...' });
+    try {
+      const decurseResult = await analyzeDecursesFromDB(reportCode, meta);
+      const decurseData = {
+        playerStats: decurseResult.playerStats,
+        totalDecurses: decurseResult.totalDecurses
+      };
+      sendEvent('decurse-analysis', decurseData);
+      await saveAndBroadcastHighlights(reportCode, 'decurses', decurseData);
+      console.log(`[LIVE] Decurse analysis complete: ${decurseResult.totalDecurses} by ${decurseResult.playerStats.length} players`);
+    } catch (err) {
+      console.error('[LIVE] Decurse analysis error:', err.message);
+    }
+    
+    // Phase 2f: Sunder Armor analysis
+    sendEvent('progress', { phase: 'analyzing', message: 'Analyzing Sunder Armor...' });
+    try {
+      const sunderResult = await analyzeSundersFromDB(reportCode, meta);
+      const sunderData = {
+        playerStats: sunderResult.playerStats,
+        effectiveSunders: sunderResult.effectiveSunders,
+        totalSunders: sunderResult.totalSunders
+      };
+      sendEvent('sunder-analysis', sunderData);
+      await saveAndBroadcastHighlights(reportCode, 'sunders', sunderData);
+      console.log(`[LIVE] Sunder analysis complete: ${sunderResult.effectiveSunders} effective by ${sunderResult.playerStats.length} players`);
+    } catch (err) {
+      console.error('[LIVE] Sunder analysis error:', err.message);
+    }
+    
+    // Phase 2g: Scorch (Fire Vulnerability) analysis
+    sendEvent('progress', { phase: 'analyzing', message: 'Analyzing Scorch...' });
+    try {
+      const scorchResult = await analyzeScorchesFromDB(reportCode, meta);
+      const scorchData = {
+        playerStats: scorchResult.playerStats,
+        effectiveScorches: scorchResult.effectiveScorches,
+        totalScorches: scorchResult.totalScorches
+      };
+      sendEvent('scorch-analysis', scorchData);
+      await saveAndBroadcastHighlights(reportCode, 'scorches', scorchData);
+      console.log(`[LIVE] Scorch analysis complete: ${scorchResult.effectiveScorches} effective by ${scorchResult.playerStats.length} players`);
+    } catch (err) {
+      console.error('[LIVE] Scorch analysis error:', err.message);
+    }
+    
+    // Phase 2h: Disarm analysis
+    sendEvent('progress', { phase: 'analyzing', message: 'Analyzing Disarms...' });
+    try {
+      const disarmResult = await analyzeDisarmsFromDB(reportCode, meta);
+      const disarmData = {
+        playerStats: disarmResult.playerStats,
+        totalDisarms: disarmResult.totalDisarms
+      };
+      sendEvent('disarm-analysis', disarmData);
+      await saveAndBroadcastHighlights(reportCode, 'disarms', disarmData);
+      console.log(`[LIVE] Disarm analysis complete: ${disarmResult.totalDisarms} by ${disarmResult.playerStats.length} players`);
+    } catch (err) {
+      console.error('[LIVE] Disarm analysis error:', err.message);
+    }
+    
+    // Phase 3: Real-time polling for new events
+    sendEvent('progress', { phase: 'polling', message: 'Watching for new events...' });
+    
+    // Poll for new events every 3 seconds
+    let pollCount = 0;
+    const maxPolls = 1000; // ~50 minutes of polling
+    const reanalysisInterval = 10; // Re-run analysis every 10 polls (30 seconds)
+    let lastAnalysisPollCount = 0;
+    
+    while (!aborted && pollCount < maxPolls) {
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      if (aborted) break;
+      
+      const pollEnd = lastCursor + windowMs;
+      let pollPage;
+      try {
+        pollPage = await fetchWclEventsPage({ reportCode, startTime: lastCursor, endTime: pollEnd, apiUrl });
+      } catch (err) {
+        sendEvent('poll-error', { message: err.message });
+        pollCount++;
+        continue;
+      }
+      
+      const newEvents = pollPage.events || [];
+      const pollNextCursor = pollPage.nextPageTimestamp;
+      let hasNewEvents = false;
+      
+      if (newEvents.length > 0) {
+        hasNewEvents = true;
+        // Store new events
+        await safeQuery(`
+          INSERT INTO wcl_event_pages (event_id, report_code, start_time, end_time, next_cursor, events)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (event_id, report_code, start_time, end_time) DO NOTHING;
+        `, [sessionId, reportCode, lastCursor, pollEnd, pollNextCursor, JSON.stringify(newEvents)]);
+        
+        totalEvents += newEvents.length;
+        
+        // Enrich new events with metadata
+        const enrichedNewEvents = newEvents.slice(0, 50).map(ev => {
+          const enriched = { ...ev };
+          if (ev.sourceID != null && meta.actorsById[ev.sourceID]) {
+            enriched.sourceName = meta.actorsById[ev.sourceID].name;
+            enriched.sourceType = meta.actorsById[ev.sourceID].type;
+          }
+          if (ev.targetID != null && meta.actorsById[ev.targetID]) {
+            enriched.targetName = meta.actorsById[ev.targetID].name;
+            enriched.targetType = meta.actorsById[ev.targetID].type;
+          }
+          const abilityId = ev.abilityGameID ?? ev.ability?.guid;
+          if (abilityId != null && meta.abilitiesById[abilityId]) {
+            enriched.abilityName = meta.abilitiesById[abilityId].name;
+          }
+          return enriched;
+        });
+        
+        sendEvent('new-events', {
+          count: newEvents.length,
+          totalEvents,
+          cursor: lastCursor,
+          events: enrichedNewEvents
+        });
+        
+        if (pollNextCursor && pollNextCursor > lastCursor) {
+          lastCursor = pollNextCursor;
+        }
+      } else {
+        // Send heartbeat to keep connection alive
+        sendEvent('heartbeat', { cursor: lastCursor, pollCount, totalEvents });
+      }
+      
+      // Periodic re-analysis every 30 seconds (if there were new events since last analysis)
+      if (hasNewEvents && (pollCount - lastAnalysisPollCount) >= reanalysisInterval) {
+        console.log(`[LIVE] Running periodic re-analysis at poll ${pollCount}`);
+        lastAnalysisPollCount = pollCount;
+        
+        try {
+          // Re-run bloodrage analysis
+          const analysisResult = await analyzeBloodragesFromDB(reportCode, fights, meta);
+          const bloodrageData = {
+            badBloodrages: analysisResult.badBloodrages,
+            totalBloodrages: analysisResult.totalBloodrages,
+            combatSegments: analysisResult.combatSegmentCount,
+            damageEvents: analysisResult.damageEventCount,
+            isUpdate: true
+          };
+          sendEvent('bloodrage-analysis', bloodrageData);
+          await saveAndBroadcastHighlights(reportCode, 'bloodrages', bloodrageData);
+          
+          // Re-run charge analysis if tanks provided
+          if (tankNames.length > 0) {
+            const chargeResult = await analyzeChargesFromDB(reportCode, tankNames, meta);
+            const chargeData = {
+              charges: chargeResult.charges,
+              totalCharges: chargeResult.totalCharges,
+              badCharges: chargeResult.badCharges,
+              isUpdate: true
+            };
+            sendEvent('charge-analysis', chargeData);
+            await saveAndBroadcastHighlights(reportCode, 'charges', chargeData);
+          }
+          
+          console.log(`[LIVE] Periodic re-analysis complete: ${analysisResult.badBloodrages.length} bad BRs`);
+        } catch (reanalysisErr) {
+          console.error('[LIVE] Periodic re-analysis error:', reanalysisErr.message);
+        }
+      }
+      
+      pollCount++;
+    }
+    
+    sendEvent('session-end', { message: 'Polling session ended', totalEvents, lastCursor });
+    
+  } catch (err) {
+    sendEvent('error', { message: err.message || 'Unknown error' });
+  } finally {
+    activeLiveSession = null; // Clear active session when done
+    try { res.end(); } catch (_) {}
+  }
+});
+
+// Debug endpoint to compare our damage AND healing calculation with WCL's
+app.get('/api/debug/compare/:reportCode/:playerName', async (req, res) => {
+  const { reportCode, playerName } = req.params;
+  
+  try {
+    // 1. Get our calculated damage for this player
+    const metaResult = await pool.query(
+      'SELECT actors_by_id, abilities_by_id FROM wcl_report_meta WHERE report_code = $1',
+      [reportCode]
+    );
+    
+    if (metaResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Report not found in database' });
+    }
+    
+    const meta = {
+      actorsById: metaResult.rows[0].actors_by_id || {},
+      abilitiesById: metaResult.rows[0].abilities_by_id || {}
+    };
+    
+    // Get all events for this player
+    const pagesResult = await pool.query(
+      'SELECT events FROM wcl_event_pages WHERE report_code = $1 ORDER BY start_time',
+      [reportCode]
+    );
+    
+    const playerNameLower = playerName.toLowerCase();
+    let ourTotal = 0;
+    let ourTotalWithOverkill = 0;
+    const eventBreakdown = {};
+    const excludedEvents = [];
+    const includedSample = [];
+    
+    const seenEvents = new Set();
+    function getEventKey(ev) {
+      return `${ev.timestamp}-${ev.sourceID}-${ev.targetID}-${ev.type}-${ev.abilityGameID || ev.ability?.guid || ''}-${ev.amount || 0}`;
+    }
+    
+    for (const row of pagesResult.rows) {
+      const events = typeof row.events === 'string' ? JSON.parse(row.events) : row.events;
+      
+      for (const ev of events) {
+        // Deduplicate
+        const eventKey = getEventKey(ev);
+        if (seenEvents.has(eventKey)) continue;
+        seenEvents.add(eventKey);
+        
+        const type = String(ev.type || '').toLowerCase();
+        if (type !== 'damage') continue;
+        
+        // Check if this is from our player
+        let sourceName = ev.sourceName;
+        if (!sourceName && ev.sourceID != null && meta.actorsById[ev.sourceID]) {
+          sourceName = meta.actorsById[ev.sourceID].name;
+        }
+        if (!sourceName || sourceName.toLowerCase() !== playerNameLower) continue;
+        
+        const amount = ev.amount || 0;
+        const overkill = ev.overkill || 0;
+        
+        // Get target info
+        const targetActor = ev.targetID != null ? meta.actorsById[ev.targetID] : null;
+        const targetName = ev.targetName || targetActor?.name || `#${ev.targetID}`;
+        const abilityName = ev.abilityName || (ev.abilityGameID && meta.abilitiesById[ev.abilityGameID]?.name) || 'Unknown';
+        
+        // Check exclusion reasons
+        let excluded = false;
+        let excludeReason = '';
+        
+        // Check if target is player
+        if (targetActor && (targetActor.type === 'Player' || targetActor.subType === 'Player')) {
+          excluded = true;
+          excludeReason = 'Target is player (friendly fire)';
+        }
+        
+        // Check critters
+        const targetNameLower = targetName.toLowerCase();
+        if (!excluded && (targetNameLower === 'maggot' || targetNameLower === 'rat' || targetNameLower === 'roach' || 
+            targetNameLower === 'spider' || targetNameLower === 'frog' || targetNameLower === 'larva' ||
+            targetNameLower === 'beetle' || targetNameLower === 'cockroach' || targetNameLower === 'snake')) {
+          excluded = true;
+          excludeReason = 'Target is critter';
+        }
+        
+        // Check mind-controlled/friendly NPCs
+        if (!excluded && targetNameLower === 'death knight understudy') {
+          excluded = true;
+          excludeReason = 'Target is MC\'d NPC (Razuvious fight)';
+        }
+        
+        ourTotalWithOverkill += amount;
+        
+        if (excluded) {
+          excludedEvents.push({
+            timestamp: ev.timestamp,
+            target: targetName,
+            ability: abilityName,
+            amount,
+            overkill,
+            reason: excludeReason
+          });
+          continue;
+        }
+        
+        const effectiveDamage = Math.max(0, amount - overkill);
+        ourTotal += effectiveDamage;
+        
+        // Track by target
+        if (!eventBreakdown[targetName]) {
+          eventBreakdown[targetName] = { count: 0, total: 0, overkill: 0 };
+        }
+        eventBreakdown[targetName].count++;
+        eventBreakdown[targetName].total += effectiveDamage;
+        eventBreakdown[targetName].overkill += overkill;
+        
+        // Sample first few events
+        if (includedSample.length < 20) {
+          includedSample.push({
+            timestamp: ev.timestamp,
+            target: targetName,
+            ability: abilityName,
+            amount,
+            overkill,
+            effective: effectiveDamage
+          });
+        }
+      }
+    }
+    
+    // Also calculate healing for this player
+    let ourHealingTotal = 0;
+    const healEventBreakdown = {};
+    const healSeenEvents = new Set();
+    const healIncludedSample = [];
+    
+    for (const row of pagesResult.rows) {
+      const events = typeof row.events === 'string' ? JSON.parse(row.events) : row.events;
+      
+      for (const ev of events) {
+        // Deduplicate
+        const eventKey = getEventKey(ev);
+        if (healSeenEvents.has(eventKey)) continue;
+        healSeenEvents.add(eventKey);
+        
+        const type = String(ev.type || '').toLowerCase();
+        if (type !== 'heal' && type !== 'absorbed' && type !== 'healabsorbed') continue;
+        
+        // Check if this is from our player
+        let sourceName = ev.sourceName;
+        if (!sourceName && ev.sourceID != null && meta.actorsById[ev.sourceID]) {
+          sourceName = meta.actorsById[ev.sourceID].name;
+        }
+        if (!sourceName || sourceName.toLowerCase() !== playerNameLower) continue;
+        
+        const amount = ev.amount || 0;
+        const overheal = ev.overheal || 0;
+        const effectiveHeal = Math.max(0, amount - overheal);
+        
+        ourHealingTotal += effectiveHeal;
+        
+        // Get target info
+        const targetActor = ev.targetID != null ? meta.actorsById[ev.targetID] : null;
+        const targetName = ev.targetName || targetActor?.name || `#${ev.targetID}`;
+        const abilityName = ev.abilityName || (ev.abilityGameID && meta.abilitiesById[ev.abilityGameID]?.name) || 'Unknown';
+        
+        // Track by target
+        if (!healEventBreakdown[targetName]) {
+          healEventBreakdown[targetName] = { count: 0, total: 0, overheal: 0 };
+        }
+        healEventBreakdown[targetName].count++;
+        healEventBreakdown[targetName].total += effectiveHeal;
+        healEventBreakdown[targetName].overheal += overheal;
+        
+        if (healIncludedSample.length < 20) {
+          healIncludedSample.push({
+            timestamp: ev.timestamp,
+            target: targetName,
+            ability: abilityName,
+            amount,
+            overheal,
+            effective: effectiveHeal
+          });
+        }
+      }
+    }
+    
+    // 2. Query WCL API for their damage AND healing totals
+    let wclDamageTotal = null;
+    let wclDamageBreakdown = null;
+    let wclHealingTotal = null;
+    let wclHealingBreakdown = null;
+    try {
+      const token = await getWclAccessToken();
+      const apiUrl = 'https://vanilla.warcraftlogs.com/api/v2/client';
+      
+      const query = `query($code: String!) {
+        reportData {
+          report(code: $code) {
+            damageTable: table(dataType: DamageDone, startTime: 0, endTime: 999999999)
+            healingTable: table(dataType: Healing, startTime: 0, endTime: 999999999)
+          }
+        }
+      }`;
+      
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ query, variables: { code: reportCode } })
+      });
+      
+      const data = await response.json();
+      const damageTable = data?.data?.reportData?.report?.damageTable?.data;
+      const healingTable = data?.data?.reportData?.report?.healingTable?.data;
+      
+      if (damageTable && damageTable.entries) {
+        const playerEntry = damageTable.entries.find(e => 
+          e.name && e.name.toLowerCase() === playerNameLower
+        );
+        if (playerEntry) {
+          wclDamageTotal = playerEntry.total;
+          wclDamageBreakdown = playerEntry;
+        }
+      }
+      
+      if (healingTable && healingTable.entries) {
+        const playerEntry = healingTable.entries.find(e => 
+          e.name && e.name.toLowerCase() === playerNameLower
+        );
+        if (playerEntry) {
+          wclHealingTotal = playerEntry.total;
+          wclHealingBreakdown = playerEntry;
+        }
+      }
+    } catch (wclErr) {
+      console.error('WCL API error:', wclErr.message);
+    }
+    
+    // Sort damage breakdown by total
+    const sortedBreakdown = Object.entries(eventBreakdown)
+      .map(([target, data]) => ({ target, ...data }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 30);
+    
+    // Sort healing breakdown by total
+    const sortedHealBreakdown = Object.entries(healEventBreakdown)
+      .map(([target, data]) => ({ target, ...data }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 30);
+    
+    res.json({
+      player: playerName,
+      reportCode,
+      damage: {
+        ourTotal,
+        ourTotalWithOverkill,
+        wclTotal: wclDamageTotal,
+        difference: wclDamageTotal ? ourTotal - wclDamageTotal : null,
+        differencePercent: wclDamageTotal ? ((ourTotal - wclDamageTotal) / wclDamageTotal * 100).toFixed(2) + '%' : null,
+        overkillSubtracted: ourTotalWithOverkill - ourTotal,
+        topTargets: sortedBreakdown,
+        excludedEvents: excludedEvents.slice(0, 50),
+        includedSample,
+        wclBreakdown: wclDamageBreakdown
+      },
+      healing: {
+        ourTotal: ourHealingTotal,
+        wclTotal: wclHealingTotal,
+        difference: wclHealingTotal ? ourHealingTotal - wclHealingTotal : null,
+        differencePercent: wclHealingTotal ? ((ourHealingTotal - wclHealingTotal) / wclHealingTotal * 100).toFixed(2) + '%' : null,
+        topTargets: sortedHealBreakdown,
+        includedSample: healIncludedSample,
+        wclBreakdown: wclHealingBreakdown
+      }
+    });
+    
+  } catch (err) {
+    console.error('Debug compare error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fetch damage and healing leaderboards directly from WCL API
+// This gives exact WCL numbers including class info
+app.get('/api/wcl/leaderboards/:reportCode', async (req, res) => {
+  const { reportCode } = req.params;
+  
+  try {
+    const token = await getWclAccessToken();
+    const apiUrl = 'https://vanilla.warcraftlogs.com/api/v2/client';
+    
+    // Fetch both damage and healing tables
+    // Note: WCL uses "DamageDone" but just "Healing" (not "HealingDone")
+    const query = `query($code: String!) {
+      reportData {
+        report(code: $code) {
+          damageTable: table(dataType: DamageDone, startTime: 0, endTime: 999999999)
+          healingTable: table(dataType: Healing, startTime: 0, endTime: 999999999)
+        }
+      }
+    }`;
+    
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ query, variables: { code: reportCode } })
+    });
+    
+    const data = await response.json();
+    
+    if (data.errors) {
+      return res.status(400).json({ error: data.errors[0].message });
+    }
+    
+    const damageTable = data?.data?.reportData?.report?.damageTable?.data;
+    const healingTable = data?.data?.reportData?.report?.healingTable?.data;
+    
+    // Process damage entries
+    const damage = (damageTable?.entries || [])
+      .filter(e => e.type && e.type !== 'Pet') // Filter out pets
+      .map(e => ({
+        name: e.name,
+        amount: e.total,
+        class: e.type || 'Unknown',
+        icon: e.icon,
+        percent: 0 // Will calculate below
+      }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 30);
+    
+    // Calculate percent relative to top
+    if (damage.length > 0) {
+      const topDamage = damage[0].amount;
+      for (const p of damage) {
+        p.percent = (p.amount / topDamage) * 100;
+      }
+    }
+    
+    // Process healing entries
+    const healing = (healingTable?.entries || [])
+      .filter(e => e.type && e.type !== 'Pet')
+      .map(e => ({
+        name: e.name,
+        amount: e.total,
+        class: e.type || 'Unknown',
+        icon: e.icon,
+        percent: 0
+      }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 15);
+    
+    if (healing.length > 0) {
+      const topHealing = healing[0].amount;
+      for (const p of healing) {
+        p.percent = (p.amount / topHealing) * 100;
+      }
+    }
+    
+    res.json({
+      reportCode,
+      damage,
+      healing,
+      totalDamage: damageTable?.totalDamage || 0,
+      totalHealing: healingTable?.totalHealing || 0
+    });
+    
+  } catch (err) {
+    console.error('WCL leaderboards error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// SSE endpoint for live page viewers - streams from cached highlights
+app.get('/api/live/stream', async (req, res) => {
+  // Set up SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+  
+  // Add this connection to viewers set
+  liveViewerConnections.add(res);
+  console.log(`[LIVE VIEWER] Connected. Total viewers: ${liveViewerConnections.size}`);
+  
+  // Send initial state from cache
+  try {
+    const result = await pool.query('SELECT highlight_type, highlights, updated_at FROM wcl_live_highlights ORDER BY updated_at DESC');
+    const cached = {};
+    for (const row of result.rows) {
+      cached[row.highlight_type] = typeof row.highlights === 'string' ? JSON.parse(row.highlights) : row.highlights;
+    }
+    
+    // Send current session status
+    res.write(`event: init\ndata: ${JSON.stringify({ 
+      active: activeLiveSession != null,
+      session: activeLiveSession,
+      cached,
+      viewerCount: liveViewerConnections.size
+    })}\n\n`);
+  } catch (err) {
+    res.write(`event: error\ndata: ${JSON.stringify({ message: 'Failed to load cached highlights' })}\n\n`);
+  }
+  
+  // Handle client disconnect
+  req.on('close', () => {
+    liveViewerConnections.delete(res);
+    console.log(`[LIVE VIEWER] Disconnected. Total viewers: ${liveViewerConnections.size}`);
+  });
+  
+  // Send heartbeat every 15 seconds to keep connection alive
+  const heartbeatInterval = setInterval(() => {
+    try {
+      res.write(`event: heartbeat\ndata: ${JSON.stringify({ 
+        time: Date.now(),
+        viewerCount: liveViewerConnections.size 
+      })}\n\n`);
+    } catch (_) {
+      clearInterval(heartbeatInterval);
+      liveViewerConnections.delete(res);
+    }
+  }, 15000);
+  
+  req.on('close', () => clearInterval(heartbeatInterval));
+});
+
+// API to save PW:S highlights from host
+app.post('/api/live/highlights/pws', express.json({ limit: '5mb' }), async (req, res) => {
+  const { reportCode, events, fights, tanks } = req.body || {};
+  if (!reportCode || !Array.isArray(events)) {
+    return res.status(400).json({ ok: false, error: 'Missing reportCode or events' });
+  }
+  try {
+    await saveAndBroadcastHighlights(reportCode, 'pws', { events, count: events.length });
+    // Also save meta data (fights, tanks) for detail modals on live page
+    if (fights || tanks) {
+      await saveAndBroadcastHighlights(reportCode, 'meta', { fights: fights || [], tanks: tanks || [] });
+    }
+    res.json({ ok: true, count: events.length });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// API to save Renew highlights from host
+app.post('/api/live/highlights/renew', express.json({ limit: '5mb' }), async (req, res) => {
+  const { reportCode, events } = req.body || {};
+  if (!reportCode || !Array.isArray(events)) {
+    return res.status(400).json({ ok: false, error: 'Missing reportCode or events' });
+  }
+  try {
+    await saveAndBroadcastHighlights(reportCode, 'renew', { events, count: events.length });
+    res.json({ ok: true, count: events.length });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// API to stop the active live session
+app.post('/api/live/stop', async (req, res) => {
+  activeLiveSession = null;
+  broadcastHighlightsToViewers({ type: 'stopped', timestamp: Date.now() });
+  res.json({ ok: true, message: 'Live session stopped' });
+});
+
+// API to clear all highlights
+app.post('/api/live/clear', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM wcl_live_highlights');
+    broadcastHighlightsToViewers({ type: 'clear', timestamp: Date.now() });
+    res.json({ ok: true, message: 'Highlights cleared' });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// API to get live session status (for navigation indicator)
+app.get('/api/live/status', async (req, res) => {
+  try {
+    res.json({
+      active: activeLiveSession != null,
+      session: activeLiveSession ? {
+        reportCode: activeLiveSession.reportCode,
+        startTime: activeLiveSession.startTime
+      } : null,
+      viewerCount: liveViewerConnections.size
+    });
+  } catch (err) {
+    res.status(500).json({ active: false, error: err.message });
+  }
+});
+
+// Get session status
+app.get('/api/wcl/live-session/:sessionId', async (req, res) => {
+  let client;
+  try {
+    const { sessionId } = req.params;
+    client = await pool.connect();
+    await ensureLiveSessionTable(client);
+    
+    const result = await client.query(`
+      SELECT * FROM wcl_live_sessions WHERE session_id = $1
+    `, [sessionId]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'Session not found' });
+    }
+    
+    res.json({ ok: true, session: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  } finally {
+    if (client) client.release();
+  }
+});
+
 app.get('/api/db-status', (req, res) => {
   res.json({ status: dbConnectionStatus });
 });
@@ -4869,6 +7075,52 @@ app.post('/api/assignments/:eventId/replace-name', requireRosterManager, express
     return res.status(500).json({ success: false, message: 'Failed to replace assignments' });
   } finally {
     client.release();
+  }
+});
+
+// API to get tank names for an event (for livehost filtering)
+app.get('/api/event/:eventId/tanks', async (req, res) => {
+  const { eventId } = req.params;
+  console.log(`[TANKS API] Fetching tanks for event: ${eventId}`);
+  let client;
+  try {
+    client = await pool.connect();
+    
+    // First, try to find tank entries - check what wing/boss values exist
+    const checkResult = await client.query(`
+      SELECT DISTINCT wing, boss FROM raid_assignment_entries WHERE event_id = $1
+    `, [eventId]);
+    console.log(`[TANKS API] Wings/bosses found for event ${eventId}:`, checkResult.rows);
+    
+    // Get tank entries - try multiple possible combinations
+    let result = await client.query(`
+      SELECT character_name, assignment, marker_icon_url, sort_index
+      FROM raid_assignment_entries
+      WHERE event_id = $1 AND boss = 'Tanking'
+      ORDER BY sort_index ASC
+      LIMIT 4
+    `, [eventId]);
+    
+    // If no results, try looking for 'Main Tank', 'Off Tank' in assignment field
+    if (result.rows.length === 0) {
+      console.log(`[TANKS API] No Tanking boss found, trying assignment field...`);
+      result = await client.query(`
+        SELECT character_name, assignment, marker_icon_url, sort_index
+        FROM raid_assignment_entries
+        WHERE event_id = $1 AND (assignment LIKE '%Tank%' OR assignment LIKE '%tank%')
+        ORDER BY sort_index ASC
+        LIMIT 8
+      `, [eventId]);
+    }
+    
+    const tankNames = result.rows.map(r => r.character_name).filter(n => n && n.trim());
+    console.log(`[TANKS API] Found tanks:`, tankNames);
+    res.json({ tanks: tankNames, count: tankNames.length, debug: checkResult.rows });
+  } catch (err) {
+    console.error('[TANKS API] Error fetching tanks:', err);
+    res.status(500).json({ error: err.message, tanks: [] });
+  } finally {
+    if (client) client.release();
   }
 });
 
@@ -19984,4 +22236,5 @@ app.post('/api/chat/mod/delete', requireManagement, express.json(), async (req, 
   }
 });
 
+// Voice monitor removed per request
 // Voice monitor removed per request

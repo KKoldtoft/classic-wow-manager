@@ -113,9 +113,14 @@ async function updateAuthUI() {
 function highlightActiveNav() {
     const currentPath = window.location.pathname;
     const navLinks = document.querySelectorAll('.top-nav-link');
+    const isLivePage = currentPath === '/live' || currentPath === '/livehost';
     
     navLinks.forEach(link => {
-        if (link.getAttribute('href') === currentPath) {
+        const linkHref = link.getAttribute('href');
+        // Special handling for Live link (matches both /live and /livehost)
+        if (isLivePage && linkHref === '/live') {
+            link.classList.add('active');
+        } else if (linkHref === currentPath) {
             link.classList.add('active');
         } else {
             link.classList.remove('active');
@@ -157,6 +162,41 @@ function highlightActiveRaidNav() {
     });
 }
 
+// Check live session status and update the indicator in top-bar
+async function updateLiveStatusIndicator() {
+    const statusDot = document.getElementById('live-status-dot');
+    const liveLink = document.getElementById('top-nav-live-link');
+    
+    if (!statusDot) return;
+    
+    try {
+        const response = await fetch('/api/live/status');
+        if (response.ok) {
+            const data = await response.json();
+            if (data.active) {
+                statusDot.classList.add('active');
+                if (liveLink) liveLink.classList.add('live-active');
+            } else {
+                statusDot.classList.remove('active');
+                if (liveLink) liveLink.classList.remove('live-active');
+            }
+        }
+    } catch (err) {
+        // Silent fail - keep default state
+        if (statusDot) statusDot.classList.remove('active');
+        if (liveLink) liveLink.classList.remove('live-active');
+    }
+}
+
+// Start periodic live status checks
+function startLiveStatusPolling() {
+    // Initial check after a short delay to allow DOM to be ready
+    setTimeout(updateLiveStatusIndicator, 100);
+    
+    // Poll every 10 seconds
+    setInterval(updateLiveStatusIndicator, 10000);
+}
+
 // Inject a "Rules" link into the top navigation if not present
 function injectRulesNavLink() {
     const navs = document.querySelectorAll('.top-nav');
@@ -165,6 +205,7 @@ function injectRulesNavLink() {
         const existingRules = nav.querySelector('a.top-nav-link[href="/rules"]');
         const existingStats = nav.querySelector('a.top-nav-link[href="/stats"]');
         const existingFaq = nav.querySelector('a.top-nav-link[href="/faq"]');
+        const existingLive = nav.querySelector('a.top-nav-link[href="/live"]');
 
         // Insert Stats link to the left of Rules
         if (!existingStats) {
@@ -193,6 +234,16 @@ function injectRulesNavLink() {
             faqLink.className = 'top-nav-link';
             faqLink.textContent = 'FAQ';
             nav.appendChild(faqLink);
+        }
+
+        // Add Live link with status indicator
+        if (!existingLive) {
+            const liveLink = document.createElement('a');
+            liveLink.href = '/live';
+            liveLink.className = 'top-nav-link live-nav-link';
+            liveLink.id = 'top-nav-live-link';
+            liveLink.innerHTML = '<span class="live-status-dot" id="live-status-dot"></span><span class="nav-text">Live</span>';
+            nav.appendChild(liveLink);
         }
 
     });
@@ -255,15 +306,16 @@ function enhanceTopNavIcons() {
 
 		// Links
 		document.querySelectorAll('.top-nav a.top-nav-link').forEach(link => {
-			// Skip if already enhanced
+			// Skip if already enhanced or if it's the live link (has custom structure with status dot)
 			if (link.querySelector('i.nav-icon')) return;
+			if (link.classList.contains('live-nav-link')) return;
 			const href = link.getAttribute('href') || '';
 			const icon = iconForHref(href);
 			const text = link.textContent.trim();
 			link.innerHTML = `<i class="fas ${icon} nav-icon" aria-hidden="true"></i><span class="nav-text">${text}</span>`;
 		});
 
-		// Dropdown toggle (Upcoming Raids)
+		// Dropdown toggle (Raids)
 		document.querySelectorAll('.top-nav .dropdown-toggle').forEach(btn => {
 			if (!btn.classList.contains('top-nav-link')) {
 				btn.classList.add('top-nav-link');
@@ -274,7 +326,7 @@ function enhanceTopNavIcons() {
 				const chevron = btn.querySelector('.fa-chevron-down');
 				const label = btn.childNodes[0] && btn.childNodes[0].nodeType === Node.TEXT_NODE
 					? btn.childNodes[0].textContent.trim()
-					: (btn.textContent.replace(/\s*\u25BC|\s*▼/g, '').trim() || 'Upcoming Raids');
+					: (btn.textContent.replace(/\s*\u25BC|\s*▼/g, '').trim() || 'Raids');
 				btn.innerHTML = `<i class="fas fa-calendar-alt nav-icon" aria-hidden="true"></i><span class="nav-text">${label}</span>` + (chevron ? ` <i class="fas fa-chevron-down"></i>` : ' <i class="fas fa-chevron-down"></i>');
 			}
 		});
@@ -334,7 +386,7 @@ function handleScroll() {
     }, 50); // Small delay to prevent excessive triggering
 }
 
-// Upcoming Raids Dropdown functionality
+// Raids Dropdown functionality
 async function loadUpcomingRaids() {
     const dropdownMenu = document.getElementById('upcoming-raids-menu');
     if (!dropdownMenu) return;
@@ -528,7 +580,6 @@ function updateRaidNavigation(eventId) {
     const logsLink = document.getElementById('raid-logs-link');
     const goldpotLink = document.getElementById('raid-goldpot-link');
     const lootLink = document.getElementById('raid-loot-link');
-    const liveViewLink = document.getElementById('live-view-link');
     
     // Update roster link
     if (rosterLink) {
@@ -556,11 +607,6 @@ function updateRaidNavigation(eventId) {
         lootLink.href = `/event/${eventId}/loot`;
         lootLink.replaceWith(lootLink.cloneNode(true));
     }
-
-    // Remove Live View link if present
-    if (liveViewLink && liveViewLink.parentNode) {
-        liveViewLink.parentNode.removeChild(liveViewLink);
-    }
 }
 
 // Run the functions when the document is ready.
@@ -576,6 +622,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Ensure raid navigation highlighting is applied after everything loads
     setTimeout(() => highlightActiveRaidNav(), 200);
+    
+    // Start polling for live session status
+    setTimeout(() => startLiveStatusPolling(), 500);
 
     // Add scroll listener for sticky header behavior
     window.addEventListener('scroll', handleScroll, { passive: true });

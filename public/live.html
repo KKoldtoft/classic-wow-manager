@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live - WCL Analysis</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="icon" href="/images/1p_logo.png">
+    <style>
+        :root {
+            --bg-dark: #0a0a0f;
+            --bg-card: #12121a;
+            --bg-input: #1a1a24;
+            --border: #2a2a3a;
+            --text: #e0e0e0;
+            --text-dim: #888;
+            --accent: #4a9eff;
+            --accent-glow: rgba(74, 158, 255, 0.3);
+            --success: #4ade80;
+            --warning: #fbbf24;
+            --error: #f87171;
+        }
+
+        body {
+            background: var(--bg-dark);
+            color: var(--text);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            padding-top: 44px; /* Account for top bar */
+        }
+
+        body.has-raid-bar {
+            padding-top: 94px; /* Account for both bars */
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            padding: 30px 0 20px;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            font-weight: 300;
+            margin: 0;
+            letter-spacing: 0.05em;
+        }
+
+        .header h1 span {
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        .status-section {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-size: 14px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--text-dim);
+        }
+
+        .status-dot.connected {
+            background: var(--success);
+            box-shadow: 0 0 8px var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.waiting {
+            background: var(--warning);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .viewer-count {
+            color: var(--text-dim);
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        /* Highlight Panels */
+        .highlights-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 1200px) {
+            .highlights-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .highlights-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .highlight-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .highlight-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .highlight-header h3 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .highlight-count {
+            background: rgba(255, 255, 255, 0.15);
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+
+        .panel-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        .highlight-list {
+            max-height: 175px; /* ~5 items visible */
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        /* Custom scrollbar styling */
+        .highlight-list::-webkit-scrollbar,
+        .leaderboard-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .highlight-list::-webkit-scrollbar-track,
+        .leaderboard-list::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+        }
+
+        .highlight-list::-webkit-scrollbar-thumb,
+        .leaderboard-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+
+        .highlight-list::-webkit-scrollbar-thumb:hover,
+        .leaderboard-list::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.35);
+        }
+
+        /* Firefox scrollbar */
+        .highlight-list,
+        .leaderboard-list {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
+        }
+
+        .highlight-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 10px;
+            background: var(--bg-input);
+            border-radius: 6px;
+            margin-bottom: 4px;
+            font-size: 12px;
+        }
+
+        .highlight-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .highlight-item .time {
+            display: none;
+        }
+
+        .highlight-item .source {
+            font-weight: 500;
+            min-width: 100px;
+            text-align: left;
+        }
+        
+        /* Default color for source if no class color */
+        .highlight-item .source.class-unknown {
+            color: var(--accent);
+        }
+        
+        /* Ability icons */
+        .ability-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+            vertical-align: middle;
+            margin: 0 4px;
+            flex-shrink: 0;
+        }
+
+        .highlight-item .arrow {
+            color: var(--text-dim);
+            margin: 0 6px;
+            flex-shrink: 0;
+        }
+
+        .highlight-item .target {
+            margin-left: auto;
+            text-align: right;
+        }
+
+        /* Default color for target if no class color */
+        .highlight-item .target.class-unknown {
+            color: var(--text);
+        }
+
+        .highlight-item .meta {
+            color: var(--text-dim);
+            font-size: 10px;
+            margin-left: auto;
+            padding-left: 10px;
+        }
+
+        .highlight-item.clickable {
+            cursor: pointer;
+            transition: background 0.15s, transform 0.1s;
+        }
+
+        .highlight-item.clickable:hover {
+            background: rgba(74, 158, 255, 0.15);
+            transform: translateX(2px);
+        }
+
+        .highlight-empty {
+            padding: 30px 20px;
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 12px;
+        }
+
+        .charge-status-icon {
+            margin-right: 6px;
+            font-size: 11px;
+        }
+
+        .charge-status-icon.good {
+            filter: drop-shadow(0 0 2px rgba(74, 222, 128, 0.5));
+        }
+
+        .charge-status-icon.bad {
+            filter: drop-shadow(0 0 2px rgba(248, 113, 113, 0.5));
+        }
+
+        /* Detail Modal */
+        .detail-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+        }
+
+        .detail-modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .detail-modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .detail-modal-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .detail-modal-header h3 {
+            margin: 0;
+            font-size: 16px;
+            color: var(--accent);
+        }
+
+        .detail-modal-close {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .detail-modal-close:hover {
+            color: var(--text);
+        }
+
+        .detail-modal-body {
+            padding: 20px;
+        }
+
+        .detail-section {
+            margin-bottom: 20px;
+        }
+
+        .detail-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .detail-section-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 120px 1fr;
+            gap: 8px 12px;
+            font-size: 13px;
+        }
+
+        .detail-label {
+            color: var(--text-dim);
+        }
+
+        .detail-value {
+            color: var(--text);
+        }
+
+        .detail-verdict {
+            margin-top: 16px;
+            padding: 12px;
+            background: rgba(248, 113, 113, 0.1);
+            border: 1px solid rgba(248, 113, 113, 0.3);
+            border-radius: 8px;
+            font-size: 13px;
+        }
+
+        .detail-verdict.good, .detail-verdict.verdict-ok {
+            background: rgba(74, 222, 128, 0.1);
+            border-color: rgba(74, 222, 128, 0.3);
+        }
+
+        .detail-verdict.verdict-bad {
+            background: rgba(248, 113, 113, 0.1);
+            border-color: rgba(248, 113, 113, 0.3);
+        }
+
+        /* WoW Class Colors */
+        .class-warrior { color: #C79C6E; }
+        .class-paladin { color: #F58CBA; }
+        .class-hunter { color: #ABD473; }
+        .class-rogue { color: #FFF569; }
+        .class-priest { color: #FFFFFF; }
+        .class-shaman { color: #0070DE; }
+        .class-mage { color: #69CCF0; }
+        .class-warlock { color: #9482C9; }
+        .class-druid { color: #FF7D0A; }
+        .class-unknown { color: var(--text); }
+
+        /* Class background colors for bars */
+        .bar-warrior { background: #C79C6E; }
+        .bar-paladin { background: #F58CBA; }
+        .bar-hunter { background: #ABD473; }
+        .bar-rogue { background: #FFF569; }
+        .bar-priest { background: #FFFFFF; }
+        .bar-shaman { background: #0070DE; }
+        .bar-mage { background: #69CCF0; }
+        .bar-warlock { background: #9482C9; }
+        .bar-druid { background: #FF7D0A; }
+        .bar-unknown { background: var(--accent); }
+
+        /* Leaderboard Panels */
+        .leaderboards-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 1000px) {
+            .leaderboards-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .leaderboard-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .leaderboard-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .leaderboard-header h3 {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        .leaderboard-subtitle {
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+
+        .leaderboard-list {
+            max-height: 230px;
+            overflow-y: auto;
+        }
+
+        .leaderboard-empty {
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--text-dim);
+        }
+
+        .leaderboard-row {
+            display: grid;
+            grid-template-columns: 30px 1fr 130px;
+            gap: 12px;
+            align-items: center;
+            padding: 8px 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+
+        .leaderboard-row:hover {
+            background: rgba(255,255,255,0.02);
+        }
+
+        .leaderboard-rank {
+            font-size: 12px;
+            color: var(--text-dim);
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .leaderboard-rank.top1 { color: #ffd700; }
+        .leaderboard-rank.top2 { color: #c0c0c0; }
+        .leaderboard-rank.top3 { color: #cd7f32; }
+
+        .leaderboard-player {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .leaderboard-name {
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .leaderboard-bar-container {
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .leaderboard-bar {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        .leaderboard-amount {
+            font-size: 13px;
+            font-weight: 500;
+            text-align: right;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            white-space: nowrap;
+        }
+
+        .leaderboard-amount.damage {
+            color: #ff6b6b;
+        }
+
+        .leaderboard-amount.healing {
+            color: #4ade80;
+        }
+
+        .leaderboard-ps {
+            color: var(--text-dim);
+            font-size: 11px;
+            font-weight: 400;
+        }
+
+        .detail-value.good {
+            color: var(--success);
+        }
+
+        .detail-value.bad {
+            color: var(--error);
+        }
+
+        .detail-encounter {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .detail-encounter-name {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .detail-encounter-time {
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+
+        .detail-no-encounter {
+            color: var(--text-dim);
+            font-style: italic;
+        }
+
+        .detail-damage-info {
+            color: var(--text-dim);
+            font-size: 11px;
+            font-style: italic;
+        }
+
+        /* Too Low Panels */
+        .too-low-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 1000px) {
+            .too-low-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .too-low-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .too-low-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .too-low-header h3 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .too-low-count {
+            background: rgba(251, 191, 36, 0.2);
+            color: var(--warning);
+            font-size: 12px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+
+        .too-low-list {
+            max-height: 160px;
+            overflow-y: auto;
+        }
+
+        /* Custom scrollbar for too-low lists */
+        .too-low-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .too-low-list::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+        }
+
+        .too-low-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+
+        .too-low-list::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.35);
+        }
+
+        .too-low-list {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
+        }
+
+        .too-low-row {
+            display: grid;
+            grid-template-columns: 1fr 70px 55px 45px;
+            gap: 8px;
+            align-items: center;
+            padding: 8px 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+
+        .too-low-row:hover {
+            background: rgba(255,255,255,0.02);
+        }
+
+        .too-low-player {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .too-low-name {
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .too-low-bar-container {
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .too-low-bar {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .too-low-amount {
+            font-size: 12px;
+            font-weight: 500;
+            text-align: right;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            color: var(--text-dim);
+        }
+
+        .too-low-dps {
+            font-size: 11px;
+            font-weight: 500;
+            text-align: right;
+            color: var(--warning);
+        }
+
+        .too-low-points {
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+            text-align: center;
+            min-width: 35px;
+        }
+
+        .too-low-points.severe {
+            background: rgba(248, 113, 113, 0.2);
+            color: #f87171;
+        }
+
+        .too-low-points.moderate {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+        }
+
+        .too-low-points.minor {
+            background: rgba(251, 191, 36, 0.15);
+            color: #d4a72c;
+        }
+
+        .too-low-empty {
+            padding: 20px;
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 13px;
+        }
+
+        /* Host button for management */
+        .host-section {
+            display: none;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .host-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #5865F2, #4752C4);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+
+        .host-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(88, 101, 242, 0.4);
+        }
+
+        .host-button i {
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Top Navigation Bar -->
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+            <nav class="top-nav">
+                <a href="/" class="top-nav-link">Home</a>
+                <div class="top-nav-dropdown">
+                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+                        Raids <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="upcoming-raids-menu">
+                        <div class="dropdown-loading">Loading raids...</div>
+                    </div>
+                </div>
+                <a href="/guild-members" class="top-nav-link">Members</a>
+                <a href="/attendance" class="top-nav-link">Attendance</a>
+            </nav>
+        </div>
+        <div id="auth-container">
+            <!-- Auth content is loaded by top-bar.js -->
+        </div>
+    </div>
+
+    <!-- Active Raid Bar (shown when raid is selected) -->
+    <div class="raid-bar" id="raid-bar" style="display: none;">
+        <div class="raid-bar-left">
+            <span class="raid-title" id="raid-title">Loading...</span>
+            <nav class="raid-nav">
+                <a href="#" class="raid-nav-link" id="raid-roster-link">
+                    <i class="fas fa-users"></i> Roster
+                </a>
+                <a href="#" class="raid-nav-link" id="raid-assignments-link">
+                    <i class="fas fa-tasks"></i> Assignments
+                </a>
+                <a href="/raidlogs" class="raid-nav-link" id="raid-logs-link">
+                    <i class="fas fa-chart-line"></i> Raid Logs
+                </a>
+                <a href="/gold" class="raid-nav-link" id="raid-goldpot-link">
+                    <i class="fas fa-coins"></i> Gold Pot
+                </a>
+                <a href="/loot" class="raid-nav-link" id="raid-loot-link">
+                    <i class="fas fa-shield-alt"></i> Loot
+                </a>
+            </nav>
+        </div>
+        <div class="raid-bar-right">
+            <button class="raid-close-btn" onclick="localStorage.removeItem('activeEventSession'); location.reload();">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="header">
+            <h1><span>LIVE</span> Analysis</h1>
+        </div>
+
+        <!-- Host button (shown only to management users when no session active) -->
+        <div class="host-section" id="hostSection">
+            <a href="/livehost" target="_blank" class="host-button">
+                <i class="fas fa-broadcast-tower"></i>
+                Host a Live Event
+            </a>
+        </div>
+
+        <div class="status-section">
+            <div class="status-badge">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Connecting...</span>
+            </div>
+            <div class="viewer-count" id="viewerCount"></div>
+        </div>
+
+        <!-- Damage & Healing Leaderboards -->
+        <div class="leaderboards-grid" id="leaderboardsGrid" style="display: none;">
+            <div class="leaderboard-panel" id="damagePanel">
+                <div class="leaderboard-header">
+                    <h3>⚔️ Damage Done</h3>
+                    <span class="leaderboard-subtitle">Top 30</span>
+                </div>
+                <div class="leaderboard-list" id="damageList">
+                    <div class="leaderboard-empty">Analyzing...</div>
+                </div>
+            </div>
+            
+            <div class="leaderboard-panel" id="healingPanel">
+                <div class="leaderboard-header">
+                    <h3>💚 Healing Done</h3>
+                    <span class="leaderboard-subtitle">Top 15</span>
+                </div>
+                <div class="leaderboard-list" id="healingList">
+                    <div class="leaderboard-empty">Analyzing...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Too Low Performance Panels -->
+        <div class="too-low-grid" id="tooLowGrid" style="display: none;">
+            <div class="too-low-panel" id="tooLowDamagePanel">
+                <div class="too-low-header">
+                    <h3>⚠️ Too Low Damage</h3>
+                    <span class="too-low-count" id="tooLowDamageCount">0</span>
+                </div>
+                <div class="too-low-list" id="tooLowDamageList">
+                    <div class="too-low-empty">Waiting for data...</div>
+                </div>
+            </div>
+            
+            <div class="too-low-panel" id="tooLowHealingPanel">
+                <div class="too-low-header">
+                    <h3>⚠️ Too Low Healing</h3>
+                    <span class="too-low-count" id="tooLowHealingCount">0</span>
+                </div>
+                <div class="too-low-list" id="tooLowHealingList">
+                    <div class="too-low-empty">Waiting for data...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="highlights-grid" id="highlightsGrid">
+            <div class="highlight-panel">
+                <div class="highlight-header">
+                    <h3><img class="panel-icon" src="https://wow.zamimg.com/images/wow/icons/large/spell_holy_powerwordshield.jpg" alt="">Shields on Tanks <span class="highlight-count" id="pwsCount">0</span></h3>
+                </div>
+                <div class="highlight-list" id="pwsList">
+                    <div class="highlight-empty">Waiting for data...</div>
+                </div>
+            </div>
+
+            <div class="highlight-panel">
+                <div class="highlight-header">
+                    <h3><img class="panel-icon" src="https://wow.zamimg.com/images/wow/icons/large/ability_racial_bloodrage.jpg" alt="">End of Combat Bloodrages <span class="highlight-count" id="bloodrageCount">0</span></h3>
+                </div>
+                <div class="highlight-list" id="bloodrageList">
+                    <div class="highlight-empty">Waiting for data...</div>
+                </div>
+            </div>
+
+            <div class="highlight-panel">
+                <div class="highlight-header">
+                    <h3><img class="panel-icon" src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_charge.jpg" alt="">Risky Charges <span class="highlight-count" id="chargeCount">0</span></h3>
+                </div>
+                <div class="highlight-list" id="chargeList">
+                    <div class="highlight-empty">Waiting for data...</div>
+                </div>
+            </div>
+
+            <div class="highlight-panel">
+                <div class="highlight-header">
+                    <h3><img class="panel-icon" src="https://wow.zamimg.com/images/wow/icons/large/spell_holy_renew.jpg" alt="">Renews on Tanks <span class="highlight-count" id="renewCount">0</span></h3>
+                </div>
+                <div class="highlight-list" id="renewList">
+                    <div class="highlight-empty">Waiting for data...</div>
+                </div>
+            </div>
+            
+            <!-- Interrupts Panel -->
+            <div class="highlight-panel">
+                <div class="highlight-header">
+                    <h3><img class="panel-icon" src="https://wow.zamimg.com/images/wow/icons/large/ability_kick.jpg" alt="">Interupts <span class="highlight-count" id="interruptCount">0</span></h3>
+                </div>
+                <div class="highlight-list" id="interruptList">
+                    <div class="highlight-empty">Waiting for data...</div>
+                </div>
+            </div>
+            
+            <!-- Decurses Panel -->
+            <div class="highlight-panel">
+                <div class="highlight-header">
+                    <h3><img class="panel-icon" src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_removecurse.jpg" alt="">Decurses <span class="highlight-count" id="decurseCount">0</span></h3>
+                </div>
+                <div class="highlight-list" id="decurseList">
+                    <div class="highlight-empty">Waiting for data...</div>
+                </div>
+            </div>
+            
+            <!-- Sunder Armor Panel -->
+            <div class="highlight-panel">
+                <div class="highlight-header">
+                    <h3><img class="panel-icon" src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_sunder.jpg" alt="">Effective Sunder Armors <span class="highlight-count" id="sunderCount">0</span></h3>
+                </div>
+                <div class="highlight-list" id="sunderList">
+                    <div class="highlight-empty">Waiting for data...</div>
+                </div>
+            </div>
+            
+            <!-- Scorch Panel -->
+            <div class="highlight-panel">
+                <div class="highlight-header">
+                    <h3><img class="panel-icon" src="https://wow.zamimg.com/images/wow/icons/large/spell_fire_soulburn.jpg" alt="">Effective Scorches <span class="highlight-count" id="scorchCount">0</span></h3>
+                </div>
+                <div class="highlight-list" id="scorchList">
+                    <div class="highlight-empty">Waiting for data...</div>
+                </div>
+            </div>
+            
+            <!-- Disarm Panel -->
+            <div class="highlight-panel">
+                <div class="highlight-header">
+                    <h3><img class="panel-icon" src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_disarm.jpg" alt="">Disarms <span class="highlight-count" id="disarmCount">0</span></h3>
+                </div>
+                <div class="highlight-list" id="disarmList">
+                    <div class="highlight-empty">Waiting for data...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detail Modal -->
+    <div id="detailModalOverlay" class="detail-modal-overlay">
+        <div id="detailModal" class="detail-modal">
+            <div class="detail-modal-header">
+                <h3 id="detailModalTitle">Event Details</h3>
+                <button class="detail-modal-close" id="detailModalClose">&times;</button>
+            </div>
+            <div class="detail-modal-body" id="detailModalBody">
+            </div>
+        </div>
+    </div>
+
+    <script src="/top-bar.js"></script>
+    <script src="/live.js"></script>
+</body>
+</html>

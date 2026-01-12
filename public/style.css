@@ -314,6 +314,38 @@ body.has-raid-bar {
 .raid-nav > .raid-nav-link { border-left: 1px solid var(--raid-btn-border); }
 .raid-nav > .raid-nav-link:last-child { border-right: 1px solid var(--raid-btn-border); }
 
+/* Live link status indicator in top-bar */
+.top-nav-link.live-nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.live-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #6b7280; /* Gray by default (inactive) */
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+    flex-shrink: 0;
+}
+
+.live-status-dot.active {
+    background: #22c55e; /* Green when active */
+    box-shadow: 0 0 8px #22c55e;
+    animation: live-pulse 3s ease-in-out infinite;
+}
+
+/* Highlight the Live link when session is active */
+.top-nav-link.live-nav-link.live-active {
+    color: #22c55e;
+}
+
+@keyframes live-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 10px #22c55e; }
+    50% { opacity: 0.5; box-shadow: 0 0 4px #22c55e; }
+}
+
 #auth-container {
     display: flex;
     align-items: center;
