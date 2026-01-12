@@ -294,49 +294,75 @@
             font-size: 12px;
         }
 
-        /* Spore group styling */
-        .spore-group {
-            background: var(--bg-input);
-            border-radius: 6px;
-            margin-bottom: 8px;
-            padding: 10px;
+        /* Loatheb Spores Panel - spans full width */
+        .loatheb-spores-panel {
+            grid-column: span 4;
         }
-        
-        .spore-group-header {
+
+        .spores-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            padding: 12px;
+        }
+
+        .spore-cell {
+            background: var(--bg-input);
+            border-radius: 8px;
+            padding: 10px;
+            min-height: 80px;
+        }
+
+        .spore-cell-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 6px;
-            font-size: 11px;
-            color: var(--text-dim);
+            margin-bottom: 8px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid rgba(143, 209, 158, 0.2);
         }
-        
-        .spore-group-header .spore-number {
+
+        .spore-number {
             font-weight: 600;
+            font-size: 12px;
             color: #8fd19e;
         }
-        
-        .spore-group-header .spore-time {
+
+        .spore-time {
             font-size: 10px;
+            color: var(--text-dim);
         }
-        
-        .spore-group-players {
+
+        .spore-players {
             display: flex;
             flex-wrap: wrap;
             gap: 4px;
         }
-        
+
         .spore-player {
             background: rgba(143, 209, 158, 0.15);
             padding: 3px 8px;
             border-radius: 4px;
             font-size: 11px;
             font-weight: 500;
+            border: 2px solid transparent;
         }
-        
-        .loatheb-spores-panel .highlight-list {
-            max-height: 400px;
-            overflow-y: auto;
+
+        .spore-player.wrong-assignment {
+            border-color: #ef4444;
+            background: rgba(239, 68, 68, 0.15);
+        }
+
+        /* Spore icon - larger than other icons */
+        .loatheb-spores-panel .panel-icon {
+            width: 40px;
+            height: 40px;
+        }
+
+        .spore-cell-empty {
+            color: var(--text-dim);
+            font-size: 11px;
+            font-style: italic;
         }
 
         .charge-status-icon {
@@ -1377,10 +1403,81 @@
             <!-- Loatheb Spores Panel -->
             <div class="highlight-panel loatheb-spores-panel">
                 <div class="highlight-header">
-                    <h3><img class="panel-icon" src="https://wow.zamimg.com/images/wow/icons/large/inv_mushroom_11.jpg" alt="">Loatheb Spores <span class="highlight-count" id="sporeCount">0</span></h3>
+                    <h3><img class="panel-icon" src="https://wow.zamimg.com/modelviewer/classic/webthumbs/npc/239/16111.webp" alt="">Loatheb Spores <span class="highlight-count" id="sporeCount">0</span></h3>
                 </div>
-                <div class="highlight-list spore-list" id="sporeList">
-                    <div class="highlight-empty">Waiting for data...</div>
+                <div class="spores-grid" id="sporesGrid">
+                    <div class="spore-cell" id="spore1">
+                        <div class="spore-cell-header">
+                            <span class="spore-number">Spore 1</span>
+                            <span class="spore-time" id="spore1Time">--:--</span>
+                        </div>
+                        <div class="spore-players" id="spore1Players">
+                            <span class="spore-cell-empty">Waiting...</span>
+                        </div>
+                    </div>
+                    <div class="spore-cell" id="spore2">
+                        <div class="spore-cell-header">
+                            <span class="spore-number">Spore 2</span>
+                            <span class="spore-time" id="spore2Time">--:--</span>
+                        </div>
+                        <div class="spore-players" id="spore2Players">
+                            <span class="spore-cell-empty">Waiting...</span>
+                        </div>
+                    </div>
+                    <div class="spore-cell" id="spore3">
+                        <div class="spore-cell-header">
+                            <span class="spore-number">Spore 3</span>
+                            <span class="spore-time" id="spore3Time">--:--</span>
+                        </div>
+                        <div class="spore-players" id="spore3Players">
+                            <span class="spore-cell-empty">Waiting...</span>
+                        </div>
+                    </div>
+                    <div class="spore-cell" id="spore4">
+                        <div class="spore-cell-header">
+                            <span class="spore-number">Spore 4</span>
+                            <span class="spore-time" id="spore4Time">--:--</span>
+                        </div>
+                        <div class="spore-players" id="spore4Players">
+                            <span class="spore-cell-empty">Waiting...</span>
+                        </div>
+                    </div>
+                    <div class="spore-cell" id="spore5">
+                        <div class="spore-cell-header">
+                            <span class="spore-number">Spore 5</span>
+                            <span class="spore-time" id="spore5Time">--:--</span>
+                        </div>
+                        <div class="spore-players" id="spore5Players">
+                            <span class="spore-cell-empty">Waiting...</span>
+                        </div>
+                    </div>
+                    <div class="spore-cell" id="spore6">
+                        <div class="spore-cell-header">
+                            <span class="spore-number">Spore 6</span>
+                            <span class="spore-time" id="spore6Time">--:--</span>
+                        </div>
+                        <div class="spore-players" id="spore6Players">
+                            <span class="spore-cell-empty">Waiting...</span>
+                        </div>
+                    </div>
+                    <div class="spore-cell" id="spore7">
+                        <div class="spore-cell-header">
+                            <span class="spore-number">Spore 7</span>
+                            <span class="spore-time" id="spore7Time">--:--</span>
+                        </div>
+                        <div class="spore-players" id="spore7Players">
+                            <span class="spore-cell-empty">Waiting...</span>
+                        </div>
+                    </div>
+                    <div class="spore-cell" id="spore8">
+                        <div class="spore-cell-header">
+                            <span class="spore-number">Spore 8</span>
+                            <span class="spore-time" id="spore8Time">--:--</span>
+                        </div>
+                        <div class="spore-players" id="spore8Players">
+                            <span class="spore-cell-empty">Waiting...</span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

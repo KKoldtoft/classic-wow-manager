@@ -962,46 +962,88 @@
         }
     }
 
-    // Display Loatheb spore groups
-    function displaySpores(data) {
+    // Store player class mapping and spore assignments
+    let playerClassMap = {};
+    let sporeAssignments = {}; // { groupNumber: [playerNames] }
+
+    // Fetch spore assignments for the event
+    async function fetchSporeAssignments(eventId) {
+        if (!eventId) return {};
+        try {
+            const response = await fetch(`/api/assignments/${eventId}`);
+            if (!response.ok) return {};
+            const data = await response.json();
+            
+            // Extract spore assignments from panels
+            const assignments = {};
+            for (const panel of (data.panels || [])) {
+                for (const entry of (panel.entries || [])) {
+                    // Format: __SPORE__:{groupNumber}:{slotNumber}
+                    const match = String(entry.assignment || '').match(/^__SPORE__:(\d+):(\d+)$/);
+                    if (match) {
+                        const groupNum = Number(match[1]);
+                        const charName = entry.character_name;
+                        if (!assignments[groupNum]) assignments[groupNum] = [];
+                        assignments[groupNum].push(charName);
+                    }
+                }
+            }
+            console.log('[SPORES] Loaded assignments:', assignments);
+            return assignments;
+        } catch (err) {
+            console.error('[SPORES] Failed to fetch assignments:', err);
+            return {};
+        }
+    }
+
+    // Display Loatheb spore groups (first 8 spores in 4x2 grid)
+    async function displaySpores(data) {
         const sporeGroups = data.sporeGroups || [];
         const totalSpores = data.totalSpores || 0;
         if (sporeCount) sporeCount.textContent = totalSpores;
 
-        if (!sporeList) return;
-
-        if (sporeGroups.length === 0) {
-            sporeList.innerHTML = '<div class="highlight-empty">No Loatheb spore data</div>';
-            return;
+        // Fetch spore assignments if we have an event ID
+        const eventId = localStorage.getItem('activeEventSession');
+        if (eventId) {
+            sporeAssignments = await fetchSporeAssignments(eventId);
         }
 
-        sporeList.innerHTML = '';
-
-        for (const spore of sporeGroups) {
-            const group = document.createElement('div');
-            group.className = 'spore-group';
-
-            // Format timestamp as mm:ss from fight start
-            const timeInSeconds = Math.floor(spore.timestamp / 1000);
-            const minutes = Math.floor(timeInSeconds / 60);
-            const seconds = timeInSeconds % 60;
-            const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-            const playersHtml = spore.players.map(name => 
-                `<span class="spore-player">${name}</span>`
-            ).join('');
-
-            group.innerHTML = `
-                <div class="spore-group-header">
-                    <span class="spore-number">Spore ${spore.sporeNumber}</span>
-                    <span class="spore-time">${timeStr}</span>
-                </div>
-                <div class="spore-group-players">
-                    ${playersHtml}
-                </div>
-            `;
-
-            sporeList.appendChild(group);
+        // Update each spore cell (1-8)
+        for (let i = 1; i <= 8; i++) {
+            const timeEl = document.getElementById(`spore${i}Time`);
+            const playersEl = document.getElementById(`spore${i}Players`);
+            
+            if (!timeEl || !playersEl) continue;
+            
+            // Find spore data for this spore number
+            const sporeData = sporeGroups.find(s => s.sporeNumber === i);
+            
+            if (sporeData) {
+                // Format timestamp as mm:ss from fight start
+                const timeInSeconds = Math.floor(sporeData.timestamp / 1000);
+                const minutes = Math.floor(timeInSeconds / 60);
+                const seconds = timeInSeconds % 60;
+                timeEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                
+                // Display players who got the buff
+                if (sporeData.players && sporeData.players.length > 0) {
+                    const assignedPlayers = sporeAssignments[i] || [];
+                    
+                    playersEl.innerHTML = sporeData.players.map(name => {
+                        const playerClass = playerClassMap[name] || 'unknown';
+                        const classColor = getClassColor(playerClass);
+                        const isWrongAssignment = assignedPlayers.length > 0 && !assignedPlayers.includes(name);
+                        const wrongClass = isWrongAssignment ? ' wrong-assignment' : '';
+                        
+                        return `<span class="spore-player ${classColor}${wrongClass}" title="${name}">${name}</span>`;
+                    }).join('');
+                } else {
+                    playersEl.innerHTML = '<span class="spore-cell-empty">No players</span>';
+                }
+            } else {
+                timeEl.textContent = '--:--';
+                playersEl.innerHTML = '<span class="spore-cell-empty">Waiting...</span>';
+            }
         }
     }
 
@@ -1798,6 +1840,19 @@
                 displaySpores(data.data);
                 break;
             case 'playerstats':
+                // Build player class map for spore coloring
+                playerClassMap = {};
+                if (data.data.damage) {
+                    data.data.damage.forEach(p => {
+                        if (p.name && p.class) playerClassMap[p.name] = p.class.toLowerCase();
+                    });
+                }
+                if (data.data.healing) {
+                    data.data.healing.forEach(p => {
+                        if (p.name && p.class) playerClassMap[p.name] = p.class.toLowerCase();
+                    });
+                }
+                
                 // Store top values for reference bars
                 if (data.data.damage && data.data.damage.length > 0) {
                     topDamage = data.data.damage[0].amount;
@@ -1890,8 +1945,14 @@
         if (deathsCount) deathsCount.textContent = '0';
         if (curseDamageList) curseDamageList.innerHTML = '<div class="highlight-empty">Waiting for data...</div>';
         if (curseDamageCount) curseDamageCount.textContent = '0';
-        if (sporeList) sporeList.innerHTML = '<div class="highlight-empty">Waiting for data...</div>';
+        // Clear spores panel - reset all 8 spore cells
         if (sporeCount) sporeCount.textContent = '0';
+        for (let i = 1; i <= 8; i++) {
+            const timeEl = document.getElementById(`spore${i}Time`);
+            const playersEl = document.getElementById(`spore${i}Players`);
+            if (timeEl) timeEl.textContent = '--:--';
+            if (playersEl) playersEl.innerHTML = '<span class="spore-cell-empty">Waiting...</span>';
+        }
         // Clear leaderboards
         if (damageList) damageList.innerHTML = '<div class="leaderboard-empty">Waiting for data...</div>';
         if (healingList) healingList.innerHTML = '<div class="leaderboard-empty">Waiting for data...</div>';
