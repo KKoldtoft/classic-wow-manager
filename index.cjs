@@ -182,14 +182,29 @@ async function fetchWclEventsPage(params) {
       timeout: 30000
     });
   } catch (err) {
+    // Better error handling for different error types
+    if (err.code === 'ECONNABORTED') {
+      console.error('[WCL] Request timeout fetching events');
+      throw new Error('WCL API timeout - request took too long');
+    }
+    if (err.code === 'ENOTFOUND' || err.code === 'EAI_AGAIN') {
+      console.error('[WCL] DNS error:', err.code);
+      throw new Error('WCL API DNS error - cannot resolve host');
+    }
+    if (err.code === 'ECONNREFUSED') {
+      console.error('[WCL] Connection refused');
+      throw new Error('WCL API connection refused');
+    }
     const status = err.response && err.response.status;
     const data = err.response && err.response.data;
-    const details = typeof data === 'object' ? JSON.stringify(data) : String(data || '');
+    const details = typeof data === 'object' ? JSON.stringify(data) : String(data || err.message || '');
+    console.error(`[WCL] HTTP error fetching events: status=${status}, details=${details}`);
     throw new Error(`HTTP error from WCL API ${status || ''}: ${details}`.trim());
   }
   const body = resp.data;
   if (body.errors) {
     const message = body.errors.map(e => e.message).join('; ');
+    console.error('[WCL] GraphQL error fetching events:', message);
     throw new Error(`Warcraft Logs GraphQL error: ${message}`);
   }
   const report = body && body.data && body.data.reportData && body.data.reportData.report;
@@ -279,14 +294,29 @@ async function fetchWclFights(params) {
       timeout: 30000
     });
   } catch (err) {
+    // Better error handling for different error types
+    if (err.code === 'ECONNABORTED') {
+      console.error('[WCL] Request timeout fetching fights');
+      throw new Error('WCL API timeout - request took too long');
+    }
+    if (err.code === 'ENOTFOUND' || err.code === 'EAI_AGAIN') {
+      console.error('[WCL] DNS error:', err.code);
+      throw new Error('WCL API DNS error - cannot resolve host');
+    }
+    if (err.code === 'ECONNREFUSED') {
+      console.error('[WCL] Connection refused');
+      throw new Error('WCL API connection refused');
+    }
     const status = err.response && err.response.status;
     const data = err.response && err.response.data;
-    const details = typeof data === 'object' ? JSON.stringify(data) : String(data || '');
+    const details = typeof data === 'object' ? JSON.stringify(data) : String(data || err.message || '');
+    console.error(`[WCL] HTTP error fetching fights: status=${status}, details=${details}`);
     throw new Error(`HTTP error from WCL API ${status || ''}: ${details}`.trim());
   }
   const body = resp.data;
   if (body.errors) {
     const message = body.errors.map(e => e.message).join('; ');
+    console.error('[WCL] GraphQL error fetching fights:', message);
     throw new Error(`Warcraft Logs GraphQL error: ${message}`);
   }
   const fights = body && body.data && body.data.reportData && body.data.reportData.report && body.data.reportData.report.fights;
@@ -5704,14 +5734,50 @@ async function analyzePlayerStatsFromDB(reportCode, meta) {
     console.log(`[PLAYER STATS] Skipped ${duplicateCount} duplicate events`);
   }
   
-  // Convert to sorted arrays
+  // Build a name-to-class mapping from meta
+  const nameToClass = {};
+  if (meta.actorsById) {
+    for (const [id, actor] of Object.entries(meta.actorsById)) {
+      if (actor.name && actor.subType) {
+        nameToClass[actor.name] = actor.subType;
+      }
+    }
+  }
+  
+  // Calculate time span for DPS/HPS (from earliest to latest event)
+  let minTime = Infinity, maxTime = 0;
+  for (const row of pagesResult.rows) {
+    const events = typeof row.events === 'string' ? JSON.parse(row.events) : row.events;
+    for (const ev of events) {
+      if (ev.timestamp) {
+        minTime = Math.min(minTime, ev.timestamp);
+        maxTime = Math.max(maxTime, ev.timestamp);
+      }
+    }
+  }
+  const totalTimeMs = maxTime > minTime ? (maxTime - minTime) : 1;
+  const totalTimeSec = totalTimeMs / 1000;
+  
+  // Convert to sorted arrays with class info and DPS/HPS
   const damageList = Array.from(damageByPlayer.entries())
-    .map(([name, amount]) => ({ name, amount }))
-    .sort((a, b) => b.amount - a.amount);
+    .map(([name, amount]) => ({ 
+      name, 
+      amount,
+      class: nameToClass[name] || 'Unknown',
+      dps: amount / totalTimeSec
+    }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 30);
   
   const healingList = Array.from(healingByPlayer.entries())
-    .map(([name, amount]) => ({ name, amount }))
-    .sort((a, b) => b.amount - a.amount);
+    .map(([name, amount]) => ({ 
+      name, 
+      amount,
+      class: nameToClass[name] || 'Unknown',
+      hps: amount / totalTimeSec
+    }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 15);
   
   // Calculate percentages relative to top player
   const topDamage = damageList[0]?.amount || 1;
@@ -5725,7 +5791,7 @@ async function analyzePlayerStatsFromDB(reportCode, meta) {
     player.percent = (player.amount / topHealing) * 100;
   }
   
-  console.log(`[PLAYER STATS] ${damageList.length} damage dealers, ${healingList.length} healers`);
+  console.log(`[PLAYER STATS] ${damageList.length} damage dealers, ${healingList.length} healers (from ${totalTimeSec.toFixed(0)}s of events)`);
   
   return {
     damage: damageList,
@@ -6469,6 +6535,607 @@ app.get('/api/wcl/stream-import', async (req, res) => {
     sendEvent('error', { message: err.message || 'Unknown error' });
   } finally {
     activeLiveSession = null; // Clear active session when done
+    try { res.end(); } catch (_) {}
+  }
+});
+
+// =============================================================================
+// SIMULATION MODE: Replay an existing report as if it were a live log
+// =============================================================================
+// This endpoint simulates a live logging session by:
+// 1. Pre-fetching all data from a completed WCL report
+// 2. Grouping events into "chunks" based on fight boundaries
+// 3. Releasing chunks on a timer to simulate real-time uploads
+// 4. Providing detailed chunk status events for visual debugging
+
+app.get('/api/wcl/simulate-import', async (req, res) => {
+  const reportInput = String(req.query.report || '').trim();
+  const reportCode = extractWclReportCode(reportInput);
+  const speed = Math.max(1, Math.min(100, parseInt(req.query.speed) || 10)); // 1x to 100x speed
+  const chunkDelayMs = Math.max(500, parseInt(req.query.delay) || 3000); // Min delay between chunks
+  
+  if (!reportCode) {
+    return res.status(400).json({ error: 'Invalid report URL or code' });
+  }
+  
+  const sessionId = `sim-${reportCode}-${Date.now()}`;
+  const apiUrl = getWclApiUrlFromInput(reportInput);
+  
+  // Set up SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+  
+  const sendEvent = (type, data) => {
+    try {
+      res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+    } catch (_) {}
+  };
+  
+  const safeQuery = async (sql, params) => {
+    try {
+      return await pool.query(sql, params);
+    } catch (err) {
+      console.error('SSE query error:', err.message);
+      return null;
+    }
+  };
+  
+  let aborted = false;
+  req.on('close', () => { aborted = true; });
+  
+  // Chunk queue and processing state
+  const chunkQueue = [];
+  let currentChunkIndex = 0;
+  let isProcessingChunk = false;
+  let totalChunks = 0;
+  
+  // Send chunk status update
+  const sendChunkStatus = (chunkId, status, details = {}) => {
+    sendEvent('chunk-status', {
+      chunkId,
+      status, // 'queued' | 'fetching' | 'storing' | 'analyzing' | 'complete' | 'error'
+      queueDepth: chunkQueue.length,
+      currentChunk: currentChunkIndex,
+      totalChunks,
+      timestamp: Date.now(),
+      ...details
+    });
+  };
+  
+  try {
+    // Ensure tables exist
+    const setupClient = await pool.connect();
+    try {
+      await ensureWclIngestTables(setupClient);
+      await ensureLiveSessionTable(setupClient);
+      await ensureLiveHighlightsTable(setupClient);
+    } finally {
+      setupClient.release();
+    }
+    
+    // Clear existing event pages for this report
+    await pool.query('DELETE FROM wcl_event_pages WHERE report_code = $1', [reportCode]);
+    
+    // Set active session
+    activeLiveSession = { sessionId, reportCode, startTime: Date.now(), hostName: 'Simulator', hostId: null, isSimulation: true };
+    
+    sendEvent('connected', { sessionId, reportCode, status: 'simulation-starting', speed });
+    sendEvent('simulation-info', { 
+      message: `Simulation mode: ${speed}x speed, ${chunkDelayMs}ms between chunks`,
+      speed,
+      chunkDelayMs
+    });
+    
+    // Notify viewers
+    broadcastHighlightsToViewers({ type: 'session-start', reportCode, timestamp: Date.now(), isSimulation: true });
+    
+    // ========== PHASE 0: Pre-fetch all data ==========
+    sendEvent('progress', { phase: 'prefetch', message: 'Pre-fetching report data for simulation...' });
+    sendChunkStatus('prefetch', 'fetching', { message: 'Loading metadata...' });
+    
+    // Fetch metadata
+    let meta = { actorsById: {}, abilitiesById: {} };
+    try {
+      meta = await fetchWclReportMeta({ reportCode, apiUrl });
+      await safeQuery(`
+        INSERT INTO wcl_report_meta (report_code, api_url, actors_by_id, abilities_by_id, fetched_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (report_code) DO UPDATE SET
+          actors_by_id = EXCLUDED.actors_by_id,
+          abilities_by_id = EXCLUDED.abilities_by_id,
+          fetched_at = NOW();
+      `, [reportCode, apiUrl, JSON.stringify(meta.actorsById || {}), JSON.stringify(meta.abilitiesById || {})]);
+      sendEvent('meta', { actorCount: Object.keys(meta.actorsById).length, abilityCount: Object.keys(meta.abilitiesById).length });
+    } catch (err) {
+      sendEvent('warning', { message: 'Failed to fetch metadata: ' + err.message });
+    }
+    
+    if (aborted) { res.end(); return; }
+    
+    // Fetch fights
+    sendChunkStatus('prefetch', 'fetching', { message: 'Loading fight list...' });
+    let fights = [];
+    try {
+      fights = await fetchWclFights({ reportCode, apiUrl });
+      const fightsForLive = fights.map(f => ({ id: f.id, name: f.name, startTime: f.startTime, endTime: f.endTime, kill: f.kill, encounterID: f.encounterID }));
+      sendEvent('fights', { count: fights.length, fights: fightsForLive });
+      await saveAndBroadcastHighlights(reportCode, 'meta', { fights: fightsForLive, tanks: [], hostName: 'Simulator' });
+    } catch (err) {
+      sendEvent('error', { message: 'Failed to fetch fights: ' + err.message });
+      res.end();
+      return;
+    }
+    
+    if (aborted || fights.length === 0) { 
+      sendEvent('error', { message: 'No fights found in report' });
+      res.end(); 
+      return; 
+    }
+    
+    // Sort fights by endTime to create chunks
+    const sortedFights = [...fights].sort((a, b) => (a.endTime || 0) - (b.endTime || 0));
+    
+    // ========== PHASE 1: Create chunks based on fight boundaries ==========
+    // Each chunk = events from previous chunk end to this fight's end
+    sendEvent('progress', { phase: 'chunking', message: 'Creating simulation chunks from fights...' });
+    
+    const chunks = [];
+    let prevEndTime = 0;
+    
+    for (const fight of sortedFights) {
+      if (!fight.endTime) continue;
+      
+      // Chunk covers: previous end time to this fight's end time
+      chunks.push({
+        id: `chunk-${chunks.length + 1}`,
+        fightId: fight.id,
+        fightName: fight.name || 'Trash',
+        startTime: prevEndTime,
+        endTime: fight.endTime,
+        encounterID: fight.encounterID,
+        isKill: fight.kill,
+        events: [], // Will be populated when fetched
+        status: 'pending'
+      });
+      
+      prevEndTime = fight.endTime;
+    }
+    
+    totalChunks = chunks.length;
+    sendEvent('chunks-created', { 
+      count: chunks.length, 
+      chunks: chunks.map(c => ({ 
+        id: c.id, 
+        fightName: c.fightName, 
+        startTime: c.startTime, 
+        endTime: c.endTime,
+        duration: c.endTime - c.startTime
+      }))
+    });
+    
+    console.log(`[SIM] Created ${chunks.length} chunks from ${fights.length} fights`);
+    
+    // Helper to enrich events
+    const enrichEvent = (ev) => {
+      const enriched = { ...ev };
+      if (ev.sourceID != null && meta.actorsById[ev.sourceID]) {
+        enriched.sourceName = meta.actorsById[ev.sourceID].name;
+        enriched.sourceType = meta.actorsById[ev.sourceID].type;
+        enriched.sourceSubType = meta.actorsById[ev.sourceID].subType;
+      }
+      if (ev.targetID != null && meta.actorsById[ev.targetID]) {
+        enriched.targetName = meta.actorsById[ev.targetID].name;
+        enriched.targetType = meta.actorsById[ev.targetID].type;
+        enriched.targetSubType = meta.actorsById[ev.targetID].subType;
+      }
+      const abilityId = ev.abilityGameID ?? ev.ability?.guid;
+      if (abilityId != null && meta.abilitiesById[abilityId]) {
+        enriched.abilityName = meta.abilitiesById[abilityId].name;
+        enriched.abilityType = meta.abilitiesById[abilityId].type;
+      }
+      return enriched;
+    };
+    
+    // ========== PHASE 2: Process chunks with queue management ==========
+    sendEvent('progress', { phase: 'simulation', message: 'Starting chunk-by-chunk simulation...' });
+    
+    let totalEvents = 0;
+    let pagesStored = 0;
+    
+    // Process one chunk at a time
+    const processChunk = async (chunk, index) => {
+      if (aborted) return;
+      
+      isProcessingChunk = true;
+      currentChunkIndex = index + 1;
+      
+      const chunkStartMs = Date.now();
+      console.log(`[SIM] Processing chunk ${index + 1}/${totalChunks}: ${chunk.fightName} (${chunk.startTime}-${chunk.endTime})`);
+      
+      // Step 1: Mark as fetching
+      sendChunkStatus(chunk.id, 'fetching', { 
+        fightName: chunk.fightName,
+        timeRange: `${chunk.startTime}-${chunk.endTime}`,
+        message: `Fetching events for ${chunk.fightName}...`
+      });
+      
+      // Fetch events for this chunk
+      let events = [];
+      try {
+        const page = await fetchWclEventsPage({ 
+          reportCode, 
+          startTime: chunk.startTime, 
+          endTime: chunk.endTime, 
+          apiUrl 
+        });
+        events = page.events || [];
+        chunk.events = events;
+        console.log(`[SIM] Chunk ${chunk.id}: fetched ${events.length} events`);
+      } catch (err) {
+        console.error(`[SIM] Chunk ${chunk.id} fetch error:`, err.message);
+        sendChunkStatus(chunk.id, 'error', { message: err.message });
+        isProcessingChunk = false;
+        return;
+      }
+      
+      if (aborted) { isProcessingChunk = false; return; }
+      
+      // Step 2: Store events
+      sendChunkStatus(chunk.id, 'storing', { 
+        eventCount: events.length,
+        message: `Storing ${events.length} events...`
+      });
+      
+      if (events.length > 0) {
+        await safeQuery(`
+          INSERT INTO wcl_event_pages (event_id, report_code, start_time, end_time, next_cursor, events)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (event_id, report_code, start_time, end_time) DO NOTHING;
+        `, [sessionId, reportCode, chunk.startTime, chunk.endTime, chunk.endTime, JSON.stringify(events)]);
+        pagesStored++;
+      }
+      
+      totalEvents += events.length;
+      
+      // Step 3: Send events to client (enriched sample)
+      const HIGHLIGHT_ABILITIES = ['power word: shield', 'bloodrage', 'charge', 'renew'];
+      const highlightedEvents = [];
+      const otherEvents = [];
+      
+      for (const ev of events) {
+        const abilityId = ev.abilityGameID ?? ev.ability?.guid;
+        const abilityName = (abilityId != null && meta.abilitiesById[abilityId]) 
+          ? meta.abilitiesById[abilityId].name.toLowerCase() 
+          : '';
+        const type = String(ev.type || '').toLowerCase();
+        const isHighlight = (type === 'cast' || type === 'applybuff') && 
+                            HIGHLIGHT_ABILITIES.some(h => abilityName.includes(h));
+        const isDamage = type === 'damage';
+        
+        if (isHighlight || isDamage) {
+          highlightedEvents.push(enrichEvent(ev));
+        } else {
+          otherEvents.push(ev);
+        }
+      }
+      
+      const streamSample = otherEvents.slice(0, 50).map(enrichEvent);
+      const enrichedEvents = [...highlightedEvents, ...streamSample];
+      
+      sendEvent('events', { 
+        count: events.length, 
+        totalEvents,
+        cursor: chunk.startTime,
+        nextCursor: chunk.endTime,
+        progress: Math.round((index + 1) / totalChunks * 100),
+        pagesStored,
+        events: enrichedEvents,
+        highlightCount: highlightedEvents.length,
+        chunkId: chunk.id,
+        fightName: chunk.fightName
+      });
+      
+      // Step 4: Run FULL incremental analysis on all events so far
+      sendChunkStatus(chunk.id, 'analyzing', {
+        message: `Analyzing ${chunk.fightName}...`
+      });
+
+      // Run ALL analysis on cumulative events (everything imported so far)
+      // This ensures all panels update after each chunk
+      
+      // 4a. Bloodrage analysis
+      try {
+        const brResult = await analyzeBloodragesFromDB(reportCode, fights, meta);
+        sendEvent('bloodrage-analysis', {
+          badBloodrages: brResult.badBloodrages,
+          totalBloodrages: brResult.totalBloodrages,
+          isIncremental: true,
+          chunkId: chunk.id
+        });
+        await saveAndBroadcastHighlights(reportCode, 'bloodrages', {
+          badBloodrages: brResult.badBloodrages,
+          totalBloodrages: brResult.totalBloodrages
+        });
+      } catch (err) {
+        console.error(`[SIM] Chunk ${chunk.id} bloodrage analysis error:`, err.message);
+      }
+      
+      // 4b. Player stats (damage/healing leaderboards) from WCL API
+      // SIMULATION LIMITATION: WCL API returns complete report data for finished reports,
+      // so damage/healing will show full totals from the start in simulation mode.
+      // In a real live event, WCL would only have partial data as it uploads.
+      // Only fetch every 3rd chunk to reduce API load (data is the same anyway in simulation)
+      if (index % 3 === 0 || index === chunks.length - 1) {
+        try {
+          const playerStats = await fetchPlayerStatsFromWCL(reportCode);
+          sendEvent('player-stats', { 
+            damage: playerStats.damage, 
+            healing: playerStats.healing,
+            isIncremental: true,
+            chunkId: chunk.id
+          });
+          await saveAndBroadcastHighlights(reportCode, 'playerstats', playerStats);
+        } catch (err) {
+          console.error(`[SIM] Chunk ${chunk.id} player stats error:`, err.message);
+        }
+      }
+      
+      // 4c. Interrupts
+      try {
+        const interruptResult = await analyzeInterruptsFromDB(reportCode, meta);
+        sendEvent('interrupt-analysis', { 
+          playerStats: interruptResult.playerStats, 
+          totalInterrupts: interruptResult.totalInterrupts,
+          isIncremental: true,
+          chunkId: chunk.id
+        });
+        await saveAndBroadcastHighlights(reportCode, 'interrupts', interruptResult);
+      } catch (err) {
+        console.error(`[SIM] Chunk ${chunk.id} interrupt analysis error:`, err.message);
+      }
+      
+      // 4d. Decurses
+      try {
+        const decurseResult = await analyzeDecursesFromDB(reportCode, meta);
+        sendEvent('decurse-analysis', { 
+          playerStats: decurseResult.playerStats, 
+          totalDecurses: decurseResult.totalDecurses,
+          isIncremental: true,
+          chunkId: chunk.id
+        });
+        await saveAndBroadcastHighlights(reportCode, 'decurses', decurseResult);
+      } catch (err) {
+        console.error(`[SIM] Chunk ${chunk.id} decurse analysis error:`, err.message);
+      }
+      
+      // 4e. Sunders
+      try {
+        const sunderResult = await analyzeSundersFromDB(reportCode, meta);
+        sendEvent('sunder-analysis', { 
+          playerStats: sunderResult.playerStats, 
+          totalSunders: sunderResult.totalSunders,
+          isIncremental: true,
+          chunkId: chunk.id
+        });
+        await saveAndBroadcastHighlights(reportCode, 'sunders', sunderResult);
+      } catch (err) {
+        console.error(`[SIM] Chunk ${chunk.id} sunder analysis error:`, err.message);
+      }
+      
+      // 4f. Scorch (Fire Vulnerability)
+      try {
+        const scorchResult = await analyzeScorchesFromDB(reportCode, meta);
+        sendEvent('scorch-analysis', { 
+          playerStats: scorchResult.playerStats, 
+          totalScorches: scorchResult.totalScorches,
+          isIncremental: true,
+          chunkId: chunk.id
+        });
+        await saveAndBroadcastHighlights(reportCode, 'scorches', scorchResult);
+      } catch (err) {
+        console.error(`[SIM] Chunk ${chunk.id} scorch analysis error:`, err.message);
+      }
+      
+      // 4g. Disarms
+      try {
+        const disarmResult = await analyzeDisarmsFromDB(reportCode, meta);
+        sendEvent('disarm-analysis', { 
+          playerStats: disarmResult.playerStats, 
+          totalDisarms: disarmResult.totalDisarms,
+          isIncremental: true,
+          chunkId: chunk.id
+        });
+        await saveAndBroadcastHighlights(reportCode, 'disarms', disarmResult);
+      } catch (err) {
+        console.error(`[SIM] Chunk ${chunk.id} disarm analysis error:`, err.message);
+      }
+      
+      // 4h. Deaths by fight
+      try {
+        const deathPagesResult = await pool.query(
+          'SELECT events FROM wcl_event_pages WHERE report_code = $1',
+          [reportCode]
+        );
+        const deathsByFight = {};
+        const seenDeaths = new Set();
+        
+        for (const row of deathPagesResult.rows) {
+          const events = typeof row.events === 'string' ? JSON.parse(row.events) : row.events;
+          for (const ev of events) {
+            if (ev.type !== 'death') continue;
+            const actor = meta.actorsById[ev.targetID];
+            if (!actor || actor.type !== 'Player') continue;
+            
+            const deathKey = `${ev.timestamp}-${ev.targetID}`;
+            if (seenDeaths.has(deathKey)) continue;
+            seenDeaths.add(deathKey);
+            
+            const fight = fights.find(f => ev.timestamp >= f.startTime && ev.timestamp <= f.endTime);
+            const fightName = fight ? (fight.name || 'Trash') : 'Unknown';
+            
+            if (!deathsByFight[fightName]) deathsByFight[fightName] = [];
+            deathsByFight[fightName].push({
+              playerName: actor.name,
+              timestamp: ev.timestamp,
+              fightName
+            });
+          }
+        }
+        
+        // Flatten deathsByFight into a deaths array for the frontend
+        const deathsArray = [];
+        for (const [fightName, fightDeaths] of Object.entries(deathsByFight)) {
+          deathsArray.push(...fightDeaths);
+        }
+        
+        sendEvent('deaths-analysis', { 
+          deathsByFight, 
+          deaths: deathsArray,
+          totalDeaths: seenDeaths.size,
+          isIncremental: true,
+          chunkId: chunk.id
+        });
+        await saveAndBroadcastHighlights(reportCode, 'deaths', { deaths: deathsArray, count: deathsArray.length });
+      } catch (err) {
+        console.error(`[SIM] Chunk ${chunk.id} deaths analysis error:`, err.message);
+      }
+      
+      // 4i. Curse damage (mages)
+      try {
+        const curseResult = await analyzeMageDamageWhileCurseUp(reportCode, meta);
+        sendEvent('curse-damage-analysis', {
+          playerStats: curseResult.playerStats || [],
+          totalDamage: curseResult.totalDamage || 0,
+          isIncremental: true,
+          chunkId: chunk.id
+        });
+        await saveAndBroadcastHighlights(reportCode, 'curseDamage', curseResult);
+      } catch (err) {
+        console.error(`[SIM] Chunk ${chunk.id} curse damage error:`, err.message);
+      }
+      
+      // 4j. Loatheb spores (if applicable fight)
+      try {
+        const sporeResult = await analyzeLoathebSpores(reportCode, meta, fights);
+        if (sporeResult && sporeResult.sporeGroups && sporeResult.sporeGroups.length > 0) {
+          sendEvent('spore-analysis', {
+            sporeGroups: sporeResult.sporeGroups,
+            totalSpores: sporeResult.totalSpores || 0,
+            isIncremental: true,
+            chunkId: chunk.id
+          });
+          await saveAndBroadcastHighlights(reportCode, 'spores', sporeResult);
+        }
+      } catch (err) {
+        console.error(`[SIM] Chunk ${chunk.id} spore analysis error:`, err.message);
+      }
+      
+      // 4k. Charge analysis (if tanks provided)
+      const tankNamesParam = String(req.query.tanks || '').trim();
+      const chunkTankNames = tankNamesParam ? tankNamesParam.split(',').map(n => n.trim()).filter(Boolean) : [];
+      if (chunkTankNames.length > 0) {
+        try {
+          const chargeResult = await analyzeChargesFromDB(reportCode, chunkTankNames, meta);
+          sendEvent('charge-analysis', {
+            charges: chargeResult.charges,
+            totalCharges: chargeResult.totalCharges,
+            badCharges: chargeResult.badCharges,
+            isIncremental: true,
+            chunkId: chunk.id
+          });
+          await saveAndBroadcastHighlights(reportCode, 'charges', chargeResult);
+        } catch (err) {
+          console.error(`[SIM] Chunk ${chunk.id} charge analysis error:`, err.message);
+        }
+      }
+
+      // Step 5: Mark complete
+      const chunkDurationMs = Date.now() - chunkStartMs;
+      sendChunkStatus(chunk.id, 'complete', { 
+        eventCount: events.length,
+        durationMs: chunkDurationMs,
+        message: `${chunk.fightName} complete (${events.length} events, ${chunkDurationMs}ms)`
+      });
+      
+      chunk.status = 'complete';
+      isProcessingChunk = false;
+      
+      console.log(`[SIM] Chunk ${chunk.id} complete: ${events.length} events in ${chunkDurationMs}ms`);
+    };
+    
+    // Process chunks with delay to simulate real-time arrival
+    for (let i = 0; i < chunks.length && !aborted; i++) {
+      const chunk = chunks[i];
+      
+      // Queue the chunk
+      chunkQueue.push(chunk);
+      sendChunkStatus(chunk.id, 'queued', { 
+        fightName: chunk.fightName,
+        position: chunkQueue.length
+      });
+      
+      // Calculate delay based on simulated time difference
+      // In real live logging, chunks arrive after combat ends
+      // We simulate this with: (time_to_next_chunk / speed) but min chunkDelayMs
+      const nextChunk = chunks[i + 1];
+      const timeDiff = nextChunk ? (nextChunk.startTime - chunk.endTime) : 0;
+      const simulatedDelay = Math.max(chunkDelayMs, Math.round(timeDiff / speed));
+      
+      // Process this chunk
+      await processChunk(chunk, i);
+      
+      // Remove from queue
+      const queueIndex = chunkQueue.indexOf(chunk);
+      if (queueIndex > -1) chunkQueue.splice(queueIndex, 1);
+      
+      // Wait before next chunk (simulating real-time delay)
+      if (i < chunks.length - 1 && !aborted) {
+        sendEvent('chunk-delay', { 
+          nextChunkIn: simulatedDelay, 
+          nextChunk: chunks[i + 1]?.fightName,
+          queueDepth: chunkQueue.length
+        });
+        await new Promise(resolve => setTimeout(resolve, simulatedDelay));
+      }
+    }
+    
+    if (aborted) {
+      sendEvent('simulation-aborted', { message: 'Simulation aborted', chunksProcessed: currentChunkIndex });
+      res.end();
+      return;
+    }
+    
+    // ========== PHASE 3: Final verification ==========
+    // Note: Full analysis already ran after each chunk, so this is just a final summary
+    sendEvent('progress', { phase: 'final-verification', message: 'Verifying final results...' });
+    
+    console.log(`[SIM] All ${totalChunks} chunks processed. Running final verification...`);
+
+    // Send completion
+    sendEvent('complete', { 
+      totalEvents, 
+      pagesStored: chunks.length,
+      chunksProcessed: currentChunkIndex,
+      message: 'Simulation complete!'
+    });
+    
+    sendEvent('simulation-complete', {
+      totalChunks,
+      totalEvents,
+      speed,
+      reportCode
+    });
+    
+    console.log(`[SIM] Simulation complete: ${totalChunks} chunks, ${totalEvents} events`);
+    
+  } catch (err) {
+    console.error('[SIM] Simulation error:', err);
+    sendEvent('error', { message: err.message || 'Unknown error' });
+  } finally {
+    activeLiveSession = null;
     try { res.end(); } catch (_) {}
   }
 });

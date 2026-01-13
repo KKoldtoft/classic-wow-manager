@@ -1239,6 +1239,26 @@
             <button class="btn-control btn-stop" id="stopBtn" style="display: none;">STOP</button>
             <button class="btn-control btn-clear" id="clearAllBtn">CLEAR ALL</button>
         </div>
+        
+        <!-- Simulation Mode Controls -->
+        <div id="simulationControls" style="max-width: 800px; margin: 10px auto 20px; padding: 12px 16px; background: rgba(74, 158, 255, 0.1); border: 1px solid rgba(74, 158, 255, 0.3); border-radius: 8px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px;">
+                <input type="checkbox" id="simulateMode" style="width: 18px; height: 18px; cursor: pointer;">
+                <span>🧪 Simulation Mode</span>
+            </label>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <label for="simSpeed" style="font-size: 13px; color: var(--text-dim);">Speed:</label>
+                <input type="number" id="simSpeed" value="10" min="1" max="100" style="width: 60px; padding: 6px 8px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px;">
+                <span style="font-size: 12px; color: var(--text-dim);">x</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <label for="simDelay" style="font-size: 13px; color: var(--text-dim);">Chunk delay:</label>
+                <input type="number" id="simDelay" value="2000" min="500" max="10000" step="500" style="width: 80px; padding: 6px 8px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px;">
+                <span style="font-size: 12px; color: var(--text-dim);">ms</span>
+            </div>
+            <span style="font-size: 12px; color: var(--text-dim); margin-left: auto;">Replays completed logs as live stream for testing</span>
+        </div>
+        
         <div id="eventIdDisplay" class="event-id-display" style="display: none;"></div>
 
         <div class="progress-section" id="progressSection">
@@ -1258,6 +1278,59 @@
             <div id="phaseTracker" style="display: none; margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 8px; font-family: 'Consolas', 'Monaco', monospace; font-size: 13px;">
                 <div style="font-weight: 600; margin-bottom: 10px; color: var(--accent);">📊 Import Progress</div>
                 <div id="phaseList" style="display: flex; flex-direction: column; gap: 6px;"></div>
+            </div>
+            
+            <!-- Current Chunk Progress (Simulation Mode) -->
+            <div id="chunkProgressPanel" style="display: none; margin-top: 20px; padding: 20px; background: rgba(255,255,255,0.03); border: 1px solid rgba(74, 158, 255, 0.2); border-radius: 8px;">
+                <!-- Header with overall progress -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <div style="font-weight: 600; color: var(--accent);">📦 Chunk Progress</div>
+                    <div style="display: flex; align-items: center; gap: 16px;">
+                        <span id="chunkOverallStats" style="font-size: 14px; color: var(--text-dim);">0 / 0 chunks</span>
+                        <div id="chunkCountdownBadge" style="display: none; padding: 4px 10px; background: rgba(74, 158, 255, 0.15); border-radius: 4px; font-size: 12px; color: var(--accent);">
+                            Next in: <span id="chunkCountdown">--</span>s
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Current chunk info -->
+                <div id="currentChunkInfo" style="margin-bottom: 16px; padding: 12px; background: rgba(0,0,0,0.2); border-radius: 6px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span id="currentChunkName" style="font-weight: 600; font-size: 15px; color: #fff;">Waiting...</span>
+                            <span id="currentChunkId" style="margin-left: 10px; font-size: 12px; color: var(--text-dim);">#--</span>
+                        </div>
+                        <span id="currentChunkEvents" style="font-size: 12px; color: var(--text-dim);">-- events</span>
+                    </div>
+                </div>
+                
+                <!-- Step progress bar -->
+                <div id="chunkStepsContainer" style="display: flex; gap: 4px; margin-bottom: 12px;">
+                    <div class="chunk-step" data-step="fetch" style="flex: 1; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; transition: background 0.3s;"></div>
+                    <div class="chunk-step" data-step="store" style="flex: 1; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; transition: background 0.3s;"></div>
+                    <div class="chunk-step" data-step="analyze" style="flex: 2; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; transition: background 0.3s;"></div>
+                    <div class="chunk-step" data-step="complete" style="flex: 0.5; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; transition: background 0.3s;"></div>
+                </div>
+                
+                <!-- Step labels -->
+                <div style="display: flex; gap: 4px; font-size: 11px; color: var(--text-dim);">
+                    <div style="flex: 1; text-align: center;">Fetch</div>
+                    <div style="flex: 1; text-align: center;">Store</div>
+                    <div style="flex: 2; text-align: center;">Analyze</div>
+                    <div style="flex: 0.5; text-align: center;">✓</div>
+                </div>
+                
+                <!-- Status message -->
+                <div id="chunkStatusMessage" style="margin-top: 12px; font-size: 13px; color: var(--text-dim); font-family: 'Consolas', 'Monaco', monospace;">
+                    Waiting for first chunk...
+                </div>
+                
+                <!-- Overall progress bar -->
+                <div style="margin-top: 16px;">
+                    <div style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;">
+                        <div id="chunkOverallBar" style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), #22c55e); transition: width 0.3s;"></div>
+                    </div>
+                </div>
             </div>
         </div>
 

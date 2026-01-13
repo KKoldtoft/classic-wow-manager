@@ -26,6 +26,23 @@
     const clearAllBtn = document.getElementById('clearAllBtn');
     const phaseTracker = document.getElementById('phaseTracker');
     const phaseList = document.getElementById('phaseList');
+    
+    // Simulation mode elements
+    const simulateMode = document.getElementById('simulateMode');
+    const simSpeed = document.getElementById('simSpeed');
+    const simDelay = document.getElementById('simDelay');
+    
+    // New chunk progress panel elements
+    const chunkProgressPanel = document.getElementById('chunkProgressPanel');
+    const chunkOverallStats = document.getElementById('chunkOverallStats');
+    const chunkCountdownBadge = document.getElementById('chunkCountdownBadge');
+    const chunkCountdown = document.getElementById('chunkCountdown');
+    const currentChunkName = document.getElementById('currentChunkName');
+    const currentChunkId = document.getElementById('currentChunkId');
+    const currentChunkEvents = document.getElementById('currentChunkEvents');
+    const chunkStepsContainer = document.getElementById('chunkStepsContainer');
+    const chunkStatusMessage = document.getElementById('chunkStatusMessage');
+    const chunkOverallBar = document.getElementById('chunkOverallBar');
 
     // State
     let eventSource = null;
@@ -36,6 +53,13 @@
     let fightsCount = 0;
     let phases = {}; // Track phase completion
     let eventsBuffer = []; // Virtual scroll buffer - only keep last N events in DOM
+    
+    // Simulation mode state
+    let isSimulationMode = false;
+    let chunkData = {}; // Track chunk states: { chunkId: { status, fightName, eventCount, ... } }
+    let totalSimChunks = 0;
+    let completedChunks = 0;
+    let countdownInterval = null;
     const MAX_DOM_EVENTS = 500; // Reduced for production
     let currentReportCode = null; // Track current report code for saving highlights
     let isHostingSession = false; // Track if actively hosting a session
@@ -98,6 +122,173 @@
         phases = {};
         phaseList.innerHTML = '';
         phaseTracker.style.display = 'none';
+    }
+    
+    // ========== Chunk Progress UI Functions (Simulation Mode) ==========
+    
+    const CHUNK_STEPS = ['fetch', 'store', 'analyze', 'complete'];
+    
+    function initChunkProgress() {
+        chunkData = {};
+        totalSimChunks = 0;
+        completedChunks = 0;
+        clearCountdown();
+        
+        // Reset panel
+        if (chunkProgressPanel) chunkProgressPanel.style.display = 'none';
+        if (currentChunkName) currentChunkName.textContent = 'Waiting...';
+        if (currentChunkId) currentChunkId.textContent = '#--';
+        if (currentChunkEvents) currentChunkEvents.textContent = '-- events';
+        if (chunkStatusMessage) chunkStatusMessage.textContent = 'Waiting for first chunk...';
+        if (chunkOverallStats) chunkOverallStats.textContent = '0 / 0 chunks';
+        if (chunkOverallBar) chunkOverallBar.style.width = '0%';
+        
+        // Reset step bars
+        resetStepBars();
+    }
+    
+    function showChunkProgress() {
+        if (chunkProgressPanel) chunkProgressPanel.style.display = 'block';
+    }
+    
+    function resetStepBars() {
+        if (!chunkStepsContainer) return;
+        const steps = chunkStepsContainer.querySelectorAll('.chunk-step');
+        steps.forEach(step => {
+            step.style.background = 'rgba(255,255,255,0.1)';
+        });
+    }
+    
+    function setStepActive(stepName) {
+        if (!chunkStepsContainer) return;
+        const steps = chunkStepsContainer.querySelectorAll('.chunk-step');
+        const stepOrder = { fetch: 0, store: 1, analyze: 2, complete: 3 };
+        const activeIdx = stepOrder[stepName];
+        
+        steps.forEach((step, idx) => {
+            const stepType = step.dataset.step;
+            const stepIdx = stepOrder[stepType];
+            
+            if (stepIdx < activeIdx) {
+                // Completed step - green
+                step.style.background = 'linear-gradient(90deg, #22c55e, #16a34a)';
+            } else if (stepIdx === activeIdx) {
+                // Active step - blue with pulse
+                step.style.background = 'linear-gradient(90deg, var(--accent), #60a5fa)';
+                step.style.animation = 'pulse 1s ease-in-out infinite';
+            } else {
+                // Future step - dim
+                step.style.background = 'rgba(255,255,255,0.1)';
+                step.style.animation = 'none';
+            }
+        });
+    }
+    
+    function markAllStepsComplete() {
+        if (!chunkStepsContainer) return;
+        const steps = chunkStepsContainer.querySelectorAll('.chunk-step');
+        steps.forEach(step => {
+            step.style.background = 'linear-gradient(90deg, #22c55e, #16a34a)';
+            step.style.animation = 'none';
+        });
+    }
+    
+    function updateChunkStatus(chunkId, status, details = {}) {
+        // Create or update chunk data
+        if (!chunkData[chunkId]) {
+            chunkData[chunkId] = {
+                id: chunkId,
+                fightName: details.fightName || chunkId,
+                status: 'pending',
+                eventCount: 0
+            };
+        }
+        
+        const chunk = chunkData[chunkId];
+        chunk.status = status;
+        if (details.eventCount != null) chunk.eventCount = details.eventCount;
+        if (details.fightName) chunk.fightName = details.fightName;
+        if (details.message) chunk.message = details.message;
+        if (details.durationMs) chunk.durationMs = details.durationMs;
+        
+        // Update totals
+        if (details.totalChunks) totalSimChunks = details.totalChunks;
+        if (status === 'complete') completedChunks++;
+        
+        // Update overall stats
+        if (chunkOverallStats) {
+            chunkOverallStats.textContent = `${completedChunks} / ${totalSimChunks} chunks`;
+        }
+        
+        // Update overall progress bar
+        if (chunkOverallBar && totalSimChunks > 0) {
+            const pct = (completedChunks / totalSimChunks) * 100;
+            chunkOverallBar.style.width = `${pct}%`;
+        }
+        
+        // Only update current chunk display for active processing states
+        if (status === 'fetching' || status === 'storing' || status === 'analyzing' || status === 'complete' || status === 'error') {
+            // Update current chunk info
+            if (currentChunkName) currentChunkName.textContent = chunk.fightName;
+            if (currentChunkId) currentChunkId.textContent = `#${chunkId}`;
+            
+            // Update event count
+            if (currentChunkEvents && chunk.eventCount) {
+                currentChunkEvents.textContent = `${chunk.eventCount} events`;
+            }
+            
+            // Update step bar based on status
+            if (status === 'fetching') {
+                resetStepBars();
+                setStepActive('fetch');
+                if (chunkStatusMessage) chunkStatusMessage.textContent = `📥 Fetching events from WCL API...`;
+            } else if (status === 'storing') {
+                setStepActive('store');
+                if (chunkStatusMessage) chunkStatusMessage.textContent = `💾 Storing ${chunk.eventCount || ''} events to database...`;
+            } else if (status === 'analyzing') {
+                setStepActive('analyze');
+                const analyzeMsg = details.message || 'Running analysis...';
+                if (chunkStatusMessage) chunkStatusMessage.textContent = `🔍 ${analyzeMsg}`;
+            } else if (status === 'complete') {
+                markAllStepsComplete();
+                const duration = chunk.durationMs ? ` (${chunk.durationMs}ms)` : '';
+                if (chunkStatusMessage) chunkStatusMessage.textContent = `✅ Complete - ${chunk.eventCount} events${duration}`;
+            } else if (status === 'error') {
+                if (chunkStatusMessage) chunkStatusMessage.textContent = `❌ Error: ${details.message || 'Unknown error'}`;
+            }
+        }
+    }
+    
+    function startCountdown(ms, nextChunkName) {
+        clearCountdown();
+        if (!chunkCountdownBadge || !chunkCountdown) return;
+        
+        chunkCountdownBadge.style.display = 'block';
+        let remaining = ms;
+        
+        const update = () => {
+            if (remaining <= 0) {
+                chunkCountdown.textContent = '0';
+                chunkCountdownBadge.style.display = 'none';
+                return;
+            }
+            chunkCountdown.textContent = (remaining / 1000).toFixed(1);
+        };
+        
+        update();
+        countdownInterval = setInterval(() => {
+            remaining -= 100;
+            update();
+            if (remaining <= 0) clearCountdown();
+        }, 100);
+    }
+    
+    function clearCountdown() {
+        if (countdownInterval) {
+            clearInterval(countdownInterval);
+            countdownInterval = null;
+        }
+        if (chunkCountdownBadge) chunkCountdownBadge.style.display = 'none';
     }
 
     // Flash the browser tab title when hosting to prevent accidental close
@@ -1811,15 +2002,29 @@
         // Update UI
         goBtn.disabled = true;
         goBtn.textContent = 'Importing...';
+        progressSection.style.display = ''; // Clear any inline style
         progressSection.classList.add('active');
         statsGrid.style.display = 'grid';
         
-        // Initialize phase tracker
+        // Check simulation mode
+        isSimulationMode = simulateMode && simulateMode.checked;
+        
+        // Initialize phase tracker (different phases for simulation)
         clearPhases();
-        addPhase('phase1', 'Phase 1: Import Events');
-        addPhase('phase2', 'Phase 2: Analysis');
-        addPhase('phase3', 'Phase 3: Real-time Polling');
-        updatePhaseStatus('phase1', 'running');
+        if (isSimulationMode) {
+            addPhase('phase0', 'Phase 0: Pre-fetch Data');
+            addPhase('phase1', 'Phase 1: Process Chunks');
+            addPhase('phase2', 'Phase 2: Final Analysis');
+            updatePhaseStatus('phase0', 'running');
+            // Initialize chunk progress panel
+            initChunkProgress();
+            showChunkProgress();
+        } else {
+            addPhase('phase1', 'Phase 1: Import Events');
+            addPhase('phase2', 'Phase 2: Analysis');
+            addPhase('phase3', 'Phase 3: Real-time Polling');
+            updatePhaseStatus('phase1', 'running');
+        }
         
         // Reset state
         totalEvents = 0;
@@ -1893,7 +2098,17 @@
         // Create SSE connection (session ID is derived from report code on backend)
         // Include tank names for charge analysis if available
         const tanksParam = tankNames.size > 0 ? `&tanks=${encodeURIComponent(Array.from(tankNames).join(','))}` : '';
-        const url = `/api/wcl/stream-import?report=${encodeURIComponent(report)}${tanksParam}`;
+        
+        // Use simulation endpoint if simulation mode is enabled
+        let url;
+        if (isSimulationMode) {
+            const speed = parseInt(simSpeed?.value) || 10;
+            const delay = parseInt(simDelay?.value) || 2000;
+            url = `/api/wcl/simulate-import?report=${encodeURIComponent(report)}&speed=${speed}&delay=${delay}${tanksParam}`;
+            console.log(`[SIM] Starting simulation: speed=${speed}x, delay=${delay}ms`);
+        } else {
+            url = `/api/wcl/stream-import?report=${encodeURIComponent(report)}${tanksParam}`;
+        }
         
         eventSource = new EventSource(url);
         
@@ -1956,11 +2171,17 @@
             setStatus('complete', 'Analyzing bloodrages from all events...');
             updateStats();
             
-            // Mark Phase 1 complete, start Phase 2
-            updatePhaseStatus('phase1', 'complete');
-            updatePhaseStatus('phase2', 'running');
-            addPhase('analysis-bloodrage', '→ Bloodrages');
-            updatePhaseStatus('analysis-bloodrage', 'running');
+            if (isSimulationMode) {
+                // Simulation mode: chunks are already processed, now doing final analysis
+                updatePhaseStatus('phase1', 'complete');
+                updatePhaseStatus('phase2', 'running');
+            } else {
+                // Normal mode: Mark Phase 1 complete, start Phase 2
+                updatePhaseStatus('phase1', 'complete');
+                updatePhaseStatus('phase2', 'running');
+                addPhase('analysis-bloodrage', '→ Bloodrages');
+                updatePhaseStatus('analysis-bloodrage', 'running');
+            }
             
             // Save PW:S and Renew highlights to backend for live viewers
             savePwsToBackend();
@@ -2112,6 +2333,84 @@
             setStatus('complete', `Watching... (poll ${data.pollCount})`);
         });
         
+        // ========== Simulation Mode Event Listeners ==========
+        
+        eventSource.addEventListener('simulation-info', (e) => {
+            const data = JSON.parse(e.data);
+            console.log('[SIM] Simulation info:', data);
+            setStatus('importing', data.message);
+        });
+        
+        eventSource.addEventListener('chunks-created', (e) => {
+            const data = JSON.parse(e.data);
+            console.log('[SIM] Chunks created:', data);
+            totalSimChunks = data.count;
+            
+            // Mark prefetch complete, start chunk processing
+            updatePhaseStatus('phase0', 'complete');
+            updatePhaseStatus('phase1', 'running');
+            
+            // Pre-populate chunk queue with all chunks
+            if (data.chunks) {
+                data.chunks.forEach(chunk => {
+                    updateChunkStatus(chunk.id, 'pending', {
+                        fightName: chunk.fightName,
+                        totalChunks: data.count,
+                        message: `${Math.round(chunk.duration / 1000)}s of events`
+                    });
+                });
+            }
+            
+            setStatus('importing', `Processing ${data.count} chunks...`);
+        });
+        
+        eventSource.addEventListener('chunk-status', (e) => {
+            const data = JSON.parse(e.data);
+            console.log('[SIM] Chunk status:', data);
+            updateChunkStatus(data.chunkId, data.status, data);
+            
+            // Update phase status text
+            if (data.status === 'fetching') {
+                setStatus('importing', `Fetching: ${data.fightName || data.chunkId}`);
+            } else if (data.status === 'analyzing') {
+                setStatus('importing', `Analyzing: ${data.fightName || data.chunkId}`);
+            } else if (data.status === 'complete') {
+                setStatus('importing', `Completed: ${data.fightName || data.chunkId}`);
+            }
+        });
+        
+        eventSource.addEventListener('chunk-delay', (e) => {
+            const data = JSON.parse(e.data);
+            console.log('[SIM] Chunk delay:', data);
+            startCountdown(data.nextChunkIn, data.nextChunk);
+        });
+        
+        eventSource.addEventListener('simulation-complete', (e) => {
+            const data = JSON.parse(e.data);
+            console.log('[SIM] Simulation complete:', data);
+            
+            // Mark all phases complete
+            updatePhaseStatus('phase1', 'complete');
+            updatePhaseStatus('phase2', 'complete');
+            clearCountdown();
+            
+            setStatus('complete', `Simulation complete! ${data.totalChunks} chunks, ${formatNumber(data.totalEvents)} events`);
+            goBtn.textContent = 'Done';
+            goBtn.disabled = false;
+            goBtn.style.background = '#28a745';
+            
+            // Stop hosting session state
+            isHostingSession = false;
+            stopTitleFlash();
+        });
+        
+        eventSource.addEventListener('simulation-aborted', (e) => {
+            const data = JSON.parse(e.data);
+            console.log('[SIM] Simulation aborted:', data);
+            clearCountdown();
+            setStatus('warning', data.message);
+        });
+        
         eventSource.addEventListener('warning', (e) => {
             const data = JSON.parse(e.data);
             console.warn('Stream warning:', data.message);
@@ -2150,8 +2449,10 @@
         isImporting = false;
         isHostingSession = false; // Session ended - disable beforeunload warning
         stopTitleFlash(); // Stop flashing browser tab
+        clearCountdown(); // Clear simulation countdown timer
         goBtn.disabled = false;
         goBtn.textContent = 'GO';
+        goBtn.style.background = ''; // Reset button color
     }
 
     // Clear stream
@@ -2249,6 +2550,7 @@
         stopBtn.style.display = 'none';
         if (leaderboardsGrid) leaderboardsGrid.style.display = 'none';
         if (tooLowGrid) tooLowGrid.style.display = 'none';
+        initChunkProgress(); // Reset chunk progress panel
         currentReportCode = null;
     }
 
