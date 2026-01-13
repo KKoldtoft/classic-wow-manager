@@ -1,0 +1,9 @@
+# Dependabot configuration
+# Checks for vulnerable/outdated npm packages weekly
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
