@@ -24,6 +24,8 @@
     const scrollBtn = document.getElementById('scrollBtn');
     const stopBtn = document.getElementById('stopBtn');
     const clearAllBtn = document.getElementById('clearAllBtn');
+    const phaseTracker = document.getElementById('phaseTracker');
+    const phaseList = document.getElementById('phaseList');
 
     // State
     let eventSource = null;
@@ -32,6 +34,7 @@
     let pagesStored = 0;
     let actorCount = 0;
     let fightsCount = 0;
+    let phases = {}; // Track phase completion
     let eventsBuffer = []; // Virtual scroll buffer - only keep last N events in DOM
     const MAX_DOM_EVENTS = 500; // Reduced for production
     let currentReportCode = null; // Track current report code for saving highlights
@@ -39,6 +42,64 @@
     let titleFlashInterval = null; // For flashing browser tab title
     const originalTitle = document.title;
     
+    // Phase Tracker Functions
+    function addPhase(id, label) {
+        if (phases[id]) return; // Already exists
+        phases[id] = { label, status: 'pending', element: null };
+        
+        const phaseEl = document.createElement('div');
+        phaseEl.id = `phase-${id}`;
+        phaseEl.style.cssText = 'display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);';
+        phaseEl.innerHTML = `
+            <span style="width: 20px; text-align: center;">⏳</span>
+            <span style="flex: 1;">${label}</span>
+            <span style="font-size: 11px; color: var(--text-dim);">pending</span>
+        `;
+        
+        phaseList.appendChild(phaseEl);
+        phases[id].element = phaseEl;
+        phaseTracker.style.display = 'block';
+    }
+    
+    function updatePhaseStatus(id, status, message = '') {
+        if (!phases[id]) {
+            addPhase(id, message || id);
+        }
+        
+        const phase = phases[id];
+        phase.status = status;
+        
+        let icon = '⏳';
+        let statusText = 'pending';
+        let color = 'var(--text-dim)';
+        
+        if (status === 'running') {
+            icon = '⚙️';
+            statusText = 'running';
+            color = 'var(--warning)';
+        } else if (status === 'complete') {
+            icon = '✅';
+            statusText = 'OK';
+            color = 'var(--success)';
+        } else if (status === 'error') {
+            icon = '❌';
+            statusText = 'error';
+            color = 'var(--error)';
+        }
+        
+        phase.element.innerHTML = `
+            <span style="width: 20px; text-align: center;">${icon}</span>
+            <span style="flex: 1;">${phase.label}</span>
+            <span style="font-size: 11px; color: ${color}; font-weight: 600;">${statusText}</span>
+        `;
+    }
+    
+    function clearPhases() {
+        phases = {};
+        phaseList.innerHTML = '';
+        phaseTracker.style.display = 'none';
+    }
+
     // Flash the browser tab title when hosting to prevent accidental close
     function startTitleFlash() {
         if (titleFlashInterval) return; // Already flashing
@@ -1753,6 +1814,13 @@
         progressSection.classList.add('active');
         statsGrid.style.display = 'grid';
         
+        // Initialize phase tracker
+        clearPhases();
+        addPhase('phase1', 'Phase 1: Import Events');
+        addPhase('phase2', 'Phase 2: Analysis');
+        addPhase('phase3', 'Phase 3: Real-time Polling');
+        updatePhaseStatus('phase1', 'running');
+        
         // Reset state
         totalEvents = 0;
         pagesStored = 0;
@@ -1888,6 +1956,12 @@
             setStatus('complete', 'Analyzing bloodrages from all events...');
             updateStats();
             
+            // Mark Phase 1 complete, start Phase 2
+            updatePhaseStatus('phase1', 'complete');
+            updatePhaseStatus('phase2', 'running');
+            addPhase('analysis-bloodrage', '→ Bloodrages');
+            updatePhaseStatus('analysis-bloodrage', 'running');
+            
             // Save PW:S and Renew highlights to backend for live viewers
             savePwsToBackend();
             saveRenewToBackend();
@@ -1903,6 +1977,7 @@
             // Display bad bloodrages from backend analysis
             displayBackendBloodrages(data.badBloodrages || [], data.totalBloodrages || 0);
             
+            updatePhaseStatus('analysis-bloodrage', 'complete');
             setStatus('complete', `Analysis complete - ${data.badBloodrages?.length || 0} bad bloodrages found`);
             goBtn.textContent = 'Polling...';
         });
@@ -1910,6 +1985,9 @@
         eventSource.addEventListener('charge-analysis', (e) => {
             const data = JSON.parse(e.data);
             console.log('[LIVE] Charge analysis received:', data);
+            
+            addPhase('analysis-charges', '→ Charges');
+            updatePhaseStatus('analysis-charges', 'complete');
             
             // Display charges from backend analysis
             displayBackendCharges(data.charges || [], data.totalCharges || 0, data.badCharges || 0);
@@ -1920,6 +1998,8 @@
         eventSource.addEventListener('interrupt-analysis', (e) => {
             const data = JSON.parse(e.data);
             console.log('[LIVE] Interrupt analysis received:', data);
+            addPhase('analysis-interrupts', '→ Interrupts');
+            updatePhaseStatus('analysis-interrupts', 'complete');
             displayInterrupts(data.playerStats || [], data.totalInterrupts || 0);
         });
         
@@ -1957,6 +2037,9 @@
             const data = JSON.parse(e.data);
             console.log('[LIVE] Player stats received:', data);
             
+            addPhase('analysis-stats', '→ Player Stats');
+            updatePhaseStatus('analysis-stats', 'complete');
+            
             // Build player class map for spore coloring
             playerClassMap = {};
             if (data.damage) {
@@ -1989,8 +2072,24 @@
             displayTooLowDamageFromStats(data.damage || []);
             displayTooLowHealingFromStats(data.healing || []);
             
+            // Mark Phase 2 complete
+            updatePhaseStatus('phase2', 'complete');
+            
             setStatus('complete', 'Analysis complete!');
             goBtn.textContent = 'Polling...';
+        });
+        
+        eventSource.addEventListener('polling-started', (e) => {
+            const data = JSON.parse(e.data);
+            console.log('[LIVE] Polling phase started:', data);
+            
+            // Mark Phase 3 as running
+            updatePhaseStatus('phase3', 'running');
+            
+            setStatus('complete', 'Now watching for new events in real-time...');
+            goBtn.textContent = 'Polling...';
+            goBtn.disabled = false;
+            goBtn.style.background = '#28a745'; // Green to show active polling
         });
         
         eventSource.addEventListener('new-events', (e) => {

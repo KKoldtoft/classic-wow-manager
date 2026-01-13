@@ -6065,9 +6065,11 @@ app.get('/api/wcl/stream-import', async (req, res) => {
     
     // Phase 2: Backend analysis of bad bloodrages
     // This uses ALL events from the database for accurate combat detection
+    console.log('[LIVE] ====== STARTING PHASE 2: ANALYSIS ======');
     sendEvent('progress', { phase: 'analyzing', message: 'Analyzing all events for bad bloodrages...' });
     
     try {
+      console.log('[LIVE] Starting bloodrage analysis...');
       const analysisResult = await analyzeBloodragesFromDB(reportCode, fights, meta);
       const bloodrageData = {
         badBloodrages: analysisResult.badBloodrages,
@@ -6343,8 +6345,13 @@ app.get('/api/wcl/stream-import', async (req, res) => {
       console.error('[LIVE] Spore analysis error:', err.message);
     }
     
+    console.log('[LIVE] ====== PHASE 2 COMPLETE - ALL ANALYSIS DONE ======');
+    
     // Phase 3: Real-time polling for new events
+    console.log('[LIVE] ====== STARTING PHASE 3: REAL-TIME POLLING ======');
+    console.log(`[LIVE] aborted=${aborted}, lastCursor=${lastCursor}`);
     sendEvent('progress', { phase: 'polling', message: 'Watching for new events...' });
+    sendEvent('polling-started', { message: 'Real-time polling started', cursor: lastCursor });
     
     // Poll for new events every 3 seconds
     let pollCount = 0;
@@ -6352,6 +6359,7 @@ app.get('/api/wcl/stream-import', async (req, res) => {
     const reanalysisInterval = 10; // Re-run analysis every 10 polls (30 seconds)
     let lastAnalysisPollCount = 0;
     
+    console.log('[LIVE] Entering polling loop (maxPolls=1000, interval=3s)');
     while (!aborted && pollCount < maxPolls) {
       await new Promise(resolve => setTimeout(resolve, 3000));
       
