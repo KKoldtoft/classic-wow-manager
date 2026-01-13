@@ -36,7 +36,7 @@ async function addMessage(message) {
       const src = String(message && message.source || 'site');
       const uid = String(message && message.userId || '');
       const hashInput = `${src}|${uid}|${text}|${minuteBucket}`;
-      const hash = crypto.createHash('sha1').update(hashInput).digest('base64url');
+      const hash = crypto.createHash('sha256').update(hashInput).digest('base64url');
       const dedupeKey = `chat:dedupe:${hash}`;
       const ok = await client.set(dedupeKey, '1', { NX: true, EX: DEDUPE_TTL_SECONDS });
       if (ok !== 'OK') {

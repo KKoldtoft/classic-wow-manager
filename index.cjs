@@ -9289,7 +9289,8 @@ app.put('/api/players/:discordUserId/fix-name', async (req, res) => {
 
 // Search players by name (minimum 3 characters)
 app.get('/api/players/search', async (req, res) => {
-    const { q } = req.query;
+    // Ensure q is a string (prevent type confusion if array is passed)
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     
     if (!q || q.length < 3) {
         return res.json([]);
@@ -12260,7 +12261,8 @@ app.post('/api/confirmed-logs/:raidId/player', async (req, res) => {
 // Get confirmed players for a raid
 app.get('/api/confirmed-logs/:raidId/players', async (req, res) => {
     const { raidId } = req.params;
-    const { manually_matched } = req.query;
+    // Ensure manually_matched is a string (prevent type confusion if array is passed)
+    const manually_matched = typeof req.query.manually_matched === 'string' ? req.query.manually_matched : '';
     
     console.log(`🔍 [CONFIRM LOGS] Getting confirmed players for raid: ${raidId}, manually_matched: ${manually_matched}`);
     
@@ -15305,7 +15307,8 @@ app.get('/api/reward-settings', async (req, res) => {
 
 // Search players from database (similar to roster functionality)
 app.get('/api/search-players', async (req, res) => {
-    const { query } = req.query;
+    // Ensure query is a string (prevent type confusion if array is passed)
+    const query = typeof req.query.query === 'string' ? req.query.query.trim() : '';
     
     if (!query || query.length < 2) {
         return res.json([]);
