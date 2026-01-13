@@ -12,7 +12,7 @@ const { S3Client, PutObjectCommand, ListObjectsV2Command, GetObjectCommand, Head
 const multer = require('multer');
 const fs = require('fs');
 const cloudinary = require('cloudinary').v2;
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const CloudinaryStorage = require('multer-storage-cloudinary');
 const WebSocket = require('ws');
 // Chat: Socket.IO (initialized after server listen)
 let attachChatIo = null;
