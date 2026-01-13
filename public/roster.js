@@ -1,6 +1,13 @@
 // public/roster.js
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // Utility: Escape HTML to prevent XSS
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
     const rosterGrid = document.getElementById('roster-grid');
     const rosterEventTitle = document.getElementById('roster-event-title');
     const compToolButton = document.getElementById('comp-tool-button');
@@ -189,7 +196,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 : `<span class="compare-badge badge-fail"><i class="fas fa-times"></i> Class ${hasName && rosterClass ? '('+rosterClass+')' : ''}</span>`;
             return `
                 <div class="compare-row">
-                    <div class="compare-name">${item.name} <span style="opacity:0.8; font-weight:400;">${item.cls}</span></div>
+                    <div class="compare-name">${escapeHtml(item.name)} <span style="opacity:0.8; font-weight:400;">${escapeHtml(item.cls)}</span></div>
                     <div>${nameBadge}</div>
                     <div>${classBadge}</div>
                 </div>`;

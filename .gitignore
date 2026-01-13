@@ -1,3 +1,21 @@
+# Dependencies
 node_modules/
+
+# Database dumps (too large for GitHub)
+*.dump
+latest.dump
+
+# Environment variables (contains secrets!)
 .env
-/.env
+
+# Logs
+*.log
+.last-run.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
