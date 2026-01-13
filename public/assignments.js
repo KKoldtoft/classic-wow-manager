@@ -689,9 +689,9 @@
     const desc = document.createElement('div');
     function renderDesc(readOnly) {
       if (readOnly) {
-        desc.innerHTML = `<p class="strategy-text" style="color:#ddd; line-height:1.4;">${currentStrategy || '—'}</p>`;
+        desc.innerHTML = `<p class="strategy-text" style="color:#ddd; line-height:1.4;">${escapeHtml(currentStrategy || '—')}</p>`;
       } else {
-        desc.innerHTML = `<textarea class="assignment-editable assignment-textarea" data-field="strategy_text" placeholder="Fight description...">${currentStrategy || ''}</textarea>`;
+        desc.innerHTML = `<textarea class="assignment-editable assignment-textarea" data-field="strategy_text" placeholder="Fight description...">${escapeHtml(currentStrategy || '')}</textarea>`;
       }
     }
     renderDesc(true);
@@ -1000,7 +1000,7 @@
             renderAcceptArea();
           } else {
             assignText.className = '';
-            assignText.innerHTML = `<textarea class="assignment-editable assignment-assignment-textarea" data-field="assignment" placeholder="Assignment">${(row.dataset.assignment || '')}</textarea>`;
+            assignText.innerHTML = `<textarea class="assignment-editable assignment-assignment-textarea" data-field="assignment" placeholder="Assignment">${escapeHtml(row.dataset.assignment || '')}</textarea>`;
             renderCharInfo(false);
             renderMarker(false);
             // Reset acceptance when manager edits the assignment text
@@ -3232,9 +3232,9 @@
     const desc = document.createElement('div');
     function renderDesc(readOnly) {
       if (readOnly) {
-        desc.innerHTML = currentStrategy ? `<p class="strategy-text" style="color:#ddd; line-height:1.4;">${currentStrategy}</p>` : '';
+        desc.innerHTML = currentStrategy ? `<p class="strategy-text" style="color:#ddd; line-height:1.4;">${escapeHtml(currentStrategy)}</p>` : '';
       } else {
-        desc.innerHTML = `<textarea class="assignment-editable assignment-textarea" data-field="strategy_text" placeholder="Optional notes...">${currentStrategy || ''}</textarea>`;
+        desc.innerHTML = `<textarea class="assignment-editable assignment-textarea" data-field="strategy_text" placeholder="Optional notes...">${escapeHtml(currentStrategy || '')}</textarea>`;
       }
     }
     renderDesc(true);
@@ -3404,7 +3404,7 @@
         const tClass = getRosterClassByName(roster, targetName);
         const canonical = canonicalizeClass('', tClass);
         const color = getRosterClassColorByName(roster, targetName);
-        assignText.innerHTML = `<span class="character-name class-${classToCssName(canonical)}" style="display:inline-flex; align-items:center; color:${color} !important;">${targetName}</span>`;
+        assignText.innerHTML = `<span class="character-name class-${escapeHtml(classToCssName(canonical))}" style="display:inline-flex; align-items:center; color:${escapeHtml(color)} !important;">${escapeHtml(targetName)}</span>`;
         row.dataset.assignment = targetName;
       } else if (variantLower === 'buffs') {
         assignText.textContent = e.assignment || '';
@@ -3481,7 +3481,7 @@
               const tClass = getRosterClassByName(roster, finalTarget);
               const canonical = canonicalizeClass('', tClass);
               const color = getRosterClassColorByName(roster, finalTarget);
-              assignText.innerHTML = `<span class=\"character-name class-${classToCssName(canonical)}\" style=\"display:inline-flex; align-items:center; color:${color} !important;\">${finalTarget}</span>`;
+              assignText.innerHTML = `<span class=\"character-name class-${escapeHtml(classToCssName(canonical))}\" style=\"display:inline-flex; align-items:center; color:${escapeHtml(color)} !important;\">${escapeHtml(finalTarget)}</span>`;
             } else {
               const finalText = (ta && typeof ta.value === 'string') ? ta.value : (row.dataset.assignment || '');
               assignText.textContent = finalText;
@@ -3499,11 +3499,11 @@
               assignText.innerHTML = `
                 <select class=\"assignment-editable\" data-field=\"target_character_name\" style=\"max-width:260px;\">
                   <option value=\"\">Select target...</option>
-                  ${roster.map(r => `<option value="${r.character_name}" ${r.character_name===(row.dataset.assignment||'')?'selected':''}>${r.character_name}</option>`).join('')}
+                  ${roster.map(r => `<option value="${escapeHtml(r.character_name)}" ${r.character_name===(row.dataset.assignment||'')?'selected':''}>${escapeHtml(r.character_name)}</option>`).join('')}
                 </select>
               `;
             } else {
-              assignText.innerHTML = `<textarea class=\"assignment-editable assignment-assignment-textarea\" data-field=\"assignment\" placeholder=\"Assignment\">${(row.dataset.assignment || '')}</textarea>`;
+              assignText.innerHTML = `<textarea class=\"assignment-editable assignment-assignment-textarea\" data-field=\"assignment\" placeholder=\"Assignment\">${escapeHtml(row.dataset.assignment || '')}</textarea>`;
             }
             renderCharInfo(false);
             renderMarker(false);

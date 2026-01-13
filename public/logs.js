@@ -1,5 +1,12 @@
 // WoW Logs Analysis JavaScript
 
+// Utility: Escape HTML to prevent XSS
+function escapeHtmlLogs(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 class WoWLogsAnalyzer {
     constructor() {
         this.apiKey = 'e5c41ab0436b3a44c0e9c2fbd6cf016d';
@@ -3964,8 +3971,8 @@ class WoWLogsAnalyzer {
         
         rosterCharacterDiv.className = `roster-character ${classBackgroundClass}`;
         rosterCharacterDiv.innerHTML = `
-            <span class="roster-name-black exact" data-discord-id="${discordId}">
-                ${characterName}
+            <span class="roster-name-black exact" data-discord-id="${escapeHtmlLogs(discordId)}">
+                ${escapeHtmlLogs(characterName)}
             </span>
         `;
         

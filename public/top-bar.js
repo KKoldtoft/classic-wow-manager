@@ -1,5 +1,12 @@
 // public/top-bar.js
 
+// Utility: Escape HTML to prevent XSS
+function escapeHtmlTopBar(text) {
+	const div = document.createElement('div');
+	div.textContent = text;
+	return div.innerHTML;
+}
+
 // Google Analytics (gtag) universal injection
 (function initGoogleAnalytics() {
 	try {
@@ -312,7 +319,7 @@ function enhanceTopNavIcons() {
 			const href = link.getAttribute('href') || '';
 			const icon = iconForHref(href);
 			const text = link.textContent.trim();
-			link.innerHTML = `<i class="fas ${icon} nav-icon" aria-hidden="true"></i><span class="nav-text">${text}</span>`;
+			link.innerHTML = `<i class="fas ${escapeHtmlTopBar(icon)} nav-icon" aria-hidden="true"></i><span class="nav-text">${escapeHtmlTopBar(text)}</span>`;
 		});
 
 		// Dropdown toggle (Raids)
@@ -327,7 +334,7 @@ function enhanceTopNavIcons() {
 				const label = btn.childNodes[0] && btn.childNodes[0].nodeType === Node.TEXT_NODE
 					? btn.childNodes[0].textContent.trim()
 					: (btn.textContent.replace(/\s*\u25BC|\s*▼/g, '').trim() || 'Raids');
-				btn.innerHTML = `<i class="fas fa-calendar-alt nav-icon" aria-hidden="true"></i><span class="nav-text">${label}</span>` + (chevron ? ` <i class="fas fa-chevron-down"></i>` : ' <i class="fas fa-chevron-down"></i>');
+				btn.innerHTML = `<i class="fas fa-calendar-alt nav-icon" aria-hidden="true"></i><span class="nav-text">${escapeHtmlTopBar(label)}</span>` + (chevron ? ` <i class="fas fa-chevron-down"></i>` : ' <i class="fas fa-chevron-down"></i>');
 			}
 		});
 	} catch (_) {
