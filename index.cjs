@@ -1154,12 +1154,14 @@ async function setCachedRaidHelperEvent(eventId, eventData) {
 }
 
 async function cleanupRaidHelperEventCache(olderThanDays = 365) {
+    // Validate input to prevent SQL injection - must be a positive integer
+    const days = Math.max(1, Math.min(9999, parseInt(olderThanDays, 10) || 365));
     try {
         const result = await pool.query(`
             DELETE FROM raid_helper_events_cache 
-            WHERE cached_at < NOW() - INTERVAL '${olderThanDays} days'
+            WHERE cached_at < NOW() - INTERVAL '1 day' * $1
             RETURNING event_id
-        `);
+        `, [days]);
         
         if (result.rows.length > 0) {
             console.log(`🧹 [CACHE] Cleaned up ${result.rows.length} old Raid-Helper event cache entries`);
@@ -16865,7 +16867,8 @@ app.get('/api/cache/raid-helper/stats', async (req, res) => {
 
 app.post('/api/cache/raid-helper/cleanup', async (req, res) => {
     try {
-        const { olderThanDays = 30 } = req.body;
+        // Validate olderThanDays is a positive integer (prevent injection)
+        const olderThanDays = Math.max(1, Math.min(9999, parseInt(req.body.olderThanDays, 10) || 30));
         const cleanedCount = await cleanupRaidHelperEventCache(olderThanDays);
         
         res.json({

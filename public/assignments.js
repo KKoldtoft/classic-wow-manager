@@ -1,4 +1,11 @@
 (function() {
+  // Utility: Escape HTML to prevent XSS
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
   // Determine current wing from location pathname
   function getCurrentWing() {
     const parts = window.location.pathname.split('/').filter(Boolean);
@@ -4073,7 +4080,7 @@
           const tdChar = document.createElement('td'); tdChar.style.padding='10px 8px'; tdChar.style.display = 'none';
           try {
             const color = getRosterClassColorByName(roster, row.character_name);
-            tdChar.innerHTML = `<span class="character-name" style="color:${color} !important; font-weight: normal;">${row.character_name}</span>`;
+            tdChar.innerHTML = `<span class="character-name" style="color:${escapeHtml(color)} !important; font-weight: normal;">${escapeHtml(row.character_name)}</span>`;
           } catch {
             tdChar.textContent = row.character_name;
           }

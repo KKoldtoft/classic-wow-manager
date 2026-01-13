@@ -51,6 +51,13 @@
         .switch input:checked + .slider:before { transform: translateX(20px); }
     </style>
     <script>
+        // Utility: Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         async function postJson(url, body) {
             const res = await fetch(url, {
                 method: 'POST',
@@ -413,7 +420,7 @@
                         const content = document.createElement('div'); content.className = 'content';
                         const nameDiv = document.createElement('div'); nameDiv.className = 'name';
                         const color = classToColor(r.class_name);
-                        nameDiv.innerHTML = `<b style="color:${color}">${r.character_name}</b>`;
+                        nameDiv.innerHTML = `<b style="color:${escapeHtml(color)}">${escapeHtml(r.character_name)}</b>`;
                         content.appendChild(nameDiv);
                         const meta = document.createElement('div'); meta.style.color = '#bbb';
                         const didText = did ? `Discord ID: ${did}` : 'Discord ID: N/A';
