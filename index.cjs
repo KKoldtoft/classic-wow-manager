@@ -12,7 +12,14 @@ const { S3Client, PutObjectCommand, ListObjectsV2Command, GetObjectCommand, Head
 const multer = require('multer');
 const fs = require('fs');
 const cloudinary = require('cloudinary').v2;
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
+// multer-storage-cloudinary has shipped with multiple CJS export styles across versions:
+// - v4+:   { CloudinaryStorage }
+// - v2.x:  module.exports = CloudinaryStorage
+// Make startup resilient across environments (Heroku/local) by supporting both.
+const multerStorageCloudinary = require('multer-storage-cloudinary');
+const CloudinaryStorage =
+  (multerStorageCloudinary && multerStorageCloudinary.CloudinaryStorage) ||
+  multerStorageCloudinary;
 const WebSocket = require('ws');
 // Chat: Socket.IO (initialized after server listen)
 let attachChatIo = null;
