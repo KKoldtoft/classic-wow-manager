@@ -6568,8 +6568,17 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         sendEvent('meta', { actorCount: Object.keys(meta.actorsById).length, abilityCount: Object.keys(meta.abilitiesById).length });
         
         // Step 3: Re-import ALL events (ON CONFLICT DO NOTHING prevents duplicates)
-        console.log(`[LIVE REFRESH ${refreshCount}] Re-importing all events...`);
-        sendEvent('refresh-status', { message: 'Importing events...', refreshCount });
+        console.log(`[LIVE REFRESH ${refreshCount}] Re-importing all events from ${reportMinStart}ms to ${reportMaxEnd}ms...`);
+        sendEvent('refresh-status', { message: 'Re-importing all events from WCL...', refreshCount });
+        
+        // Send initial progress to show import has started
+        sendEvent('refresh-progress', { 
+          cursor: reportMinStart, 
+          maxEnd: reportMaxEnd, 
+          events: 0, 
+          pages: 0,
+          progress: 0
+        });
         
         let reimportCursor = reportMinStart;
         let reimportTotalEvents = 0;
@@ -6579,6 +6588,7 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         const reimportMaxGuard = 10000;
         
         while (reimportCursor < reportMaxEnd + 60000 && reimportGuard < reimportMaxGuard && !aborted) {
+          reimportPageCount++;
           const reimportEnd = Math.min(reimportCursor + reimportWindowMs, reportMaxEnd + 60000);
           
           const reimportPage = await fetchWclEventsPage({ reportCode, startTime: reimportCursor, endTime: reimportEnd, apiUrl });
@@ -6594,18 +6604,19 @@ app.get('/api/wcl/stream-import', async (req, res) => {
             `, [sessionId, reportCode, reimportCursor, reimportEnd, reimportNextCursor, JSON.stringify(reimportEvents)]);
             
             reimportTotalEvents += reimportEvents.length;
-            reimportPageCount++;
-            
-            // Send progress update every 10 pages
-            if (reimportPageCount % 10 === 0) {
-              sendEvent('refresh-progress', { 
-                cursor: reimportCursor, 
-                maxEnd: reportMaxEnd, 
-                events: reimportTotalEvents, 
-                pages: reimportPageCount,
-                progress: Math.min(100, Math.round((reimportCursor / reportMaxEnd) * 100))
-              });
-            }
+          }
+          
+          // Send progress update every page (not every 10) so user sees import progress
+          if (reimportPageCount % 5 === 0 || reimportEvents.length > 0) {
+            const progress = Math.min(100, Math.round(((reimportCursor - reportMinStart) / (reportMaxEnd - reportMinStart)) * 100));
+            sendEvent('refresh-progress', { 
+              cursor: reimportCursor, 
+              maxEnd: reportMaxEnd, 
+              events: reimportTotalEvents, 
+              pages: reimportPageCount,
+              progress: progress
+            });
+            console.log(`[LIVE REFRESH ${refreshCount}] Progress: ${progress}% (${reimportPageCount} pages, ${reimportTotalEvents} events, cursor ${reimportCursor}/${reportMaxEnd})`);
           }
           
           // Advance cursor
@@ -6613,6 +6624,7 @@ app.get('/api/wcl/stream-import', async (req, res) => {
             reimportCursor = reimportNextCursor;
           } else {
             // No more pages
+            console.log(`[LIVE REFRESH ${refreshCount}] No more pages (nextCursor=${reimportNextCursor}, current=${reimportCursor})`);
             break;
           }
           
@@ -6620,66 +6632,97 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         }
         
         console.log(`[LIVE REFRESH ${refreshCount}] Import complete: ${reimportTotalEvents} events, ${reimportPageCount} pages`);
-        sendEvent('refresh-status', { message: 'Running analysis...', refreshCount, totalEvents: reimportTotalEvents });
+        
+        // Send final progress update
+        sendEvent('refresh-progress', { 
+          cursor: reportMaxEnd, 
+          maxEnd: reportMaxEnd, 
+          events: reimportTotalEvents, 
+          pages: reimportPageCount,
+          progress: 100
+        });
+        
+        sendEvent('refresh-status', { message: 'Import complete! Running analysis on all events...', refreshCount, totalEvents: reimportTotalEvents });
         
         // Step 4: Run ALL analysis
-        console.log(`[LIVE REFRESH ${refreshCount}] Running full analysis...`);
+        console.log(`[LIVE REFRESH ${refreshCount}] Running full analysis on all events...`);
+        sendEvent('refresh-status', { message: 'Analyzing bloodrages...', refreshCount });
         
         // Bloodrage analysis
         const analysisResult = await analyzeBloodragesFromDB(reportCode, fights, meta);
-        await saveAndBroadcastHighlights(reportCode, 'bloodrages', {
+        const bloodrageData = {
           badBloodrages: analysisResult.badBloodrages,
           totalBloodrages: analysisResult.totalBloodrages,
           combatSegments: analysisResult.combatSegmentCount,
           damageEvents: analysisResult.damageEventCount
-        });
+        };
+        sendEvent('bloodrage-analysis', bloodrageData);
+        await saveAndBroadcastHighlights(reportCode, 'bloodrages', bloodrageData);
         
         // Charge analysis (if tanks provided)
         if (tankNames.length > 0) {
+          sendEvent('refresh-status', { message: 'Analyzing charges...', refreshCount });
           const chargeResult = await analyzeChargesFromDB(reportCode, tankNames, meta);
-          await saveAndBroadcastHighlights(reportCode, 'charges', {
+          const chargeData = {
             charges: chargeResult.charges,
             totalCharges: chargeResult.totalCharges,
             badCharges: chargeResult.badCharges
-          });
+          };
+          sendEvent('charge-analysis', chargeData);
+          await saveAndBroadcastHighlights(reportCode, 'charges', chargeData);
         }
         
         // Interrupt analysis
+        sendEvent('refresh-status', { message: 'Analyzing interrupts...', refreshCount });
         const interruptResult = await analyzeInterruptsFromDB(reportCode, meta);
-        await saveAndBroadcastHighlights(reportCode, 'interrupts', {
+        const interruptData = {
           playerStats: interruptResult.playerStats,
           totalInterrupts: interruptResult.totalInterrupts
-        });
+        };
+        sendEvent('interrupt-analysis', interruptData);
+        await saveAndBroadcastHighlights(reportCode, 'interrupts', interruptData);
         
         // Decurse analysis
+        sendEvent('refresh-status', { message: 'Analyzing decurses...', refreshCount });
         const decurseResult = await analyzeDecursesFromDB(reportCode, meta);
-        await saveAndBroadcastHighlights(reportCode, 'decurses', {
+        const decurseData = {
           playerStats: decurseResult.playerStats,
           totalDecurses: decurseResult.totalDecurses
-        });
+        };
+        sendEvent('decurse-analysis', decurseData);
+        await saveAndBroadcastHighlights(reportCode, 'decurses', decurseData);
         
         // Sunder analysis
+        sendEvent('refresh-status', { message: 'Analyzing sunders...', refreshCount });
         const sunderResult = await analyzeSundersFromDB(reportCode, meta);
-        await saveAndBroadcastHighlights(reportCode, 'sunders', {
+        const sunderData = {
           playerStats: sunderResult.playerStats,
           effectiveSunders: sunderResult.effectiveSunders,
           totalSunders: sunderResult.totalSunders
-        });
+        };
+        sendEvent('sunder-analysis', sunderData);
+        await saveAndBroadcastHighlights(reportCode, 'sunders', sunderData);
         
         // Scorch analysis
+        sendEvent('refresh-status', { message: 'Analyzing scorches...', refreshCount });
         const scorchResult = await analyzeScorchesFromDB(reportCode, meta);
-        await saveAndBroadcastHighlights(reportCode, 'scorches', {
+        const scorchData = {
           playerStats: scorchResult.playerStats,
           effectiveScorches: scorchResult.effectiveScorches,
           totalScorches: scorchResult.totalScorches
-        });
+        };
+        sendEvent('scorch-analysis', scorchData);
+        await saveAndBroadcastHighlights(reportCode, 'scorches', scorchData);
         
         // Disarm analysis
+        sendEvent('refresh-status', { message: 'Analyzing disarms...', refreshCount });
         const disarmResult = await analyzeDisarmsFromDB(reportCode, meta);
-        await saveAndBroadcastHighlights(reportCode, 'disarms', {
+        const disarmData = {
           playerStats: disarmResult.playerStats,
           totalDisarms: disarmResult.totalDisarms
-        });
+        };
+        sendEvent('disarm-analysis', disarmData);
+        await saveAndBroadcastHighlights(reportCode, 'disarms', disarmData);
         
         console.log(`[LIVE REFRESH ${refreshCount}] ✅ Refresh complete!`);
         sendEvent('refresh-complete', { 
