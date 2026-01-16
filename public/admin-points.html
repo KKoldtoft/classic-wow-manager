@@ -7,6 +7,300 @@
     <link rel="stylesheet" href="/style.css">
     <link rel="stylesheet" href="/admin-styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* Points Management Specific Styles */
+        .reward-panel {
+            background: var(--panel-bg, #ffffff);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(131, 168, 255, 0.15);
+            transition: box-shadow 0.2s ease;
+        }
+        
+        .dark .reward-panel {
+            background: #1a1f2e;
+            border-color: rgba(131, 168, 255, 0.25);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .reward-panel:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+        }
+        
+        .dark .reward-panel:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+        
+        .reward-panel-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid rgba(131, 168, 255, 0.2);
+        }
+        
+        .reward-panel-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin: 0;
+        }
+        
+        /* Compact number inputs */
+        .admin-input-number {
+            max-width: 120px;
+            padding: 8px 12px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-align: center;
+        }
+        
+        .admin-input-array {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            padding: 10px 12px;
+        }
+        
+        /* Input with badge (for units) */
+        .input-with-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .input-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 10px;
+            background: rgba(59, 130, 246, 0.1);
+            color: #3b82f6;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            min-width: 40px;
+            justify-content: center;
+        }
+        
+        .dark .input-badge {
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+        }
+        
+        /* Formula display */
+        .formula-box {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #4f46e5;
+        }
+        
+        .dark .formula-box {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.15));
+            border-color: rgba(99, 102, 241, 0.4);
+            color: #a5b4fc;
+        }
+        
+        .formula-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #6366f1;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        
+        .dark .formula-label {
+            color: #818cf8;
+        }
+        
+        /* Enhanced info boxes */
+        .info-box-enhanced {
+            background: rgba(59, 130, 246, 0.08);
+            border: 1px solid rgba(59, 130, 246, 0.25);
+            border-radius: 8px;
+            padding: 14px 16px;
+            margin-top: 16px;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        
+        .dark .info-box-enhanced {
+            background: rgba(59, 130, 246, 0.12);
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+        
+        .info-box-enhanced strong {
+            color: #2563eb;
+            font-weight: 700;
+        }
+        
+        .dark .info-box-enhanced strong {
+            color: #60a5fa;
+        }
+        
+        /* Field labels */
+        .field-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 700;
+            color: #374151;
+            margin-bottom: 8px;
+            letter-spacing: 0.3px;
+        }
+        
+        .dark .field-label {
+            color: #d1d5db;
+        }
+        
+        .field-hint {
+            display: block;
+            font-size: 0.8rem;
+            color: #6b7280;
+            margin-top: 6px;
+            font-weight: 400;
+        }
+        
+        .dark .field-hint {
+            color: #9ca3af;
+        }
+        
+        /* Tier indicator */
+        .tier-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+        
+        .tier-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .tier-badge-1 { background: rgba(239, 68, 68, 0.15); color: #dc2626; }
+        .tier-badge-2 { background: rgba(251, 191, 36, 0.15); color: #d97706; }
+        .tier-badge-3 { background: rgba(34, 197, 94, 0.15); color: #16a34a; }
+        
+        .dark .tier-badge-1 { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+        .dark .tier-badge-2 { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
+        .dark .tier-badge-3 { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
+        
+        /* Sunder ranges table style */
+        .sunder-ranges-table {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .sunder-range-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 1fr;
+            gap: 12px;
+            padding: 14px;
+            border: 1px solid rgba(209, 213, 219, 0.3);
+            border-radius: 8px;
+            background: rgba(249, 250, 251, 0.5);
+            transition: all 0.2s ease;
+        }
+        
+        .dark .sunder-range-row {
+            background: rgba(17, 24, 39, 0.5);
+            border-color: rgba(75, 85, 99, 0.3);
+        }
+        
+        .sunder-range-row:hover {
+            background: rgba(243, 244, 246, 0.8);
+            border-color: rgba(59, 130, 246, 0.4);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+        
+        .dark .sunder-range-row:hover {
+            background: rgba(31, 41, 55, 0.8);
+            border-color: rgba(59, 130, 246, 0.5);
+        }
+        
+        /* Points array display */
+        .points-array-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(243, 244, 246, 0.5);
+            border-radius: 8px;
+        }
+        
+        .dark .points-array-chips {
+            background: rgba(17, 24, 39, 0.5);
+        }
+        
+        .point-chip {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 8px 12px;
+            background: white;
+            border: 1px solid rgba(209, 213, 219, 0.5);
+            border-radius: 6px;
+            font-size: 0.85rem;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+        
+        .dark .point-chip {
+            background: #1f2937;
+            border-color: rgba(75, 85, 99, 0.5);
+        }
+        
+        .point-chip-position {
+            font-size: 0.7rem;
+            color: #6b7280;
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+        
+        .dark .point-chip-position {
+            color: #9ca3af;
+        }
+        
+        .point-chip-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #059669;
+        }
+        
+        .dark .point-chip-value {
+            color: #34d399;
+        }
+        
+        /* Color preview swatch */
+        .color-swatch {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            vertical-align: middle;
+            margin-left: 6px;
+        }
+        
+        .color-swatch.red { background-color: #ef4444; }
+        .color-swatch.gray { background-color: #6b7280; }
+        .color-swatch.green { background-color: #10b981; }
+        .color-swatch.blue { background-color: #3b82f6; }
+    </style>
     <script>
         // Initialize dark mode IMMEDIATELY (before page render) to prevent flash
         (function() {
@@ -215,54 +509,65 @@
             // Abilities settings
             if (settings.abilities) {
                 settingsHTML += `
-                    <div class="admin-card-inner mb-6">
-                        <h4 class="text-lg font-bold mb-4 flex items-center gap-3" style="color: #ff6b35;">
-                            <img src="https://wow.zamimg.com/images/wow/icons/large/inv_misc_bomb_06.jpg" style="width: 24px; height: 24px;"> 
-                            Engineering & Holywater
-                        </h4>
+                    <div class="reward-panel">
+                        <div class="reward-panel-header">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/inv_misc_bomb_06.jpg" style="width: 28px; height: 28px;"> 
+                            <h4 class="reward-panel-title" style="color: #ff6b35;">Engineering & Holywater</h4>
+                        </div>
                         
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-4">
+                        <div class="formula-box">
+                            <div class="formula-label">💡 Formula</div>
+                            Points = floor((abilities used × avg targets) ÷ divisor), capped at maximum
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
-                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                <label class="field-label">
                                     Calculation Divisor
                                 </label>
-                                <input 
-                                    type="number" 
-                                    id="abilities-calculation-divisor" 
-                                    value="${settings.abilities.calculation_divisor.value}" 
-                                    min="1" 
-                                    max="100" 
-                                    step="0.1"
-                                    class="admin-input"
-                                    onchange="markRewardsChanged()"
-                                >
-                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
-                                    Formula: (abilities used × avg targets) ÷ divisor
+                                <div class="input-with-badge">
+                                    <input 
+                                        type="number" 
+                                        id="abilities-calculation-divisor" 
+                                        value="${settings.abilities.calculation_divisor.value}" 
+                                        min="1" 
+                                        max="100" 
+                                        step="0.1"
+                                        class="admin-input admin-input-number"
+                                        onchange="markRewardsChanged()"
+                                    >
+                                    <span class="input-badge">÷</span>
+                                </div>
+                                <small class="field-hint">
+                                    Higher divisor = fewer points awarded
                                 </small>
                             </div>
                             
                             <div>
-                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                <label class="field-label">
                                     Maximum Points
                                 </label>
-                                <input 
-                                    type="number" 
-                                    id="abilities-max-points" 
-                                    value="${settings.abilities.max_points.value}" 
-                                    min="1" 
-                                    max="500" 
-                                    step="1"
-                                    class="admin-input"
-                                    onchange="markRewardsChanged()"
-                                >
-                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                <div class="input-with-badge">
+                                    <input 
+                                        type="number" 
+                                        id="abilities-max-points" 
+                                        value="${settings.abilities.max_points.value}" 
+                                        min="1" 
+                                        max="500" 
+                                        step="1"
+                                        class="admin-input admin-input-number"
+                                        onchange="markRewardsChanged()"
+                                    >
+                                    <span class="input-badge">pts</span>
+                                </div>
+                                <small class="field-hint">
                                     Points are capped at this maximum value
                                 </small>
                             </div>
                         </div>
                         
-                        <div class="info-box-blue">
-                            <strong>Description:</strong> ${settings.abilities.calculation_divisor.description}
+                        <div class="info-box-enhanced">
+                            <strong>💡 Example:</strong> 10 sappers × 5 avg targets = 50 ÷ 10 divisor = 5 points (if max is 20)
                         </div>
                     </div>
                 `;
@@ -270,31 +575,53 @@
 
             // Damage settings
             if (settings.damage) {
+                const damagePointsArray = settings.damage.points_array.value;
+                let damageChips = '';
+                damagePointsArray.forEach((pts, idx) => {
+                    const position = idx + 1;
+                    const suffix = position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th';
+                    damageChips += `
+                        <div class="point-chip">
+                            <span class="point-chip-position">${position}${suffix}</span>
+                            <span class="point-chip-value">${pts}</span>
+                        </div>
+                    `;
+                });
+                
                 settingsHTML += `
-                    <div class="admin-card-inner mb-6">
-                        <h4 class="text-lg font-bold text-red-600 dark:text-red-400 mb-4 flex items-center gap-3">
-                            <i class="fas fa-sword"></i> 
-                            Damage Dealers
-                        </h4>
+                    <div class="reward-panel">
+                        <div class="reward-panel-header">
+                            <i class="fas fa-sword" style="color: #dc2626; font-size: 24px;"></i>
+                            <h4 class="reward-panel-title" style="color: #dc2626;">Damage Dealers</h4>
+                        </div>
+                        
+                        <div class="formula-box">
+                            <div class="formula-label">📊 How It Works</div>
+                            Rank players by total damage → Award points based on position
+                        </div>
                         
                         <div>
-                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                            <label class="field-label">
                                 Points for Each Position
                             </label>
                             <textarea 
                                 id="damage-points-array" 
-                                class="admin-input font-mono text-sm"
-                                rows="3"
+                                class="admin-input admin-input-array"
+                                rows="2"
                                 onchange="markRewardsChanged()"
                                 placeholder="80, 70, 55, 40, 35, 30, 25, 20, 15, 10, 8, 6, 5, 4, 3"
-                            >${settings.damage.points_array.value.join(', ')}</textarea>
-                            <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
-                                Enter points separated by commas (e.g., "80, 70, 55"). Position 1 gets first value, position 2 gets second value, etc.
+                            >${damagePointsArray.join(', ')}</textarea>
+                            <small class="field-hint">
+                                Enter points separated by commas. Position 1 gets first value, position 2 gets second, etc.
                             </small>
+                            
+                            <div class="points-array-chips">
+                                ${damageChips}
+                            </div>
                         </div>
                         
-                        <div class="info-box-blue mt-4">
-                            <strong>Description:</strong> ${settings.damage.points_array.description}
+                        <div class="info-box-enhanced">
+                            <strong>💡 Current Setup:</strong> ${damagePointsArray.length} positions configured. Top DPS gets ${damagePointsArray[0]} points, 2nd place gets ${damagePointsArray[1]} points.
                         </div>
                     </div>
                 `;
@@ -302,31 +629,53 @@
 
             // Healing settings
             if (settings.healing) {
+                const healingPointsArray = settings.healing.points_array.value;
+                let healingChips = '';
+                healingPointsArray.forEach((pts, idx) => {
+                    const position = idx + 1;
+                    const suffix = position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th';
+                    healingChips += `
+                        <div class="point-chip">
+                            <span class="point-chip-position">${position}${suffix}</span>
+                            <span class="point-chip-value">${pts}</span>
+                        </div>
+                    `;
+                });
+                
                 settingsHTML += `
-                    <div class="admin-card-inner mb-6">
-                        <h4 class="text-lg font-bold text-green-600 dark:text-green-400 mb-4 flex items-center gap-3">
-                            <i class="fas fa-heart"></i> 
-                            Healers
-                        </h4>
+                    <div class="reward-panel">
+                        <div class="reward-panel-header">
+                            <i class="fas fa-heart" style="color: #16a34a; font-size: 24px;"></i>
+                            <h4 class="reward-panel-title" style="color: #16a34a;">Healers</h4>
+                        </div>
+                        
+                        <div class="formula-box">
+                            <div class="formula-label">📊 How It Works</div>
+                            Rank players by total healing → Award points based on position
+                        </div>
                         
                         <div>
-                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                            <label class="field-label">
                                 Points for Each Position
                             </label>
                             <textarea 
                                 id="healing-points-array" 
-                                class="admin-input font-mono text-sm"
+                                class="admin-input admin-input-array"
                                 rows="2"
                                 onchange="markRewardsChanged()"
                                 placeholder="80, 65, 60, 55, 40, 35, 30, 20, 15, 10"
-                            >${settings.healing.points_array.value.join(', ')}</textarea>
-                            <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
-                                Enter points separated by commas (e.g., "80, 65, 60"). Position 1 gets first value, position 2 gets second value, etc.
+                            >${healingPointsArray.join(', ')}</textarea>
+                            <small class="field-hint">
+                                Enter points separated by commas. Position 1 gets first value, position 2 gets second, etc.
                             </small>
+                            
+                            <div class="points-array-chips">
+                                ${healingChips}
+                            </div>
                         </div>
                         
-                        <div class="info-box-blue mt-4">
-                            <strong>Description:</strong> ${settings.healing.points_array.description}
+                        <div class="info-box-enhanced">
+                            <strong>💡 Current Setup:</strong> ${healingPointsArray.length} positions configured. Top healer gets ${healingPointsArray[0]} points, 2nd place gets ${healingPointsArray[1]} points.
                         </div>
                     </div>
                 `;
@@ -335,74 +684,87 @@
             // Mana Potions settings
             if (settings.mana_potions) {
                 settingsHTML += `
-                    <div class="admin-card-inner mb-6">
-                        <h4 class="text-lg font-bold mb-4 flex items-center gap-3" style="color: #4a9eff;">
-                            <img src="https://wow.zamimg.com/images/wow/icons/large/inv_potion_76.jpg" style="width: 20px; height: 20px;"> 
-                            Major Mana Potions
-                        </h4>
+                    <div class="reward-panel">
+                        <div class="reward-panel-header">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/inv_potion_76.jpg" style="width: 28px; height: 28px;"> 
+                            <h4 class="reward-panel-title" style="color: #4a9eff;">Major Mana Potions</h4>
+                        </div>
                         
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4">
+                        <div class="formula-box">
+                            <div class="formula-label">💡 Formula</div>
+                            Points = min(max_points, floor((potions_used - threshold) ÷ 3))
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div>
-                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                <label class="field-label">
                                     Minimum Threshold
                                 </label>
-                                <input 
-                                    type="number" 
-                                    id="mana-threshold" 
-                                    value="${settings.mana_potions.threshold.value}" 
-                                    min="0" 
-                                    max="100" 
-                                    step="1"
-                                    class="admin-input"
-                                    onchange="markRewardsChanged()"
-                                >
-                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
-                                    Potions below this count earn 0 points
+                                <div class="input-with-badge">
+                                    <input 
+                                        type="number" 
+                                        id="mana-threshold" 
+                                        value="${settings.mana_potions.threshold.value}" 
+                                        min="0" 
+                                        max="100" 
+                                        step="1"
+                                        class="admin-input admin-input-number"
+                                        onchange="markRewardsChanged()"
+                                    >
+                                    <span class="input-badge">🧪</span>
+                                </div>
+                                <small class="field-hint">
+                                    Potions below this = 0 points
                                 </small>
                             </div>
                             
                             <div>
-                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                <label class="field-label">
                                     Points Per Potion
                                 </label>
-                                <input 
-                                    type="number" 
-                                    id="mana-points-per-potion" 
-                                    value="${settings.mana_potions.points_per_potion.value}" 
-                                    min="0.1" 
-                                    max="50" 
-                                    step="0.1"
-                                    class="admin-input"
-                                    onchange="markRewardsChanged()"
-                                >
-                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
-                                    Points earned per potion above threshold
+                                <div class="input-with-badge">
+                                    <input 
+                                        type="number" 
+                                        id="mana-points-per-potion" 
+                                        value="${settings.mana_potions.points_per_potion.value}" 
+                                        min="0.1" 
+                                        max="50" 
+                                        step="0.1"
+                                        class="admin-input admin-input-number"
+                                        onchange="markRewardsChanged()"
+                                    >
+                                    <span class="input-badge">pts</span>
+                                </div>
+                                <small class="field-hint">
+                                    Points earned per potion
                                 </small>
                             </div>
                             
                             <div>
-                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                <label class="field-label">
                                     Maximum Points
                                 </label>
-                                <input 
-                                    type="number" 
-                                    id="mana-max-points" 
-                                    value="${settings.mana_potions.max_points.value}" 
-                                    min="1" 
-                                    max="500" 
-                                    step="1"
-                                    class="admin-input"
-                                    onchange="markRewardsChanged()"
-                                >
-                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
-                                    Points are capped at this maximum value
+                                <div class="input-with-badge">
+                                    <input 
+                                        type="number" 
+                                        id="mana-max-points" 
+                                        value="${settings.mana_potions.max_points.value}" 
+                                        min="1" 
+                                        max="500" 
+                                        step="1"
+                                        class="admin-input admin-input-number"
+                                        onchange="markRewardsChanged()"
+                                    >
+                                    <span class="input-badge">max</span>
+                                </div>
+                                <small class="field-hint">
+                                    Points capped at this value
                                 </small>
                             </div>
                         </div>
                         
-                        <div class="info-box-blue">
-                            <strong>Formula:</strong> Points = min(max_points, (potions_used - threshold) × points_per_potion)
-                            <br><strong>Description:</strong> ${settings.mana_potions.threshold.description}
+                        <div class="info-box-enhanced">
+                            <strong>💡 Example:</strong> With threshold ${settings.mana_potions.threshold.value}, using 15 potions = (15 - ${settings.mana_potions.threshold.value}) ÷ 3 = ${Math.floor((15 - settings.mana_potions.threshold.value) / 3)} points
                         </div>
                     </div>
                 `;
@@ -411,55 +773,65 @@
             // Runes settings
             if (settings.runes) {
                 settingsHTML += `
-                    <div class="admin-card-inner mb-6">
-                        <h4 class="text-lg font-bold text-purple-600 dark:text-purple-400 mb-4 flex items-center gap-3">
-                            <img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_sealofkings.jpg" style="width: 20px; height: 20px;"> 
-                            Dark or Demonic runes
-                        </h4>
+                    <div class="reward-panel">
+                        <div class="reward-panel-header">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_sealofkings.jpg" style="width: 28px; height: 28px;"> 
+                            <h4 class="reward-panel-title" style="color: #9333ea;">Dark or Demonic Runes</h4>
+                        </div>
                         
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-4">
+                        <div class="formula-box">
+                            <div class="formula-label">💡 Formula</div>
+                            Points = floor(total_runes ÷ ${settings.runes.usage_divisor.value}) × ${settings.runes.points_per_division.value}
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
-                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
-                                    You get <span class="text-purple-600 dark:text-purple-400">X</span> points
+                                <label class="field-label">
+                                    Points Earned <span style="color: #9333ea;">(X)</span>
                                 </label>
-                                <input 
-                                    type="number" 
-                                    id="runes-points-earned" 
-                                    value="${settings.runes.points_per_division.value}" 
-                                    min="0.1" 
-                                    max="10" 
-                                    step="0.1"
-                                    class="admin-input"
-                                    onchange="markRewardsChanged()"
-                                >
-                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
-                                    Points awarded per rune threshold reached
+                                <div class="input-with-badge">
+                                    <input 
+                                        type="number" 
+                                        id="runes-points-earned" 
+                                        value="${settings.runes.points_per_division.value}" 
+                                        min="0.1" 
+                                        max="10" 
+                                        step="0.1"
+                                        class="admin-input admin-input-number"
+                                        onchange="markRewardsChanged()"
+                                    >
+                                    <span class="input-badge">pts</span>
+                                </div>
+                                <small class="field-hint">
+                                    Points per threshold reached
                                 </small>
                             </div>
                             
                             <div>
-                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
-                                    Per <span class="text-purple-600 dark:text-purple-400">Y</span> runes used
+                                <label class="field-label">
+                                    Runes Needed <span style="color: #9333ea;">(Y)</span>
                                 </label>
-                                <input 
-                                    type="number" 
-                                    id="runes-threshold" 
-                                    value="${settings.runes.usage_divisor.value}" 
-                                    min="1" 
-                                    max="20" 
-                                    step="1"
-                                    class="admin-input"
-                                    onchange="markRewardsChanged()"
-                                >
-                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
-                                    Number of runes needed to earn points
+                                <div class="input-with-badge">
+                                    <input 
+                                        type="number" 
+                                        id="runes-threshold" 
+                                        value="${settings.runes.usage_divisor.value}" 
+                                        min="1" 
+                                        max="20" 
+                                        step="1"
+                                        class="admin-input admin-input-number"
+                                        onchange="markRewardsChanged()"
+                                    >
+                                    <span class="input-badge">🪨</span>
+                                </div>
+                                <small class="field-hint">
+                                    Runes per point threshold
                                 </small>
                             </div>
                         </div>
                         
-                        <div class="info-box-purple">
-                            <strong>Example:</strong> If you set "1 point per 2 runes", then 2 runes = 1 point, 4 runes = 2 points, 5 runes = 2 points
-                            <br><strong>Formula:</strong> Points = floor(total_runes ÷ runes_threshold) × points_earned
+                        <div class="info-box-enhanced">
+                            <strong>💡 Example:</strong> ${settings.runes.points_per_division.value} point per ${settings.runes.usage_divisor.value} runes → 2 runes = 1 point, 4 runes = 2 points, 5 runes = 2 points
                         </div>
                     </div>
                 `;
@@ -624,45 +996,48 @@
                 
                 ranges.forEach((range, index) => {
                     rangesHTML += `
-                        <div class="grid grid-cols-4 gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg mb-3">
+                        <div class="sunder-range-row">
                             <div>
-                                <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Min Count</label>
+                                <label class="field-label" style="font-size: 0.75rem; margin-bottom: 4px;">Min Count</label>
                                 <input 
                                     type="number" 
                                     id="sunder-range-${index}-min" 
                                     value="${range.min}" 
                                     min="0" 
                                     max="999"
-                                    class="admin-input-sm"
+                                    class="admin-input admin-input-number"
+                                    style="max-width: 100px;"
                                     onchange="markRewardsChanged()"
                                 >
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Max Count</label>
+                                <label class="field-label" style="font-size: 0.75rem; margin-bottom: 4px;">Max Count</label>
                                 <input 
                                     type="number" 
                                     id="sunder-range-${index}-max" 
                                     value="${range.max}" 
                                     min="0" 
                                     max="999"
-                                    class="admin-input-sm"
+                                    class="admin-input admin-input-number"
+                                    style="max-width: 100px;"
                                     onchange="markRewardsChanged()"
                                 >
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Points</label>
+                                <label class="field-label" style="font-size: 0.75rem; margin-bottom: 4px;">Points</label>
                                 <input 
                                     type="number" 
                                     id="sunder-range-${index}-points" 
                                     value="${range.points}" 
                                     min="-50" 
                                     max="50"
-                                    class="admin-input-sm"
+                                    class="admin-input admin-input-number"
+                                    style="max-width: 100px;"
                                     onchange="markRewardsChanged()"
                                 >
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Color</label>
+                                <label class="field-label" style="font-size: 0.75rem; margin-bottom: 4px;">Color <span class="color-swatch ${range.color}"></span></label>
                                 <select 
                                     id="sunder-range-${index}-color" 
                                     class="admin-select"
@@ -680,24 +1055,28 @@
                 });
                 
                 settingsHTML += `
-                    <div class="admin-card-inner mb-6">
-                        <h4 class="text-lg font-bold text-purple-600 dark:text-purple-400 mb-4 flex items-center gap-3">
-                            <img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_sunder.jpg" style="width: 20px; height: 20px;"> 
-                            Sunder Armor
-                        </h4>
+                    <div class="reward-panel">
+                        <div class="reward-panel-header">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_sunder.jpg" style="width: 28px; height: 28px;"> 
+                            <h4 class="reward-panel-title" style="color: #9333ea;">Sunder Armor</h4>
+                        </div>
+                        
+                        <div class="formula-box">
+                            <div class="formula-label">📊 How It Works</div>
+                            Points awarded based on Sunder Armor count falling into configured ranges
+                        </div>
                         
                         <div class="mb-4">
-                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                            <label class="field-label">
                                 Point Ranges
                             </label>
-                            <div id="sunder-ranges-container">
+                            <div class="sunder-ranges-table" id="sunder-ranges-container">
                                 ${rangesHTML}
                             </div>
                         </div>
                         
-                        <div class="info-box-purple">
-                            <strong>How it works:</strong> Players are awarded points based on their Sunder Armor count falling into these ranges.
-                            <br><strong>Note:</strong> Negative points (red) will be displayed in red text. Zero points (gray) mean no reward or penalty.
+                        <div class="info-box-enhanced">
+                            <strong>💡 Example:</strong> If a player has ${ranges[2]?.min || 100} sunders, they fall in the ${ranges[2]?.min || 100}-${ranges[2]?.max || 119} range and get ${ranges[2]?.points || 5} points.
                         </div>
                     </div>
                 `;
@@ -930,92 +1309,115 @@
             // Scorch settings
             if (settings.scorch) {
                 settingsHTML += `
-                    <div class="admin-card-inner mb-6">
-                        <h4 class="text-lg font-bold text-red-600 dark:text-red-400 mb-4 flex items-center gap-3">
-                            <img src="https://wow.zamimg.com/images/wow/icons/large/spell_fire_soulburn.jpg" style="width: 24px; height: 24px;"> 
-                            Scorch
-                        </h4>
+                    <div class="reward-panel">
+                        <div class="reward-panel-header">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/spell_fire_soulburn.jpg" style="width: 28px; height: 28px;"> 
+                            <h4 class="reward-panel-title" style="color: #dc2626;">Scorch</h4>
+                        </div>
                         
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4">
+                        <div class="formula-box">
+                            <div class="formula-label">📊 Tier System</div>
+                            0-${settings.scorch.tier1_max.value} = 0 pts • ${settings.scorch.tier1_max.value + 1}-${settings.scorch.tier2_max.value} = ${settings.scorch.tier2_points.value} pts • ${settings.scorch.tier2_max.value + 1}+ = ${settings.scorch.tier3_points.value} pts
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
                             <div>
-                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
-                                    Tier 1 Max (0 points)
+                                <div class="tier-container">
+                                    <span class="tier-badge tier-badge-1">Tier 1</span>
+                                    <span style="font-size: 0.85rem; color: #6b7280;">0 points</span>
+                                </div>
+                                <label class="field-label">
+                                    Maximum Count
                                 </label>
-                                <input 
-                                    type="number" 
-                                    id="scorch-tier1-max" 
-                                    value="${settings.scorch.tier1_max.value}" 
-                                    min="0" 
-                                    max="999" 
-                                    step="1"
-                                    class="admin-input"
-                                    onchange="markRewardsChanged()"
-                                >
-                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
-                                    Max scorch count for 0 points
+                                <div class="input-with-badge">
+                                    <input 
+                                        type="number" 
+                                        id="scorch-tier1-max" 
+                                        value="${settings.scorch.tier1_max.value}" 
+                                        min="0" 
+                                        max="999" 
+                                        step="1"
+                                        class="admin-input admin-input-number"
+                                        onchange="markRewardsChanged()"
+                                    >
+                                    <span class="input-badge">max</span>
+                                </div>
+                                <small class="field-hint">
+                                    Scorches 0-${settings.scorch.tier1_max.value} = 0 points
                                 </small>
                             </div>
                             
                             <div>
-                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
-                                    Tier 2 Max
-                                </label>
-                                <input 
-                                    type="number" 
-                                    id="scorch-tier2-max" 
-                                    value="${settings.scorch.tier2_max.value}" 
-                                    min="0" 
-                                    max="999" 
-                                    step="1"
-                                    class="admin-input"
-                                    onchange="markRewardsChanged()"
-                                >
-                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
-                                    Max for tier 2 points
+                                <div class="tier-container">
+                                    <span class="tier-badge tier-badge-2">Tier 2</span>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="field-label">Max Count</label>
+                                        <input 
+                                            type="number" 
+                                            id="scorch-tier2-max" 
+                                            value="${settings.scorch.tier2_max.value}" 
+                                            min="0" 
+                                            max="999" 
+                                            step="1"
+                                            class="admin-input admin-input-number"
+                                            style="max-width: 100px;"
+                                            onchange="markRewardsChanged()"
+                                        >
+                                    </div>
+                                    <div>
+                                        <label class="field-label">Points</label>
+                                        <div class="input-with-badge">
+                                            <input 
+                                                type="number" 
+                                                id="scorch-tier2-points" 
+                                                value="${settings.scorch.tier2_points.value}" 
+                                                min="0" 
+                                                max="100" 
+                                                step="1"
+                                                class="admin-input admin-input-number"
+                                                style="max-width: 80px;"
+                                                onchange="markRewardsChanged()"
+                                            >
+                                            <span class="input-badge">pts</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <small class="field-hint">
+                                    Scorches ${settings.scorch.tier1_max.value + 1}-${settings.scorch.tier2_max.value} = ${settings.scorch.tier2_points.value} points
                                 </small>
                             </div>
-                            
-                            <div>
-                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
-                                    Tier 2 Points
-                                </label>
+                        </div>
+                        
+                        <div>
+                            <div class="tier-container">
+                                <span class="tier-badge tier-badge-3">Tier 3</span>
+                                <span style="font-size: 0.85rem; color: #16a34a; font-weight: 600;">Highest Tier</span>
+                            </div>
+                            <label class="field-label">
+                                Points Awarded
+                            </label>
+                            <div class="input-with-badge">
                                 <input 
                                     type="number" 
-                                    id="scorch-tier2-points" 
-                                    value="${settings.scorch.tier2_points.value}" 
+                                    id="scorch-tier3-points" 
+                                    value="${settings.scorch.tier3_points.value}" 
                                     min="0" 
                                     max="100" 
                                     step="1"
-                                    class="admin-input"
+                                    class="admin-input admin-input-number"
                                     onchange="markRewardsChanged()"
                                 >
-                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
-                                    Points for mid-tier
-                                </small>
+                                <span class="input-badge">pts</span>
                             </div>
-                        </div>
-                        
-                        <div class="mb-4">
-                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
-                                Tier 3 Points (High Tier)
-                            </label>
-                            <input 
-                                type="number" 
-                                id="scorch-tier3-points" 
-                                value="${settings.scorch.tier3_points.value}" 
-                                min="0" 
-                                max="100" 
-                                step="1"
-                                class="admin-input"
-                                onchange="markRewardsChanged()"
-                            >
-                            <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
-                                Points for highest tier (above tier 2 max)
+                            <small class="field-hint">
+                                Scorches ${settings.scorch.tier2_max.value + 1}+ = ${settings.scorch.tier3_points.value} points
                             </small>
                         </div>
                         
-                        <div class="info-box-blue">
-                            <strong>Description:</strong> ${settings.scorch.tier1_max.description}
+                        <div class="info-box-enhanced">
+                            <strong>💡 Example:</strong> If a player casts 150 Scorches, they're in Tier 2 and get ${settings.scorch.tier2_points.value} points.
                         </div>
                     </div>
                 `;
