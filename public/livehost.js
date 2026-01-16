@@ -2079,17 +2079,18 @@
             goBtn.textContent = 'Polling...';
         });
         
-        eventSource.addEventListener('polling-started', (e) => {
+        eventSource.addEventListener('live-started', (e) => {
             const data = JSON.parse(e.data);
-            console.log('[LIVE] Polling phase started:', data);
+            console.log('[LIVE] Live tracking started:', data);
             
             // Mark Phase 3 as running
             updatePhaseStatus('phase3', 'running');
             
-            setStatus('complete', 'Now watching for new events in real-time...');
-            goBtn.textContent = 'Polling...';
+            const refreshIntervalMin = Math.round(data.refreshInterval / 60000);
+            setStatus('complete', `Live tracking active - refreshing every ${refreshIntervalMin} minutes`);
+            goBtn.textContent = 'Live';
             goBtn.disabled = false;
-            goBtn.style.background = '#28a745'; // Green to show active polling
+            goBtn.style.background = '#28a745'; // Green to show active
         });
         
         eventSource.addEventListener('new-events', (e) => {
@@ -2110,15 +2111,71 @@
         
         eventSource.addEventListener('heartbeat', (e) => {
             const data = JSON.parse(e.data);
-            const cursorFormatted = formatNumber(data.cursor);
-            const timeSinceLastEvent = data.timestamp ? `${Math.floor((Date.now() - data.timestamp) / 1000)}s ago` : '';
-            setStatus('complete', `Polling... #${data.pollCount} | Cursor: ${cursorFormatted} | ${timeSinceLastEvent}`);
             
-            // Update progress bar to show we're actively polling (pulse effect)
-            if (progressBar) {
-                progressBar.style.background = 'linear-gradient(90deg, #28a745, #20c997)';
-                progressBar.style.width = '100%';
+            // Show countdown timer for next refresh
+            if (data.nextRefreshIn != null) {
+                const seconds = Math.round(data.nextRefreshIn / 1000);
+                const minutes = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                const timeStr = minutes > 0 ? `${minutes}m ${secs}s` : `${secs}s`;
+                
+                setStatus('complete', `💓 Keep-alive | Next refresh in ${timeStr}`);
+                
+                // Update progress bar to show countdown (reverse progress)
+                if (progressBar) {
+                    const totalWait = data.refreshCount === 1 ? 10000 : 180000; // 10s or 3min
+                    const elapsed = totalWait - data.nextRefreshIn;
+                    const progress = Math.min(100, (elapsed / totalWait) * 100);
+                    progressBar.style.background = 'linear-gradient(90deg, #007bff, #0056b3)';
+                    progressBar.style.width = `${progress}%`;
+                    progressBar.style.transition = 'width 1s linear';
+                }
+                
+                if (progressText) {
+                    progressText.textContent = `Next refresh: ${timeStr}`;
+                }
+            } else {
+                // Old-style heartbeat (for backwards compatibility)
+                const cursorFormatted = formatNumber(data.cursor);
+                const timeSinceLastEvent = data.timestamp ? `${Math.floor((Date.now() - data.timestamp) / 1000)}s ago` : '';
+                setStatus('complete', `Polling... #${data.pollCount} | Cursor: ${cursorFormatted} | ${timeSinceLastEvent}`);
+                
+                if (progressBar) {
+                    progressBar.style.background = 'linear-gradient(90deg, #28a745, #20c997)';
+                    progressBar.style.width = '100%';
+                }
             }
+        });
+        
+        eventSource.addEventListener('refresh-start', (e) => {
+            const data = JSON.parse(e.data);
+            console.log(`[LIVE] Refresh #${data.refreshCount} starting...`);
+            setStatus('importing', `🔄 Importing new logs (refresh #${data.refreshCount})...`);
+            updateProgress(0, 'Re-importing all logs...');
+        });
+        
+        eventSource.addEventListener('refresh-progress', (e) => {
+            const data = JSON.parse(e.data);
+            const progress = data.progress || 0;
+            updateProgress(progress, `Re-importing... ${formatNumber(data.events || 0)} events (${data.pages || 0} pages)`);
+        });
+        
+        eventSource.addEventListener('refresh-status', (e) => {
+            const data = JSON.parse(e.data);
+            setStatus('importing', data.message);
+        });
+        
+        eventSource.addEventListener('refresh-complete', (e) => {
+            const data = JSON.parse(e.data);
+            console.log(`[LIVE] Refresh #${data.refreshCount} complete:`, data);
+            
+            totalEvents = data.totalEvents || totalEvents;
+            fightsCount = data.fights || fightsCount;
+            updateStats();
+            
+            const nextRefreshMin = Math.round(data.nextRefreshIn / 60000);
+            updateProgress(100, `✅ Refresh complete! Next refresh in ${nextRefreshMin} min`);
+            setStatus('complete', `Refresh #${data.refreshCount} complete - ${formatNumber(data.totalEvents)} events, ${data.fights} fights`);
         });
         
         eventSource.addEventListener('warning', (e) => {
