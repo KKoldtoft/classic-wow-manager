@@ -6625,17 +6625,18 @@ app.get('/api/wcl/stream-import', async (req, res) => {
       }
       
       // Always advance cursor (even if no events found) to catch up to real-time
-      // Use API's nextPageTimestamp if available, otherwise advance by window
+      // Use API's nextPageTimestamp if available, otherwise advance by poll interval (3s) to stay close to real-time
       const oldCursor = lastCursor;
       if (pollNextCursor != null && pollNextCursor > lastCursor) {
         lastCursor = pollNextCursor;
         const delta = lastCursor - oldCursor;
         console.log(`[LIVE POLL ${pollCount}] ✅ Cursor advanced via API: ${oldCursor} -> ${lastCursor} (+${delta}ms, ${newEvents.length} events)`);
       } else {
-        // If API doesn't provide next cursor, advance by window size
-        lastCursor = pollEnd;
+        // If no new data, only advance by 3 seconds (poll interval) to stay close to real-time
+        // Don't skip ahead by the full window (60s) or we'll overshoot live raid time
+        lastCursor = lastCursor + 3000;
         const delta = lastCursor - oldCursor;
-        console.log(`[LIVE POLL ${pollCount}] ✅ Cursor advanced by window: ${oldCursor} -> ${lastCursor} (+${delta}ms, ${newEvents.length} events)`);
+        console.log(`[LIVE POLL ${pollCount}] ✅ Cursor advanced by poll interval: ${oldCursor} -> ${lastCursor} (+${delta}ms, ${newEvents.length} events)`);
       }
       
       // Safeguard: Detect if cursor is stuck (critical bug indicator)
