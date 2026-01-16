@@ -6673,8 +6673,23 @@ app.get('/api/wcl/stream-import', async (req, res) => {
             fights = freshFights;
             reportMaxEnd = Math.max(...fights.map(f => f.endTime));
             
+            console.log(`[LIVE POLL ${pollCount}] Fight check: ${oldCount} -> ${fights.length} fights, maxEnd: ${oldMaxEnd} -> ${reportMaxEnd} (cursor at ${lastCursor})`);
+            
             if (fights.length > oldCount || reportMaxEnd > oldMaxEnd) {
-              console.log(`[LIVE POLL ${pollCount}] ✅ Fights updated: ${oldCount} -> ${fights.length}, maxEnd: ${oldMaxEnd} -> ${reportMaxEnd}`);
+              console.log(`[LIVE POLL ${pollCount}] ✅ NEW FIGHTS DETECTED!`);
+              
+              // Check if cursor has passed the new fight - if so, backtrack to catch the data
+              const newFights = fights.slice(oldCount); // Get only the newly added fights
+              if (newFights.length > 0) {
+                const earliestNewFight = Math.min(...newFights.map(f => f.startTime));
+                if (earliestNewFight < lastCursor) {
+                  const backtrackTo = Math.max(oldMaxEnd, earliestNewFight - 5000); // Go to old end or 5s before new fight
+                  console.log(`[LIVE POLL ${pollCount}] 🔙 BACKTRACKING: Cursor ${lastCursor} -> ${backtrackTo} to catch new fight at ${earliestNewFight}`);
+                  lastCursor = backtrackTo;
+                  consecutiveEmptyPolls = 0; // Reset so we don't trigger smart jump
+                }
+              }
+              
               sendEvent('fights-updated', { 
                 oldCount, 
                 newCount: fights.length, 
@@ -6682,7 +6697,12 @@ app.get('/api/wcl/stream-import', async (req, res) => {
                 newMaxEnd: reportMaxEnd,
                 fights: fights.map(f => ({ id: f.id, name: f.name, startTime: f.startTime, endTime: f.endTime, kill: f.kill }))
               });
+              // Also re-fetch meta since new actors/abilities may have been added
+              meta = await fetchWclReportMeta({ reportCode, apiUrl });
+              sendEvent('meta', { actorCount: Object.keys(meta.actorsById).length, abilityCount: Object.keys(meta.abilitiesById).length });
             }
+          } else {
+            console.log(`[LIVE POLL ${pollCount}] No fights returned from WCL API (API lag or no data yet)`);
           }
         } catch (fightRefreshErr) {
           console.error(`[LIVE POLL ${pollCount}] Error refreshing fights:`, fightRefreshErr.message);
