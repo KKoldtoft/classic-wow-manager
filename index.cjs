@@ -2060,6 +2060,10 @@ app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
+app.get('/admin/points', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin-points.html'));
+});
+
 app.get('/admin/raid-channels', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin-raid-channels.html'));
 });
@@ -6495,6 +6499,11 @@ app.get('/api/wcl/stream-import', async (req, res) => {
     let cursorsStuckCount = 0;
     const MAX_STUCK_POLLS = 5; // Alert if cursor doesn't advance for 5 consecutive polls
     
+    // Smart jump: Track empty polls and re-check for fights if stuck in empty space
+    let consecutiveEmptyPolls = 0;
+    const EMPTY_POLL_RECHECK_THRESHOLD = 20; // Re-check fights every 20 empty polls (~60 seconds)
+    let lastFightCheckPoll = -999; // Ensure we don't re-check too frequently
+    
     console.log('[LIVE] Entering polling loop (maxPolls=1000, interval=3s)');
     console.log(`[LIVE] Initial cursor: ${lastCursor}, windowMs: ${windowMs}`);
     while (!aborted && pollCount < maxPolls) {
@@ -6518,6 +6527,8 @@ app.get('/api/wcl/stream-import', async (req, res) => {
       
       if (newEvents.length > 0) {
         hasNewEvents = true;
+        consecutiveEmptyPolls = 0; // Reset empty poll counter - we found data!
+        
         // Store new events
         await safeQuery(`
           INSERT INTO wcl_event_pages (event_id, report_code, start_time, end_time, next_cursor, events)
@@ -6552,6 +6563,52 @@ app.get('/api/wcl/stream-import', async (req, res) => {
           events: enrichedNewEvents
         });
       } else {
+        // No events in this poll - track consecutive empty polls
+        consecutiveEmptyPolls++;
+        
+        // SMART JUMP: If stuck getting empty polls, re-check if fights now exist
+        if (consecutiveEmptyPolls >= EMPTY_POLL_RECHECK_THRESHOLD && 
+            (pollCount - lastFightCheckPoll) >= EMPTY_POLL_RECHECK_THRESHOLD) {
+          
+          console.log(`[LIVE POLL ${pollCount}] 🔍 ${consecutiveEmptyPolls} consecutive empty polls - re-checking for fights...`);
+          lastFightCheckPoll = pollCount;
+          
+          try {
+            const freshFights = await fetchWclFights({ reportCode, apiUrl });
+            if (freshFights && freshFights.length > 0) {
+              let minFightStart = null;
+              for (const f of freshFights) {
+                if (f && typeof f.startTime === 'number') {
+                  minFightStart = minFightStart == null ? f.startTime : Math.min(minFightStart, f.startTime);
+                }
+              }
+              
+              if (minFightStart != null && minFightStart > lastCursor) {
+                const jumpTo = Math.max(0, minFightStart - 5000); // 5s before first fight
+                const jumpDistance = jumpTo - lastCursor;
+                
+                console.log(`[LIVE POLL ${pollCount}] 🚀 SMART JUMP: Found ${freshFights.length} fights! Jumping from ${lastCursor}ms to ${jumpTo}ms (skip ${jumpDistance}ms)`);
+                sendEvent('progress', { 
+                  phase: 'jump', 
+                  message: `Found ${freshFights.length} fights! Jumping ahead ${Math.round(jumpDistance/1000/60)} minutes...`,
+                  jumpFrom: lastCursor,
+                  jumpTo: jumpTo,
+                  fightsFound: freshFights.length
+                });
+                
+                lastCursor = jumpTo;
+                consecutiveEmptyPolls = 0; // Reset counter after jump
+                pollCount++; // Increment and continue to next poll immediately
+                continue;
+              }
+            } else {
+              console.log(`[LIVE POLL ${pollCount}] No fights found yet - continuing sequential polling`);
+            }
+          } catch (jumpErr) {
+            console.error(`[LIVE POLL ${pollCount}] Error during fight re-check:`, jumpErr.message);
+          }
+        }
+        
         // Send heartbeat to keep connection alive with detailed status
         sendEvent('heartbeat', { 
           cursor: lastCursor, 
@@ -6560,7 +6617,8 @@ app.get('/api/wcl/stream-import', async (req, res) => {
           timestamp: Date.now(),
           windowStart: lastCursor,
           windowEnd: pollEnd,
-          cursorAdvancing: true // We'll always advance now
+          cursorAdvancing: true,
+          consecutiveEmptyPolls // Include in heartbeat for debugging
         });
       }
       
@@ -22674,10 +22732,7 @@ app.get('/api/discord/voice-debug', (req, res) => {
 // Get recent Discord member join/leave events
 app.get('/api/discord/member-events', async (req, res) => {
     try {
-        // Get from memory first (most recent)
-        const memoryEvents = getMemberEvents ? getMemberEvents() : [];
-        
-        // Also fetch from database for persistence across restarts
+        // Fetch from database (single source of truth)
         const limit = parseInt(req.query.limit) || 50;
         const dbResult = await pool.query(`
             SELECT event_type, discord_id, username, discriminator, tag, avatar_url, created_at
@@ -22686,30 +22741,18 @@ app.get('/api/discord/member-events', async (req, res) => {
             LIMIT $1
         `, [limit]);
         
-        // Combine memory and DB, dedupe by discord_id + timestamp
-        const allEvents = [...memoryEvents];
-        const seen = new Set(memoryEvents.map(e => `${e.userId}-${e.timestamp}`));
+        // Map database results to API format
+        const events = dbResult.rows.map(row => ({
+            eventType: row.event_type,
+            userId: row.discord_id,
+            username: row.username,
+            discriminator: row.discriminator,
+            tag: row.tag,
+            avatarUrl: row.avatar_url,
+            timestamp: row.created_at.toISOString()
+        }));
         
-        for (const row of dbResult.rows) {
-            const key = `${row.discord_id}-${row.created_at.toISOString()}`;
-            if (!seen.has(key)) {
-                allEvents.push({
-                    eventType: row.event_type,
-                    userId: row.discord_id,
-                    username: row.username,
-                    discriminator: row.discriminator,
-                    tag: row.tag,
-                    avatarUrl: row.avatar_url,
-                    timestamp: row.created_at.toISOString()
-                });
-            }
-        }
-        
-        // Sort by timestamp descending and limit
-        allEvents.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        const results = allEvents.slice(0, limit);
-        
-        res.json({ ok: true, events: results });
+        res.json({ ok: true, events });
     } catch (error) {
         console.error('❌ Error fetching member events:', error);
         res.status(500).json({ ok: false, error: error.message });
