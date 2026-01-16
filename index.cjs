@@ -6611,39 +6611,37 @@ app.get('/api/wcl/stream-import', async (req, res) => {
       reportMaxEnd = Math.max(...fights.map(f => f.endTime));
       
       // Run analysis after importing new fights
-      if (hasNewEvents) {
-        console.log(`[LIVE POLL ${pollCount}] 🔬 Running re-analysis after new fights...`);
+      console.log(`[LIVE POLL ${pollCount}] 🔬 Running re-analysis after new fights...`);
+      
+      try {
+        // Re-run bloodrage analysis
+        const analysisResult = await analyzeBloodragesFromDB(reportCode, fights, meta);
+        const bloodrageData = {
+          badBloodrages: analysisResult.badBloodrages,
+          totalBloodrages: analysisResult.totalBloodrages,
+          combatSegments: analysisResult.combatSegmentCount,
+          damageEvents: analysisResult.damageEventCount,
+          isUpdate: true
+        };
+        sendEvent('bloodrage-analysis', bloodrageData);
+        await saveAndBroadcastHighlights(reportCode, 'bloodrages', bloodrageData);
         
-        try {
-          // Re-run bloodrage analysis
-          const analysisResult = await analyzeBloodragesFromDB(reportCode, fights, meta);
-          const bloodrageData = {
-            badBloodrages: analysisResult.badBloodrages,
-            totalBloodrages: analysisResult.totalBloodrages,
-            combatSegments: analysisResult.combatSegmentCount,
-            damageEvents: analysisResult.damageEventCount,
+        // Re-run charge analysis if tanks provided
+        if (tankNames.length > 0) {
+          const chargeResult = await analyzeChargesFromDB(reportCode, tankNames, meta);
+          const chargeData = {
+            charges: chargeResult.charges,
+            totalCharges: chargeResult.totalCharges,
+            badCharges: chargeResult.badCharges,
             isUpdate: true
           };
-          sendEvent('bloodrage-analysis', bloodrageData);
-          await saveAndBroadcastHighlights(reportCode, 'bloodrages', bloodrageData);
-          
-          // Re-run charge analysis if tanks provided
-          if (tankNames.length > 0) {
-            const chargeResult = await analyzeChargesFromDB(reportCode, tankNames, meta);
-            const chargeData = {
-              charges: chargeResult.charges,
-              totalCharges: chargeResult.totalCharges,
-              badCharges: chargeResult.badCharges,
-              isUpdate: true
-            };
-            sendEvent('charge-analysis', chargeData);
-            await saveAndBroadcastHighlights(reportCode, 'charges', chargeData);
-          }
-          
-          console.log(`[LIVE POLL ${pollCount}] ✅ Re-analysis complete: ${analysisResult.badBloodrages.length} bad BRs`);
-        } catch (reanalysisErr) {
-          console.error(`[LIVE POLL ${pollCount}] Re-analysis error:`, reanalysisErr.message);
+          sendEvent('charge-analysis', chargeData);
+          await saveAndBroadcastHighlights(reportCode, 'charges', chargeData);
         }
+        
+        console.log(`[LIVE POLL ${pollCount}] ✅ Re-analysis complete: ${analysisResult.badBloodrages.length} bad BRs`);
+      } catch (reanalysisErr) {
+        console.error(`[LIVE POLL ${pollCount}] Re-analysis error:`, reanalysisErr.message);
       }
     }
     
