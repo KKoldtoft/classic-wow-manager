@@ -6506,213 +6506,113 @@ app.get('/api/wcl/stream-import', async (req, res) => {
     const EMPTY_POLL_RECHECK_THRESHOLD = 20; // Re-check fights every 20 empty polls (~60 seconds)
     let lastFightCheckPoll = -999; // Ensure we don't re-check too frequently
     
-    console.log('[LIVE] Entering polling loop (maxPolls=1000, interval=3s)');
-    console.log(`[LIVE] Initial cursor: ${lastCursor}, windowMs: ${windowMs}`);
+    // Track which fights we've already processed
+    const processedFightIds = new Set(fights.map(f => f.id));
+    console.log(`[LIVE] Entering FIGHT-BASED polling loop (have ${processedFightIds.size} fights already)`);
+    console.log(`[LIVE] Will check for new fights every 3 seconds`);
+    
     while (!aborted && pollCount < maxPolls) {
       await new Promise(resolve => setTimeout(resolve, 3000));
       
       if (aborted) break;
+      pollCount++;
       
-      const pollEnd = lastCursor + windowMs;
-      let pollPage;
+      // Check for new fights
+      let freshFights;
       try {
-        pollPage = await fetchWclEventsPage({ reportCode, startTime: lastCursor, endTime: pollEnd, apiUrl });
+        freshFights = await fetchWclFights({ reportCode, apiUrl });
       } catch (err) {
-        sendEvent('poll-error', { message: err.message });
-        pollCount++;
+        console.error(`[LIVE POLL ${pollCount}] Error fetching fights:`, err.message);
+        sendEvent('poll-error', { message: `Fight fetch error: ${err.message}` });
         continue;
       }
       
-      const newEvents = pollPage.events || [];
-      const pollNextCursor = pollPage.nextPageTimestamp;
-      let hasNewEvents = false;
+      if (!freshFights || freshFights.length === 0) {
+        console.log(`[LIVE POLL ${pollCount}] No fights returned from WCL - API lag`);
+        sendEvent('heartbeat', { pollCount, totalEvents, fightCount: processedFightIds.size });
+        continue;
+      }
       
-      if (newEvents.length > 0) {
-        hasNewEvents = true;
-        consecutiveEmptyPolls = 0; // Reset empty poll counter - we found data!
+      // Find new fights we haven't processed yet
+      const newFights = freshFights.filter(f => !processedFightIds.has(f.id));
+      
+      if (newFights.length === 0) {
+        console.log(`[LIVE POLL ${pollCount}] No new fights (have ${processedFightIds.size}/${freshFights.length})`);
+        sendEvent('heartbeat', { pollCount, totalEvents, fightCount: processedFightIds.size });
+        continue;
+      }
+      
+      console.log(`[LIVE POLL ${pollCount}] 🎯 NEW FIGHTS DETECTED: ${newFights.length} new fights!`);
+      sendEvent('new-fights-detected', { count: newFights.length, fights: newFights.map(f => ({ id: f.id, name: f.name })) });
+      
+      // Process each new fight
+      for (const fight of newFights) {
+        console.log(`[LIVE POLL ${pollCount}] Importing fight ${fight.id}: ${fight.name} (${fight.startTime}-${fight.endTime})`);
         
-        // Store new events
-        await safeQuery(`
-          INSERT INTO wcl_event_pages (event_id, report_code, start_time, end_time, next_cursor, events)
-          VALUES ($1, $2, $3, $4, $5, $6)
-          ON CONFLICT (event_id, report_code, start_time, end_time) DO NOTHING;
-        `, [sessionId, reportCode, lastCursor, pollEnd, pollNextCursor, JSON.stringify(newEvents)]);
+        let fightCursor = fight.startTime;
+        let fightEvents = [];
+        let fightGuard = 0;
         
-        totalEvents += newEvents.length;
+        // Fetch all events for this fight
+        while (fightCursor < fight.endTime && fightGuard < 100) {
+          const fightEnd = Math.min(fightCursor + 60000, fight.endTime + 1000); // Fetch up to fight end
+          
+          let fightPage;
+          try {
+            fightPage = await fetchWclEventsPage({ reportCode, startTime: fightCursor, endTime: fightEnd, apiUrl });
+          } catch (err) {
+            console.error(`[LIVE POLL ${pollCount}] Error fetching fight ${fight.id} events:`, err.message);
+            break;
+          }
+          
+          const pageEvents = fightPage.events || [];
+          if (pageEvents.length > 0) {
+            fightEvents.push(...pageEvents);
+            
+            // Store page
+            await safeQuery(`
+              INSERT INTO wcl_event_pages (event_id, report_code, start_time, end_time, next_cursor, events)
+              VALUES ($1, $2, $3, $4, $5, $6)
+              ON CONFLICT (event_id, report_code, start_time, end_time) DO NOTHING;
+            `, [sessionId, reportCode, fightCursor, fightEnd, fightPage.nextPageTimestamp, JSON.stringify(pageEvents)]);
+          }
+          
+          // Advance cursor
+          if (fightPage.nextPageTimestamp && fightPage.nextPageTimestamp > fightCursor) {
+            fightCursor = fightPage.nextPageTimestamp;
+          } else {
+            fightCursor = fightEnd;
+          }
+          
+          fightGuard++;
+        }
         
-        // Enrich new events with metadata
-        const enrichedNewEvents = newEvents.slice(0, 50).map(ev => {
+        console.log(`[LIVE POLL ${pollCount}] ✅ Fight ${fight.id} imported: ${fightEvents.length} events`);
+        totalEvents += fightEvents.length;
+        processedFightIds.add(fight.id);
+        
+        // Send sample events to client
+        const sampleEvents = fightEvents.slice(0, 50).map(ev => {
           const enriched = { ...ev };
-          if (ev.sourceID != null && meta.actorsById[ev.sourceID]) {
+          if (ev.sourceID && meta.actorsById[ev.sourceID]) {
             enriched.sourceName = meta.actorsById[ev.sourceID].name;
-            enriched.sourceType = meta.actorsById[ev.sourceID].type;
           }
-          if (ev.targetID != null && meta.actorsById[ev.targetID]) {
+          if (ev.targetID && meta.actorsById[ev.targetID]) {
             enriched.targetName = meta.actorsById[ev.targetID].name;
-            enriched.targetType = meta.actorsById[ev.targetID].type;
-          }
-          const abilityId = ev.abilityGameID ?? ev.ability?.guid;
-          if (abilityId != null && meta.abilitiesById[abilityId]) {
-            enriched.abilityName = meta.abilitiesById[abilityId].name;
           }
           return enriched;
         });
         
-        sendEvent('new-events', {
-          count: newEvents.length,
-          totalEvents,
-          cursor: lastCursor,
-          events: enrichedNewEvents
-        });
-      } else {
-        // No events in this poll - track consecutive empty polls
-        consecutiveEmptyPolls++;
-        
-        // SMART JUMP: If stuck getting empty polls, re-check if fights now exist
-        if (consecutiveEmptyPolls >= EMPTY_POLL_RECHECK_THRESHOLD && 
-            (pollCount - lastFightCheckPoll) >= EMPTY_POLL_RECHECK_THRESHOLD) {
-          
-          console.log(`[LIVE POLL ${pollCount}] 🔍 ${consecutiveEmptyPolls} consecutive empty polls - re-checking for fights...`);
-          lastFightCheckPoll = pollCount;
-          
-          try {
-            const freshFights = await fetchWclFights({ reportCode, apiUrl });
-            if (freshFights && freshFights.length > 0) {
-              let minFightStart = null;
-              for (const f of freshFights) {
-                if (f && typeof f.startTime === 'number') {
-                  minFightStart = minFightStart == null ? f.startTime : Math.min(minFightStart, f.startTime);
-                }
-              }
-              
-              if (minFightStart != null && minFightStart > lastCursor) {
-                const jumpTo = Math.max(0, minFightStart - 5000); // 5s before first fight
-                const jumpDistance = jumpTo - lastCursor;
-                
-                console.log(`[LIVE POLL ${pollCount}] 🚀 SMART JUMP: Found ${freshFights.length} fights! Jumping from ${lastCursor}ms to ${jumpTo}ms (skip ${jumpDistance}ms)`);
-                sendEvent('progress', { 
-                  phase: 'jump', 
-                  message: `Found ${freshFights.length} fights! Jumping ahead ${Math.round(jumpDistance/1000/60)} minutes...`,
-                  jumpFrom: lastCursor,
-                  jumpTo: jumpTo,
-                  fightsFound: freshFights.length
-                });
-                
-                lastCursor = jumpTo;
-                consecutiveEmptyPolls = 0; // Reset counter after jump
-                pollCount++; // Increment and continue to next poll immediately
-                continue;
-              }
-            } else {
-              console.log(`[LIVE POLL ${pollCount}] No fights found yet - continuing sequential polling`);
-            }
-          } catch (jumpErr) {
-            console.error(`[LIVE POLL ${pollCount}] Error during fight re-check:`, jumpErr.message);
-          }
-        }
-        
-        // Send heartbeat to keep connection alive with detailed status
-        sendEvent('heartbeat', { 
-          cursor: lastCursor, 
-          pollCount, 
-          totalEvents,
-          timestamp: Date.now(),
-          windowStart: lastCursor,
-          windowEnd: pollEnd,
-          cursorAdvancing: true,
-          consecutiveEmptyPolls // Include in heartbeat for debugging
-        });
+        sendEvent('new-fight-imported', { fightId: fight.id, fightName: fight.name, eventCount: fightEvents.length, events: sampleEvents });
       }
       
-      // Always advance cursor (even if no events found) to catch up to real-time
-      // Use API's nextPageTimestamp if available, otherwise advance by poll interval (3s) to stay close to real-time
-      const oldCursor = lastCursor;
-      if (pollNextCursor != null && pollNextCursor > lastCursor) {
-        lastCursor = pollNextCursor;
-        const delta = lastCursor - oldCursor;
-        console.log(`[LIVE POLL ${pollCount}] ✅ Cursor advanced via API: ${oldCursor} -> ${lastCursor} (+${delta}ms, ${newEvents.length} events)`);
-      } else {
-        // If no new data, only advance by 3 seconds (poll interval) to stay close to real-time
-        // Don't skip ahead by the full window (60s) or we'll overshoot live raid time
-        lastCursor = lastCursor + 3000;
-        const delta = lastCursor - oldCursor;
-        console.log(`[LIVE POLL ${pollCount}] ✅ Cursor advanced by poll interval: ${oldCursor} -> ${lastCursor} (+${delta}ms, ${newEvents.length} events)`);
-      }
+      // Update fight list
+      fights = freshFights;
+      reportMaxEnd = Math.max(...fights.map(f => f.endTime));
       
-      // Safeguard: Detect if cursor is stuck (critical bug indicator)
-      if (lastCursor <= lastCursorValue) {
-        cursorsStuckCount++;
-        console.error(`[LIVE POLL ${pollCount}] ⚠️ WARNING: Cursor did not advance! Stuck count: ${cursorsStuckCount}/${MAX_STUCK_POLLS}`);
-        console.error(`[LIVE POLL ${pollCount}] lastCursorValue: ${lastCursorValue}, newCursor: ${lastCursor}, pollNextCursor: ${pollNextCursor}, pollEnd: ${pollEnd}`);
-        
-        if (cursorsStuckCount >= MAX_STUCK_POLLS) {
-          const errorMsg = `CRITICAL: Cursor stuck for ${MAX_STUCK_POLLS} consecutive polls - polling may not work correctly`;
-          console.error(`[LIVE POLL ${pollCount}] ${errorMsg}`);
-          sendEvent('warning', { 
-            message: errorMsg,
-            cursor: lastCursor,
-            pollCount,
-            debugInfo: { lastCursorValue, pollNextCursor, pollEnd, newEventsCount: newEvents.length }
-          });
-        }
-      } else {
-        cursorsStuckCount = 0; // Reset counter on successful advancement
-      }
-      lastCursorValue = lastCursor;
-      
-      // Periodic fight list refresh every ~3 minutes to detect new bosses and update reportMaxEnd
-      if ((pollCount - lastFightRefreshPoll) >= fightRefreshInterval) {
-        console.log(`[LIVE POLL ${pollCount}] 🔄 Refreshing fights list to detect new bosses...`);
-        lastFightRefreshPoll = pollCount;
-        
-        try {
-          const freshFights = await fetchWclFights({ reportCode, apiUrl });
-          if (freshFights && freshFights.length > 0) {
-            const oldCount = fights.length;
-            const oldMaxEnd = reportMaxEnd;
-            fights = freshFights;
-            reportMaxEnd = Math.max(...fights.map(f => f.endTime));
-            
-            console.log(`[LIVE POLL ${pollCount}] Fight check: ${oldCount} -> ${fights.length} fights, maxEnd: ${oldMaxEnd} -> ${reportMaxEnd} (cursor at ${lastCursor})`);
-            
-            if (fights.length > oldCount || reportMaxEnd > oldMaxEnd) {
-              console.log(`[LIVE POLL ${pollCount}] ✅ NEW FIGHTS DETECTED!`);
-              
-              // Check if cursor has passed the new fight - if so, backtrack to catch the data
-              const newFights = fights.slice(oldCount); // Get only the newly added fights
-              if (newFights.length > 0) {
-                const earliestNewFight = Math.min(...newFights.map(f => f.startTime));
-                if (earliestNewFight < lastCursor) {
-                  const backtrackTo = Math.max(oldMaxEnd, earliestNewFight - 5000); // Go to old end or 5s before new fight
-                  console.log(`[LIVE POLL ${pollCount}] 🔙 BACKTRACKING: Cursor ${lastCursor} -> ${backtrackTo} to catch new fight at ${earliestNewFight}`);
-                  lastCursor = backtrackTo;
-                  consecutiveEmptyPolls = 0; // Reset so we don't trigger smart jump
-                }
-              }
-              
-              sendEvent('fights-updated', { 
-                oldCount, 
-                newCount: fights.length, 
-                oldMaxEnd, 
-                newMaxEnd: reportMaxEnd,
-                fights: fights.map(f => ({ id: f.id, name: f.name, startTime: f.startTime, endTime: f.endTime, kill: f.kill }))
-              });
-              // Also re-fetch meta since new actors/abilities may have been added
-              meta = await fetchWclReportMeta({ reportCode, apiUrl });
-              sendEvent('meta', { actorCount: Object.keys(meta.actorsById).length, abilityCount: Object.keys(meta.abilitiesById).length });
-            }
-          } else {
-            console.log(`[LIVE POLL ${pollCount}] No fights returned from WCL API (API lag or no data yet)`);
-          }
-        } catch (fightRefreshErr) {
-          console.error(`[LIVE POLL ${pollCount}] Error refreshing fights:`, fightRefreshErr.message);
-        }
-      }
-      
-      // Periodic re-analysis every 30 seconds (if there were new events since last analysis)
-      if (hasNewEvents && (pollCount - lastAnalysisPollCount) >= reanalysisInterval) {
-        console.log(`[LIVE] Running periodic re-analysis at poll ${pollCount}`);
-        lastAnalysisPollCount = pollCount;
+      // Run analysis after importing new fights
+      if (hasNewEvents) {
+        console.log(`[LIVE POLL ${pollCount}] 🔬 Running re-analysis after new fights...`);
         
         try {
           // Re-run bloodrage analysis
@@ -6740,13 +6640,11 @@ app.get('/api/wcl/stream-import', async (req, res) => {
             await saveAndBroadcastHighlights(reportCode, 'charges', chargeData);
           }
           
-          console.log(`[LIVE] Periodic re-analysis complete: ${analysisResult.badBloodrages.length} bad BRs`);
+          console.log(`[LIVE POLL ${pollCount}] ✅ Re-analysis complete: ${analysisResult.badBloodrages.length} bad BRs`);
         } catch (reanalysisErr) {
-          console.error('[LIVE] Periodic re-analysis error:', reanalysisErr.message);
+          console.error(`[LIVE POLL ${pollCount}] Re-analysis error:`, reanalysisErr.message);
         }
       }
-      
-      pollCount++;
     }
     
     sendEvent('session-end', { message: 'Polling session ended', totalEvents, lastCursor });
