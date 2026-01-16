@@ -6494,12 +6494,35 @@ app.get('/api/wcl/stream-import', async (req, res) => {
     console.log(`[LIVE] Starting periodic full re-import (interval: ${REFRESH_INTERVAL_MS/1000}s)`);
     
     while (!aborted) {
-      // Wait 3 minutes before next refresh
-      await new Promise(resolve => setTimeout(resolve, REFRESH_INTERVAL_MS));
+      refreshCount++;
+      
+      // Wait 10 seconds before first refresh (let initial import settle), then 3 minutes between refreshes
+      const waitTime = refreshCount === 1 ? 10000 : REFRESH_INTERVAL_MS;
+      
+      if (waitTime > 0) {
+        console.log(`[LIVE] Waiting ${waitTime/1000}s before refresh ${refreshCount}...`);
+        
+        // Send heartbeats every 30 seconds during wait to keep connection alive
+        const heartbeatInterval = 30000; // 30 seconds
+        let waited = 0;
+        while (waited < waitTime && !aborted) {
+          const sleepTime = Math.min(heartbeatInterval, waitTime - waited);
+          await new Promise(resolve => setTimeout(resolve, sleepTime));
+          waited += sleepTime;
+          
+          if (!aborted && waited < waitTime) {
+            const remaining = Math.round((waitTime - waited) / 1000);
+            sendEvent('heartbeat', { 
+              message: `Next refresh in ${remaining}s`, 
+              refreshCount, 
+              nextRefreshIn: waitTime - waited,
+              timestamp: Date.now()
+            });
+          }
+        }
+      }
       
       if (aborted) break;
-      
-      refreshCount++;
       console.log(`\n[LIVE REFRESH ${refreshCount}] ${'='.repeat(60)}`);
       console.log(`[LIVE REFRESH ${refreshCount}] Starting full re-import...`);
       sendEvent('refresh-start', { refreshCount, timestamp: Date.now() });
