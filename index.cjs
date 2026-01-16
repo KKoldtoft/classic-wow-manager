@@ -6482,275 +6482,200 @@ app.get('/api/wcl/stream-import', async (req, res) => {
     
     console.log('[LIVE] ====== PHASE 2 COMPLETE - ALL ANALYSIS DONE ======');
     
-    // Phase 3: Real-time polling for new events
-    console.log('[LIVE] ====== STARTING PHASE 3: REAL-TIME POLLING ======');
-    console.log(`[LIVE] aborted=${aborted}, lastCursor=${lastCursor}`);
-    sendEvent('progress', { phase: 'polling', message: 'Watching for new events...' });
-    sendEvent('polling-started', { message: 'Real-time polling started', cursor: lastCursor });
+    // Phase 3: Periodic full re-import every 3 minutes
+    console.log('[LIVE] ====== STARTING PHASE 3: PERIODIC FULL RE-IMPORT ======');
+    sendEvent('progress', { phase: 'live', message: 'Live tracking active - full re-import every 3 minutes' });
+    sendEvent('live-started', { message: 'Live tracking started', refreshInterval: 180000 });
     
-    // Poll for new events every 3 seconds
-    let pollCount = 0;
-    const maxPolls = 999999; // Effectively unlimited for live raids (~34 days)
-    const reanalysisInterval = 10; // Re-run analysis every 10 polls (30 seconds)
-    let lastAnalysisPollCount = 0;
-    const fightRefreshInterval = 60; // Re-fetch fights every 60 polls (~3 minutes) to update reportMaxEnd
-    let lastFightRefreshPoll = 0;
+    // Periodic full re-import every 3 minutes
+    let refreshCount = 0;
+    const REFRESH_INTERVAL_MS = 180000; // 3 minutes
     
-    // Safeguard: Track cursor advancement to detect stuck polling
-    let lastCursorValue = lastCursor;
-    let cursorsStuckCount = 0;
-    const MAX_STUCK_POLLS = 5; // Alert if cursor doesn't advance for 5 consecutive polls
+    console.log(`[LIVE] Starting periodic full re-import (interval: ${REFRESH_INTERVAL_MS/1000}s)`);
     
-    // Smart jump: Track empty polls and re-check for fights if stuck in empty space
-    let consecutiveEmptyPolls = 0;
-    const EMPTY_POLL_RECHECK_THRESHOLD = 20; // Re-check fights every 20 empty polls (~60 seconds)
-    let lastFightCheckPoll = -999; // Ensure we don't re-check too frequently
-    
-    console.log('[LIVE] Entering polling loop (maxPolls=1000, interval=3s)');
-    console.log(`[LIVE] Initial cursor: ${lastCursor}, windowMs: ${windowMs}`);
-    while (!aborted && pollCount < maxPolls) {
-      await new Promise(resolve => setTimeout(resolve, 3000));
+    while (!aborted) {
+      // Wait 3 minutes before next refresh
+      await new Promise(resolve => setTimeout(resolve, REFRESH_INTERVAL_MS));
       
       if (aborted) break;
       
-      const pollEnd = lastCursor + windowMs;
-      let pollPage;
+      refreshCount++;
+      console.log(`\n[LIVE REFRESH ${refreshCount}] ${'='.repeat(60)}`);
+      console.log(`[LIVE REFRESH ${refreshCount}] Starting full re-import...`);
+      sendEvent('refresh-start', { refreshCount, timestamp: Date.now() });
+      
       try {
-        pollPage = await fetchWclEventsPage({ reportCode, startTime: lastCursor, endTime: pollEnd, apiUrl });
-      } catch (err) {
-        sendEvent('poll-error', { message: err.message });
-        pollCount++;
-        continue;
-      }
-      
-      const newEvents = pollPage.events || [];
-      const pollNextCursor = pollPage.nextPageTimestamp;
-      let hasNewEvents = false;
-      
-      if (newEvents.length > 0) {
-        hasNewEvents = true;
-        consecutiveEmptyPolls = 0; // Reset empty poll counter - we found data!
+        // Step 1: Re-fetch fights (get latest state from WCL)
+        console.log(`[LIVE REFRESH ${refreshCount}] Fetching latest fights...`);
+        const freshFights = await fetchWclFights({ reportCode, apiUrl });
         
-        // Store new events
-        await safeQuery(`
-          INSERT INTO wcl_event_pages (event_id, report_code, start_time, end_time, next_cursor, events)
-          VALUES ($1, $2, $3, $4, $5, $6)
-          ON CONFLICT (event_id, report_code, start_time, end_time) DO NOTHING;
-        `, [sessionId, reportCode, lastCursor, pollEnd, pollNextCursor, JSON.stringify(newEvents)]);
-        
-        totalEvents += newEvents.length;
-        
-        // Enrich new events with metadata
-        const enrichedNewEvents = newEvents.slice(0, 50).map(ev => {
-          const enriched = { ...ev };
-          if (ev.sourceID != null && meta.actorsById[ev.sourceID]) {
-            enriched.sourceName = meta.actorsById[ev.sourceID].name;
-            enriched.sourceType = meta.actorsById[ev.sourceID].type;
-          }
-          if (ev.targetID != null && meta.actorsById[ev.targetID]) {
-            enriched.targetName = meta.actorsById[ev.targetID].name;
-            enriched.targetType = meta.actorsById[ev.targetID].type;
-          }
-          const abilityId = ev.abilityGameID ?? ev.ability?.guid;
-          if (abilityId != null && meta.abilitiesById[abilityId]) {
-            enriched.abilityName = meta.abilitiesById[abilityId].name;
-          }
-          return enriched;
-        });
-        
-        sendEvent('new-events', {
-          count: newEvents.length,
-          totalEvents,
-          cursor: lastCursor,
-          events: enrichedNewEvents
-        });
-      } else {
-        // No events in this poll - track consecutive empty polls
-        consecutiveEmptyPolls++;
-        
-        // SMART JUMP: If stuck getting empty polls, re-check if fights now exist
-        if (consecutiveEmptyPolls >= EMPTY_POLL_RECHECK_THRESHOLD && 
-            (pollCount - lastFightCheckPoll) >= EMPTY_POLL_RECHECK_THRESHOLD) {
-          
-          console.log(`[LIVE POLL ${pollCount}] 🔍 ${consecutiveEmptyPolls} consecutive empty polls - re-checking for fights...`);
-          lastFightCheckPoll = pollCount;
-          
-          try {
-            const freshFights = await fetchWclFights({ reportCode, apiUrl });
-            if (freshFights && freshFights.length > 0) {
-              let minFightStart = null;
-              for (const f of freshFights) {
-                if (f && typeof f.startTime === 'number') {
-                  minFightStart = minFightStart == null ? f.startTime : Math.min(minFightStart, f.startTime);
-                }
-              }
-              
-              if (minFightStart != null && minFightStart > lastCursor) {
-                const jumpTo = Math.max(0, minFightStart - 5000); // 5s before first fight
-                const jumpDistance = jumpTo - lastCursor;
-                
-                console.log(`[LIVE POLL ${pollCount}] 🚀 SMART JUMP: Found ${freshFights.length} fights! Jumping from ${lastCursor}ms to ${jumpTo}ms (skip ${jumpDistance}ms)`);
-                sendEvent('progress', { 
-                  phase: 'jump', 
-                  message: `Found ${freshFights.length} fights! Jumping ahead ${Math.round(jumpDistance/1000/60)} minutes...`,
-                  jumpFrom: lastCursor,
-                  jumpTo: jumpTo,
-                  fightsFound: freshFights.length
-                });
-                
-                lastCursor = jumpTo;
-                consecutiveEmptyPolls = 0; // Reset counter after jump
-                pollCount++; // Increment and continue to next poll immediately
-                continue;
-              }
-            } else {
-              console.log(`[LIVE POLL ${pollCount}] No fights found yet - continuing sequential polling`);
-            }
-          } catch (jumpErr) {
-            console.error(`[LIVE POLL ${pollCount}] Error during fight re-check:`, jumpErr.message);
-          }
+        if (!freshFights || freshFights.length === 0) {
+          console.log(`[LIVE REFRESH ${refreshCount}] No fights found yet`);
+          sendEvent('refresh-status', { message: 'No fights found yet', refreshCount });
+          continue;
         }
         
-        // Send heartbeat to keep connection alive with detailed status
-        sendEvent('heartbeat', { 
-          cursor: lastCursor, 
-          pollCount, 
-          totalEvents,
-          timestamp: Date.now(),
-          windowStart: lastCursor,
-          windowEnd: pollEnd,
-          cursorAdvancing: true,
-          consecutiveEmptyPolls // Include in heartbeat for debugging
-        });
-      }
-      
-      // Always advance cursor (even if no events found) to catch up to real-time
-      // Use API's nextPageTimestamp if available, otherwise advance by poll interval (3s) to stay close to real-time
-      const oldCursor = lastCursor;
-      if (pollNextCursor != null && pollNextCursor > lastCursor) {
-        lastCursor = pollNextCursor;
-        const delta = lastCursor - oldCursor;
-        console.log(`[LIVE POLL ${pollCount}] ✅ Cursor advanced via API: ${oldCursor} -> ${lastCursor} (+${delta}ms, ${newEvents.length} events)`);
-      } else {
-        // If no new data, only advance by 3 seconds (poll interval) to stay close to real-time
-        // Don't skip ahead by the full window (60s) or we'll overshoot live raid time
-        lastCursor = lastCursor + 3000;
-        const delta = lastCursor - oldCursor;
-        console.log(`[LIVE POLL ${pollCount}] ✅ Cursor advanced by poll interval: ${oldCursor} -> ${lastCursor} (+${delta}ms, ${newEvents.length} events)`);
-      }
-      
-      // Safeguard: Detect if cursor is stuck (critical bug indicator)
-      if (lastCursor <= lastCursorValue) {
-        cursorsStuckCount++;
-        console.error(`[LIVE POLL ${pollCount}] ⚠️ WARNING: Cursor did not advance! Stuck count: ${cursorsStuckCount}/${MAX_STUCK_POLLS}`);
-        console.error(`[LIVE POLL ${pollCount}] lastCursorValue: ${lastCursorValue}, newCursor: ${lastCursor}, pollNextCursor: ${pollNextCursor}, pollEnd: ${pollEnd}`);
+        const oldFightCount = fights.length;
+        fights = freshFights;
+        reportMaxEnd = Math.max(...fights.map(f => f.endTime));
+        reportMinStart = Math.min(...fights.map(f => f.startTime));
         
-        if (cursorsStuckCount >= MAX_STUCK_POLLS) {
-          const errorMsg = `CRITICAL: Cursor stuck for ${MAX_STUCK_POLLS} consecutive polls - polling may not work correctly`;
-          console.error(`[LIVE POLL ${pollCount}] ${errorMsg}`);
-          sendEvent('warning', { 
-            message: errorMsg,
-            cursor: lastCursor,
-            pollCount,
-            debugInfo: { lastCursorValue, pollNextCursor, pollEnd, newEventsCount: newEvents.length }
+        console.log(`[LIVE REFRESH ${refreshCount}] Fights: ${oldFightCount} → ${fights.length}, time range: ${reportMinStart}-${reportMaxEnd}ms`);
+        
+        sendEvent('fights', { 
+          count: fights.length, 
+          startTime: reportMinStart, 
+          endTime: reportMaxEnd, 
+          fights: fights.map(f => ({ id: f.id, name: f.name, startTime: f.startTime, endTime: f.endTime, kill: f.kill }))
+        });
+        
+        // Step 2: Re-fetch metadata (new actors/abilities may have appeared)
+        console.log(`[LIVE REFRESH ${refreshCount}] Refreshing metadata...`);
+        meta = await fetchWclReportMeta({ reportCode, apiUrl });
+        await safeQuery(`
+          INSERT INTO wcl_report_meta (report_code, api_url, actors_by_id, abilities_by_id, fetched_at)
+          VALUES ($1, $2, $3, $4, NOW())
+          ON CONFLICT (report_code)
+          DO UPDATE SET api_url = EXCLUDED.api_url,
+                        actors_by_id = EXCLUDED.actors_by_id,
+                        abilities_by_id = EXCLUDED.abilities_by_id,
+                        fetched_at = EXCLUDED.fetched_at;
+        `, [reportCode, apiUrl, JSON.stringify(meta.actorsById), JSON.stringify(meta.abilitiesById)]);
+        
+        sendEvent('meta', { actorCount: Object.keys(meta.actorsById).length, abilityCount: Object.keys(meta.abilitiesById).length });
+        
+        // Step 3: Re-import ALL events (ON CONFLICT DO NOTHING prevents duplicates)
+        console.log(`[LIVE REFRESH ${refreshCount}] Re-importing all events...`);
+        sendEvent('refresh-status', { message: 'Importing events...', refreshCount });
+        
+        let reimportCursor = reportMinStart;
+        let reimportTotalEvents = 0;
+        let reimportPageCount = 0;
+        const reimportWindowMs = 60000; // 60s chunks
+        let reimportGuard = 0;
+        const reimportMaxGuard = 10000;
+        
+        while (reimportCursor < reportMaxEnd + 60000 && reimportGuard < reimportMaxGuard && !aborted) {
+          const reimportEnd = Math.min(reimportCursor + reimportWindowMs, reportMaxEnd + 60000);
+          
+          const reimportPage = await fetchWclEventsPage({ reportCode, startTime: reimportCursor, endTime: reimportEnd, apiUrl });
+          const reimportEvents = reimportPage.events || [];
+          const reimportNextCursor = reimportPage.nextPageTimestamp;
+          
+          if (reimportEvents.length > 0) {
+            // Store events (ON CONFLICT DO NOTHING means no duplicates)
+            await safeQuery(`
+              INSERT INTO wcl_event_pages (event_id, report_code, start_time, end_time, next_cursor, events)
+              VALUES ($1, $2, $3, $4, $5, $6)
+              ON CONFLICT (event_id, report_code, start_time, end_time) DO NOTHING;
+            `, [sessionId, reportCode, reimportCursor, reimportEnd, reimportNextCursor, JSON.stringify(reimportEvents)]);
+            
+            reimportTotalEvents += reimportEvents.length;
+            reimportPageCount++;
+            
+            // Send progress update every 10 pages
+            if (reimportPageCount % 10 === 0) {
+              sendEvent('refresh-progress', { 
+                cursor: reimportCursor, 
+                maxEnd: reportMaxEnd, 
+                events: reimportTotalEvents, 
+                pages: reimportPageCount,
+                progress: Math.min(100, Math.round((reimportCursor / reportMaxEnd) * 100))
+              });
+            }
+          }
+          
+          // Advance cursor
+          if (reimportNextCursor != null && reimportNextCursor > reimportCursor) {
+            reimportCursor = reimportNextCursor;
+          } else {
+            // No more pages
+            break;
+          }
+          
+          reimportGuard++;
+        }
+        
+        console.log(`[LIVE REFRESH ${refreshCount}] Import complete: ${reimportTotalEvents} events, ${reimportPageCount} pages`);
+        sendEvent('refresh-status', { message: 'Running analysis...', refreshCount, totalEvents: reimportTotalEvents });
+        
+        // Step 4: Run ALL analysis
+        console.log(`[LIVE REFRESH ${refreshCount}] Running full analysis...`);
+        
+        // Bloodrage analysis
+        const analysisResult = await analyzeBloodragesFromDB(reportCode, fights, meta);
+        await saveAndBroadcastHighlights(reportCode, 'bloodrages', {
+          badBloodrages: analysisResult.badBloodrages,
+          totalBloodrages: analysisResult.totalBloodrages,
+          combatSegments: analysisResult.combatSegmentCount,
+          damageEvents: analysisResult.damageEventCount
+        });
+        
+        // Charge analysis (if tanks provided)
+        if (tankNames.length > 0) {
+          const chargeResult = await analyzeChargesFromDB(reportCode, tankNames, meta);
+          await saveAndBroadcastHighlights(reportCode, 'charges', {
+            charges: chargeResult.charges,
+            totalCharges: chargeResult.totalCharges,
+            badCharges: chargeResult.badCharges
           });
         }
-      } else {
-        cursorsStuckCount = 0; // Reset counter on successful advancement
-      }
-      lastCursorValue = lastCursor;
-      
-      // Periodic fight list refresh every ~3 minutes to detect new bosses and update reportMaxEnd
-      if ((pollCount - lastFightRefreshPoll) >= fightRefreshInterval) {
-        console.log(`[LIVE POLL ${pollCount}] 🔄 Refreshing fights list to detect new bosses...`);
-        lastFightRefreshPoll = pollCount;
         
-        try {
-          const freshFights = await fetchWclFights({ reportCode, apiUrl });
-          if (freshFights && freshFights.length > 0) {
-            const oldCount = fights.length;
-            const oldMaxEnd = reportMaxEnd;
-            fights = freshFights;
-            reportMaxEnd = Math.max(...fights.map(f => f.endTime));
-            
-            console.log(`[LIVE POLL ${pollCount}] Fight check: ${oldCount} -> ${fights.length} fights, maxEnd: ${oldMaxEnd} -> ${reportMaxEnd} (cursor at ${lastCursor})`);
-            
-            if (fights.length > oldCount || reportMaxEnd > oldMaxEnd) {
-              console.log(`[LIVE POLL ${pollCount}] ✅ NEW FIGHTS DETECTED!`);
-              
-              // Check if cursor has passed the new fight - if so, backtrack to catch the data
-              const newFights = fights.slice(oldCount); // Get only the newly added fights
-              if (newFights.length > 0) {
-                const earliestNewFight = Math.min(...newFights.map(f => f.startTime));
-                if (earliestNewFight < lastCursor) {
-                  const backtrackTo = Math.max(oldMaxEnd, earliestNewFight - 5000); // Go to old end or 5s before new fight
-                  console.log(`[LIVE POLL ${pollCount}] 🔙 BACKTRACKING: Cursor ${lastCursor} -> ${backtrackTo} to catch new fight at ${earliestNewFight}`);
-                  lastCursor = backtrackTo;
-                  consecutiveEmptyPolls = 0; // Reset so we don't trigger smart jump
-                }
-              }
-              
-              sendEvent('fights-updated', { 
-                oldCount, 
-                newCount: fights.length, 
-                oldMaxEnd, 
-                newMaxEnd: reportMaxEnd,
-                fights: fights.map(f => ({ id: f.id, name: f.name, startTime: f.startTime, endTime: f.endTime, kill: f.kill }))
-              });
-              // Also re-fetch meta since new actors/abilities may have been added
-              meta = await fetchWclReportMeta({ reportCode, apiUrl });
-              sendEvent('meta', { actorCount: Object.keys(meta.actorsById).length, abilityCount: Object.keys(meta.abilitiesById).length });
-            }
-          } else {
-            console.log(`[LIVE POLL ${pollCount}] No fights returned from WCL API (API lag or no data yet)`);
-          }
-        } catch (fightRefreshErr) {
-          console.error(`[LIVE POLL ${pollCount}] Error refreshing fights:`, fightRefreshErr.message);
-        }
-      }
-      
-      // Periodic re-analysis every 30 seconds (if there were new events since last analysis)
-      if (hasNewEvents && (pollCount - lastAnalysisPollCount) >= reanalysisInterval) {
-        console.log(`[LIVE] Running periodic re-analysis at poll ${pollCount}`);
-        lastAnalysisPollCount = pollCount;
+        // Interrupt analysis
+        const interruptResult = await analyzeInterruptsFromDB(reportCode, meta);
+        await saveAndBroadcastHighlights(reportCode, 'interrupts', {
+          playerStats: interruptResult.playerStats,
+          totalInterrupts: interruptResult.totalInterrupts
+        });
         
-        try {
-          // Re-run bloodrage analysis
-          const analysisResult = await analyzeBloodragesFromDB(reportCode, fights, meta);
-          const bloodrageData = {
-            badBloodrages: analysisResult.badBloodrages,
-            totalBloodrages: analysisResult.totalBloodrages,
-            combatSegments: analysisResult.combatSegmentCount,
-            damageEvents: analysisResult.damageEventCount,
-            isUpdate: true
-          };
-          sendEvent('bloodrage-analysis', bloodrageData);
-          await saveAndBroadcastHighlights(reportCode, 'bloodrages', bloodrageData);
-          
-          // Re-run charge analysis if tanks provided
-          if (tankNames.length > 0) {
-            const chargeResult = await analyzeChargesFromDB(reportCode, tankNames, meta);
-            const chargeData = {
-              charges: chargeResult.charges,
-              totalCharges: chargeResult.totalCharges,
-              badCharges: chargeResult.badCharges,
-              isUpdate: true
-            };
-            sendEvent('charge-analysis', chargeData);
-            await saveAndBroadcastHighlights(reportCode, 'charges', chargeData);
-          }
-          
-          console.log(`[LIVE] Periodic re-analysis complete: ${analysisResult.badBloodrages.length} bad BRs`);
-        } catch (reanalysisErr) {
-          console.error('[LIVE] Periodic re-analysis error:', reanalysisErr.message);
-        }
+        // Decurse analysis
+        const decurseResult = await analyzeDecursesFromDB(reportCode, meta);
+        await saveAndBroadcastHighlights(reportCode, 'decurses', {
+          playerStats: decurseResult.playerStats,
+          totalDecurses: decurseResult.totalDecurses
+        });
+        
+        // Sunder analysis
+        const sunderResult = await analyzeSundersFromDB(reportCode, meta);
+        await saveAndBroadcastHighlights(reportCode, 'sunders', {
+          playerStats: sunderResult.playerStats,
+          effectiveSunders: sunderResult.effectiveSunders,
+          totalSunders: sunderResult.totalSunders
+        });
+        
+        // Scorch analysis
+        const scorchResult = await analyzeScorchesFromDB(reportCode, meta);
+        await saveAndBroadcastHighlights(reportCode, 'scorches', {
+          playerStats: scorchResult.playerStats,
+          effectiveScorches: scorchResult.effectiveScorches,
+          totalScorches: scorchResult.totalScorches
+        });
+        
+        // Disarm analysis
+        const disarmResult = await analyzeDisarmsFromDB(reportCode, meta);
+        await saveAndBroadcastHighlights(reportCode, 'disarms', {
+          playerStats: disarmResult.playerStats,
+          totalDisarms: disarmResult.totalDisarms
+        });
+        
+        console.log(`[LIVE REFRESH ${refreshCount}] ✅ Refresh complete!`);
+        sendEvent('refresh-complete', { 
+          refreshCount, 
+          timestamp: Date.now(), 
+          totalEvents: reimportTotalEvents,
+          fights: fights.length,
+          nextRefreshIn: REFRESH_INTERVAL_MS
+        });
+        
+      } catch (refreshErr) {
+        console.error(`[LIVE REFRESH ${refreshCount}] Error:`, refreshErr.message);
+        sendEvent('refresh-error', { message: refreshErr.message, refreshCount });
       }
-      
-      pollCount++;
     }
     
-    sendEvent('session-end', { message: 'Polling session ended', totalEvents, lastCursor });
-    
+    // Session ended (user closed connection)
+    console.log('[LIVE] Session ended');
+    sendEvent('session-end', { message: 'Live tracking ended', refreshCount });
   } catch (err) {
     sendEvent('error', { message: err.message || 'Unknown error' });
   } finally {
