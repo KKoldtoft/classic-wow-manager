@@ -6490,9 +6490,11 @@ app.get('/api/wcl/stream-import', async (req, res) => {
     
     // Poll for new events every 3 seconds
     let pollCount = 0;
-    const maxPolls = 1000; // ~50 minutes of polling
+    const maxPolls = 999999; // Effectively unlimited for live raids (~34 days)
     const reanalysisInterval = 10; // Re-run analysis every 10 polls (30 seconds)
     let lastAnalysisPollCount = 0;
+    const fightRefreshInterval = 60; // Re-fetch fights every 60 polls (~3 minutes) to update reportMaxEnd
+    let lastFightRefreshPoll = 0;
     
     // Safeguard: Track cursor advancement to detect stuck polling
     let lastCursorValue = lastCursor;
@@ -6656,6 +6658,35 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         cursorsStuckCount = 0; // Reset counter on successful advancement
       }
       lastCursorValue = lastCursor;
+      
+      // Periodic fight list refresh every ~3 minutes to detect new bosses and update reportMaxEnd
+      if ((pollCount - lastFightRefreshPoll) >= fightRefreshInterval) {
+        console.log(`[LIVE POLL ${pollCount}] 🔄 Refreshing fights list to detect new bosses...`);
+        lastFightRefreshPoll = pollCount;
+        
+        try {
+          const freshFights = await fetchWclFights({ reportCode, apiUrl });
+          if (freshFights && freshFights.length > 0) {
+            const oldCount = fights.length;
+            const oldMaxEnd = reportMaxEnd;
+            fights = freshFights;
+            reportMaxEnd = Math.max(...fights.map(f => f.endTime));
+            
+            if (fights.length > oldCount || reportMaxEnd > oldMaxEnd) {
+              console.log(`[LIVE POLL ${pollCount}] ✅ Fights updated: ${oldCount} -> ${fights.length}, maxEnd: ${oldMaxEnd} -> ${reportMaxEnd}`);
+              sendEvent('fights-updated', { 
+                oldCount, 
+                newCount: fights.length, 
+                oldMaxEnd, 
+                newMaxEnd: reportMaxEnd,
+                fights: fights.map(f => ({ id: f.id, name: f.name, startTime: f.startTime, endTime: f.endTime, kill: f.kill }))
+              });
+            }
+          }
+        } catch (fightRefreshErr) {
+          console.error(`[LIVE POLL ${pollCount}] Error refreshing fights:`, fightRefreshErr.message);
+        }
+      }
       
       // Periodic re-analysis every 30 seconds (if there were new events since last analysis)
       if (hasNewEvents && (pollCount - lastAnalysisPollCount) >= reanalysisInterval) {

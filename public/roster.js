@@ -1078,16 +1078,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         } catch {}
 
-        // Hide bench and top button panel for non-management users
-        if (!currentUserCanManage) {
+        // Show management-only sections for management users
+        if (currentUserCanManage) {
             try {
                 const btnPanel = document.querySelector('.button-panel');
-                if (btnPanel) btnPanel.style.display = 'none';
-                if (benchContainer) benchContainer.style.display = 'none';
-            } catch {}
-        } else {
-            // Show management-only buttons for management users
-            try {
+                if (btnPanel) btnPanel.classList.add('visible');
+                if (benchContainer) {
+                    benchContainer.classList.add('bench-visible');
+                }
+                const statsSection = document.querySelector('.stats-section');
+                if (statsSection) statsSection.style.display = '';
                 const hostLiveBtn = document.getElementById('host-live-button');
                 if (hostLiveBtn) hostLiveBtn.style.display = '';
             } catch {}

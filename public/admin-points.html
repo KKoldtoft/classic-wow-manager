@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Points Management - Classic WoW Manager</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/admin-styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script>
+        // Initialize dark mode IMMEDIATELY (before page render) to prevent flash
+        (function() {
+            const stored = localStorage.getItem('admin-theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (stored === 'dark' || (!stored && prefersDark)) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
+    <style>
+        /* Minimal inline styles - most styling is in admin-styles.css */
+        body {
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- Admin Navigation Bar -->
+    <nav class="admin-nav-bar">
+        <div class="admin-nav-container">
+            <div class="admin-nav-content">
+                <!-- Logo & Brand -->
+                <div class="admin-nav-logo">
+                    <img src="/images/1p_logo.png" alt="1Principles" width="110" height="30">
+                    <span class="admin-nav-logo-text">Admin</span>
+                </div>
+
+                <!-- Navigation Links -->
+                <div class="admin-nav-links">
+                    <a href="/admin" class="admin-nav-link">
+                        <i class="fas fa-home"></i> Admin Home
+                    </a>
+                    <a href="/admin/raid-channels" class="admin-nav-link">
+                        <i class="fas fa-hashtag"></i> Raid Channels
+                    </a>
+                    <a href="/admin/points" class="admin-nav-link-active">
+                        <i class="fas fa-trophy"></i> Points
+                    </a>
+                </div>
+
+                <!-- Actions -->
+                <div class="admin-nav-actions">
+                    <!-- Dark Mode Toggle -->
+                    <button id="dark-mode-toggle" class="dark-mode-toggle-nav" aria-label="Toggle dark mode">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    
+                    <!-- Exit Admin -->
+                    <a href="/" class="admin-nav-exit-btn">
+                        <i class="fas fa-sign-out-alt"></i> Exit Admin
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="admin-page-content bg-gray-50 dark:bg-gray-900">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <!-- Page Header -->
+            <div class="mb-8">
+                <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Points Management</h1>
+                <p class="text-gray-600 dark:text-gray-400">Configure point calculations and limits for different raid performance categories</p>
+            </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="hidden">
+            <div class="admin-card text-center py-12">
+                <div class="loading-spinner mx-auto mb-4 text-blue-600"></div>
+                <p class="text-gray-600 dark:text-gray-400">Loading...</p>
+            </div>
+        </div>
+
+        <!-- Access Denied -->
+        <div id="access-denied" class="hidden">
+            <div class="admin-card bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800">
+                <div class="text-center py-8">
+                    <i class="fas fa-lock text-5xl text-red-600 dark:text-red-400 mb-4"></i>
+                    <h2 class="text-2xl font-bold text-red-900 dark:text-red-200 mb-2">Access Denied</h2>
+                    <p class="text-red-700 dark:text-red-300">You don't have permission to access this page. Please contact an administrator if you believe this is an error.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div id="content" class="hidden space-y-8">
+            <!-- Rewards and Deductions Section -->
+            <section id="rewards-section" class="admin-card">
+                <div class="mb-6">
+                    <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                        <i class="fas fa-trophy text-yellow-600"></i>
+                        Rewards and Deductions
+                    </h2>
+                    <p class="text-gray-600 dark:text-gray-400">Configure point calculations and limits for different raid performance categories.</p>
+                </div>
+                
+                <div class="flex flex-wrap gap-3 mb-6">
+                    <button class="admin-btn-primary hidden" onclick="saveRewardSettings()" id="save-rewards-btn">
+                        <i class="fas fa-save"></i> Save Changes
+                    </button>
+                </div>
+                
+                <div id="rewards-content" class="min-h-[100px]">
+                    <!-- Reward settings will be loaded here -->
+                </div>
+            </section>
+        </div>
+    </div>
+    </div>
+
+    <script src="/top-bar.js"></script>
+    <script src="/admin-dark-mode.js"></script>
+    <script>
+        let currentUser = null;
+
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', async () => {
+            await initPage();
+        });
+
+        async function initPage() {
+            document.getElementById('loading').classList.remove('hidden');
+            try {
+                const response = await fetch('/user');
+                const user = await response.json();
+                
+                if (!user.loggedIn) {
+                    showAccessDenied();
+                    return;
+                }
+                
+                currentUser = user;
+                
+                // Check if user has Management role
+                if (!user.hasManagementRole) {
+                    showAccessDenied();
+                    return;
+                }
+                
+                // User has Management role, show content
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('content').classList.remove('hidden');
+                
+                // Auto-load reward settings on page load
+                await loadRewardSettings();
+                
+            } catch (error) {
+                console.error('Error initializing page:', error);
+                showAccessDenied();
+            }
+        }
+
+        function showAccessDenied() {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('access-denied').classList.remove('hidden');
+        }
+
+        // ==================== REWARDS SETTINGS SECTION ====================
+
+        async function loadRewardSettings() {
+            const contentDiv = document.getElementById('rewards-content');
+            const saveBtn = document.getElementById('save-rewards-btn');
+            
+            contentDiv.innerHTML = '<div class="text-center py-8"><div class="loading-spinner mx-auto mb-3"></div><p class="text-gray-600 dark:text-gray-400">Loading reward settings...</p></div>';
+
+            try {
+                const response = await fetch('/api/admin/reward-settings');
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    renderRewardSettings(data.settings);
+                    saveBtn.style.display = 'inline-flex';
+                } else {
+                    contentDiv.innerHTML = `<div class="alert-error"><i class="fas fa-exclamation-circle mr-2"></i>Error loading settings: ${data.message}</div>`;
+                }
+            } catch (error) {
+                console.error('Error loading reward settings:', error);
+                contentDiv.innerHTML = '<div class="alert-error"><i class="fas fa-exclamation-circle mr-2"></i>Network error occurred while loading settings.</div>';
+            }
+        }
+
+        function renderRewardSettings(settings) {
+            const contentDiv = document.getElementById('rewards-content');
+            
+            if (!settings || Object.keys(settings).length === 0) {
+                contentDiv.innerHTML = `
+                    <div class="alert-warning">
+                        <h4 class="font-semibold mb-2"><i class="fas fa-inbox mr-2"></i>No Settings Found</h4>
+                        <p class="mb-0">No reward settings found in the database. Please run database setup first.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let settingsHTML = `
+                <div class="admin-card-inner mb-6">
+                    <h4 class="text-lg font-bold text-gray-900 dark:text-white mb-3">⚙️ Reward Configuration</h4>
+                    <p class="text-gray-600 dark:text-gray-400 mb-0">
+                        Configure how points are calculated and awarded for different performance categories.
+                        <br><strong>Note:</strong> Changes take effect immediately on all raid logs pages.
+                    </p>
+                </div>
+            `;
+
+            // Abilities settings
+            if (settings.abilities) {
+                settingsHTML += `
+                    <div class="admin-card-inner mb-6">
+                        <h4 class="text-lg font-bold mb-4 flex items-center gap-3" style="color: #ff6b35;">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/inv_misc_bomb_06.jpg" style="width: 24px; height: 24px;"> 
+                            Engineering & Holywater
+                        </h4>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Calculation Divisor
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="abilities-calculation-divisor" 
+                                    value="${settings.abilities.calculation_divisor.value}" 
+                                    min="1" 
+                                    max="100" 
+                                    step="0.1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Formula: (abilities used × avg targets) ÷ divisor
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Maximum Points
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="abilities-max-points" 
+                                    value="${settings.abilities.max_points.value}" 
+                                    min="1" 
+                                    max="500" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Points are capped at this maximum value
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="info-box-blue">
+                            <strong>Description:</strong> ${settings.abilities.calculation_divisor.description}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Damage settings
+            if (settings.damage) {
+                settingsHTML += `
+                    <div class="admin-card-inner mb-6">
+                        <h4 class="text-lg font-bold text-red-600 dark:text-red-400 mb-4 flex items-center gap-3">
+                            <i class="fas fa-sword"></i> 
+                            Damage Dealers
+                        </h4>
+                        
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                Points for Each Position
+                            </label>
+                            <textarea 
+                                id="damage-points-array" 
+                                class="admin-input font-mono text-sm"
+                                rows="3"
+                                onchange="markRewardsChanged()"
+                                placeholder="80, 70, 55, 40, 35, 30, 25, 20, 15, 10, 8, 6, 5, 4, 3"
+                            >${settings.damage.points_array.value.join(', ')}</textarea>
+                            <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                Enter points separated by commas (e.g., "80, 70, 55"). Position 1 gets first value, position 2 gets second value, etc.
+                            </small>
+                        </div>
+                        
+                        <div class="info-box-blue mt-4">
+                            <strong>Description:</strong> ${settings.damage.points_array.description}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Healing settings
+            if (settings.healing) {
+                settingsHTML += `
+                    <div class="admin-card-inner mb-6">
+                        <h4 class="text-lg font-bold text-green-600 dark:text-green-400 mb-4 flex items-center gap-3">
+                            <i class="fas fa-heart"></i> 
+                            Healers
+                        </h4>
+                        
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                Points for Each Position
+                            </label>
+                            <textarea 
+                                id="healing-points-array" 
+                                class="admin-input font-mono text-sm"
+                                rows="2"
+                                onchange="markRewardsChanged()"
+                                placeholder="80, 65, 60, 55, 40, 35, 30, 20, 15, 10"
+                            >${settings.healing.points_array.value.join(', ')}</textarea>
+                            <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                Enter points separated by commas (e.g., "80, 65, 60"). Position 1 gets first value, position 2 gets second value, etc.
+                            </small>
+                        </div>
+                        
+                        <div class="info-box-blue mt-4">
+                            <strong>Description:</strong> ${settings.healing.points_array.description}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Mana Potions settings
+            if (settings.mana_potions) {
+                settingsHTML += `
+                    <div class="admin-card-inner mb-6">
+                        <h4 class="text-lg font-bold mb-4 flex items-center gap-3" style="color: #4a9eff;">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/inv_potion_76.jpg" style="width: 20px; height: 20px;"> 
+                            Major Mana Potions
+                        </h4>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Minimum Threshold
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="mana-threshold" 
+                                    value="${settings.mana_potions.threshold.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Potions below this count earn 0 points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Points Per Potion
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="mana-points-per-potion" 
+                                    value="${settings.mana_potions.points_per_potion.value}" 
+                                    min="0.1" 
+                                    max="50" 
+                                    step="0.1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Points earned per potion above threshold
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Maximum Points
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="mana-max-points" 
+                                    value="${settings.mana_potions.max_points.value}" 
+                                    min="1" 
+                                    max="500" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Points are capped at this maximum value
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="info-box-blue">
+                            <strong>Formula:</strong> Points = min(max_points, (potions_used - threshold) × points_per_potion)
+                            <br><strong>Description:</strong> ${settings.mana_potions.threshold.description}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Runes settings
+            if (settings.runes) {
+                settingsHTML += `
+                    <div class="admin-card-inner mb-6">
+                        <h4 class="text-lg font-bold text-purple-600 dark:text-purple-400 mb-4 flex items-center gap-3">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_sealofkings.jpg" style="width: 20px; height: 20px;"> 
+                            Dark or Demonic runes
+                        </h4>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    You get <span class="text-purple-600 dark:text-purple-400">X</span> points
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="runes-points-earned" 
+                                    value="${settings.runes.points_per_division.value}" 
+                                    min="0.1" 
+                                    max="10" 
+                                    step="0.1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Points awarded per rune threshold reached
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Per <span class="text-purple-600 dark:text-purple-400">Y</span> runes used
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="runes-threshold" 
+                                    value="${settings.runes.usage_divisor.value}" 
+                                    min="1" 
+                                    max="20" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Number of runes needed to earn points
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="info-box-purple">
+                            <strong>Example:</strong> If you set "1 point per 2 runes", then 2 runes = 1 point, 4 runes = 2 points, 5 runes = 2 points
+                            <br><strong>Formula:</strong> Points = floor(total_runes ÷ runes_threshold) × points_earned
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Interrupts settings
+            if (settings.interrupts) {
+                settingsHTML += `
+                    <div class="admin-card-inner mb-6">
+                        <h4 class="text-lg font-bold text-yellow-600 dark:text-yellow-400 mb-4 flex items-center gap-3">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/ability_kick.jpg" style="width: 20px; height: 20px;"> 
+                            Interrupted spells
+                        </h4>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    You get <span class="text-yellow-600 dark:text-yellow-400">X</span> points
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="interrupts-points-earned" 
+                                    value="${settings.interrupts.points_per_interrupt.value}" 
+                                    min="0.1" 
+                                    max="10" 
+                                    step="0.1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Points awarded per interrupt threshold reached
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Per <span class="text-yellow-600 dark:text-yellow-400">Y</span> interrupts
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="interrupts-threshold" 
+                                    value="${settings.interrupts.interrupts_needed.value}" 
+                                    min="1" 
+                                    max="10" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Number of interrupts needed to earn points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Maximum Points
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="interrupts-max-points" 
+                                    value="${settings.interrupts.max_points.value}" 
+                                    min="1" 
+                                    max="50" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Points are capped at this maximum value
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="info-box-blue">
+                            <strong>Example:</strong> If you set "1 point per 1 interrupt, max 5", then 1 interrupt = 1 point, 5 interrupts = 5 points, 8 interrupts = 5 points (capped)
+                            <br><strong>Formula:</strong> Points = min(max_points, floor(interrupts ÷ threshold) × points_earned)
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Disarms settings
+            if (settings.disarms) {
+                settingsHTML += `
+                    <div class="admin-card-inner mb-6">
+                        <h4 class="text-lg font-bold text-red-600 dark:text-red-400 mb-4 flex items-center gap-3">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_disarm.jpg" style="width: 20px; height: 20px;"> 
+                            Disarmed enemies
+                        </h4>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    You get <span class="text-red-600 dark:text-red-400">X</span> points
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="disarms-points-earned" 
+                                    value="${settings.disarms.points_per_disarm.value}" 
+                                    min="0.1" 
+                                    max="10" 
+                                    step="0.1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Points awarded per disarm threshold reached
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Per <span class="text-red-600 dark:text-red-400">Y</span> disarms
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="disarms-threshold" 
+                                    value="${settings.disarms.disarms_needed.value}" 
+                                    min="1" 
+                                    max="10" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Number of disarms needed to earn points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Maximum Points
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="disarms-max-points" 
+                                    value="${settings.disarms.max_points.value}" 
+                                    min="1" 
+                                    max="50" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Points are capped at this maximum value
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="info-box-blue">
+                            <strong>Example:</strong> If you set "1 point per 1 disarm, max 5", then 1 disarm = 1 point, 5 disarms = 5 points, 8 disarms = 5 points (capped)
+                            <br><strong>Formula:</strong> Points = min(max_points, floor(disarms ÷ threshold) × points_earned)
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Sunder Armor settings
+            if (settings.sunder) {
+                const ranges = settings.sunder.point_ranges.value || [];
+                let rangesHTML = '';
+                
+                ranges.forEach((range, index) => {
+                    rangesHTML += `
+                        <div class="grid grid-cols-4 gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg mb-3">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Min Count</label>
+                                <input 
+                                    type="number" 
+                                    id="sunder-range-${index}-min" 
+                                    value="${range.min}" 
+                                    min="0" 
+                                    max="999"
+                                    class="admin-input-sm"
+                                    onchange="markRewardsChanged()"
+                                >
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Max Count</label>
+                                <input 
+                                    type="number" 
+                                    id="sunder-range-${index}-max" 
+                                    value="${range.max}" 
+                                    min="0" 
+                                    max="999"
+                                    class="admin-input-sm"
+                                    onchange="markRewardsChanged()"
+                                >
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Points</label>
+                                <input 
+                                    type="number" 
+                                    id="sunder-range-${index}-points" 
+                                    value="${range.points}" 
+                                    min="-50" 
+                                    max="50"
+                                    class="admin-input-sm"
+                                    onchange="markRewardsChanged()"
+                                >
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Color</label>
+                                <select 
+                                    id="sunder-range-${index}-color" 
+                                    class="admin-select"
+                                    style="padding: 0.5rem 0.75rem; font-size: 0.875rem;"
+                                    onchange="markRewardsChanged()"
+                                >
+                                    <option value="red" ${range.color === 'red' ? 'selected' : ''}>Red</option>
+                                    <option value="gray" ${range.color === 'gray' ? 'selected' : ''}>Gray</option>
+                                    <option value="green" ${range.color === 'green' ? 'selected' : ''}>Green</option>
+                                    <option value="blue" ${range.color === 'blue' ? 'selected' : ''}>Blue</option>
+                                </select>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                settingsHTML += `
+                    <div class="admin-card-inner mb-6">
+                        <h4 class="text-lg font-bold text-purple-600 dark:text-purple-400 mb-4 flex items-center gap-3">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_sunder.jpg" style="width: 20px; height: 20px;"> 
+                            Sunder Armor
+                        </h4>
+                        
+                        <div class="mb-4">
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                Point Ranges
+                            </label>
+                            <div id="sunder-ranges-container">
+                                ${rangesHTML}
+                            </div>
+                        </div>
+                        
+                        <div class="info-box-purple">
+                            <strong>How it works:</strong> Players are awarded points based on their Sunder Armor count falling into these ranges.
+                            <br><strong>Note:</strong> Negative points (red) will be displayed in red text. Zero points (gray) mean no reward or penalty.
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Curse of Recklessness settings
+            if (settings.curse) {
+                settingsHTML += `
+                    <div class="admin-card-inner mb-6">
+                        <h4 class="text-lg font-bold text-purple-600 dark:text-purple-400 mb-4 flex items-center gap-3">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_unholystrength.jpg" style="width: 24px; height: 24px;"> 
+                            Curse of Recklessness
+                        </h4>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Uptime Threshold (%)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="curse-uptime-threshold" 
+                                    value="${settings.curse.uptime_threshold.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="0.1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Players need more than this % uptime to earn points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Points Awarded
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="curse-points" 
+                                    value="${settings.curse.points.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Points given to players above threshold
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="info-box-purple">
+                            <strong>Description:</strong> ${settings.curse.uptime_threshold.description}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Curse of Shadow settings
+            if (settings.curse_shadow) {
+                settingsHTML += `
+                    <div class="admin-card-inner mb-6">
+                        <h4 class="text-lg font-bold text-purple-600 dark:text-purple-400 mb-4 flex items-center gap-3">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_curseofachimonde.jpg" style="width: 24px; height: 24px;"> 
+                            Curse of Shadow
+                        </h4>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Uptime Threshold (%)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="curse-shadow-uptime-threshold" 
+                                    value="${settings.curse_shadow.uptime_threshold.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="0.1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Players need more than this % uptime to earn points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Points Awarded
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="curse-shadow-points" 
+                                    value="${settings.curse_shadow.points.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Points given to players above threshold
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="info-box-purple">
+                            <strong>Description:</strong> ${settings.curse_shadow.uptime_threshold.description}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Curse of the Elements settings
+            if (settings.curse_elements) {
+                settingsHTML += `
+                    <div class="admin-card-inner mb-6">
+                        <h4 class="text-lg font-bold text-blue-600 dark:text-blue-400 mb-4 flex items-center gap-3">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_chilltouch.jpg" style="width: 24px; height: 24px;"> 
+                            Curse of the Elements
+                        </h4>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Uptime Threshold (%)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="curse-elements-uptime-threshold" 
+                                    value="${settings.curse_elements.uptime_threshold.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="0.1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Players need more than this % uptime to earn points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Points Awarded
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="curse-elements-points" 
+                                    value="${settings.curse_elements.points.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Points given to players above threshold
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="info-box-blue">
+                            <strong>Description:</strong> ${settings.curse_elements.uptime_threshold.description}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Faerie Fire settings
+            if (settings.faerie_fire) {
+                settingsHTML += `
+                    <div class="admin-card-inner mb-6">
+                        <h4 class="text-lg font-bold text-green-600 dark:text-green-400 mb-4 flex items-center gap-3">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/spell_nature_faeriefire.jpg" style="width: 24px; height: 24px;"> 
+                            Faerie Fire
+                        </h4>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Uptime Threshold (%)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="faerie-fire-uptime-threshold" 
+                                    value="${settings.faerie_fire.uptime_threshold.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="0.1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Players need more than this % uptime to earn points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Points Awarded
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="faerie-fire-points" 
+                                    value="${settings.faerie_fire.points.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Points given to players above threshold
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="info-box-blue">
+                            <strong>Description:</strong> ${settings.faerie_fire.uptime_threshold.description}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Scorch settings
+            if (settings.scorch) {
+                settingsHTML += `
+                    <div class="admin-card-inner mb-6">
+                        <h4 class="text-lg font-bold text-red-600 dark:text-red-400 mb-4 flex items-center gap-3">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/spell_fire_soulburn.jpg" style="width: 24px; height: 24px;"> 
+                            Scorch
+                        </h4>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Tier 1 Max (0 points)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="scorch-tier1-max" 
+                                    value="${settings.scorch.tier1_max.value}" 
+                                    min="0" 
+                                    max="999" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Max scorch count for 0 points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Tier 2 Max
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="scorch-tier2-max" 
+                                    value="${settings.scorch.tier2_max.value}" 
+                                    min="0" 
+                                    max="999" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Max for tier 2 points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Tier 2 Points
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="scorch-tier2-points" 
+                                    value="${settings.scorch.tier2_points.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Points for mid-tier
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                Tier 3 Points (High Tier)
+                            </label>
+                            <input 
+                                type="number" 
+                                id="scorch-tier3-points" 
+                                value="${settings.scorch.tier3_points.value}" 
+                                min="0" 
+                                max="100" 
+                                step="1"
+                                class="admin-input"
+                                onchange="markRewardsChanged()"
+                            >
+                            <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                Points for highest tier (above tier 2 max)
+                            </small>
+                        </div>
+                        
+                        <div class="info-box-blue">
+                            <strong>Description:</strong> ${settings.scorch.tier1_max.description}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Demoralizing Shout settings
+            if (settings.demo_shout) {
+                settingsHTML += `
+                    <div class="admin-card-inner mb-6">
+                        <h4 class="text-lg font-bold mb-4 flex items-center gap-3" style="color: #d2691e;">
+                            <img src="https://wow.zamimg.com/images/wow/icons/large/ability_warrior_warcry.jpg" style="width: 24px; height: 24px;"> 
+                            Demoralizing Shout
+                        </h4>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Tier 1 Max (0 points)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="demo-shout-tier1-max" 
+                                    value="${settings.demo_shout.tier1_max.value}" 
+                                    min="0" 
+                                    max="999" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Max demo shout count for 0 points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Tier 2 Max
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="demo-shout-tier2-max" 
+                                    value="${settings.demo_shout.tier2_max.value}" 
+                                    min="0" 
+                                    max="999" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Max for tier 2 points
+                                </small>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                    Tier 2 Points
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="demo-shout-tier2-points" 
+                                    value="${settings.demo_shout.tier2_points.value}" 
+                                    min="0" 
+                                    max="100" 
+                                    step="1"
+                                    class="admin-input"
+                                    onchange="markRewardsChanged()"
+                                >
+                                <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                    Points for mid-tier
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                Tier 3 Points (High Tier)
+                            </label>
+                            <input 
+                                type="number" 
+                                id="demo-shout-tier3-points" 
+                                value="${settings.demo_shout.tier3_points.value}" 
+                                min="0" 
+                                max="100" 
+                                step="1"
+                                class="admin-input"
+                                onchange="markRewardsChanged()"
+                            >
+                            <small class="text-gray-500 dark:text-gray-400 text-xs block mt-2">
+                                Points for highest tier (above tier 2 max)
+                            </small>
+                        </div>
+                        
+                        <div class="info-box-blue">
+                            <strong>Description:</strong> ${settings.demo_shout.tier1_max.description}
+                        </div>
+                    </div>
+                `;
+            }
+
+            contentDiv.innerHTML = settingsHTML;
+        }
+
+        function markRewardsChanged() {
+            document.getElementById('save-rewards-btn').style.display = 'inline-flex';
+        }
+
+        function collectSunderRanges() {
+        const ranges = [];
+        const container = document.getElementById('sunder-ranges-container');
+        if (!container) return ranges;
+        
+        const rangeElements = container.querySelectorAll('[id^="sunder-range-"]');
+        const rangeIndexes = new Set();
+        
+        // Extract unique range indexes
+        rangeElements.forEach(element => {
+            const match = element.id.match(/sunder-range-(\d+)-/);
+            if (match) {
+                rangeIndexes.add(parseInt(match[1]));
+            }
+        });
+        
+        // Collect data for each range
+        rangeIndexes.forEach(index => {
+            const minElement = document.getElementById(`sunder-range-${index}-min`);
+            const maxElement = document.getElementById(`sunder-range-${index}-max`);
+            const pointsElement = document.getElementById(`sunder-range-${index}-points`);
+            const colorElement = document.getElementById(`sunder-range-${index}-color`);
+            
+            if (minElement && maxElement && pointsElement && colorElement) {
+                ranges.push({
+                    min: parseInt(minElement.value),
+                    max: parseInt(maxElement.value),
+                    points: parseInt(pointsElement.value),
+                    color: colorElement.value
+                });
+            }
+        });
+        
+        // Sort ranges by min value
+        ranges.sort((a, b) => a.min - b.min);
+        
+        return ranges;
+    }
+
+    async function saveRewardSettings() {
+            const saveBtn = document.getElementById('save-rewards-btn');
+            
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+            // Helper function to parse array from textarea
+            function parsePointsArray(textareaId) {
+                const text = document.getElementById(textareaId).value.trim();
+                if (!text) return [];
+                return text.split(',').map(val => parseInt(val.trim())).filter(val => !isNaN(val));
+            }
+
+            // Collect settings from form
+            const settings = {
+                abilities: {
+                    calculation_divisor: parseFloat(document.getElementById('abilities-calculation-divisor').value),
+                    max_points: parseInt(document.getElementById('abilities-max-points').value)
+                },
+                damage: {
+                    points_array: parsePointsArray('damage-points-array')
+                },
+                healing: {
+                    points_array: parsePointsArray('healing-points-array')
+                },
+                mana_potions: {
+                    threshold: parseInt(document.getElementById('mana-threshold').value),
+                    points_per_potion: parseFloat(document.getElementById('mana-points-per-potion').value),
+                    max_points: parseInt(document.getElementById('mana-max-points').value)
+                },
+                runes: {
+                    usage_divisor: parseInt(document.getElementById('runes-threshold').value),
+                    points_per_division: parseFloat(document.getElementById('runes-points-earned').value)
+                },
+                interrupts: {
+                    points_per_interrupt: parseFloat(document.getElementById('interrupts-points-earned').value),
+                    interrupts_needed: parseInt(document.getElementById('interrupts-threshold').value),
+                    max_points: parseInt(document.getElementById('interrupts-max-points').value)
+                },
+                disarms: {
+                    points_per_disarm: parseFloat(document.getElementById('disarms-points-earned').value),
+                    disarms_needed: parseInt(document.getElementById('disarms-threshold').value),
+                    max_points: parseInt(document.getElementById('disarms-max-points').value)
+                },
+                sunder: {
+                    point_ranges: collectSunderRanges()
+                },
+                curse: {
+                    uptime_threshold: parseFloat(document.getElementById('curse-uptime-threshold').value),
+                    points: parseInt(document.getElementById('curse-points').value)
+                },
+                curse_shadow: {
+                    uptime_threshold: parseFloat(document.getElementById('curse-shadow-uptime-threshold').value),
+                    points: parseInt(document.getElementById('curse-shadow-points').value)
+                },
+                curse_elements: {
+                    uptime_threshold: parseFloat(document.getElementById('curse-elements-uptime-threshold').value),
+                    points: parseInt(document.getElementById('curse-elements-points').value)
+                }
+            };
+
+            // Only include settings if the corresponding input fields exist (defensive checks)
+            const faerieFireThreshold = document.getElementById('faerie-fire-uptime-threshold');
+            if (faerieFireThreshold) {
+                settings.faerie_fire = {
+                    uptime_threshold: parseFloat(faerieFireThreshold.value),
+                    points: parseInt(document.getElementById('faerie-fire-points').value)
+                };
+            }
+
+            const scorchTier1Max = document.getElementById('scorch-tier1-max');
+            if (scorchTier1Max) {
+                settings.scorch = {
+                    tier1_max: parseInt(scorchTier1Max.value),
+                    tier1_points: 0, // Always 0 for tier 1
+                    tier2_max: parseInt(document.getElementById('scorch-tier2-max').value),
+                    tier2_points: parseInt(document.getElementById('scorch-tier2-points').value),
+                    tier3_points: parseInt(document.getElementById('scorch-tier3-points').value)
+                };
+            }
+
+            const demoShoutTier1Max = document.getElementById('demo-shout-tier1-max');
+            if (demoShoutTier1Max) {
+                settings.demo_shout = {
+                    tier1_max: parseInt(demoShoutTier1Max.value),
+                    tier1_points: 0, // Always 0 for tier 1
+                    tier2_max: parseInt(document.getElementById('demo-shout-tier2-max').value),
+                    tier2_points: parseInt(document.getElementById('demo-shout-tier2-points').value),
+                    tier3_points: parseInt(document.getElementById('demo-shout-tier3-points').value)
+                };
+            }
+
+            try {
+                const response = await fetch('/api/admin/reward-settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        settings: settings
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    // Show success message
+                    const contentDiv = document.getElementById('rewards-content');
+                    const successMsg = document.createElement('div');
+                    successMsg.className = 'alert-success';
+                    successMsg.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Reward settings have been updated successfully! Changes are now active on all raid logs pages.';
+                    contentDiv.insertBefore(successMsg, contentDiv.firstChild);
+
+                    // Remove success message after 4 seconds
+                    setTimeout(() => {
+                        if (successMsg.parentNode) {
+                            successMsg.parentNode.removeChild(successMsg);
+                        }
+                    }, 4000);
+
+                    saveBtn.style.display = 'none';
+                } else {
+                    alert(`Error saving settings: ${data.message}`);
+                }
+            } catch (error) {
+                console.error('Error saving reward settings:', error);
+                alert('Network error occurred while saving settings.');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
+            }
+        }
+    </script>
+</body>
+</html>

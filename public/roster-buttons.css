@@ -1,7 +1,7 @@
 /* public/roster-buttons.css */
 
 .button-panel {
-    display: grid;
+    display: none; /* Hidden by default, shown by JS for management users */
     grid-template-columns: repeat(2, 1fr); /* 2 columns for buttons */
     gap: 8px; /* Small gap between buttons */
     width: 390px; /* Width for 2 columns of 150px buttons */
@@ -11,6 +11,10 @@
     border-radius: 0px;
     border: 1px solid #000;
     text-align: left; /* Override parent's center alignment */
+}
+
+.button-panel.visible {
+    display: grid; /* Show as grid when visible */
 }
 
 .panel-button {

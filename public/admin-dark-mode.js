@@ -58,27 +58,46 @@
         const toggle = document.getElementById('dark-mode-toggle');
         if (!toggle) {
             console.warn('Dark mode toggle button not found in navigation');
-            return;
+            return false;
         }
         
-        toggle.onclick = toggleDarkMode;
+        // Use addEventListener instead of onclick for better compatibility
+        // Remove any existing listeners first
+        toggle.removeEventListener('click', toggleDarkMode);
+        toggle.addEventListener('click', toggleDarkMode);
         updateToggleButton();
+        console.log('Dark mode toggle initialized successfully');
+        return true;
     }
 
     // Initialize IMMEDIATELY to prevent flash
     initDarkMode();
 
+    // Try multiple initialization strategies to ensure button works
+    let initAttempts = 0;
+    const maxAttempts = 10;
+    
+    function tryInitButton() {
+        initAttempts++;
+        if (initToggleButton()) {
+            console.log(`Dark mode button initialized on attempt ${initAttempts}`);
+            return true;
+        }
+        
+        if (initAttempts < maxAttempts) {
+            setTimeout(tryInitButton, 100);
+        } else {
+            console.error('Failed to initialize dark mode toggle button after', maxAttempts, 'attempts');
+        }
+        return false;
+    }
+
     // Initialize toggle button on DOM load
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initToggleButton);
+        document.addEventListener('DOMContentLoaded', tryInitButton);
     } else {
         // DOM already loaded
-        if (document.body) {
-            initToggleButton();
-        } else {
-            // Wait for body
-            setTimeout(initToggleButton, 0);
-        }
+        tryInitButton();
     }
 
     // Expose global functions for manual control if needed
