@@ -2099,7 +2099,8 @@
             
             if (data.events && data.events.length > 0) {
                 addEventsToStream(data.events);
-                setStatus('complete', `New events: +${data.count}`);
+                const cursorFormatted = formatNumber(data.cursor);
+                setStatus('complete', `✅ New events: +${data.count} | Cursor: ${cursorFormatted} | Total: ${formatNumber(totalEvents)}`);
                 
                 // Update PW:S and Renew highlights for live viewers
                 savePwsToBackend();
@@ -2109,12 +2110,27 @@
         
         eventSource.addEventListener('heartbeat', (e) => {
             const data = JSON.parse(e.data);
-            setStatus('complete', `Watching... (poll ${data.pollCount})`);
+            const cursorFormatted = formatNumber(data.cursor);
+            const timeSinceLastEvent = data.timestamp ? `${Math.floor((Date.now() - data.timestamp) / 1000)}s ago` : '';
+            setStatus('complete', `Polling... #${data.pollCount} | Cursor: ${cursorFormatted} | ${timeSinceLastEvent}`);
+            
+            // Update progress bar to show we're actively polling (pulse effect)
+            if (progressBar) {
+                progressBar.style.background = 'linear-gradient(90deg, #28a745, #20c997)';
+                progressBar.style.width = '100%';
+            }
         });
         
         eventSource.addEventListener('warning', (e) => {
             const data = JSON.parse(e.data);
-            console.warn('Stream warning:', data.message);
+            console.warn('Stream warning:', data.message, data);
+            // Show critical warnings to user
+            if (data.message.includes('CRITICAL') || data.message.includes('stuck')) {
+                setStatus('error', `⚠️ ${data.message}`);
+                alert(`⚠️ POLLING WARNING:\n\n${data.message}\n\nCheck console for details. You may need to refresh and re-import.`);
+            } else {
+                setStatus('warning', data.message);
+            }
         });
         
         eventSource.addEventListener('error', (e) => {

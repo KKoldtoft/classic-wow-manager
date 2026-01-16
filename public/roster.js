@@ -733,6 +733,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Add listeners for dropdown actions
             this.attachDropdownListeners(newCell);
             
+            // Attach placeholder-specific actions
+            const addDiscordIdItem = newCell.querySelector('[data-action="add-discord-id"]');
+            if (addDiscordIdItem) {
+                addDiscordIdItem.addEventListener('click', (e) => {
+                    const { partyId, slotId } = e.currentTarget.dataset;
+                    const player = currentRosterData.raidDrop?.find(p => 
+                        p && p.partyId === parseInt(partyId) && p.slotId === parseInt(slotId)
+                    );
+                    if (player) openAddDiscordIdModal(player);
+                });
+            }
+            
+            const removePlaceholderItem = newCell.querySelector('[data-action="remove-placeholder"]');
+            if (removePlaceholderItem) {
+                removePlaceholderItem.addEventListener('click', (e) => {
+                    const { partyId, slotId } = e.currentTarget.dataset;
+                    handleRemovePlaceholder(parseInt(partyId), parseInt(slotId));
+                });
+            }
+            
             return newCell; // Return the new cell reference
         },
 
@@ -1084,8 +1104,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (rosterEventTitle) rosterEventTitle.textContent = '';
         try {
             const rosterData = await fetchRoster(eventId);
-            
-
 
             if (!rosterData || !rosterData.raidDrop) {
                 throw new Error("Invalid or empty roster data received from server.");
@@ -1105,6 +1123,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             setupHideConfirmedToggle();
             setupPlayerSearchModal();
             setupFixNameModal();
+            setupPlaceholderModals();
             wireRaidleaderControls();
             await prefetchPlayersDb();
             await applyDbMismatchStyling();
@@ -1415,44 +1434,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                     columnDiv.appendChild(partyName);
 
                 for (let j = 0; j < slotPerParty; j++) {
-                    const cellDiv = document.createElement('div');
-                    cellDiv.classList.add('roster-cell');
                     const player = rosterMatrix[i][j];
 
                     if (player && player.name) {
-                        cellDiv.classList.add('player-filled');
-                    const displayName = player.mainCharacterName || player.name;
-                    const nameClass = player.mainCharacterName ? 'player-name' : 'player-name unregistered-name';
-                    const specIconHTML = player.spec_emote ? `<img src="https://cdn.discordapp.com/emojis/${player.spec_emote}.png" class="spec-icon">` : '';
-                    
-                    // Add confirmation status indicator
-                    let confirmationIconHTML = '';
-                    if (player.isConfirmed === "confirmed" || player.isConfirmed === true) {
-                        confirmationIconHTML = '<i class="fas fa-check confirmation-icon confirmed" title="Confirmed"></i>';
-                    } else {
-                        confirmationIconHTML = '<i class="fas fa-times confirmation-icon unconfirmed" title="Not Confirmed"></i>';
-                    }
-
-                    
-                    let dropdownContentHTML = await buildDropdownContent(player, false);
-
-                        cellDiv.innerHTML = `
-                        <div class="${nameClass}" data-character-name="${displayName}" data-discord-name="${player.name}">${specIconHTML}${confirmationIconHTML}<span>${displayName}</span></div>
-                        <div class="player-details-dropdown">${dropdownContentHTML}</div>`;
-
-                    applyPlayerColor(cellDiv, player.color);
-                    if (!player.userid) { try { cellDiv.classList.add('no-discord-id'); } catch {} }
-                    applyNoAssignmentsStyling(cellDiv, player);
-                    markCellDbMismatch(cellDiv, player);
+                        // Use createPlayerCell to handle both regular and placeholder players
+                        const cellDiv = await createPlayerCell(player, false, false);
+                        columnDiv.appendChild(cellDiv);
                     } else {
                         // Empty slot - make it clickable with "Add new character" option
-                        cellDiv.classList.add('empty-slot-clickable');
+                        const cellDiv = document.createElement('div');
+                        cellDiv.classList.add('roster-cell', 'empty-slot-clickable');
                         const emptyDropdownContent = buildEmptySlotDropdownContent(i + 1, j + 1);
                         cellDiv.innerHTML = `
                             <div class="player-name">Empty</div>
                             <div class="player-details-dropdown">${emptyDropdownContent}</div>`;
+                        columnDiv.appendChild(cellDiv);
                     }
-                    columnDiv.appendChild(cellDiv);
                 }
                 rosterGrid.appendChild(columnDiv);
             }
@@ -1512,19 +1509,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         const displayName = player.mainCharacterName || player.name;
-        let specIconHTML = player.spec_emote ? `<img src="https://cdn.discordapp.com/emojis/${player.spec_emote}.png" class="spec-icon">` : '';
-
-        // Only add the extra absent icon if the player doesn't already have the Discord absent emoji as their spec icon
-        if (isAbsent && player.spec_emote !== "612343589070045200") {
-            specIconHTML += '<img src="https://cdn.discordapp.com/emojis/612343589070045200.png" class="spec-icon absent-icon">';
+        
+        // For placeholders, use skull icon instead of spec icon
+        let specIconHTML = '';
+        if (player.isPlaceholder === true || player.is_placeholder === true) {
+            specIconHTML = '<i class="fas fa-skull spec-icon placeholder-icon" title="Placeholder - No Discord ID"></i>';
+            cellDiv.classList.add('placeholder-player');
+        } else {
+            specIconHTML = player.spec_emote ? `<img src="https://cdn.discordapp.com/emojis/${player.spec_emote}.png" class="spec-icon">` : '';
+            
+            // Only add the extra absent icon if the player doesn't already have the Discord absent emoji as their spec icon
+            if (isAbsent && player.spec_emote !== "612343589070045200") {
+                specIconHTML += '<img src="https://cdn.discordapp.com/emojis/612343589070045200.png" class="spec-icon absent-icon">';
+            }
         }
 
-        // Add confirmation status indicator
+        // Add confirmation status indicator (not for placeholders)
         let confirmationIconHTML = '';
-        if (player.isConfirmed === "confirmed" || player.isConfirmed === true) {
-            confirmationIconHTML = '<i class="fas fa-check confirmation-icon confirmed" title="Confirmed"></i>';
-        } else {
-            confirmationIconHTML = '<i class="fas fa-times confirmation-icon unconfirmed" title="Not Confirmed"></i>';
+        if (!player.isPlaceholder) {
+            if (player.isConfirmed === "confirmed" || player.isConfirmed === true) {
+                confirmationIconHTML = '<i class="fas fa-check confirmation-icon confirmed" title="Confirmed"></i>';
+            } else {
+                confirmationIconHTML = '<i class="fas fa-times confirmation-icon unconfirmed" title="Not Confirmed"></i>';
+            }
         }
 
         let dropdownContentHTML = await buildDropdownContent(player, isBenched);
@@ -1534,7 +1541,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="player-details-dropdown">${dropdownContentHTML}</div>`;
 
         applyPlayerColor(cellDiv, player.color);
-        if (!player.userid) { try { cellDiv.classList.add('no-discord-id'); } catch {} }
+        if (!player.userid || player.isPlaceholder) { try { cellDiv.classList.add('no-discord-id'); } catch {} }
         applyNoAssignmentsStyling(cellDiv, player);
         markCellDbMismatch(cellDiv, player);
         return cellDiv;
@@ -1737,6 +1744,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!currentUserCanManage) {
             return '<div class="dropdown-header">Only management can edit</div>';
         }
+        
+        // Special menu for placeholder players
+        if (player.isPlaceholder) {
+            return `
+                <div class="dropdown-header">Placeholder Actions</div>
+                <div class="dropdown-item" data-action="add-discord-id" data-party-id="${player.partyId}" data-slot-id="${player.slotId}">
+                    <i class="fas fa-user-plus menu-icon"></i>Add Discord ID
+                </div>
+                <div class="dropdown-item" data-action="remove-placeholder" data-party-id="${player.partyId}" data-slot-id="${player.slotId}">
+                    <i class="fas fa-trash menu-icon"></i>Remove Placeholder
+                </div>
+            `;
+        }
+        
         let content = '<div class="dropdown-header">Actions</div>';
 
         // Helper: read/write "no assignments" map in localStorage
@@ -1956,6 +1977,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         return `
             <div class="dropdown-header">Actions</div>
+            <div class="dropdown-item" data-action="add-placeholder" data-target-party="${partyId}" data-target-slot="${slotId}">
+                <i class="fas fa-user-plus menu-icon"></i>Add Placeholder
+            </div>
             <div class="dropdown-item" data-action="add-new-character" data-target-party="${partyId}" data-target-slot="${slotId}">
                 <i class="fas fa-plus menu-icon"></i>Add New Character
             </div>
@@ -2044,9 +2068,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
 
+        // Add listener for "Add placeholder" action
+        const addPlaceholderItem = newCell.querySelector('[data-action="add-placeholder"]');
+        if (addPlaceholderItem) {
+            addPlaceholderItem.addEventListener('click', (e) => {
+                const { targetParty, targetSlot } = e.currentTarget.dataset;
+                openAddPlaceholderModal(parseInt(targetParty), parseInt(targetSlot));
+            });
+        }
+
         // Add listener for "Add new character" action
         const addCharacterItem = newCell.querySelector('[data-action="add-new-character"]');
-        
         if (addCharacterItem) {
             addCharacterItem.addEventListener('click', (e) => {
                 const { targetParty, targetSlot } = e.currentTarget.dataset;
@@ -2056,7 +2088,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Add listener for "Add existing player" action
         const addExistingPlayerItem = newCell.querySelector('[data-action="add-existing-player"]');
-        
         if (addExistingPlayerItem) {
             addExistingPlayerItem.addEventListener('click', (e) => {
                 const { targetParty, targetSlot } = e.currentTarget.dataset;
@@ -2442,6 +2473,254 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.error('Error adding existing player:', error);
             showAlert('Add Player Error', `Error adding player to roster: ${error.message}`);
         }
+    }
+
+    // Placeholder modal functionality
+    let currentPlaceholderTarget = null;
+    let currentPlaceholderPlayer = null;
+
+    function openAddPlaceholderModal(partyId, slotId) {
+        currentPlaceholderTarget = { partyId, slotId };
+        const overlay = document.getElementById('add-placeholder-overlay');
+        const nameInput = document.getElementById('placeholder-name-input');
+        const classSelect = document.getElementById('placeholder-class-select');
+        
+        nameInput.value = '';
+        classSelect.value = '';
+        overlay.style.display = 'flex';
+        nameInput.focus();
+    }
+
+    function closeAddPlaceholderModal() {
+        const overlay = document.getElementById('add-placeholder-overlay');
+        overlay.style.display = 'none';
+        currentPlaceholderTarget = null;
+    }
+
+    async function handleAddPlaceholder() {
+        const nameInput = document.getElementById('placeholder-name-input');
+        const classSelect = document.getElementById('placeholder-class-select');
+        
+        const characterName = nameInput.value.trim();
+        const characterClass = classSelect.value;
+        
+        if (!characterName || !characterClass) {
+            showAlert('Invalid Input', 'Please enter both name and class');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/roster/${eventId}/add-placeholder`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    characterName,
+                    characterClass,
+                    targetPartyId: currentPlaceholderTarget.partyId,
+                    targetSlotId: currentPlaceholderTarget.slotId
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to add placeholder');
+            }
+            
+            closeAddPlaceholderModal();
+            isManaged = true;
+            updateRevertButtonVisibility();
+            await renderRoster();
+            showAlert('Success', 'Placeholder added successfully');
+        } catch (error) {
+            console.error('Error adding placeholder:', error);
+            showAlert('Error', error.message);
+        }
+    }
+
+    async function handleRemovePlaceholder(partyId, slotId) {
+        if (!confirm('Remove this placeholder?')) return;
+        
+        try {
+            const response = await fetch(`/api/roster/${eventId}/remove-placeholder`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ partyId, slotId })
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to remove placeholder');
+            }
+            
+            await renderRoster();
+            showAlert('Success', 'Placeholder removed successfully');
+        } catch (error) {
+            console.error('Error removing placeholder:', error);
+            showAlert('Error', error.message);
+        }
+    }
+
+    function openAddDiscordIdModal(player) {
+        currentPlaceholderPlayer = player;
+        const overlay = document.getElementById('add-discord-id-overlay');
+        const nameDiv = document.getElementById('placeholder-current-name');
+        const classDiv = document.getElementById('placeholder-current-class');
+        const searchInput = document.getElementById('discord-id-search-input');
+        const results = document.getElementById('discord-id-search-results');
+        
+        nameDiv.textContent = player.mainCharacterName || player.name;
+        classDiv.textContent = player.class;
+        searchInput.value = '';
+        results.innerHTML = '<div class="player-search-no-results">Type at least 2 characters to search</div>';
+        
+        overlay.style.display = 'flex';
+        searchInput.focus();
+    }
+
+    function closeAddDiscordIdModal() {
+        const overlay = document.getElementById('add-discord-id-overlay');
+        overlay.style.display = 'none';
+        currentPlaceholderPlayer = null;
+    }
+
+    async function searchPlayersForDiscordId(query) {
+        if (query.length < 2) {
+            const results = document.getElementById('discord-id-search-results');
+            results.innerHTML = '<div class="player-search-no-results">Type at least 2 characters to search</div>';
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/players/search?q=${encodeURIComponent(query)}`);
+            const players = await response.json();
+            
+            const results = document.getElementById('discord-id-search-results');
+            
+            if (players.length === 0) {
+                results.innerHTML = '<div class="player-search-no-results">No players found</div>';
+                return;
+            }
+
+            const playersHTML = players.map(player => {
+                const canonicalClass = getCanonicalClass(player.class);
+                const classColor = getClassColor(canonicalClass);
+                const rgb = classColor.split(',').map(Number);
+                const textColor = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000 < 128 ? 'white' : 'black';
+                
+                return `
+                    <div class="player-search-item" data-discord-id="${player.discord_id}" data-character-name="${player.character_name}" data-class="${player.class}" 
+                         style="background-color: rgb(${classColor}); color: ${textColor}; cursor: pointer; padding: 10px; margin: 5px 0; border-radius: 4px;">
+                        <div>
+                            <div class="player-search-item-name" style="font-weight: bold;">${player.character_name}</div>
+                            <div class="player-search-item-class" style="font-size: 12px; opacity: 0.9;">${player.class}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            results.innerHTML = playersHTML;
+
+            // Add click listeners to search results
+            results.querySelectorAll('.player-search-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const discordId = item.dataset.discordId;
+                    const characterName = item.dataset.characterName;
+                    const characterClass = item.dataset.class;
+                    
+                    convertPlaceholderToPlayer(discordId, characterName, characterClass);
+                });
+            });
+
+        } catch (error) {
+            console.error('Error searching players:', error);
+            const results = document.getElementById('discord-id-search-results');
+            results.innerHTML = '<div class="player-search-no-results">Error searching players</div>';
+        }
+    }
+
+    async function convertPlaceholderToPlayer(discordId, characterName, characterClass) {
+        try {
+            const response = await fetch(`/api/roster/${eventId}/convert-placeholder`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    partyId: currentPlaceholderPlayer.partyId,
+                    slotId: currentPlaceholderPlayer.slotId,
+                    discordId,
+                    characterName,
+                    characterClass
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to convert placeholder');
+            }
+            
+            closeAddDiscordIdModal();
+            await renderRoster();
+            showAlert('Success', 'Placeholder converted to real player successfully');
+        } catch (error) {
+            console.error('Error converting placeholder:', error);
+            showAlert('Error', error.message);
+        }
+    }
+
+    function setupPlaceholderModals() {
+        // Add Placeholder Modal
+        const addPlaceholderOverlay = document.getElementById('add-placeholder-overlay');
+        const addPlaceholderClose = addPlaceholderOverlay?.querySelector('.add-placeholder-close');
+        const placeholderCancel = document.getElementById('placeholder-cancel');
+        const placeholderAdd = document.getElementById('placeholder-add');
+
+        if (addPlaceholderClose) addPlaceholderClose.addEventListener('click', closeAddPlaceholderModal);
+        if (placeholderCancel) placeholderCancel.addEventListener('click', closeAddPlaceholderModal);
+        if (placeholderAdd) placeholderAdd.addEventListener('click', handleAddPlaceholder);
+        if (addPlaceholderOverlay) {
+            addPlaceholderOverlay.addEventListener('click', (e) => {
+                if (e.target === addPlaceholderOverlay) closeAddPlaceholderModal();
+            });
+        }
+
+        // Add Discord ID Modal
+        const addDiscordIdOverlay = document.getElementById('add-discord-id-overlay');
+        const addDiscordIdClose = addDiscordIdOverlay?.querySelector('.add-discord-id-close');
+        const discordIdCancel = document.getElementById('discord-id-cancel');
+        const discordIdSearchInput = document.getElementById('discord-id-search-input');
+
+        if (addDiscordIdClose) addDiscordIdClose.addEventListener('click', closeAddDiscordIdModal);
+        if (discordIdCancel) discordIdCancel.addEventListener('click', closeAddDiscordIdModal);
+        if (addDiscordIdOverlay) {
+            addDiscordIdOverlay.addEventListener('click', (e) => {
+                if (e.target === addDiscordIdOverlay) closeAddDiscordIdModal();
+            });
+        }
+
+        // Search on input
+        if (discordIdSearchInput) {
+            let searchTimeout;
+            discordIdSearchInput.addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    searchPlayersForDiscordId(e.target.value.trim());
+                }, 300);
+            });
+        }
+
+        // Close modals on Escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (addPlaceholderOverlay && addPlaceholderOverlay.style.display === 'flex') {
+                    closeAddPlaceholderModal();
+                }
+                if (addDiscordIdOverlay && addDiscordIdOverlay.style.display === 'flex') {
+                    closeAddDiscordIdModal();
+                }
+            }
+        });
     }
 
     function setupPlayerSearchModal() {

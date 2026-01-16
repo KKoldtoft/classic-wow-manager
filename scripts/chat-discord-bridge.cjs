@@ -1,6 +1,7 @@
 // scripts/chat-discord-bridge.cjs
 // Minimal Discord bridge: mirror site messages to a channel; forward Discord messages into site chat
 // Also tracks voice state for the "Who is not in Discord?" feature
+// Also tracks guild member joins/leaves for the roster page
 
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const store = require('./chat-store.cjs');
@@ -9,12 +10,22 @@ const { broadcastFromDiscord } = require('./chat-socket.cjs');
 // Global voice state map: channelId -> Map(userId -> { mute, deaf, selfMute, selfDeaf, streaming, video })
 const voiceStateMap = new Map();
 
+// Global member events array: stores recent join/leave events
+// Each event: { eventType: 'join'|'leave', userId, username, discriminator, tag, avatarUrl, timestamp }
+const memberEvents = [];
+const MAX_MEMBER_EVENTS = 100; // Keep last 100 events in memory
+
 // Export for use by API endpoints
 function getVoiceStateMap() {
   return voiceStateMap;
 }
 
-function createDiscordBridge() {
+function getMemberEvents() {
+  return memberEvents;
+}
+
+function createDiscordBridge(options = {}) {
+  const { persistMemberEvent } = options; // Optional callback to persist events to DB
   const token = process.env.DISCORD_BOT_TOKEN;
   const guildId = process.env.DISCORD_GUILD_ID;
   const channelId = process.env.DISCORD_CHANNEL_ID; // Optional - only needed for text chat bridge
@@ -159,6 +170,94 @@ function createDiscordBridge() {
     }
   });
 
+  // Track guild member joins
+  client.on('guildMemberAdd', async (member) => {
+    try {
+      // Only track for our guild
+      if (String(member.guild?.id) !== String(guildId)) return;
+      
+      const userId = String(member.id || member.user?.id);
+      const username = member.user?.username || 'Unknown';
+      const discriminator = member.user?.discriminator || '0';
+      const tag = member.user?.tag || `${username}#${discriminator}`;
+      const avatarUrl = member.user?.avatar 
+        ? `https://cdn.discordapp.com/avatars/${userId}/${member.user.avatar}.png`
+        : null;
+      
+      const event = {
+        eventType: 'join',
+        userId,
+        username,
+        discriminator,
+        tag,
+        avatarUrl,
+        timestamp: new Date().toISOString()
+      };
+      
+      memberEvents.unshift(event); // Add to beginning
+      if (memberEvents.length > MAX_MEMBER_EVENTS) {
+        memberEvents.pop(); // Remove oldest
+      }
+      
+      // Persist to database if callback provided
+      if (persistMemberEvent && typeof persistMemberEvent === 'function') {
+        try {
+          await persistMemberEvent(event);
+        } catch (dbErr) {
+          console.warn('[bridge] Failed to persist member join event:', dbErr?.message || dbErr);
+        }
+      }
+      
+      console.log(`[bridge] 👋 Member joined: ${tag} (${userId})`);
+    } catch (e) {
+      console.warn('[bridge] guildMemberAdd error:', e?.message || e);
+    }
+  });
+
+  // Track guild member leaves
+  client.on('guildMemberRemove', async (member) => {
+    try {
+      // Only track for our guild
+      if (String(member.guild?.id) !== String(guildId)) return;
+      
+      const userId = String(member.id || member.user?.id);
+      const username = member.user?.username || 'Unknown';
+      const discriminator = member.user?.discriminator || '0';
+      const tag = member.user?.tag || `${username}#${discriminator}`;
+      const avatarUrl = member.user?.avatar 
+        ? `https://cdn.discordapp.com/avatars/${userId}/${member.user.avatar}.png`
+        : null;
+      
+      const event = {
+        eventType: 'leave',
+        userId,
+        username,
+        discriminator,
+        tag,
+        avatarUrl,
+        timestamp: new Date().toISOString()
+      };
+      
+      memberEvents.unshift(event); // Add to beginning
+      if (memberEvents.length > MAX_MEMBER_EVENTS) {
+        memberEvents.pop(); // Remove oldest
+      }
+      
+      // Persist to database if callback provided
+      if (persistMemberEvent && typeof persistMemberEvent === 'function') {
+        try {
+          await persistMemberEvent(event);
+        } catch (dbErr) {
+          console.warn('[bridge] Failed to persist member leave event:', dbErr?.message || dbErr);
+        }
+      }
+      
+      console.log(`[bridge] 👋 Member left: ${tag} (${userId})`);
+    } catch (e) {
+      console.warn('[bridge] guildMemberRemove error:', e?.message || e);
+    }
+  });
+
   client.on('error', (e) => { try { console.warn('[bridge] client error', e?.message || e); } catch(_) {} });
   client.on('warn', (m) => { try { console.warn('[bridge] warn', m); } catch(_) {} });
   client.on('shardError', (e) => { try { console.warn('[bridge] shardError', e?.message || e); } catch(_) {} });
@@ -256,9 +355,9 @@ function createDiscordBridge() {
     };
   }
 
-  return { start, sendToDiscord, getStatus, getVoiceStateMap };
+  return { start, sendToDiscord, getStatus, getVoiceStateMap, getMemberEvents };
 }
 
-module.exports = { createDiscordBridge, getVoiceStateMap };
+module.exports = { createDiscordBridge, getVoiceStateMap, getMemberEvents };
 
 

@@ -5,8 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Management Panel - Classic WoW Manager</title>
     <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/admin-styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script>
+        // Initialize dark mode IMMEDIATELY (before page render) to prevent flash
+        (function() {
+            const stored = localStorage.getItem('admin-theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (stored === 'dark' || (!stored && prefersDark)) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
     <style>
+        /* Minimal inline styles - most styling is in admin-styles.css */
+        body {
+            margin: 0;
+            padding: 0;
+        }
         :root {
             --bg: #f4f4f4;
             --text: #333333;
@@ -251,6 +267,49 @@
             border-bottom: none;
         }
         
+        /* Admin Navigation Tabs */
+        .admin-nav-tabs {
+            display: flex;
+            gap: 8px;
+            margin: 20px 0;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 0;
+        }
+        
+        .admin-nav-tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            background: transparent;
+            color: var(--muted);
+            text-decoration: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            bottom: -2px;
+        }
+        
+        .admin-nav-tab:hover {
+            color: var(--heading);
+            background: var(--panel-elev);
+            border-bottom-color: #3498db;
+        }
+        
+        .admin-nav-tab.active {
+            color: #3498db;
+            border-bottom-color: #3498db;
+            font-weight: 600;
+        }
+        
+        .admin-nav-tab i {
+            font-size: 14px;
+        }
+        
         /* Responsive Design */
         @media (max-width: 768px) {
             .container, .management-panel {
@@ -263,336 +322,264 @@
         }
     </style>
 </head>
-<body class="admin">
-    <!-- Universal Top Bar -->
-    <div class="top-bar">
-        <div class="top-bar-left">
-            <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
-            <nav class="top-nav">
-                <a href="/" class="top-nav-link">Home</a>
-                <div class="top-nav-dropdown">
-                    <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
-                        Raids <i class="fas fa-chevron-down"></i>
-                    </button>
-                    <div class="dropdown-menu" id="upcoming-raids-menu">
-                        <div class="dropdown-loading">Loading raids...</div>
-                    </div>
+<body>
+    <!-- Admin Navigation Bar -->
+    <nav class="admin-nav-bar">
+        <div class="admin-nav-container">
+            <div class="admin-nav-content">
+                <!-- Logo & Brand -->
+                <div class="admin-nav-logo">
+                    <img src="/images/1p_logo.png" alt="1Principles" width="110" height="30">
+                    <span class="admin-nav-logo-text">Admin</span>
                 </div>
-                <a href="/guild-members" class="top-nav-link">Members</a>
-                <a href="/attendance" class="top-nav-link">Attendance</a>
-            </nav>
-        </div>
-        <div id="auth-container">
-            <!-- Auth content is now loaded by top-bar.js -->
-        </div>
-    </div>
 
-    <!-- Active Raid Bar (shown when raid is selected) -->
-    <div class="raid-bar" id="raid-bar" style="display: none;">
-        <div class="raid-bar-left">
-            <span class="raid-title" id="raid-title">Loading...</span>
-            <nav class="raid-nav">
-                <a href="#" class="raid-nav-link" id="raid-roster-link">
-                    <i class="fas fa-users"></i> Roster
-                </a>
-                <a href="#" class="raid-nav-link" id="raid-assignments-link">
-                    <i class="fas fa-tasks"></i> Assignments
-                </a>
-                <a href="/raidlogs" class="raid-nav-link" id="raid-logs-link">
-                    <i class="fas fa-chart-line"></i> Raid Logs
-                </a>
-                <a href="/gold" class="raid-nav-link" id="raid-goldpot-link">
-                    <i class="fas fa-coins"></i> Gold Pot
-                </a>
-                <a href="/loot" class="raid-nav-link" id="raid-loot-link">
-                    <i class="fas fa-shield-alt"></i> Loot
-                </a>
-            </nav>
-        </div>
-        <div class="raid-bar-right">
-            <button class="raid-close-btn" onclick="localStorage.removeItem('activeEventSession'); location.reload();">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-    </div>
+                <!-- Navigation Links -->
+                <div class="admin-nav-links">
+                    <a href="/admin" class="admin-nav-link-active">
+                        <i class="fas fa-home"></i> Admin Home
+                    </a>
+                    <a href="/admin/raid-channels" class="admin-nav-link">
+                        <i class="fas fa-hashtag"></i> Raid Channels
+                    </a>
+                </div>
 
-    <div class="container">
-        <div class="management-panel">
-            <h1>Management Panel</h1>
-        
-        <div id="loading" class="loading">
-            <p>Loading user permissions...</p>
+                <!-- Actions -->
+                <div class="admin-nav-actions">
+                    <!-- Dark Mode Toggle -->
+                    <button id="dark-mode-toggle" class="dark-mode-toggle-nav" aria-label="Toggle dark mode">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    
+                    <!-- Exit Admin -->
+                    <a href="/" class="admin-nav-exit-btn">
+                        <i class="fas fa-sign-out-alt"></i> Exit Admin
+                    </a>
+                </div>
+            </div>
         </div>
+    </nav>
+
+    <div class="admin-page-content bg-gray-50 dark:bg-gray-900">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <!-- Page Header -->
+            <div class="mb-8">
+                <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Management Panel</h1>
+                <p class="text-gray-600 dark:text-gray-400">Admin Dashboard & Tools</p>
+            </div>
         
-        <div id="access-denied" class="access-denied" style="display: none;">
-            <h2>Access Denied</h2>
-            <p>You need to be logged in with Discord and have the "Management" role to access this panel.</p>
-            <a href="/auth/discord?returnTo=%2Fadmin" class="btn">Login with Discord</a>
-            <div id="bootstrap-admin" style="display:none; margin-top:16px;">
-                <h3>First-time setup</h3>
-                <p>If no managers exist yet, you can grant yourself Management once.</p>
-                <button class="btn" onclick="bootstrapGrantSelf()">Grant me Management</button>
-                <div id="bootstrap-status" style="margin-top:8px;"></div>
+        <!-- Loading State -->
+        <div id="loading">
+            <div class="admin-card text-center py-12">
+                <div class="loading-spinner mx-auto mb-4 text-blue-600"></div>
+                <p class="text-gray-600 dark:text-gray-400">Loading user permissions...</p>
             </div>
         </div>
         
-        <div id="management-content" style="display: none;">
-            <div id="user-info" class="admin-user-info">
+        <!-- Access Denied -->
+        <div id="access-denied" class="hidden">
+            <div class="admin-card bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800">
+                <div class="text-center py-8">
+                    <i class="fas fa-lock text-5xl text-red-600 dark:text-red-400 mb-4"></i>
+                    <h2 class="text-2xl font-bold text-red-900 dark:text-red-200 mb-2">Access Denied</h2>
+                    <p class="text-red-700 dark:text-red-300 mb-6">You need to be logged in with Discord and have the "Management" role to access this panel.</p>
+                    <a href="/auth/discord?returnTo=%2Fadmin" class="admin-btn-primary">
+                        <i class="fab fa-discord"></i> Login with Discord
+                    </a>
+                    <div id="bootstrap-admin" class="hidden mt-6">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">First-time setup</h3>
+                        <p class="text-gray-600 dark:text-gray-400 mb-4">If no managers exist yet, you can grant yourself Management once.</p>
+                        <button class="admin-btn-secondary" onclick="bootstrapGrantSelf()">Grant me Management</button>
+                        <div id="bootstrap-status" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div id="management-content" class="hidden space-y-8">
+            <!-- User Info Card -->
+            <div id="user-info" class="admin-card">
                 <!-- User info will be loaded here -->
             </div>
             
-            <!-- Management-only section -->
-            <div id="management-section" class="permission-card management-section" style="display: none;">
-                <h2>🔴 Management Features</h2>
-                <p>You have Management role access. These features are only available to users with the "Management" role.</p>
-                <button class="btn" onclick="loadAllUsers()">Load All Users</button>
-                <button class="btn" onclick="loadRosterStats()">Load Roster Statistics</button>
-                <button class="btn danger" onclick="setupDatabase()">Setup Database</button>
-                <button class="btn" onclick="createTemplatesTable()">Create Templates Table</button>
-                <button class="btn danger" onclick="showManagementTools()">Management Tools</button>
-                <div style="margin-top:16px; padding-top:12px; border-top:1px solid #eee;"><h3 style="margin:0 0 8px 0;">App Roles (Management / Helper)</h3>
+            <!-- Management Features Section -->
+            <section id="management-section" class="admin-card hidden">
+                <div class="mb-6">
+                    <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                        <i class="fas fa-cog text-red-600"></i>
+                        Management Features
+                    </h2>
+                    <p class="text-gray-600 dark:text-gray-400">You have Management role access. These features are only available to users with the "Management" role.</p>
+                </div>
+                
+                <div class="flex flex-wrap gap-3 mb-6">
+                    <button class="admin-btn-primary" onclick="loadAllUsers()">
+                        <i class="fas fa-users"></i> Load All Users
+                    </button>
+                    <button class="admin-btn-primary" onclick="loadRosterStats()">
+                        <i class="fas fa-chart-bar"></i> Load Roster Statistics
+                    </button>
+                    <button class="admin-btn-danger" onclick="setupDatabase()">
+                        <i class="fas fa-database"></i> Setup Database
+                    </button>
+                    <button class="admin-btn-primary" onclick="createTemplatesTable()">
+                        <i class="fas fa-table"></i> Create Templates Table
+                    </button>
+                    <button class="admin-btn-danger" onclick="showManagementTools()">
+                        <i class="fas fa-tools"></i> Management Tools
+                    </button>
+                </div>
+                
+                <div class="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">App Roles (Management / Helper)</h3>
                     <div id="roles-panel">
-                        <div id="roles-controls" style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
-                            <input id="roles-discord-id" type="text" placeholder="Discord ID" style="padding:6px 8px; width:200px;">
-                            <select id="roles-role-key" style="padding:6px 8px;">
+                        <div id="roles-controls" class="flex flex-wrap items-center gap-3 mb-4">
+                            <input id="roles-discord-id" type="text" placeholder="Discord ID" class="admin-input flex-1 min-w-[200px]">
+                            <select id="roles-role-key" class="admin-select min-w-[150px]">
                                 <option value="management">management</option>
                                 <option value="helper">helper</option>
                             </select>
-                            <button class="btn" onclick="grantRole()">Grant</button>
-                            <button class="btn danger" onclick="revokeRole()">Revoke</button>
-                            <button class="btn" onclick="loadRoles()">Refresh</button>
+                            <button class="admin-btn-primary" onclick="grantRole()">
+                                <i class="fas fa-user-plus"></i> Grant
+                            </button>
+                            <button class="admin-btn-danger" onclick="revokeRole()">
+                                <i class="fas fa-user-minus"></i> Revoke
+                            </button>
+                            <button class="admin-btn-secondary" onclick="loadRoles()">
+                                <i class="fas fa-sync"></i> Refresh
+                            </button>
                         </div>
-                        <div id="roles-list" class="admin-table" style="overflow:auto; max-height:320px;"></div>
+                        <div id="roles-list" class="overflow-auto max-h-80 rounded-lg border border-gray-200 dark:border-gray-700"></div>
                     </div>
                 </div>
-                <div id="management-data"></div>
-            </div>
+                <div id="management-data" class="mt-6"></div>
+            </section>
             
-            <!-- Guild Import section -->
-            <div id="guild-import-section" class="permission-card management-section" style="display: none;">
-                <h2>🏰 Guild Import</h2>
-                <p>Import guild member data from a semicolon-separated export. Only level 60 characters will be imported.</p>
+            <!-- Guild Import Section -->
+            <section id="guild-import-section" class="admin-card hidden">
+                <div class="mb-6">
+                    <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                        <i class="fas fa-shield-alt text-purple-600"></i>
+                        Guild Import
+                    </h2>
+                    <p class="text-gray-600 dark:text-gray-400">Import guild member data from a semicolon-separated export. Only level 60 characters will be imported.</p>
+                </div>
                 
-                <div style="margin-bottom: 20px;">
-                    <label for="guild-import-data" style="display: block; margin-bottom: 10px; font-weight: 600;">
+                <div class="mb-6">
+                    <label for="guild-import-data" class="block mb-3 font-semibold text-gray-700 dark:text-gray-300">
                         Paste your guild export data here:
                     </label>
                     <textarea 
                         id="guild-import-data" 
                         placeholder="Name;Rank;Level;Class;Race;Sex;Last Online (Days);Main/Alt;Player Alts;Join Date;Promo Date;Rank History;Birthday;Public Note;Officer Note;Custom Note;Faction&#10;Aezra;GDKP Regular;60;Mage;Undead;Female;39;;;;;;;Tamatori;;;Horde"
-                        style="width: 100%; height: 200px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; font-size: 12px;"
+                        class="w-full h-48 px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     ></textarea>
                 </div>
                 
-                <div style="margin-bottom: 20px;">
-                    <button class="btn" onclick="previewGuildImport()" id="preview-btn">
+                <div class="flex flex-wrap gap-3 mb-6">
+                    <button class="admin-btn-primary" onclick="previewGuildImport()" id="preview-btn">
                         <i class="fas fa-eye"></i> Preview Import
                     </button>
-                    <button class="btn danger" onclick="executeGuildImport()" id="execute-btn" style="display: none;">
+                    <button class="admin-btn-danger hidden" onclick="executeGuildImport()" id="execute-btn">
                         <i class="fas fa-upload"></i> Execute Import
                     </button>
                 </div>
                 
-                <div id="guild-import-preview" style="display: none;">
+                <div id="guild-import-preview" class="hidden">
                     <!-- Preview content will be loaded here -->
                 </div>
                 
-                <div id="guild-import-result" style="display: none;">
+                <div id="guild-import-result" class="hidden">
                     <!-- Import result will be loaded here -->
                 </div>
-            </div>
+            </section>
             
-            <!-- Channel Filter section -->
-            <div id="channel-filter-section" class="permission-card management-section" style="display: none;">
-                <h2>📡 Filter Raids by Discord Channel</h2>
-                <p>Control which Discord channels should show raids in the upcoming raids list and events page. This affects both upcoming and completed raids.</p>
-                
-                <div style="margin-bottom: 20px;">
-                    <button class="btn" onclick="loadChannelFilters()" id="load-channels-btn">
-                        <i class="fas fa-refresh"></i> Load Channels from Upcoming & Completed Raids
-                    </button>
-                    <button class="btn" onclick="saveChannelFilters()" id="save-filters-btn" style="display: none;">
-                        <i class="fas fa-save"></i> Save Changes
-                    </button>
-                    <button class="btn" onclick="refreshChannelNamesOnce()" id="refresh-channel-names-btn" style="margin-left:8px;">
-                        <i class="fas fa-sync"></i> Refresh Channel Names (DB)
-                    </button>
+            <!-- Attendance Channel Filter Section -->
+            <section id="attendance-channel-filter-section" class="admin-card hidden">
+                <div class="mb-6">
+                    <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                        <i class="fas fa-calendar-check text-green-600"></i>
+                        Regular Attendance Channel Filter
+                    </h2>
+                    <p class="text-gray-600 dark:text-gray-400">Control which Discord channels should be included in the Regular Attendance tracking. Events from filtered-out channels will not appear in attendance statistics.</p>
                 </div>
                 
-                <div id="channel-filters-content">
-                    <!-- Channel filters will be loaded here -->
-                </div>
-            </div>
-
-            <!-- Attendance Channel Filter section -->
-            <div id="attendance-channel-filter-section" class="permission-card management-section" style="display: none;">
-                <h2>📅 Regular Attendance Channel Filter</h2>
-                <p>Control which Discord channels should be included in the Regular Attendance tracking. Events from filtered-out channels will not appear in attendance statistics.</p>
-                
-                <div style="margin-bottom: 20px;">
-                    <button class="btn" onclick="loadAttendanceChannelFilters()" id="load-attendance-channels-btn">
+                <div class="flex flex-wrap gap-3 mb-6">
+                    <button class="admin-btn-primary" onclick="loadAttendanceChannelFilters()" id="load-attendance-channels-btn">
                         <i class="fas fa-refresh"></i> Load Channels from Log Data
                     </button>
-                    <button class="btn" onclick="saveAttendanceChannelFilters()" id="save-attendance-filters-btn" style="display: none;">
+                    <button class="admin-btn-primary hidden" onclick="saveAttendanceChannelFilters()" id="save-attendance-filters-btn">
                         <i class="fas fa-save"></i> Save Changes
                     </button>
                 </div>
                 
-                <div id="attendance-channel-filters-content">
+                <div id="attendance-channel-filters-content" class="min-h-[100px]">
                     <!-- Attendance channel filters will be loaded here -->
                 </div>
-            </div>
+            </section>
 
-            <!-- Rewards and Deductions section -->
-            <div id="rewards-section" class="permission-card management-section" style="display: none;">
-                <h2>🏆 Rewards and Deductions</h2>
-                <p>Configure point calculations and limits for different raid performance categories.</p>
+            <!-- Rewards and Deductions Section -->
+            <section id="rewards-section" class="admin-card hidden">
+                <div class="mb-6">
+                    <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                        <i class="fas fa-trophy text-yellow-600"></i>
+                        Rewards and Deductions
+                    </h2>
+                    <p class="text-gray-600 dark:text-gray-400">Configure point calculations and limits for different raid performance categories.</p>
+                </div>
                 
-                <div style="margin-bottom: 20px;">
-                    <button class="btn" onclick="loadRewardSettings()" id="load-rewards-btn">
+                <div class="flex flex-wrap gap-3 mb-6">
+                    <button class="admin-btn-primary" onclick="loadRewardSettings()" id="load-rewards-btn">
                         <i class="fas fa-cog"></i> Load Current Settings
                     </button>
-                    <button class="btn" onclick="saveRewardSettings()" id="save-rewards-btn" style="display: none;">
+                    <button class="admin-btn-primary hidden" onclick="saveRewardSettings()" id="save-rewards-btn">
                         <i class="fas fa-save"></i> Save Changes
                     </button>
                 </div>
                 
-                <div id="rewards-content">
+                <div id="rewards-content" class="min-h-[100px]">
                     <!-- Reward settings will be loaded here -->
                 </div>
-            </div>
-
-            <!-- Channel Background Images section -->
-            <div id="channel-backgrounds-section" class="permission-card management-section" style="display: none;">
-                <h2>🖼️ Channel Background Images</h2>
-                <p>Upload and manage background images for each Discord channel. Images will be shown in color for upcoming raids and black & white for completed raids.</p>
-                
-                <!-- Background Blur Control -->
-                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #6f42c1;">
-                    <h4 style="margin: 0 0 15px 0; color: #2c3e50;">
-                        <i class="fas fa-adjust"></i> Background Blur Settings
-                    </h4>
-                    <p style="color: #6c757d; margin-bottom: 15px;">
-                        Apply a blur effect to all background images. This affects both upcoming and completed raids.
-                    </p>
-                    <div style="display: flex; align-items: center; gap: 15px;">
-                        <label style="font-weight: 600; color: #495057;">Blur Intensity:</label>
-                        <input 
-                            type="range" 
-                            id="blur-slider" 
-                            min="0" 
-                            max="10" 
-                            step="0.5" 
-                            value="0"
-                            style="flex: 1; max-width: 200px;"
-                            oninput="updateBlurPreview(this.value)"
-                        >
-                        <input 
-                            type="number" 
-                            id="blur-input" 
-                            min="0" 
-                            max="10" 
-                            step="0.5" 
-                            value="0"
-                            style="width: 80px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: center;"
-                            oninput="updateBlurFromInput(this.value)"
-                        >
-                        <span style="color: #6c757d; font-size: 12px;">px</span>
-                        <button 
-                            class="btn" 
-                            onclick="saveBlurSetting()" 
-                            id="save-blur-btn"
-                            style="min-width: 100px;"
-                        >
-                            <i class="fas fa-save"></i> Save
-                        </button>
-                    </div>
-                    <div id="blur-status" style="margin-top: 10px; font-size: 14px;"></div>
-                </div>
-                
-                <!-- Background Darken Control -->
-                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #dc3545;">
-                    <h4 style="margin: 0 0 15px 0; color: #2c3e50;">
-                        <i class="fas fa-moon"></i> Background Darken Settings
-                    </h4>
-                    <p style="color: #6c757d; margin-bottom: 15px;">
-                        Apply a darkening effect to all background images. Lower values make backgrounds darker. This affects both upcoming and completed raids.
-                    </p>
-                    <div style="display: flex; align-items: center; gap: 15px;">
-                        <label style="font-weight: 600; color: #495057;">Brightness:</label>
-                        <input 
-                            type="range" 
-                            id="darken-slider" 
-                            min="50" 
-                            max="100" 
-                            step="5" 
-                            value="100"
-                            style="flex: 1; max-width: 200px;"
-                            oninput="updateDarkenPreview(this.value)"
-                        >
-                        <input 
-                            type="number" 
-                            id="darken-input" 
-                            min="50" 
-                            max="100" 
-                            step="5" 
-                            value="100"
-                            style="width: 80px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: center;"
-                            oninput="updateDarkenFromInput(this.value)"
-                        >
-                        <span style="color: #6c757d; font-size: 12px;">%</span>
-                        <button 
-                            class="btn" 
-                            onclick="saveDarkenSetting()" 
-                            id="save-darken-btn"
-                            style="min-width: 100px;"
-                        >
-                            <i class="fas fa-save"></i> Save
-                        </button>
-                    </div>
-                    <div id="darken-status" style="margin-top: 10px; font-size: 14px;"></div>
-                </div>
-                
-                <div style="margin-bottom: 20px;">
-                    <button class="btn" onclick="loadChannelBackgrounds()" id="load-backgrounds-btn">
-                        <i class="fas fa-images"></i> Load Channel Backgrounds
-                    </button>
-                </div>
-                
-                <div id="channel-backgrounds-content">
-                    <!-- Channel background settings will be loaded here -->
-                </div>
-            </div>
+            </section>
 
             <!-- Class/Spec Mapping Viewer (Management) -->
-            <div id="class-spec-mapping-section" class="permission-card management-section" style="display: none;">
-                <h2 style="display:flex;align-items:center;gap:8px;cursor:pointer;" onclick="toggleClassSpecMappingPanel()">
-                    <i class="fas fa-clipboard-list"></i>
-                    Class / Spec Mapping
-                    <span id="class-spec-fold-icon" style="margin-left:auto;color:#6c757d;font-size:14px;">(click to expand)</span>
-                </h2>
-                <div id="class-spec-mapping-panel" style="display:none;">
-                    <p style="color:#7f8c8d;">Debug panel: view the static class/spec → role/icon/color mapping stored in the database.</p>
-                    <div style="margin-bottom: 12px;">
-                        <button class="btn" id="load-class-spec-btn" onclick="loadClassSpecMappings()">
-                            <i class="fas fa-download"></i> Load Mapping
-                        </button>
-                    </div>
+            <section id="class-spec-mapping-section" class="admin-card hidden">
+                <div class="flex items-center justify-between cursor-pointer" onclick="toggleClassSpecMappingPanel()">
+                    <h2 class="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                        <i class="fas fa-clipboard-list text-indigo-600"></i>
+                        Class / Spec Mapping
+                    </h2>
+                    <span id="class-spec-fold-icon" class="text-gray-500 dark:text-gray-400 text-sm">(click to expand)</span>
+                </div>
+                <div id="class-spec-mapping-panel" class="hidden mt-6">
+                    <p class="text-gray-600 dark:text-gray-400 mb-4">Debug panel: view the static class/spec → role/icon/color mapping stored in the database.</p>
+                    <button class="admin-btn-primary mb-4" id="load-class-spec-btn" onclick="loadClassSpecMappings()">
+                        <i class="fas fa-download"></i> Load Mapping
+                    </button>
                     <div id="class-spec-mapping-content"></div>
                 </div>
-            </div>
+            </section>
 
-            <!-- Regular user section -->
-            <div id="user-section" class="permission-card">
-                <h2>👤 User Features</h2>
-                <p>Basic features available to all authenticated users.</p>
-                <button class="btn" onclick="loadMyCharacters()">My Characters</button>
+            <!-- Regular User Section -->
+            <section id="user-section" class="admin-card">
+                <div class="mb-6">
+                    <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                        <i class="fas fa-user text-blue-600"></i>
+                        User Features
+                    </h2>
+                    <p class="text-gray-600 dark:text-gray-400">Basic features available to all authenticated users.</p>
+                </div>
+                <button class="admin-btn-primary mb-4" onclick="loadMyCharacters()">
+                    <i class="fas fa-user-circle"></i> My Characters
+                </button>
                 <div id="user-data"></div>
-            </div>
+            </section>
         </div>
+    </div>
     </div>
 
     <script src="top-bar.js"></script>
+    <script src="admin-dark-mode.js"></script>
     <script>
         let currentUser = null;
 
@@ -602,7 +589,7 @@
         });
 
         async function initAdminPage() {
-            document.getElementById('loading').style.display = 'block';
+            document.getElementById('loading').classList.remove('hidden');
             try {
                 const response = await fetch('/user');
                 const user = await response.json();
@@ -617,39 +604,43 @@
                 
             } catch (error) {
                 console.error('Error initializing admin page:', error);
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('access-denied').style.display = 'block';
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('access-denied').classList.remove('hidden');
                 try { maybeShowBootstrap(); } catch(_) {}
             }
         }
 
         function showAccessDenied() {
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('access-denied').style.display = 'block';
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('access-denied').classList.remove('hidden');
         }
 
         function showManagementContent(user) {
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('management-content').style.display = 'block';
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('management-content').classList.remove('hidden');
             
             // Show user info
             const userInfoHtml = `
-                <h3>Welcome, ${user.username}#${user.discriminator}</h3>
-                <p><strong>Discord ID:</strong> ${user.id}</p>
-                <p><strong>Email:</strong> ${user.email || 'Not provided'}</p>
-                <p><strong>Management Role:</strong> ${user.hasManagementRole ? '✅ Yes' : '❌ No'}</p>
+                <div class="flex items-center gap-4 mb-4">
+                    <div class="flex-1">
+                        <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Welcome, ${user.username}#${user.discriminator}</h3>
+                        <div class="space-y-1 text-sm text-gray-600 dark:text-gray-400">
+                            <p><strong>Discord ID:</strong> ${user.id}</p>
+                            <p><strong>Email:</strong> ${user.email || 'Not provided'}</p>
+                            <p><strong>Management Role:</strong> ${user.hasManagementRole ? '<span class="text-green-600 dark:text-green-400">✅ Yes</span>' : '<span class="text-red-600 dark:text-red-400">❌ No</span>'}</p>
+                        </div>
+                    </div>
+                </div>
             `;
             document.getElementById('user-info').innerHTML = userInfoHtml;
             
             // Show management section if user has Management role
             if (user.hasManagementRole) {
-                document.getElementById('management-section').style.display = 'block';
-                document.getElementById('guild-import-section').style.display = 'block';
-                document.getElementById('channel-filter-section').style.display = 'block';
-                document.getElementById('attendance-channel-filter-section').style.display = 'block';
-                document.getElementById('rewards-section').style.display = 'block';
-                document.getElementById('channel-backgrounds-section').style.display = 'block';
-                document.getElementById('class-spec-mapping-section').style.display = 'block';
+                document.getElementById('management-section').classList.remove('hidden');
+                document.getElementById('guild-import-section').classList.remove('hidden');
+                document.getElementById('attendance-channel-filter-section').classList.remove('hidden');
+                document.getElementById('rewards-section').classList.remove('hidden');
+                document.getElementById('class-spec-mapping-section').classList.remove('hidden');
                 // Load roles list on enter
                 try { loadRoles(); } catch(_) {}
             } else {
@@ -659,12 +650,11 @@
                     if (mc && !document.getElementById('bootstrap-admin-inline')) {
                         const div = document.createElement('div');
                         div.id = 'bootstrap-admin-inline';
-                        div.className = 'permission-card management-section';
-                        div.style.display = 'block';
-                        div.innerHTML = '<h2>First-time setup</h2>'+
-                                        '<p>If no managers exist yet, you can grant yourself Management once.</p>'+
-                                        '<button class="btn" onclick="bootstrapGrantSelf()">Grant me Management</button>'+
-                                        '<div id="bootstrap-status-inline" style="margin-top:8px;"></div>';
+                        div.className = 'admin-card';
+                        div.innerHTML = '<h2 class="text-xl font-bold text-gray-900 dark:text-white mb-2">First-time setup</h2>'+
+                                        '<p class="text-gray-600 dark:text-gray-400 mb-4">If no managers exist yet, you can grant yourself Management once.</p>'+
+                                        '<button class="admin-btn-primary" onclick="bootstrapGrantSelf()">Grant me Management</button>'+
+                                        '<div id="bootstrap-status-inline" class="mt-3"></div>';
                         // Insert just after user-info block
                         const userInfo = document.getElementById('user-info');
                         if (userInfo && userInfo.parentNode === mc) {
@@ -680,9 +670,14 @@
         function toggleClassSpecMappingPanel() {
             const panel = document.getElementById('class-spec-mapping-panel');
             const icon = document.getElementById('class-spec-fold-icon');
-            const isHidden = panel.style.display === 'none';
-            panel.style.display = isHidden ? 'block' : 'none';
-            icon.textContent = isHidden ? '(click to collapse)' : '(click to expand)';
+            const isHidden = panel.classList.contains('hidden');
+            if (isHidden) {
+                panel.classList.remove('hidden');
+                icon.textContent = '(click to collapse)';
+            } else {
+                panel.classList.add('hidden');
+                icon.textContent = '(click to expand)';
+            }
         }
 
         async function loadClassSpecMappings() {
@@ -3469,7 +3464,7 @@
                 const boot = document.getElementById('bootstrap-admin');
                 if (!denied || !boot) return;
                 // If user is logged in (top-bar controls login), we still show bootstrap option — server enforces the rule about no existing managers.
-                boot.style.display = 'block';
+                boot.classList.remove('hidden');
             }catch(_){}
         }
 
@@ -3537,4 +3532,5 @@
     })();
     </script>
 </body>
+</html> 
 </html> 

@@ -90,6 +90,38 @@ body, html {
 
 /* back-button removed */
 
+/* Placeholder player styling */
+i.spec-icon.placeholder-icon {
+    color: #ffffff !important;
+    font-size: 18px !important;
+    width: 20px;
+    height: 20px;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    animation: pulse-skull 2s ease-in-out infinite;
+    filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.8));
+    margin-right: 6px;
+}
+
+@keyframes pulse-skull {
+    0%, 100% { 
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% { 
+        opacity: 0.75;
+        transform: scale(1.03);
+    }
+}
+
+.roster-cell.placeholder-player {
+    border: 2px dashed #ef4444 !important;
+    position: relative;
+    opacity: 0.95;
+    /* Background color is set by applyPlayerColor() based on class */
+}
+
 #roster-event-title {
     color: #fff;
     margin-bottom: 25px;
@@ -136,8 +168,14 @@ body, html {
     cursor: default; /* Change cursor as the cell itself isn't a link anymore */
     background-color: #777; /* Background for empty cells */
     margin-bottom: 10px;
+    z-index: 1; /* Default z-index */
     /* Add smooth transitions for all changes */
     transition: all 0.3s ease, background-color 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* When dropdown is open, raise the cell above others */
+.roster-cell:has(.player-details-dropdown.show) {
+    z-index: 10000; /* Higher than dropdown's 9999 to create proper stacking */
 }
 
 /* Smooth transitions for content changes */
@@ -343,7 +381,7 @@ body, html {
     background-color: #333;
     border: 1px solid #555;
     border-radius: 0 0 5px 5px;
-    z-index: 10;
+    z-index: 9999; /* High z-index to appear above all other content */
     padding: 8px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
     text-align: left; /* Override parent's text-align: center */
@@ -494,12 +532,12 @@ body, html {
     border: 1px solid rgba(0,0,0,0.1);
 }
 
-/* Highlight cells with missing Discord ID */
-.roster-cell.player-filled.no-discord-id {
+/* Highlight cells with missing Discord ID (but not placeholders) */
+.roster-cell.player-filled.no-discord-id:not(.placeholder-player) {
     background-color: #b71c1c !important; /* red */
     color: #fff;
 }
-.roster-cell.player-filled.no-discord-id .player-name span {
+.roster-cell.player-filled.no-discord-id:not(.placeholder-player) .player-name span {
     color: #fff !important;
 }
 

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Polling - Cursor Advancement</title>
+    <style>
+        body {
+            font-family: 'Consolas', 'Monaco', monospace;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #4a9eff;
+            border-bottom: 2px solid #4a9eff;
+            padding-bottom: 10px;
+        }
+        .status {
+            background: #12121a;
+            border: 1px solid #2a2a3a;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .status.connected { border-color: #4ade80; }
+        .status.error { border-color: #f87171; }
+        .status.complete { border-color: #4a9eff; }
+        .log-container {
+            background: #12121a;
+            border: 1px solid #2a2a3a;
+            border-radius: 8px;
+            padding: 15px;
+            height: 500px;
+            overflow-y: auto;
+            font-size: 13px;
+        }
+        .log-entry {
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .log-entry.error { color: #f87171; }
+        .log-entry.success { color: #4ade80; }
+        .log-entry.warning { color: #fbbf24; }
+        .log-entry .timestamp {
+            color: #888;
+            margin-right: 10px;
+        }
+        .btn {
+            background: #4a9eff;
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        .btn:hover { background: #6bb3ff; }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: #12121a;
+            border: 1px solid #2a2a3a;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: 600;
+            color: #4a9eff;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #888;
+            margin-top: 5px;
+        }
+        .explanation {
+            background: rgba(74, 158, 255, 0.1);
+            border: 1px solid rgba(74, 158, 255, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+            line-height: 1.6;
+        }
+        .explanation h3 {
+            margin-top: 0;
+            color: #4a9eff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Polling Test - Cursor Advancement Verification</h1>
+        
+        <div class="explanation">
+            <h3>What This Tests:</h3>
+            <p>This simulates the polling behavior that runs after a WCL import completes. It verifies that the cursor <strong>always advances</strong>, even when no events are found in a time window.</p>
+            <p><strong>Expected Result:</strong> The cursor should steadily increase from 1,000,000 to ~1,200,000+ over 20 polls, regardless of whether events are found.</p>
+            <p><strong>Bug Behavior (OLD):</strong> Cursor would get stuck at the same value when no events were found.</p>
+        </div>
+
+        <button class="btn" id="startBtn" onclick="startTest()">▶ Start Test</button>
+        <button class="btn" id="stopBtn" onclick="stopTest()" style="display:none; background:#f87171;">⏹ Stop Test</button>
+
+        <div class="status" id="status">
+            Ready to start test
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="pollCount">0</div>
+                <div class="stat-label">Polls</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="cursorValue">0</div>
+                <div class="stat-label">Current Cursor</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="totalAdvancement">0</div>
+                <div class="stat-label">Total +ms</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="eventsReceived">0</div>
+                <div class="stat-label">Events Received</div>
+            </div>
+        </div>
+
+        <h3>Live Log:</h3>
+        <div class="log-container" id="logContainer"></div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        let startCursor = 1000000;
+        let pollCount = 0;
+        let totalEvents = 0;
+
+        function log(message, type = 'info') {
+            const container = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const time = new Date().toLocaleTimeString();
+            entry.innerHTML = `<span class="timestamp">[${time}]</span>${message}`;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function updateStats(cursor, advancement, events) {
+            document.getElementById('pollCount').textContent = pollCount;
+            document.getElementById('cursorValue').textContent = cursor.toLocaleString();
+            document.getElementById('totalAdvancement').textContent = advancement.toLocaleString();
+            document.getElementById('eventsReceived').textContent = events;
+        }
+
+        function startTest() {
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').style.display = 'inline-block';
+            document.getElementById('logContainer').innerHTML = '';
+            
+            pollCount = 0;
+            totalEvents = 0;
+            
+            const status = document.getElementById('status');
+            status.className = 'status';
+            status.textContent = 'Connecting to test endpoint...';
+            
+            log('🚀 Starting polling test...', 'success');
+            log('📊 Will simulate 20 polls with random event distribution', 'info');
+            
+            eventSource = new EventSource('/api/wcl/test-polling');
+            
+            eventSource.addEventListener('connected', (e) => {
+                const data = JSON.parse(e.data);
+                status.className = 'status connected';
+                status.textContent = data.message;
+                log(`✅ ${data.message}`, 'success');
+            });
+            
+            eventSource.addEventListener('polling-started', (e) => {
+                const data = JSON.parse(e.data);
+                log(`🔄 ${data.message}`, 'info');
+            });
+            
+            eventSource.addEventListener('new-events', (e) => {
+                const data = JSON.parse(e.data);
+                pollCount++;
+                totalEvents += data.count;
+                const advancement = data.cursor - startCursor;
+                updateStats(data.cursor, advancement, totalEvents);
+                
+                const cursorSource = data.apiProvidedNext ? 'API' : 'window';
+                log(`✅ Poll ${pollCount}: ${data.count} events | Cursor: ${data.cursor.toLocaleString()} (via ${cursorSource})`, 'success');
+            });
+            
+            eventSource.addEventListener('heartbeat', (e) => {
+                const data = JSON.parse(e.data);
+                pollCount++;
+                const advancement = data.cursor - startCursor;
+                updateStats(data.cursor, advancement, totalEvents);
+                
+                const cursorSource = data.apiProvidedNext ? 'API' : 'window';
+                log(`💚 Poll ${pollCount}: No events | Cursor: ${data.cursor.toLocaleString()} (advancing via ${cursorSource})`, 'info');
+            });
+            
+            eventSource.addEventListener('warning', (e) => {
+                const data = JSON.parse(e.data);
+                log(`⚠️ WARNING: ${data.message}`, 'error');
+                status.className = 'status error';
+                status.textContent = `ERROR: ${data.message}`;
+            });
+            
+            eventSource.addEventListener('test-complete', (e) => {
+                const data = JSON.parse(e.data);
+                status.className = 'status complete';
+                status.textContent = data.message;
+                log(`🎉 ${data.message}`, 'success');
+                log(`📈 Final Results: Cursor advanced ${data.totalAdvancement.toLocaleString()}ms over ${data.pollCount} polls`, 'success');
+                
+                if (data.totalAdvancement > 0) {
+                    log(`✅ TEST PASSED: Cursor advanced correctly!`, 'success');
+                } else {
+                    log(`❌ TEST FAILED: Cursor did not advance!`, 'error');
+                }
+                
+                stopTest();
+            });
+            
+            eventSource.onerror = (error) => {
+                log('❌ Connection error', 'error');
+                status.className = 'status error';
+                status.textContent = 'Connection error';
+                stopTest();
+            };
+        }
+
+        function stopTest() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').style.display = 'none';
+        }
+    </script>
+</body>
+</html>

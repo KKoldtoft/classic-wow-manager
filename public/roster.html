@@ -185,6 +185,21 @@
             
             <div id="compare-results" style="display:none; margin-top:15px; width: 100%;"></div>
         </div>
+
+        <!-- Discord Server Activity Console (Management Only) -->
+        <div id="member-events-console" class="management-only" style="display: none; margin: 20px auto; max-width: 415px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid #5865F2; border-radius: 8px; padding: 0; overflow: hidden; box-shadow: 0 4px 12px rgba(88, 101, 242, 0.1);">
+            <div style="background: linear-gradient(90deg, #5865F2 0%, #4752C4 100%); padding: 8px 14px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                <h3 style="margin: 0; font-size: 13px; font-weight: 600; color: #FFFFFF; display: flex; align-items: center; gap: 8px;">
+                    <i class="fas fa-user-plus" style="color: #57F287;"></i>
+                    Recent Discord Joins
+                </h3>
+            </div>
+            <div id="member-events-list" style="padding: 12px; font-size: 12px;">
+                <div style="color: #B9BBBE; text-align: center; padding: 12px;">
+                    <i class="fas fa-spinner fa-spin"></i> Loading...
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Player Search Overlay -->
@@ -247,10 +262,190 @@
         </div>
     </div>
 
+    <!-- Add Placeholder Overlay -->
+    <div id="add-placeholder-overlay" class="player-search-overlay">
+        <div class="player-search-modal">
+            <button class="add-placeholder-close">&times;</button>
+            <div class="player-search-header">Add Placeholder Player</div>
+            <div class="fix-name-form">
+                <div class="fix-name-row">
+                    <label>Character Name</label>
+                    <input id="placeholder-name-input" type="text" class="player-search-input" placeholder="Enter character name..." autocomplete="off">
+                </div>
+                <div class="fix-name-row">
+                    <label>Class</label>
+                    <select id="placeholder-class-select" class="player-search-input">
+                        <option value="">Select class...</option>
+                        <option value="warrior">Warrior</option>
+                        <option value="paladin">Paladin</option>
+                        <option value="hunter">Hunter</option>
+                        <option value="rogue">Rogue</option>
+                        <option value="priest">Priest</option>
+                        <option value="shaman">Shaman</option>
+                        <option value="mage">Mage</option>
+                        <option value="warlock">Warlock</option>
+                        <option value="druid">Druid</option>
+                    </select>
+                </div>
+                <div class="fix-name-actions" style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
+                    <button id="placeholder-cancel" class="panel-button" type="button"><i class="fas fa-times"></i><span>Cancel</span></button>
+                    <button id="placeholder-add" class="panel-button" type="button"><i class="fas fa-plus"></i><span>Add Placeholder</span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Discord ID to Placeholder Overlay -->
+    <div id="add-discord-id-overlay" class="player-search-overlay">
+        <div class="player-search-modal">
+            <button class="add-discord-id-close">&times;</button>
+            <div class="player-search-header">Add Discord ID to Placeholder</div>
+            <div class="fix-name-form">
+                <div class="fix-name-row">
+                    <label>Current Name</label>
+                    <div id="placeholder-current-name" class="fix-name-value"></div>
+                </div>
+                <div class="fix-name-row">
+                    <label>Current Class</label>
+                    <div id="placeholder-current-class" class="fix-name-value"></div>
+                </div>
+                <div class="fix-name-row">
+                    <label>Search Player</label>
+                    <input id="discord-id-search-input" type="text" class="player-search-input" placeholder="Type player name (min 2 characters)..." autocomplete="off">
+                </div>
+                <div id="discord-id-search-results" class="player-search-results" style="max-height: 200px; overflow-y: auto; margin-top: 10px;">
+                    <div class="player-search-no-results">Type at least 2 characters to search</div>
+                </div>
+                <div class="fix-name-actions" style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
+                    <button id="discord-id-cancel" class="panel-button" type="button"><i class="fas fa-times"></i><span>Cancel</span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="/confirmation-modal.js"></script>
     <script src="/add-character.js"></script>
     <script src="/roster-api.js"></script>
     <script src="/roster.js"></script>
     <script src="/top-bar.js"></script>
+    
+    <!-- Member Events Script -->
+    <script>
+    (function() {
+        const eventsConsole = document.getElementById('member-events-console');
+        const eventsList = document.getElementById('member-events-list');
+        if (!eventsList || !eventsConsole) return;
+        
+        // Check if user has management role
+        async function checkManagementRole() {
+            try {
+                const response = await fetch('/user');
+                if (!response.ok) return false;
+                const user = await response.json();
+                return user && user.loggedIn && user.hasManagementRole;
+            } catch (error) {
+                console.error('Error checking management role:', error);
+                return false;
+            }
+        }
+        
+        // Fetch and display member events
+        async function fetchMemberEvents() {
+            try {
+                // Check management role first
+                const hasManagement = await checkManagementRole();
+                if (!hasManagement) {
+                    eventsConsole.style.display = 'none';
+                    return;
+                }
+                
+                eventsConsole.style.display = 'block';
+                
+                const response = await fetch('/api/discord/member-events?limit=20');
+                if (!response.ok) throw new Error('Failed to fetch member events');
+                
+                const data = await response.json();
+                if (!data.ok || !data.events) throw new Error('Invalid response');
+                
+                // Filter to only show JOIN events, limit to 5
+                const joinEvents = data.events.filter(e => e.eventType === 'join').slice(0, 5);
+                
+                if (joinEvents.length === 0) {
+                    eventsList.innerHTML = '<div style="color: #72767D; text-align: center; padding: 15px; font-style: italic; font-size: 11px;">No recent joins</div>';
+                    return;
+                }
+                
+                // Build compact HTML for events
+                let html = '<div style="display: flex; flex-direction: column; gap: 6px;">';
+                joinEvents.forEach(event => {
+                    const username = event.username || 'Unknown';
+                    const userId = event.userId || '';
+                    const timestamp = event.timestamp ? new Date(event.timestamp) : null;
+                    const timeStr = timestamp ? formatTimeAgo(timestamp) : '';
+                    const fullTime = timestamp ? timestamp.toLocaleString() : '';
+                    
+                    html += `
+                        <div style="background: rgba(87, 242, 135, 0.05); border-left: 3px solid #57F287; padding: 8px 10px; border-radius: 4px; transition: all 0.2s ease;" 
+                             onmouseenter="this.style.background='rgba(87, 242, 135, 0.1)';"
+                             onmouseleave="this.style.background='rgba(87, 242, 135, 0.05)';"
+                             title="${fullTime}">
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                                <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;">
+                                    <span style="color: #57F287; font-size: 12px;">👋</span>
+                                    <div style="flex: 1; min-width: 0;">
+                                        <div style="color: #FFFFFF; font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                            ${escapeHtml(username)}
+                                        </div>
+                                        <div style="color: #72767D; font-size: 10px; font-family: 'Courier New', monospace;">
+                                            ${escapeHtml(userId)}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="color: #72767D; font-size: 10px; white-space: nowrap;">
+                                    ${timeStr}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                
+                eventsList.innerHTML = html;
+            } catch (error) {
+                console.error('Error fetching member events:', error);
+                eventsList.innerHTML = '<div style="color: #ED4245; text-align: center; padding: 15px; font-size: 11px;"><i class="fas fa-exclamation-triangle"></i> Failed to load</div>';
+            }
+        }
+        
+        // Format time ago
+        function formatTimeAgo(date) {
+            const now = new Date();
+            const diffMs = now - date;
+            const diffSec = Math.floor(diffMs / 1000);
+            const diffMin = Math.floor(diffSec / 60);
+            const diffHour = Math.floor(diffMin / 60);
+            const diffDay = Math.floor(diffHour / 24);
+            
+            if (diffSec < 60) return 'just now';
+            if (diffMin < 60) return `${diffMin}m ago`;
+            if (diffHour < 24) return `${diffHour}h ago`;
+            if (diffDay < 7) return `${diffDay}d ago`;
+            return date.toLocaleDateString();
+        }
+        
+        // Escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Initial fetch
+        fetchMemberEvents();
+        
+        // Refresh every 30 seconds
+        setInterval(fetchMemberEvents, 30000);
+    })();
+    </script>
 </body>
 </html>

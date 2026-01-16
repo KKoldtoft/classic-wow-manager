@@ -31,18 +31,22 @@ try {
 } catch (_) { attachChatIo = null; setOutboundHandler = null; }
 let createDiscordBridge = null;
 let getVoiceStateMap = null;
+let getMemberEvents = null;
 try { 
   const bridgeModule = require('./scripts/chat-discord-bridge.cjs');
   createDiscordBridge = bridgeModule.createDiscordBridge; 
   getVoiceStateMap = bridgeModule.getVoiceStateMap;
+  getMemberEvents = bridgeModule.getMemberEvents;
   console.log('[init] Discord bridge module loaded:', { 
     hasCreateDiscordBridge: !!createDiscordBridge, 
-    hasGetVoiceStateMap: !!getVoiceStateMap 
+    hasGetVoiceStateMap: !!getVoiceStateMap,
+    hasGetMemberEvents: !!getMemberEvents
   });
 } catch (err) { 
   console.error('[init] Failed to load Discord bridge module:', err?.message || err);
   createDiscordBridge = null; 
   getVoiceStateMap = null;
+  getMemberEvents = null;
 }
 
 // Fallback voiceStateMap if bridge module not available
@@ -538,6 +542,8 @@ migratePlayerConfirmedLogsTable();
 
     // Initialize authentication/user tables for local role storage
     initializeAuthTables();
+    // Initialize member events table for roster page
+    initializeMemberEventsTable();
     // Initialize polls tables and seed initial poll
     await initializePollsTables();
     await ensureInitialPoll();
@@ -593,6 +599,29 @@ async function initializeAuthTables() {
     console.log('✅ Auth tables initialized (discord_users, app_user_roles)');
   } catch (error) {
     console.error('❌ Error creating auth tables:', error);
+  }
+}
+
+// Create discord_member_events table for tracking server joins/leaves
+async function initializeMemberEventsTable() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS discord_member_events (
+        id SERIAL PRIMARY KEY,
+        event_type VARCHAR(20) NOT NULL,
+        discord_id VARCHAR(32) NOT NULL,
+        username TEXT NOT NULL,
+        discriminator VARCHAR(10),
+        tag TEXT,
+        avatar_url TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )`);
+    
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_discord_member_events_created ON discord_member_events(created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_discord_member_events_discord_id ON discord_member_events(discord_id)`);
+    console.log('✅ Discord member events table initialized');
+  } catch (error) {
+    console.error('❌ Error creating discord_member_events table:', error);
   }
 }
 
@@ -2029,6 +2058,10 @@ app.get('/players', (req, res) => {
 
 app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+app.get('/admin/raid-channels', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin-raid-channels.html'));
 });
 
 app.get('/voice-check', (req, res) => {
@@ -5740,6 +5773,97 @@ async function analyzePlayerStatsFromDB(reportCode, meta) {
   };
 }
 
+// Test endpoint: Simulate polling behavior to verify cursor advancement
+app.get('/api/wcl/test-polling', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+  
+  const sendEvent = (type, data) => {
+    try {
+      res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+    } catch (_) {}
+  };
+  
+  let aborted = false;
+  req.on('close', () => { aborted = true; });
+  
+  sendEvent('connected', { reportCode: 'TEST-POLLING', message: 'Simulating polling behavior' });
+  sendEvent('polling-started', { message: 'Test polling started' });
+  
+  let cursor = 1000000; // Start at 1 million ms
+  const windowMs = 10000; // 10 second window
+  let pollCount = 0;
+  const maxPolls = 20; // Run 20 test polls
+  
+  console.log('[TEST-POLLING] Starting test polling simulation');
+  
+  while (!aborted && pollCount < maxPolls) {
+    await new Promise(resolve => setTimeout(resolve, 1000)); // Poll every 1 second for faster testing
+    
+    if (aborted) break;
+    
+    const windowEnd = cursor + windowMs;
+    const oldCursor = cursor;
+    
+    // Simulate API behavior: sometimes return events, sometimes don't
+    const hasEvents = Math.random() > 0.5; // 50% chance of events
+    const eventCount = hasEvents ? Math.floor(Math.random() * 10) + 1 : 0;
+    
+    // Simulate nextPageTimestamp (sometimes provided by API, sometimes not)
+    const apiProvidedNext = Math.random() > 0.3; // 70% chance API provides next cursor
+    const nextCursor = apiProvidedNext ? (cursor + Math.floor(Math.random() * 15000) + 5000) : null;
+    
+    if (hasEvents) {
+      sendEvent('new-events', {
+        count: eventCount,
+        cursor: oldCursor,
+        message: `Simulated ${eventCount} events`,
+        apiProvidedNext
+      });
+    } else {
+      sendEvent('heartbeat', {
+        cursor: oldCursor,
+        pollCount,
+        message: 'No events in window',
+        apiProvidedNext
+      });
+    }
+    
+    // Apply the FIXED cursor advancement logic
+    if (nextCursor != null && nextCursor > cursor) {
+      cursor = nextCursor;
+      console.log(`[TEST-POLLING ${pollCount}] ✅ Cursor advanced via API: ${oldCursor} -> ${cursor} (+${cursor - oldCursor}ms, ${eventCount} events)`);
+    } else {
+      cursor = windowEnd;
+      console.log(`[TEST-POLLING ${pollCount}] ✅ Cursor advanced by window: ${oldCursor} -> ${cursor} (+${cursor - oldCursor}ms, ${eventCount} events)`);
+    }
+    
+    // Test the safeguard: detect if cursor didn't advance (should NEVER happen with fix)
+    if (cursor <= oldCursor) {
+      const error = `⚠️ CRITICAL: Cursor stuck at ${cursor}!`;
+      console.error(`[TEST-POLLING ${pollCount}] ${error}`);
+      sendEvent('warning', { message: error, cursor, oldCursor });
+    }
+    
+    pollCount++;
+  }
+  
+  sendEvent('test-complete', { 
+    message: `Test complete: ${pollCount} polls simulated, cursor advanced from 1000000 to ${cursor}`,
+    finalCursor: cursor,
+    totalAdvancement: cursor - 1000000,
+    pollCount 
+  });
+  
+  console.log(`[TEST-POLLING] Test complete: cursor advanced ${cursor - 1000000}ms over ${pollCount} polls`);
+  
+  setTimeout(() => {
+    try { res.end(); } catch (_) {}
+  }, 1000);
+});
+
 // SSE endpoint: Streams import progress and events
 app.get('/api/wcl/stream-import', async (req, res) => {
   const reportInput = String(req.query.report || '').trim();
@@ -6366,7 +6490,13 @@ app.get('/api/wcl/stream-import', async (req, res) => {
     const reanalysisInterval = 10; // Re-run analysis every 10 polls (30 seconds)
     let lastAnalysisPollCount = 0;
     
+    // Safeguard: Track cursor advancement to detect stuck polling
+    let lastCursorValue = lastCursor;
+    let cursorsStuckCount = 0;
+    const MAX_STUCK_POLLS = 5; // Alert if cursor doesn't advance for 5 consecutive polls
+    
     console.log('[LIVE] Entering polling loop (maxPolls=1000, interval=3s)');
+    console.log(`[LIVE] Initial cursor: ${lastCursor}, windowMs: ${windowMs}`);
     while (!aborted && pollCount < maxPolls) {
       await new Promise(resolve => setTimeout(resolve, 3000));
       
@@ -6421,14 +6551,53 @@ app.get('/api/wcl/stream-import', async (req, res) => {
           cursor: lastCursor,
           events: enrichedNewEvents
         });
+      } else {
+        // Send heartbeat to keep connection alive with detailed status
+        sendEvent('heartbeat', { 
+          cursor: lastCursor, 
+          pollCount, 
+          totalEvents,
+          timestamp: Date.now(),
+          windowStart: lastCursor,
+          windowEnd: pollEnd,
+          cursorAdvancing: true // We'll always advance now
+        });
+      }
+      
+      // Always advance cursor (even if no events found) to catch up to real-time
+      // Use API's nextPageTimestamp if available, otherwise advance by window
+      const oldCursor = lastCursor;
+      if (pollNextCursor != null && pollNextCursor > lastCursor) {
+        lastCursor = pollNextCursor;
+        const delta = lastCursor - oldCursor;
+        console.log(`[LIVE POLL ${pollCount}] ✅ Cursor advanced via API: ${oldCursor} -> ${lastCursor} (+${delta}ms, ${newEvents.length} events)`);
+      } else {
+        // If API doesn't provide next cursor, advance by window size
+        lastCursor = pollEnd;
+        const delta = lastCursor - oldCursor;
+        console.log(`[LIVE POLL ${pollCount}] ✅ Cursor advanced by window: ${oldCursor} -> ${lastCursor} (+${delta}ms, ${newEvents.length} events)`);
+      }
+      
+      // Safeguard: Detect if cursor is stuck (critical bug indicator)
+      if (lastCursor <= lastCursorValue) {
+        cursorsStuckCount++;
+        console.error(`[LIVE POLL ${pollCount}] ⚠️ WARNING: Cursor did not advance! Stuck count: ${cursorsStuckCount}/${MAX_STUCK_POLLS}`);
+        console.error(`[LIVE POLL ${pollCount}] lastCursorValue: ${lastCursorValue}, newCursor: ${lastCursor}, pollNextCursor: ${pollNextCursor}, pollEnd: ${pollEnd}`);
         
-        if (pollNextCursor && pollNextCursor > lastCursor) {
-          lastCursor = pollNextCursor;
+        if (cursorsStuckCount >= MAX_STUCK_POLLS) {
+          const errorMsg = `CRITICAL: Cursor stuck for ${MAX_STUCK_POLLS} consecutive polls - polling may not work correctly`;
+          console.error(`[LIVE POLL ${pollCount}] ${errorMsg}`);
+          sendEvent('warning', { 
+            message: errorMsg,
+            cursor: lastCursor,
+            pollCount,
+            debugInfo: { lastCursorValue, pollNextCursor, pollEnd, newEventsCount: newEvents.length }
+          });
         }
       } else {
-        // Send heartbeat to keep connection alive
-        sendEvent('heartbeat', { cursor: lastCursor, pollCount, totalEvents });
+        cursorsStuckCount = 0; // Reset counter on successful advancement
       }
+      lastCursorValue = lastCursor;
       
       // Periodic re-analysis every 30 seconds (if there were new events since last analysis)
       if (hasNewEvents && (pollCount - lastAnalysisPollCount) >= reanalysisInterval) {
@@ -7101,7 +7270,13 @@ app.get('/api/assignments/:eventId', async (req, res) => {
     const dKey = (d,w,b) => `${String(d||'')}|${String(w||'')}|${String(b||'')}`;
     const defaultsMap = new Map(defaultsRes.rows.map(r => [dKey(r.dungeon, r.wing, r.boss), r.default_strategy_text || '']));
     const entriesResult = await pool.query(
-      `SELECT * FROM raid_assignment_entries WHERE event_id = $1 ORDER BY sort_index, id`,
+      `SELECT rae.*, ro.is_placeholder 
+       FROM raid_assignment_entries rae
+       LEFT JOIN roster_overrides ro 
+         ON ro.event_id = rae.event_id 
+         AND LOWER(ro.assigned_char_name) = LOWER(rae.character_name)
+       WHERE rae.event_id = $1 
+       ORDER BY rae.sort_index, rae.id`,
       [eventId]
     );
     const acceptsResult = await pool.query(
@@ -7122,6 +7297,7 @@ app.get('/api/assignments/:eventId', async (req, res) => {
           const acc = acceptsMap.get(key);
           return {
             ...e,
+            is_placeholder: e.is_placeholder || false,
             accept_status: acc?.accept_status || null,
             accept_set_by: acc?.accept_set_by || null,
             accept_updated_at: acc?.accept_updated_at || null,
@@ -7279,6 +7455,7 @@ app.get('/api/assignments/:eventId/roster', async (req, res) => {
          ro.discord_user_id,
          ro.party_id,
          ro.slot_id,
+         ro.is_placeholder,
          csm.class_color_hex AS class_color,
          csm.spec_icon_url
        FROM roster_overrides ro
@@ -9646,10 +9823,11 @@ app.get('/api/roster/:eventId', async (req, res) => {
                             color: override.player_color,
                             isConfirmed: originalRosterPlayer?.isConfirmed || false,
                             inRaid: override.in_raid || false,
+                            isPlaceholder: override.is_placeholder || false,
                         });
                     } else {
                         // Player doesn't exist in original signups - create from override data only
-                        finalRosterPlayers.push({
+                        const playerData = {
                             userid: override.discord_user_id,
                             name: override.original_signup_name,
                             mainCharacterName: override.assigned_char_name,
@@ -9662,10 +9840,15 @@ app.get('/api/roster/:eventId', async (req, res) => {
                             altCharacters: [], // No alt data for manually added characters
                             status: 'confirmed', // Assume confirmed for manually added
                             isConfirmed: true, // Manually added players are confirmed
-                            inRaid: override.in_raid || false
-                        });
+                            inRaid: override.in_raid || false,
+                            isPlaceholder: override.is_placeholder || false,
+                        };
+                        
+                        finalRosterPlayers.push(playerData);
                     }
-                    playersInRosterOverrides.add(override.discord_user_id);
+                    if (override.discord_user_id) {
+                        playersInRosterOverrides.add(override.discord_user_id);
+                    }
                 }
             });
 
@@ -9903,6 +10086,184 @@ app.put('/api/roster/:eventId/player/:discordUserId/in-raid', requireRosterManag
         if (client) await client.query('ROLLBACK');
         console.error('Error updating player in-raid status:', error);
         res.status(500).json({ message: 'Internal Server Error' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Endpoint to add a placeholder player to roster
+app.post('/api/roster/:eventId/add-placeholder', requireRosterManager, async (req, res) => {
+    const { eventId } = req.params;
+    const { characterName, characterClass, targetPartyId, targetSlotId } = req.body;
+    
+    let client;
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+        
+        // Validate inputs
+        if (!characterName || !characterClass) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Character name and class are required' });
+        }
+        
+        if (!targetPartyId || !targetSlotId) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Target party and slot are required' });
+        }
+        
+        // Fork the roster first to preserve existing players
+        await forkRosterIfNeeded(eventId, client);
+        
+        // Check if slot is already occupied
+        const existingPlayer = await client.query(
+            'SELECT id FROM roster_overrides WHERE event_id = $1 AND party_id = $2 AND slot_id = $3',
+            [eventId, targetPartyId, targetSlotId]
+        );
+        
+        if (existingPlayer.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Slot is already occupied' });
+        }
+        
+        // Get class color
+        const canonicalClass = (characterClass || '').toLowerCase();
+        const classColors = {
+            'death knight': '196,30,59',
+            'druid': '255,125,10',
+            'hunter': '171,212,115',
+            'mage': '105,204,240',
+            'paladin': '245,140,186',
+            'priest': '255,255,255',
+            'rogue': '255,245,105',
+            'shaman': '0,112,222',
+            'warlock': '148,130,201',
+            'warrior': '199,156,110'
+        };
+        const playerColor = classColors[canonicalClass] || '128,128,128';
+        
+        // Insert placeholder
+        await client.query(`
+            INSERT INTO roster_overrides 
+            (event_id, discord_user_id, original_signup_name, assigned_char_name, assigned_char_class, 
+             player_color, party_id, slot_id, is_placeholder, in_raid) 
+            VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, TRUE, FALSE)
+        `, [eventId, characterName, characterName, characterClass, playerColor, targetPartyId, targetSlotId]);
+        
+        await client.query('COMMIT');
+        res.json({ 
+            success: true,
+            message: 'Placeholder added successfully'
+        });
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Error adding placeholder:', error);
+        res.status(500).json({ error: 'Internal server error', details: error.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Endpoint to remove a placeholder player from roster
+app.post('/api/roster/:eventId/remove-placeholder', requireRosterManager, async (req, res) => {
+    const { eventId } = req.params;
+    const { partyId, slotId } = req.body;
+    
+    let client;
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+        
+        // Delete the placeholder
+        const result = await client.query(
+            'DELETE FROM roster_overrides WHERE event_id = $1 AND party_id = $2 AND slot_id = $3 AND is_placeholder = TRUE',
+            [eventId, partyId, slotId]
+        );
+        
+        if (result.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Placeholder not found' });
+        }
+        
+        await client.query('COMMIT');
+        res.json({ 
+            success: true,
+            message: 'Placeholder removed successfully'
+        });
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Error removing placeholder:', error);
+        res.status(500).json({ error: 'Internal server error', details: error.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Endpoint to convert placeholder to real player (add Discord ID)
+app.post('/api/roster/:eventId/convert-placeholder', requireRosterManager, async (req, res) => {
+    const { eventId } = req.params;
+    const { partyId, slotId, discordId, characterName, characterClass } = req.body;
+    
+    let client;
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+        
+        // Validate inputs
+        if (!discordId) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Discord ID is required' });
+        }
+        
+        // Check if this Discord user is already in the roster for this event
+        const existingUser = await client.query(
+            'SELECT id FROM roster_overrides WHERE event_id = $1 AND discord_user_id = $2 AND is_placeholder = FALSE',
+            [eventId, discordId]
+        );
+        
+        if (existingUser.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'This player is already in the roster' });
+        }
+        
+        // Get the placeholder
+        const placeholder = await client.query(
+            'SELECT * FROM roster_overrides WHERE event_id = $1 AND party_id = $2 AND slot_id = $3 AND is_placeholder = TRUE',
+            [eventId, partyId, slotId]
+        );
+        
+        if (placeholder.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Placeholder not found' });
+        }
+        
+        // Add character to players table
+        await client.query(`
+            INSERT INTO players (discord_id, character_name, class) 
+            VALUES ($1, $2, $3)
+            ON CONFLICT DO NOTHING`,
+            [discordId, characterName, characterClass]
+        );
+        
+        // Update the placeholder with Discord ID
+        await client.query(`
+            UPDATE roster_overrides 
+            SET discord_user_id = $1,
+                assigned_char_name = $2,
+                assigned_char_class = $3,
+                is_placeholder = FALSE
+            WHERE event_id = $4 AND party_id = $5 AND slot_id = $6
+        `, [discordId, characterName, characterClass, eventId, partyId, slotId]);
+        
+        await client.query('COMMIT');
+        res.json({ 
+            success: true,
+            message: 'Placeholder converted to real player successfully'
+        });
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Error converting placeholder:', error);
+        res.status(500).json({ error: 'Internal server error', details: error.message });
     } finally {
         if (client) client.release();
     }
@@ -10476,6 +10837,7 @@ app.post('/api/admin/setup-database', async (req, res) => {
         // Create roster_overrides table
         await client.query(`
             CREATE TABLE IF NOT EXISTS roster_overrides (
+                id SERIAL PRIMARY KEY,
                 event_id VARCHAR(255),
                 discord_user_id VARCHAR(255),
                 original_signup_name VARCHAR(255),
@@ -10486,8 +10848,22 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 player_color VARCHAR(50),
                 party_id INTEGER,
                 slot_id INTEGER,
-                PRIMARY KEY (event_id, discord_user_id)
+                in_raid BOOLEAN DEFAULT FALSE,
+                is_placeholder BOOLEAN DEFAULT FALSE
             )
+        `);
+        
+        // Create unique constraints for roster_overrides
+        await client.query(`
+            CREATE UNIQUE INDEX IF NOT EXISTS roster_overrides_position_unique 
+            ON roster_overrides (event_id, party_id, slot_id) 
+            WHERE party_id IS NOT NULL AND slot_id IS NOT NULL
+        `);
+        
+        await client.query(`
+            CREATE UNIQUE INDEX IF NOT EXISTS roster_overrides_discord_unique 
+            ON roster_overrides (event_id, discord_user_id) 
+            WHERE discord_user_id IS NOT NULL AND is_placeholder = FALSE
         `);
         
         // Create player_confirmed_logs table for storing confirmed raid participants
@@ -19332,6 +19708,140 @@ app.post('/api/admin/channel-filters', async (req, res) => {
   }
 });
 
+// Helper function to fetch channel info from Discord API
+async function fetchDiscordChannelInfo(channelId) {
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken) {
+    throw new Error('DISCORD_BOT_TOKEN not configured');
+  }
+
+  try {
+    const response = await axios.get(`https://discord.com/api/v10/channels/${channelId}`, {
+      headers: {
+        'Authorization': `Bot ${botToken}`,
+        'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+      },
+      timeout: 10000
+    });
+
+    return {
+      id: response.data.id,
+      name: response.data.name,
+      type: response.data.type
+    };
+  } catch (error) {
+    if (error.response?.status === 404) {
+      console.log(`Channel ${channelId} not found (deleted or no access)`);
+      return null;
+    }
+    throw error;
+  }
+}
+
+// Admin: Fetch channel names from Discord API directly
+app.post('/api/admin/channel-names/fetch-from-discord', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+
+  const isMgmt = await hasManagementRoleById(req.user.id);
+  if (!isMgmt) {
+    return res.status(403).json({ success: false, message: 'Management role required' });
+  }
+
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken) {
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Discord bot token not configured. Please set DISCORD_BOT_TOKEN in environment variables.' 
+    });
+  }
+
+  let client;
+  try {
+    client = await pool.connect();
+
+    // Ensure table exists
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS channel_filters (
+        channel_id TEXT PRIMARY KEY,
+        channel_name TEXT,
+        is_visible BOOLEAN DEFAULT true,
+        is_nax BOOLEAN DEFAULT false,
+        webhook_url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Get all unique channel IDs from channel_filters table
+    const channelResult = await client.query(`
+      SELECT DISTINCT channel_id FROM channel_filters WHERE channel_id IS NOT NULL
+    `);
+
+    let updated = 0;
+    let failed = 0;
+    let notFound = 0;
+
+    console.log(`🔄 Fetching channel names from Discord API for ${channelResult.rows.length} channels...`);
+
+    // Fetch channel info from Discord for each channel ID
+    for (const row of channelResult.rows) {
+      const channelId = row.channel_id;
+      
+      try {
+        // Add a small delay to avoid rate limiting (50 requests per second limit)
+        await new Promise(resolve => setTimeout(resolve, 25));
+        
+        const channelInfo = await fetchDiscordChannelInfo(channelId);
+        
+        if (channelInfo && channelInfo.name) {
+          // Update the channel name in database
+          await client.query(`
+            UPDATE channel_filters 
+            SET channel_name = $1, updated_at = CURRENT_TIMESTAMP 
+            WHERE channel_id = $2
+          `, [channelInfo.name, channelId]);
+          
+          console.log(`✅ Updated channel ${channelId} -> "${channelInfo.name}"`);
+          updated++;
+        } else {
+          notFound++;
+          console.log(`⚠️ Channel ${channelId} not found or no access`);
+        }
+      } catch (error) {
+        failed++;
+        console.error(`❌ Failed to fetch channel ${channelId}:`, error.message);
+      }
+    }
+
+    // Clear all related caches so UI reflects updated names
+    try {
+      await client.query('DELETE FROM events_cache WHERE cache_key = ANY($1)', [
+        [EVENTS_CACHE_KEY, HISTORIC_EVENTS_CACHE_KEY, HISTORIC_24M_EVENTS_CACHE_KEY]
+      ]);
+    } catch (_) {}
+
+    console.log(`✨ Discord channel refresh complete: ${updated} updated, ${notFound} not found, ${failed} failed`);
+
+    res.json({ 
+      success: true, 
+      updated,
+      notFound,
+      failed,
+      total: channelResult.rows.length
+    });
+  } catch (error) {
+    console.error('Error fetching channel names from Discord:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching channel names from Discord API' 
+    });
+  } finally {
+    if (client) client.release();
+  }
+});
+
 // Admin: Refresh channel names by scanning stored events and upserting into channel_filters
 app.post('/api/admin/channel-names/refresh', async (req, res) => {
   if (!req.isAuthenticated()) {
@@ -22161,6 +22671,51 @@ app.get('/api/discord/voice-debug', (req, res) => {
     res.json({ ok: true, channels: all });
 });
 
+// Get recent Discord member join/leave events
+app.get('/api/discord/member-events', async (req, res) => {
+    try {
+        // Get from memory first (most recent)
+        const memoryEvents = getMemberEvents ? getMemberEvents() : [];
+        
+        // Also fetch from database for persistence across restarts
+        const limit = parseInt(req.query.limit) || 50;
+        const dbResult = await pool.query(`
+            SELECT event_type, discord_id, username, discriminator, tag, avatar_url, created_at
+            FROM discord_member_events
+            ORDER BY created_at DESC
+            LIMIT $1
+        `, [limit]);
+        
+        // Combine memory and DB, dedupe by discord_id + timestamp
+        const allEvents = [...memoryEvents];
+        const seen = new Set(memoryEvents.map(e => `${e.userId}-${e.timestamp}`));
+        
+        for (const row of dbResult.rows) {
+            const key = `${row.discord_id}-${row.created_at.toISOString()}`;
+            if (!seen.has(key)) {
+                allEvents.push({
+                    eventType: row.event_type,
+                    userId: row.discord_id,
+                    username: row.username,
+                    discriminator: row.discriminator,
+                    tag: row.tag,
+                    avatarUrl: row.avatar_url,
+                    timestamp: row.created_at.toISOString()
+                });
+            }
+        }
+        
+        // Sort by timestamp descending and limit
+        allEvents.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const results = allEvents.slice(0, limit);
+        
+        res.json({ ok: true, events: results });
+    } catch (error) {
+        console.error('❌ Error fetching member events:', error);
+        res.status(500).json({ ok: false, error: error.message });
+    }
+});
+
 // Resolve Discord usernames for a list of user IDs (guild-scoped)
 app.post('/api/discord/resolve-users', async (req, res) => {
     try {
@@ -22631,14 +23186,26 @@ if (attachChatIo) {
 if (createDiscordBridge) {
   (async () => {
     try {
-      const bridge = createDiscordBridge();
+      // Create callback to persist member events to database
+      const persistMemberEvent = async (event) => {
+        try {
+          await pool.query(`
+            INSERT INTO discord_member_events (event_type, discord_id, username, discriminator, tag, avatar_url)
+            VALUES ($1, $2, $3, $4, $5, $6)
+          `, [event.eventType, event.userId, event.username, event.discriminator, event.tag, event.avatarUrl]);
+        } catch (err) {
+          console.error('❌ Failed to insert member event to DB:', err?.message || err);
+        }
+      };
+      
+      const bridge = createDiscordBridge({ persistMemberEvent });
       if (bridge && typeof bridge.start === 'function') {
         await bridge.start();
         // Set up text chat handler if available
         if (setOutboundHandler && typeof bridge.sendToDiscord === 'function') {
           setOutboundHandler(async (payload) => { await bridge.sendToDiscord(payload); });
         }
-        console.log('✅ Discord bridge initialized');
+        console.log('✅ Discord bridge initialized with member event tracking');
         try { console.log('[bridge] status', typeof bridge.getStatus === 'function' ? bridge.getStatus() : null); } catch(_) {}
       }
     } catch (err) {

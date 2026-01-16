@@ -86,7 +86,11 @@
       .replace(/\s+/g, '-');
   }
 
-  function getSpecIconHtml(specName, characterClass, specEmote, specIconUrl) {
+  function getSpecIconHtml(specName, characterClass, specEmote, specIconUrl, isPlaceholder = false) {
+    // Placeholder players get white skull icon
+    if (isPlaceholder) {
+      return `<i class="fas fa-skull spec-icon placeholder-icon" style="color: #ffffff; font-size: 36px; filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.8));" title="Placeholder - No Discord ID"></i>`;
+    }
     if (specEmote) {
       return `<img src="https://cdn.discordapp.com/emojis/${specEmote}.png" class="spec-icon" alt="${specName || ''}" width="50" loading="lazy" decoding="async">`;
     }
@@ -769,7 +773,8 @@
         class_name: e.class_name || '',
         spec_name: e.spec_name || '',
         spec_emote: e.spec_emote || '',
-        spec_icon_url: e.spec_icon_url || ''
+        spec_icon_url: e.spec_icon_url || '',
+        is_placeholder: e.is_placeholder || false
       };
       function renderCharInfo(readOnly) {
         const rosterClsInit = getRosterClassByName(roster, current.character_name);
@@ -777,15 +782,15 @@
         charInfo.className = `character-info class-${classToCssName(canonicalInit)}`;
         if (readOnly) {
           charInfo.innerHTML = `
-            ${getSpecIconHtml(current.spec_name, current.class_name, current.spec_emote, current.spec_icon_url)}
+            ${getSpecIconHtml(current.spec_name, current.class_name, current.spec_emote, current.spec_icon_url, current.is_placeholder)}
             <span class="character-name" style="display:inline-flex; align-items:center;">${current.character_name}</span>
           `;
         } else {
           charInfo.innerHTML = `
-            ${getSpecIconHtml(current.spec_name, current.class_name, current.spec_emote, current.spec_icon_url)}
+            ${getSpecIconHtml(current.spec_name, current.class_name, current.spec_emote, current.spec_icon_url, current.is_placeholder)}
             <select class="assignment-editable" data-field="character_name" style="max-width:260px;">
               <option value="">Select player...</option>
-              ${roster.map(r => `<option value="${r.character_name}" data-class="${r.class_name || ''}" data-spec="${r.spec_name || ''}" data-emote="${r.spec_emote || ''}" data-specicon="${r.spec_icon_url || ''}" data-color="${r.class_color || ''}" ${r.character_name===current.character_name?'selected':''}>${r.character_name}</option>`).join('')}
+              ${roster.map(r => `<option value="${r.character_name}" data-class="${r.class_name || ''}" data-spec="${r.spec_name || ''}" data-emote="${r.spec_emote || ''}" data-specicon="${r.spec_icon_url || ''}" data-color="${r.class_color || ''}" data-placeholder="${r.is_placeholder || false}" ${r.character_name===current.character_name?'selected':''}>${r.character_name}</option>`).join('')}
             </select>
           `;
           const select = charInfo.querySelector('[data-field="character_name"]');
@@ -808,13 +813,14 @@
             current.spec_name = opt?.dataset.spec || '';
             current.spec_emote = opt?.dataset.emote || '';
             current.spec_icon_url = opt?.dataset.specicon || '';
+            current.is_placeholder = opt?.dataset.placeholder === 'true';
             const rosterCls = getRosterClassByName(roster, current.character_name);
             const canonical = canonicalizeClass(current.class_name, rosterCls);
             charInfo.className = `character-info class-${classToCssName(canonical)}`;
             // Update icon in-place
             charInfo.querySelector('.spec-icon')?.remove();
             const before = document.createElement('span');
-            before.innerHTML = getSpecIconHtml(current.spec_name, current.class_name, current.spec_emote, current.spec_icon_url);
+            before.innerHTML = getSpecIconHtml(current.spec_name, current.class_name, current.spec_emote, current.spec_icon_url, current.is_placeholder);
             charInfo.insertBefore(before.firstChild, charInfo.firstChild);
             const nameEl = charInfo.querySelector('.character-name');
             if (nameEl) nameEl.textContent = opt.value || '';
@@ -3257,7 +3263,8 @@
         spec_name: e.spec_name || '',
         spec_emote: e.spec_emote || '',
         spec_icon_url: e.spec_icon_url || '',
-        target_character_name: e.target_character_name || e.assignment || ''
+        target_character_name: e.target_character_name || e.assignment || '',
+        is_placeholder: e.is_placeholder || false
       };
       function renderCharInfo(readOnly) {
         const rosterClsInit = getRosterClassByName(roster, current.character_name);
@@ -3265,15 +3272,15 @@
         charInfo.className = `character-info class-${classToCssName(canonicalInit)}`;
         if (readOnly) {
           charInfo.innerHTML = `
-            ${getSpecIconHtml(current.spec_name, current.class_name, current.spec_emote, current.spec_icon_url)}
+            ${getSpecIconHtml(current.spec_name, current.class_name, current.spec_emote, current.spec_icon_url, current.is_placeholder)}
             <span class="character-name" style="display:inline-flex; align-items:center;">${current.character_name}</span>
           `;
         } else {
           charInfo.innerHTML = `
-            ${getSpecIconHtml(current.spec_name, current.class_name, current.spec_emote, current.spec_icon_url)}
+            ${getSpecIconHtml(current.spec_name, current.class_name, current.spec_emote, current.spec_icon_url, current.is_placeholder)}
             <select class="assignment-editable" data-field="character_name" style="max-width:260px;">
               <option value="">Select player...</option>
-              ${roster.map(r => `<option value="${r.character_name}" data-class="${r.class_name || ''}" data-spec="${r.spec_name || ''}" data-emote="${r.spec_emote || ''}" data-specicon="${r.spec_icon_url || ''}" data-color="${r.class_color || ''}" ${r.character_name===current.character_name?'selected':''}>${r.character_name}</option>`).join('')}
+              ${roster.map(r => `<option value="${r.character_name}" data-class="${r.class_name || ''}" data-spec="${r.spec_name || ''}" data-emote="${r.spec_emote || ''}" data-specicon="${r.spec_icon_url || ''}" data-color="${r.class_color || ''}" data-placeholder="${r.is_placeholder || false}" ${r.character_name===current.character_name?'selected':''}>${r.character_name}</option>`).join('')}
             </select>
           `;
           const select = charInfo.querySelector('[data-field="character_name"]');
@@ -3284,12 +3291,13 @@
             current.spec_name = opt?.dataset.spec || '';
             current.spec_emote = opt?.dataset.emote || '';
             current.spec_icon_url = opt?.dataset.specicon || '';
+            current.is_placeholder = opt?.dataset.placeholder === 'true';
             const rosterCls = getRosterClassByName(roster, current.character_name);
             const canonical = canonicalizeClass(current.class_name, rosterCls);
             charInfo.className = `character-info class-${classToCssName(canonical)}`;
             charInfo.querySelector('.spec-icon')?.remove();
             const before = document.createElement('span');
-            before.innerHTML = getSpecIconHtml(current.spec_name, current.class_name, current.spec_emote, current.spec_icon_url);
+            before.innerHTML = getSpecIconHtml(current.spec_name, current.class_name, current.spec_emote, current.spec_icon_url, current.is_placeholder);
             charInfo.insertBefore(before.firstChild, charInfo.firstChild);
             const nameEl = charInfo.querySelector('.character-name');
             if (nameEl) nameEl.textContent = opt.value || '';

@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raid Channels Management - Classic WoW Manager</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/admin-styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script>
+        // Initialize dark mode IMMEDIATELY (before page render) to prevent flash
+        (function() {
+            const stored = localStorage.getItem('admin-theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (stored === 'dark' || (!stored && prefersDark)) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
+    <style>
+        /* Minimal inline styles - most styling is in admin-styles.css */
+        body {
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- Admin Navigation Bar -->
+    <nav class="admin-nav-bar">
+        <div class="admin-nav-container">
+            <div class="admin-nav-content">
+                <!-- Logo & Brand -->
+                <div class="admin-nav-logo">
+                    <img src="/images/1p_logo.png" alt="1Principles" width="110" height="30">
+                    <span class="admin-nav-logo-text">Admin</span>
+                </div>
+
+                <!-- Navigation Links -->
+                <div class="admin-nav-links">
+                    <a href="/admin" class="admin-nav-link">
+                        <i class="fas fa-home"></i> Admin Home
+                    </a>
+                    <a href="/admin/raid-channels" class="admin-nav-link-active">
+                        <i class="fas fa-hashtag"></i> Raid Channels
+                    </a>
+                </div>
+
+                <!-- Actions -->
+                <div class="admin-nav-actions">
+                    <!-- Dark Mode Toggle -->
+                    <button id="dark-mode-toggle" class="dark-mode-toggle-nav" aria-label="Toggle dark mode">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    
+                    <!-- Exit Admin -->
+                    <a href="/" class="admin-nav-exit-btn">
+                        <i class="fas fa-sign-out-alt"></i> Exit Admin
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="admin-page-content bg-gray-50 dark:bg-gray-900">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <!-- Page Header -->
+            <div class="mb-8">
+                <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Management Panel</h1>
+                <p class="text-gray-600 dark:text-gray-400">Raid Channels Management</p>
+            </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="hidden">
+            <div class="admin-card text-center py-12">
+                <div class="loading-spinner mx-auto mb-4 text-blue-600"></div>
+                <p class="text-gray-600 dark:text-gray-400">Loading...</p>
+            </div>
+        </div>
+
+        <!-- Access Denied -->
+        <div id="access-denied" class="hidden">
+            <div class="admin-card bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800">
+                <div class="text-center py-8">
+                    <i class="fas fa-lock text-5xl text-red-600 dark:text-red-400 mb-4"></i>
+                    <h2 class="text-2xl font-bold text-red-900 dark:text-red-200 mb-2">Access Denied</h2>
+                    <p class="text-red-700 dark:text-red-300">You don't have permission to access this page. Please contact an administrator if you believe this is an error.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div id="content" class="hidden space-y-8">
+            <!-- Channel Filter Section -->
+            <section id="channel-filter-section" class="admin-card">
+                <div class="mb-8">
+                    <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-3">
+                        <i class="fas fa-filter text-blue-600 text-2xl"></i>
+                        Filter Raids by Discord Channel
+                    </h2>
+                    <p class="text-gray-600 dark:text-gray-400 text-base leading-relaxed">Control which Discord channels should show raids in the upcoming raids list and events page. Use "Fetch from Discord API" to get real channel names directly from Discord.</p>
+                </div>
+                
+                <div class="flex flex-wrap gap-3 mb-8">
+                    <button class="admin-btn-secondary" onclick="fetchChannelNamesFromDiscord()" id="fetch-discord-btn">
+                        <i class="fas fa-download"></i>
+                        Fetch from Discord API
+                    </button>
+                    <button class="admin-btn-secondary" onclick="refreshChannelNamesOnce()" id="refresh-channel-names-btn">
+                        <i class="fas fa-sync"></i>
+                        Refresh from Cached Events
+                    </button>
+                </div>
+                
+                <div class="info-box-blue mb-8">
+                    <h4 class="info-box-title">
+                        <i class="fas fa-info-circle text-blue-600"></i>
+                        Channel Name Source
+                    </h4>
+                    <div class="info-box-text space-y-2">
+                        <p><strong class="text-gray-900 dark:text-white">Fetch from Discord API</strong> - Gets real channel names directly from Discord (most reliable)</p>
+                        <p><strong class="text-gray-900 dark:text-white">Refresh from Cached Events</strong> - Extracts channel names from stored raid events (fallback method)</p>
+                    </div>
+                </div>
+                
+                <div id="channel-filters-content" class="min-h-[100px]">
+                    <!-- Channel filters will be loaded here -->
+                </div>
+                
+                <!-- Save Button (appears at bottom when changes are made) -->
+                <button class="admin-btn-success w-full mt-6 hidden" onclick="saveChannelFilters()" id="save-filters-btn">
+                    <i class="fas fa-save"></i>
+                    Save Changes
+                </button>
+            </section>
+
+            <!-- Channel Background Images Section -->
+            <section id="channel-backgrounds-section" class="admin-card">
+                <div class="mb-8">
+                    <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-3">
+                        <i class="fas fa-image text-purple-600 text-2xl"></i>
+                        Channel Background Images
+                    </h2>
+                    <p class="text-gray-600 dark:text-gray-400 text-base leading-relaxed">Upload and manage background images for each Discord channel. Images will be shown in color for upcoming raids and black & white for completed raids.</p>
+                </div>
+                
+                <!-- Background Blur Control -->
+                <div class="admin-card-inner mb-6">
+                    <h4 class="text-lg font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                        <i class="fas fa-adjust text-blue-600"></i>
+                        Background Blur Settings
+                    </h4>
+                    <p class="text-gray-600 dark:text-gray-400 mb-5 text-sm leading-relaxed">
+                        Apply a blur effect to all background images. This affects both upcoming and completed raids.
+                    </p>
+                    <div class="flex flex-wrap items-center gap-4">
+                        <label class="font-semibold text-gray-700 dark:text-gray-300 text-sm">Blur Intensity:</label>
+                        <input 
+                            type="range" 
+                            id="blur-slider" 
+                            min="0" 
+                            max="10" 
+                            step="0.5" 
+                            value="0"
+                            class="flex-1 max-w-xs h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                            oninput="updateBlurPreview(this.value)"
+                        >
+                        <input 
+                            type="number" 
+                            id="blur-input" 
+                            min="0" 
+                            max="10" 
+                            step="0.5" 
+                            value="0"
+                            class="admin-input w-24"
+                            oninput="updateBlurFromInput(this.value)"
+                        >
+                        <span class="text-gray-500 dark:text-gray-400 text-sm font-medium">px</span>
+                        <button 
+                            class="admin-btn-primary admin-btn-sm" 
+                            onclick="saveBlurSetting()" 
+                            id="save-blur-btn"
+                        >
+                            <i class="fas fa-save"></i>
+                            Save
+                        </button>
+                    </div>
+                    <div id="blur-status" class="mt-4 text-sm"></div>
+                </div>
+                
+                <!-- Background Darken Control -->
+                <div class="admin-card-inner mb-6">
+                    <h4 class="text-lg font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                        <i class="fas fa-moon text-purple-600"></i>
+                        Background Darken Settings
+                    </h4>
+                    <p class="text-gray-600 dark:text-gray-400 mb-5 text-sm leading-relaxed">
+                        Apply a darkening effect to all background images. Lower values make backgrounds darker. This affects both upcoming and completed raids.
+                    </p>
+                    <div class="flex flex-wrap items-center gap-4">
+                        <label class="font-semibold text-gray-700 dark:text-gray-300 text-sm">Brightness:</label>
+                        <input 
+                            type="range" 
+                            id="darken-slider" 
+                            min="50" 
+                            max="100" 
+                            step="5" 
+                            value="100"
+                            class="flex-1 max-w-xs h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                            oninput="updateDarkenPreview(this.value)"
+                        >
+                        <input 
+                            type="number" 
+                            id="darken-input" 
+                            min="50" 
+                            max="100" 
+                            step="5" 
+                            value="100"
+                            class="admin-input w-24"
+                            oninput="updateDarkenFromInput(this.value)"
+                        >
+                        <span class="text-gray-500 dark:text-gray-400 text-sm font-medium">%</span>
+                        <button 
+                            class="admin-btn-primary admin-btn-sm" 
+                            onclick="saveDarkenSetting()" 
+                            id="save-darken-btn"
+                        >
+                            <i class="fas fa-save"></i>
+                            Save
+                        </button>
+                    </div>
+                    <div id="darken-status" class="mt-4 text-sm"></div>
+                </div>
+                
+                <div id="channel-backgrounds-content" class="min-h-[100px]">
+                    <!-- Channel background settings will be loaded here -->
+                </div>
+            </section>
+        </div>
+    </div>
+    </div>
+
+    <script src="top-bar.js"></script>
+    <script src="admin-dark-mode.js"></script>
+    <script>
+        let currentUser = null;
+
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', async () => {
+            await initPage();
+        });
+
+        async function initPage() {
+            document.getElementById('loading').classList.remove('hidden');
+            try {
+                const response = await fetch('/user');
+                const user = await response.json();
+                
+                if (!user.loggedIn) {
+                    showAccessDenied();
+                    return;
+                }
+                
+                currentUser = user;
+                
+                // Check if user has Management role
+                if (!user.hasManagementRole) {
+                    showAccessDenied();
+                    return;
+                }
+                
+                // User has Management role, show content and auto-load data
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('content').classList.remove('hidden');
+                
+                // Auto-load both sections
+                await loadChannelFilters();
+                await loadChannelBackgrounds();
+                
+            } catch (error) {
+                console.error('Error initializing page:', error);
+                showAccessDenied();
+            }
+        }
+
+        function showAccessDenied() {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('access-denied').classList.remove('hidden');
+        }
+
+        // ==================== CHANNEL FILTERS SECTION ====================
+
+        async function loadChannelFilters() {
+            const contentDiv = document.getElementById('channel-filters-content');
+            const saveBtn = document.getElementById('save-filters-btn');
+            
+            contentDiv.innerHTML = '<div class="text-center py-8"><div class="loading-spinner mx-auto mb-3"></div><p class="text-gray-600 dark:text-gray-400">Loading channels...</p></div>';
+
+            try {
+                const response = await fetch('/api/admin/channel-filters');
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    renderChannelFilters(data.channels);
+                    try { if (data.diagnostics) { console.log('Channel diagnostics:', data.diagnostics); } } catch(_) {}
+                    saveBtn.classList.remove('hidden');
+                } else {
+                    contentDiv.innerHTML = `<div class="alert-error"><i class="fas fa-exclamation-circle mr-2"></i>Error loading channels: ${data.message}</div>`;
+                }
+            } catch (error) {
+                console.error('Error loading channel filters:', error);
+                contentDiv.innerHTML = '<div class="alert-error"><i class="fas fa-exclamation-circle mr-2"></i>Network error occurred while loading channels.</div>';
+            }
+        }
+
+        async function fetchChannelNamesFromDiscord() {
+            const btn = document.getElementById('fetch-discord-btn');
+            if (btn) { 
+                btn.disabled = true; 
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Fetching from Discord...'; 
+            }
+            try {
+                const r = await fetch('/api/admin/channel-names/fetch-from-discord', { method: 'POST' });
+                const j = await r.json();
+                if (r.ok && j && j.success) {
+                    const message = `Discord API Fetch Complete!\n\n` +
+                        `✅ Updated: ${j.updated || 0}\n` +
+                        `⚠️ Not Found: ${j.notFound || 0}\n` +
+                        `❌ Failed: ${j.failed || 0}\n` +
+                        `📊 Total: ${j.total || 0}`;
+                    alert(message);
+                    try { await loadChannelFilters(); } catch(_) { }
+                } else {
+                    alert(`Failed to fetch from Discord: ${j.message || 'Unknown error'}`);
+                }
+            } catch (error) {
+                console.error('Error fetching from Discord:', error);
+                alert('Network error occurred');
+            } finally { 
+                if (btn) { 
+                    btn.disabled = false; 
+                    btn.innerHTML = '<i class="fas fa-download"></i> Fetch from Discord API'; 
+                } 
+            }
+        }
+
+        async function refreshChannelNamesOnce(){
+            const btn = document.getElementById('refresh-channel-names-btn');
+            if (btn){ 
+                btn.disabled = true; 
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...'; 
+            }
+            try {
+                const r = await fetch('/api/admin/channel-names/refresh', { method: 'POST' });
+                const j = await r.json();
+                if (r.ok && j && j.success){
+                    alert(`Refreshed channel names from cached events.\n\nUpserts: ${j.upserts||0}`);
+                    try { await loadChannelFilters(); } catch(_){ }
+                } else {
+                    alert('Failed to refresh channel names');
+                }
+            } catch (_){ alert('Network error'); }
+            finally { 
+                if (btn){ 
+                    btn.disabled = false; 
+                    btn.innerHTML = '<i class="fas fa-sync"></i> Refresh from Cached Events'; 
+                } 
+            }
+        }
+
+        function renderChannelFilters(channels) {
+            const contentDiv = document.getElementById('channel-filters-content');
+            
+            if (!channels || channels.length === 0) {
+                contentDiv.innerHTML = `
+                    <div class="alert-warning">
+                        <h4 class="font-semibold mb-2"><i class="fas fa-inbox mr-2"></i>No Channels Found</h4>
+                        <p class="mb-0">No raids with Discord channels were found in upcoming or completed events. Please ensure there are events in the system.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let filtersHTML = `
+                <div class="info-box-blue mb-8">
+                    <h4 class="info-box-title">
+                        <i class="fas fa-cog text-blue-600"></i>
+                        Channel Filter Settings
+                    </h4>
+                    <div class="info-box-text">
+                        <p>Toggle channels below to show or hide raids from those channels. Hidden channels will not appear in the upcoming raids dropdown, events page, or completed raids panel.</p>
+                        <p class="mt-2 font-semibold text-blue-900 dark:text-blue-200">Note: Changes affect all users globally.</p>
+                    </div>
+                </div>
+                
+                <div class="space-y-3">
+            `;
+
+            channels.forEach(channel => {
+                const isVisible = channel.is_visible !== false;
+                const isNax = !!channel.is_nax;
+                const webhookUrl = channel.webhook_url || '';
+                const toggleClass = isVisible ? 'channel-toggle-on' : 'channel-toggle-off';
+                const statusText = isVisible ? 'Shown' : 'Hidden';
+                const statusColor = isVisible ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
+
+                filtersHTML += `
+                    <div class="admin-card-sm channel-filter-item border-l-4 ${isVisible ? 'border-green-500' : 'border-gray-400'} hover:shadow-lg transition-all" data-channel-id="${channel.channel_id}">
+                        <!-- Channel Header -->
+                        <div class="flex items-start justify-between mb-5 pb-4 border-b border-gray-200 dark:border-gray-700">
+                            <div class="flex-1 min-w-0">
+                                <div class="font-bold text-xl text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                                    <i class="fas fa-hashtag text-blue-600"></i>
+                                    <span class="truncate">${channel.channel_name || `Channel ${channel.channel_id}`}</span>
+                                </div>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 dark:bg-gray-700 rounded-md text-xs font-mono font-medium text-gray-700 dark:text-gray-300">
+                                        <i class="fas fa-fingerprint text-gray-500"></i>
+                                        ${channel.channel_id}
+                                    </span>
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-md text-xs font-semibold">
+                                        <i class="fas fa-calendar-check"></i>
+                                        ${channel.raid_count || 0} Total
+                                    </span>
+                                    ${channel.upcoming_count ? `
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-md text-xs font-semibold">
+                                        <i class="fas fa-arrow-up"></i>
+                                        ${channel.upcoming_count} Upcoming
+                                    </span>` : ''}
+                                    ${channel.historic_count ? `
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md text-xs font-semibold">
+                                        <i class="fas fa-history"></i>
+                                        ${channel.historic_count} Completed
+                                    </span>` : ''}
+                                </div>
+                            </div>
+                            
+                            <!-- Visibility Toggle -->
+                            <div class="flex flex-col items-center gap-2 ml-4">
+                                <span class="${statusColor} font-bold text-xs uppercase tracking-wider">
+                                    ${statusText}
+                                </span>
+                                <div class="channel-toggle ${toggleClass}" data-channel-id="${channel.channel_id}" onclick="toggleChannel('${channel.channel_id}')">
+                                    <div class="toggle-slider"></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Channel Settings Grid -->
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                            <!-- Raid Type -->
+                            <div class="flex flex-col gap-3">
+                                <label class="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide flex items-center gap-2">
+                                    <i class="fas fa-tag text-purple-600"></i>
+                                    Raid Type
+                                </label>
+                                <div class="flex gap-2">
+                                    <label class="flex-1 flex items-center justify-center gap-2 text-sm font-semibold cursor-pointer px-4 py-3 rounded-lg border-2 transition-all ${isNax ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300' : 'border-gray-300 dark:border-gray-600 hover:border-purple-300 dark:hover:border-purple-600 text-gray-600 dark:text-gray-400'}">
+                                        <input type="radio" name="nax-${channel.channel_id}" class="nax-toggle w-4 h-4 text-purple-600 focus:ring-purple-500" data-channel-id="${channel.channel_id}" value="true" ${isNax ? 'checked' : ''} onchange="markFilterChanged()">
+                                        <span>Is NAX</span>
+                                    </label>
+                                    <label class="flex-1 flex items-center justify-center gap-2 text-sm font-semibold cursor-pointer px-4 py-3 rounded-lg border-2 transition-all ${!isNax ? 'border-gray-500 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300' : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 text-gray-600 dark:text-gray-400'}">
+                                        <input type="radio" name="nax-${channel.channel_id}" class="nax-toggle w-4 h-4 text-gray-600 focus:ring-gray-500" data-channel-id="${channel.channel_id}" value="false" ${!isNax ? 'checked' : ''} onchange="markFilterChanged()">
+                                        <span>Is not NAX</span>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <!-- Webhook URL -->
+                            <div class="flex flex-col gap-3">
+                                <label class="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide flex items-center gap-2">
+                                    <i class="fas fa-webhook text-green-600"></i>
+                                    Webhook URL
+                                </label>
+                                <input 
+                                    type="url" 
+                                    class="webhook-input admin-input-sm font-mono text-xs" 
+                                    data-channel-id="${channel.channel_id}" 
+                                    placeholder="https://discord.com/api/webhooks/..." 
+                                    value="${webhookUrl.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" 
+                                    onchange="markFilterChanged()" 
+                                />
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            filtersHTML += `</div>`;
+            contentDiv.innerHTML = filtersHTML;
+        }
+
+        function toggleChannel(channelId) {
+            const toggle = document.querySelector(`.channel-toggle[data-channel-id="${channelId}"]`);
+            const statusSpan = toggle.closest('.channel-filter-item').querySelector('span[class*="text-"]');
+            
+            if (toggle.classList.contains('channel-toggle-on')) {
+                toggle.classList.remove('channel-toggle-on');
+                toggle.classList.add('channel-toggle-off');
+                statusSpan.textContent = 'Hidden';
+                statusSpan.className = 'text-red-600 dark:text-red-400 font-medium min-w-[60px]';
+            } else {
+                toggle.classList.remove('channel-toggle-off');
+                toggle.classList.add('channel-toggle-on');
+                statusSpan.textContent = 'Shown';
+                statusSpan.className = 'text-green-600 dark:text-green-400 font-medium min-w-[60px]';
+            }
+            
+            document.getElementById('save-filters-btn').classList.remove('hidden');
+        }
+
+        function markFilterChanged() {
+            document.getElementById('save-filters-btn').classList.remove('hidden');
+        }
+
+        async function saveChannelFilters() {
+            const saveBtn = document.getElementById('save-filters-btn');
+            const toggles = document.querySelectorAll('.channel-toggle');
+            
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+            const filterSettings = [];
+            toggles.forEach(toggle => {
+                const channelId = toggle.dataset.channelId;
+                const isVisible = toggle.classList.contains('channel-toggle-on');
+                const naxRadio = document.querySelector(`.nax-toggle[data-channel-id="${channelId}"][value="true"]:checked`);
+                const isNax = !!naxRadio;
+                const webhookInput = document.querySelector(`.webhook-input[data-channel-id="${channelId}"]`);
+                const webhookUrl = webhookInput ? webhookInput.value.trim() : '';
+                filterSettings.push({
+                    channel_id: channelId,
+                    is_visible: isVisible,
+                    is_nax: isNax,
+                    webhook_url: webhookUrl || null
+                });
+            });
+
+            try {
+                const response = await fetch('/api/admin/channel-filters', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filters: filterSettings })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    const contentDiv = document.getElementById('channel-filters-content');
+                    const successMsg = document.createElement('div');
+                    successMsg.className = 'alert-success';
+                    successMsg.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Channel filter settings saved successfully! The changes are now active.';
+                    contentDiv.insertBefore(successMsg, contentDiv.firstChild);
+
+                    setTimeout(() => {
+                        if (successMsg.parentNode) {
+                            successMsg.parentNode.removeChild(successMsg);
+                        }
+                    }, 3000);
+                } else {
+                    alert(`Error saving settings: ${data.message}`);
+                }
+            } catch (error) {
+                console.error('Error saving channel filters:', error);
+                alert('Network error occurred while saving settings.');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
+            }
+        }
+
+        // ==================== CHANNEL BACKGROUNDS SECTION ====================
+
+        async function loadChannelBackgrounds() {
+            const contentDiv = document.getElementById('channel-backgrounds-content');
+            
+            contentDiv.innerHTML = '<div class="text-center py-8"><div class="loading-spinner mx-auto mb-3"></div><p class="text-gray-600 dark:text-gray-400">Loading channel backgrounds...</p></div>';
+
+            try {
+                const channelsResponse = await fetch('/api/admin/channel-filters');
+                const channelsData = await channelsResponse.json();
+                
+                const backgroundsResponse = await fetch('/api/admin/channel-backgrounds');
+                const backgroundsData = await backgroundsResponse.json();
+                
+                await loadBlurSetting();
+                await loadDarkenSetting();
+                
+                if (channelsData.success && backgroundsData.success) {
+                    renderChannelBackgrounds(channelsData.channels, backgroundsData.backgrounds);
+                } else {
+                    contentDiv.innerHTML = `<div class="alert-error"><i class="fas fa-exclamation-circle mr-2"></i>Error loading data: ${channelsData.message || backgroundsData.message}</div>`;
+                }
+            } catch (error) {
+                console.error('Error loading channel backgrounds:', error);
+                contentDiv.innerHTML = '<div class="alert-error"><i class="fas fa-exclamation-circle mr-2"></i>Network error occurred while loading channel backgrounds.</div>';
+            }
+        }
+
+        async function loadBlurSetting() {
+            try {
+                const response = await fetch('/api/ui/background-blur');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const blurValue = data.blurValue || 0;
+                    document.getElementById('blur-slider').value = blurValue;
+                    document.getElementById('blur-input').value = blurValue;
+                    updateBlurPreview(blurValue);
+                }
+            } catch (error) {
+                console.error('Error loading blur setting:', error);
+            }
+        }
+
+        function updateBlurPreview(value) {
+            const numValue = parseFloat(value);
+            document.getElementById('blur-slider').value = numValue;
+            document.getElementById('blur-input').value = numValue;
+            
+            const previews = document.querySelectorAll('[style*="background-image"]');
+            previews.forEach(preview => {
+                if (preview.style.backgroundImage && preview.style.backgroundImage.includes('url(')) {
+                    if (numValue > 0) {
+                        preview.style.filter = `blur(${numValue}px)`;
+                    } else {
+                        preview.style.filter = '';
+                    }
+                }
+            });
+        }
+
+        function updateBlurFromInput(value) {
+            updateBlurPreview(value);
+        }
+
+        async function saveBlurSetting() {
+            const blurValue = parseFloat(document.getElementById('blur-input').value);
+            const saveBtn = document.getElementById('save-blur-btn');
+            const statusDiv = document.getElementById('blur-status');
+            
+            if (isNaN(blurValue) || blurValue < 0 || blurValue > 10) {
+                statusDiv.innerHTML = '<span class="text-red-600 dark:text-red-400"><i class="fas fa-times-circle mr-1"></i>Blur value must be between 0 and 10</span>';
+                return;
+            }
+
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+            statusDiv.innerHTML = '<span class="text-gray-600 dark:text-gray-400">Saving blur setting...</span>';
+
+            try {
+                const response = await fetch('/api/admin/background-blur', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ blurValue })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    statusDiv.innerHTML = '<span class="text-green-600 dark:text-green-400"><i class="fas fa-check-circle mr-1"></i>Blur setting saved successfully! Refresh pages to see the effect.</span>';
+                    setTimeout(() => { statusDiv.innerHTML = ''; }, 3000);
+                } else {
+                    statusDiv.innerHTML = `<span class="text-red-600 dark:text-red-400"><i class="fas fa-times-circle mr-1"></i>Error: ${data.message}</span>`;
+                }
+            } catch (error) {
+                console.error('Error saving blur setting:', error);
+                statusDiv.innerHTML = '<span class="text-red-600 dark:text-red-400"><i class="fas fa-times-circle mr-1"></i>Network error occurred while saving blur setting.</span>';
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+            }
+        }
+
+        async function loadDarkenSetting() {
+            try {
+                const response = await fetch('/api/ui/background-darken');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const darkenValue = data.darkenValue || 100;
+                    document.getElementById('darken-slider').value = darkenValue;
+                    document.getElementById('darken-input').value = darkenValue;
+                    updateDarkenPreview(darkenValue);
+                }
+            } catch (error) {
+                console.error('Error loading darken setting:', error);
+            }
+        }
+
+        function updateDarkenPreview(value) {
+            const numValue = parseFloat(value);
+            document.getElementById('darken-slider').value = numValue;
+            document.getElementById('darken-input').value = numValue;
+            
+            const previews = document.querySelectorAll('[style*="background-image"]');
+            previews.forEach(preview => {
+                if (preview.style.backgroundImage && preview.style.backgroundImage.includes('url(')) {
+                    if (numValue < 100) {
+                        const existingFilter = preview.style.filter || '';
+                        const filterWithoutBrightness = existingFilter.replace(/brightness\([^)]*\)\s*/g, '').trim();
+                        const newFilter = filterWithoutBrightness ? 
+                            `${filterWithoutBrightness} brightness(${numValue}%)` : 
+                            `brightness(${numValue}%)`;
+                        preview.style.filter = newFilter;
+                    } else {
+                        const existingFilter = preview.style.filter || '';
+                        const filterWithoutBrightness = existingFilter.replace(/brightness\([^)]*\)\s*/g, '').trim();
+                        preview.style.filter = filterWithoutBrightness;
+                    }
+                }
+            });
+        }
+
+        function updateDarkenFromInput(value) {
+            updateDarkenPreview(value);
+        }
+
+        async function saveDarkenSetting() {
+            const darkenValue = parseFloat(document.getElementById('darken-input').value);
+            const saveBtn = document.getElementById('save-darken-btn');
+            const statusDiv = document.getElementById('darken-status');
+            
+            if (isNaN(darkenValue) || darkenValue < 50 || darkenValue > 100) {
+                statusDiv.innerHTML = '<span class="text-red-600 dark:text-red-400"><i class="fas fa-times-circle mr-1"></i>Darken value must be between 50 and 100</span>';
+                return;
+            }
+
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+            statusDiv.innerHTML = '<span class="text-gray-600 dark:text-gray-400">Saving darken setting...</span>';
+
+            try {
+                const response = await fetch('/api/admin/background-darken', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ darkenValue })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    statusDiv.innerHTML = '<span class="text-green-600 dark:text-green-400"><i class="fas fa-check-circle mr-1"></i>Darken setting saved successfully! Refresh pages to see the effect.</span>';
+                    setTimeout(() => { statusDiv.innerHTML = ''; }, 3000);
+                } else {
+                    statusDiv.innerHTML = `<span class="text-red-600 dark:text-red-400"><i class="fas fa-times-circle mr-1"></i>Error: ${data.message}</span>`;
+                }
+            } catch (error) {
+                console.error('Error saving darken setting:', error);
+                statusDiv.innerHTML = '<span class="text-red-600 dark:text-red-400"><i class="fas fa-times-circle mr-1"></i>Network error occurred while saving darken setting.</span>';
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+            }
+        }
+
+        function renderChannelBackgrounds(channels, backgrounds) {
+            const contentDiv = document.getElementById('channel-backgrounds-content');
+            
+            if (!channels || channels.length === 0) {
+                contentDiv.innerHTML = `
+                    <div class="alert-warning">
+                        <h4 class="font-semibold mb-2"><i class="fas fa-inbox mr-2"></i>No Channels Found</h4>
+                        <p class="mb-0">No channels found. Please load some raids first to detect channels.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const backgroundsMap = {};
+            backgrounds.forEach(bg => {
+                backgroundsMap[bg.channel_id] = bg;
+            });
+
+            let backgroundsHTML = `
+                <div class="info-box-purple mb-8">
+                    <h4 class="info-box-title">
+                        <i class="fas fa-images text-purple-600"></i>
+                        Channel Background Settings
+                    </h4>
+                    <div class="info-box-text">
+                        <p>Upload background images for each Discord channel. Images will be shown in full color for upcoming raids and in black & white for completed raids.</p>
+                        <p class="mt-2 font-semibold text-purple-900 dark:text-purple-200">Supported formats: JPG, PNG, GIF, WebP (max 10MB)</p>
+                    </div>
+                </div>
+                
+                <div class="space-y-5">
+            `;
+
+            channels.forEach(channel => {
+                const channelName = channel.channel_name || `Channel ${channel.channel_id}`;
+                const existingBackground = backgroundsMap[channel.channel_id];
+                
+                backgroundsHTML += `
+                    <div class="admin-card-sm channel-background-item" data-channel-id="${channel.channel_id}">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h4 class="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2 mb-2">
+                                    <i class="fas fa-hashtag text-purple-600"></i>
+                                    ${channelName}
+                                </h4>
+                                <span class="inline-flex items-center gap-1.5 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
+                                    <i class="fas fa-fingerprint"></i>
+                                    ${channel.channel_id}
+                                </span>
+                            </div>
+                            ${existingBackground ? `
+                                <button class="admin-btn-danger" onclick="deleteChannelBackground('${channel.channel_id}', '${channelName}')">
+                                    <i class="fas fa-trash"></i>
+                                    Delete
+                                </button>
+                            ` : ''}
+                        </div>
+                        
+                        ${existingBackground ? `
+                            <div class="mb-6 p-4 bg-gray-50 dark:bg-gray-750 rounded-lg">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div>
+                                        <div class="flex items-center gap-2 mb-3">
+                                            <i class="fas fa-palette text-green-600"></i>
+                                            <h5 class="text-sm font-bold text-gray-900 dark:text-white">Color (Upcoming Raids)</h5>
+                                        </div>
+                                        <div class="w-full h-40 rounded-lg border-2 border-gray-300 dark:border-gray-600 bg-cover bg-center shadow-md" style="background-image: url('${existingBackground.background_image_url}');"></div>
+                                    </div>
+                                    <div>
+                                        <div class="flex items-center gap-2 mb-3">
+                                            <i class="fas fa-adjust text-gray-600"></i>
+                                            <h5 class="text-sm font-bold text-gray-900 dark:text-white">B&W (Completed Raids)</h5>
+                                        </div>
+                                        <div class="w-full h-40 rounded-lg border-2 border-gray-300 dark:border-gray-600 bg-cover bg-center grayscale shadow-md" style="background-image: url('${existingBackground.background_image_url}');"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        ` : ''}
+                        
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-5">
+                            <div class="flex items-center gap-2 mb-4">
+                                <i class="fas fa-upload text-blue-600"></i>
+                                <h5 class="text-sm font-bold text-gray-900 dark:text-white">${existingBackground ? 'Replace' : 'Upload'} Background Image</h5>
+                            </div>
+                            <div class="flex flex-wrap gap-3 items-end">
+                                <div class="flex-1 min-w-[250px]">
+                                    <input 
+                                        type="file" 
+                                        id="file-${channel.channel_id}"
+                                        accept="image/*"
+                                        class="admin-input"
+                                        onchange="previewBackgroundImage('${channel.channel_id}')"
+                                    >
+                                    <small class="text-gray-500 dark:text-gray-400 text-xs mt-2 block">Max 10MB • JPG, PNG, GIF, WebP</small>
+                                </div>
+                                <button 
+                                    type="button" 
+                                    class="admin-btn-primary" 
+                                    onclick="uploadChannelBackground('${channel.channel_id}', '${channelName}')"
+                                    id="upload-btn-${channel.channel_id}"
+                                >
+                                    <i class="fas fa-cloud-upload-alt"></i>
+                                    Upload
+                                </button>
+                            </div>
+                            
+                            <div id="preview-${channel.channel_id}" class="mt-6 hidden p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <i class="fas fa-eye text-blue-600"></i>
+                                    <h5 class="text-sm font-bold text-gray-900 dark:text-white">Preview</h5>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Color (Upcoming)</p>
+                                        <div id="preview-color-${channel.channel_id}" class="w-full h-32 rounded-lg border-2 border-gray-300 dark:border-gray-600 bg-cover bg-center shadow"></div>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">B&W (Completed)</p>
+                                        <div id="preview-bw-${channel.channel_id}" class="w-full h-32 rounded-lg border-2 border-gray-300 dark:border-gray-600 bg-cover bg-center grayscale shadow"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            backgroundsHTML += `</div>`;
+            contentDiv.innerHTML = backgroundsHTML;
+        }
+
+        function previewBackgroundImage(channelId) {
+            const fileInput = document.getElementById(`file-${channelId}`);
+            const previewDiv = document.getElementById(`preview-${channelId}`);
+            const previewColor = document.getElementById(`preview-color-${channelId}`);
+            const previewBW = document.getElementById(`preview-bw-${channelId}`);
+            
+            if (fileInput.files && fileInput.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const imageUrl = e.target.result;
+                    previewColor.style.backgroundImage = `url("${imageUrl}")`;
+                    previewBW.style.backgroundImage = `url("${imageUrl}")`;
+                    previewDiv.classList.remove('hidden');
+                };
+                reader.readAsDataURL(fileInput.files[0]);
+            } else {
+                previewDiv.classList.add('hidden');
+            }
+        }
+
+        async function uploadChannelBackground(channelId, channelName) {
+            const fileInput = document.getElementById(`file-${channelId}`);
+            const uploadBtn = document.getElementById(`upload-btn-${channelId}`);
+            
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('Please select an image file first.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('backgroundImage', fileInput.files[0]);
+            formData.append('channelId', channelId);
+            formData.append('channelName', channelName);
+
+            uploadBtn.disabled = true;
+            uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+
+            try {
+                const response = await fetch('/api/admin/channel-backgrounds/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    const channelItem = document.querySelector(`[data-channel-id="${channelId}"]`);
+                    const successMsg = document.createElement('div');
+                    successMsg.className = 'alert-success mt-4';
+                    successMsg.innerHTML = '<i class="fas fa-check mr-2"></i>Background uploaded successfully! Refresh the page to see updated interface.';
+                    channelItem.appendChild(successMsg);
+
+                    fileInput.value = '';
+                    document.getElementById(`preview-${channelId}`).classList.add('hidden');
+
+                    setTimeout(() => {
+                        if (successMsg.parentNode) {
+                            successMsg.parentNode.removeChild(successMsg);
+                        }
+                    }, 3000);
+                } else {
+                    alert(`Error uploading background: ${data.message}`);
+                }
+            } catch (error) {
+                console.error('Error uploading background:', error);
+                alert('Network error occurred while uploading background.');
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = '<i class="fas fa-upload"></i> Upload';
+            }
+        }
+
+        async function deleteChannelBackground(channelId, channelName) {
+            if (!confirm(`Are you sure you want to delete the background image for ${channelName}?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/channel-backgrounds/${channelId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    loadChannelBackgrounds();
+                } else {
+                    alert(`Error deleting background: ${data.message}`);
+                }
+            } catch (error) {
+                console.error('Error deleting background:', error);
+                alert('Network error occurred while deleting background.');
+            }
+        }
+    </script>
+</body>
+</html>
