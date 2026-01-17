@@ -2700,6 +2700,176 @@ app.post('/api/discord/prompt-goldcuts', requireRosterManager, async (req, res) 
   }
 });
 
+// Send assignment DM to a single player
+app.post('/api/discord/send-assignment/:eventId/:discordUserId', requireRosterManager, async (req, res) => {
+  const { eventId, discordUserId } = req.params;
+  const TEST_USER_ID = '492023474437619732'; // Kim's Discord ID for testing
+  
+  try {
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    if (!botToken) {
+      return res.status(500).json({ ok: false, error: 'DISCORD_BOT_TOKEN not set' });
+    }
+
+    // 1) Fetch event details from cache
+    const eventResult = await pool.query(
+      'SELECT event_data FROM raid_helper_events_cache WHERE event_id = $1',
+      [eventId]
+    );
+    
+    if (!eventResult.rows.length) {
+      return res.status(404).json({ ok: false, error: 'Event not found' });
+    }
+
+    const eventData = eventResult.rows[0].event_data;
+    const eventTitle = eventData.title || 'Tonight\'s raid';
+    const invitesBy = eventData.invitedBy || 'the raid leader';
+
+    // Fetch raidleader name from event_metadata
+    let raidleaderName = null;
+    try {
+      const raidleaderResult = await pool.query(
+        'SELECT raidleader_name FROM event_metadata WHERE event_id = $1',
+        [eventId]
+      );
+      if (raidleaderResult.rows.length > 0) {
+        raidleaderName = raidleaderResult.rows[0].raidleader_name;
+      }
+    } catch (err) {
+      console.log('Could not fetch raidleader name:', err.message);
+    }
+
+    // Use raidleader name if available, otherwise fall back to invitesBy
+    const contactPerson = raidleaderName && raidleaderName.trim() ? raidleaderName : invitesBy;
+
+    // 2) Fetch player info from roster
+    const rosterResult = await pool.query(
+      `SELECT 
+        assigned_char_name AS character_name,
+        assigned_char_class AS class_name,
+        party_id
+       FROM roster_overrides 
+       WHERE event_id = $1 
+         AND discord_user_id = $2
+         AND assigned_char_name IS NOT NULL
+         AND in_raid = true
+       LIMIT 1`,
+      [eventId, discordUserId]
+    );
+
+    if (!rosterResult.rows.length) {
+      return res.status(404).json({ ok: false, error: 'Player not found in roster' });
+    }
+
+    const player = rosterResult.rows[0];
+
+    // 3) Fetch assignments for this player
+    const charKey = String(player.character_name || '').toLowerCase();
+    const assignmentsResult = await pool.query(
+      `SELECT 
+        dungeon,
+        wing,
+        boss
+       FROM raid_assignment_entries 
+       WHERE event_id = $1 
+         AND LOWER(character_name) = $2`,
+      [eventId, charKey]
+    );
+
+    const numAssignments = assignmentsResult.rows.length;
+    
+    // For testing, send all DMs to Kim
+    const targetUserId = TEST_USER_ID;
+    
+    // Build the DM message
+    const assignmentsUrl = `https://www.1principles.net/event/${encodeURIComponent(eventId)}/assignments/myassignments`;
+    
+    const embed = {
+      title: `Assignment Details for ${eventTitle}`,
+      color: 0x3B82F6, // Blue
+      fields: [
+        {
+          name: '\u200b',
+          value: '\u200b',
+          inline: false
+        },
+        {
+          name: '🎮 Your Character',
+          value: `In tonight's raid, you will be playing **${player.character_name}**, **${player.class_name}** in **Group ${player.party_id || '?'}**.\n\nIf this is not the correct character name or class that you have joined the raid with, please inform **${contactPerson}** right away.`,
+          inline: false
+        },
+        {
+          name: '\u200b',
+          value: '\u200b',
+          inline: false
+        },
+        {
+          name: '🔗 Assignment Page',
+          value: `Click the link and go confirm your ${numAssignments} assignment${numAssignments !== 1 ? 's' : ''} in tonights raid.\n\n[View and confirm your assignments to get additional bonus gold!](${assignmentsUrl})`,
+          inline: false
+        },
+        {
+          name: '\u200b',
+          value: 'If you accept and complete all your assignments, you will be awarded 10 bonus points.',
+          inline: false
+        }
+      ],
+      image: {
+        url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1768679591/2026-01-17_20h52_09_mqobmy.gif'
+      },
+      thumbnail: { 
+        url: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1758251886/assignments_icon_dhrmkz.png' 
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    // 1) Create DM channel
+    const dmResponse = await discordFetch('https://discord.com/api/v10/users/@me/channels', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bot ${botToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ recipient_id: targetUserId })
+    }, { maxRetries: 3, timeoutMs: 10000 });
+
+    if (!dmResponse.ok) {
+      const errText = await dmResponse.text();
+      return res.status(dmResponse.status).json({ ok: false, step: 'create_dm', error: errText });
+    }
+
+    const dmJson = await dmResponse.json();
+    const dmChannelId = dmJson && dmJson.id;
+    if (!dmChannelId) {
+      return res.status(500).json({ ok: false, error: 'Failed to create DM channel' });
+    }
+
+    // 2) Send message
+    const msgResponse = await discordFetch(`https://discord.com/api/v10/channels/${dmChannelId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bot ${botToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ 
+        content: `**Assignment notification for ${player.character_name}**`,
+        embeds: [embed] 
+      })
+    }, { maxRetries: 3, timeoutMs: 10000 });
+
+    if (!msgResponse.ok) {
+      const errText = await msgResponse.text();
+      return res.status(msgResponse.status).json({ ok: false, step: 'send_message', error: errText });
+    }
+
+    return res.json({ ok: true });
+
+  } catch (err) {
+    console.error('Error in send-assignment endpoint:', err);
+    return res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err) });
+  }
+});
+
 // Prompt a specific user via DM to confirm (test version sends a simple message)
 app.post('/api/discord/prompt-confirmation', requireRosterManager, async (req, res) => {
   try {
@@ -12905,6 +13075,110 @@ app.get('/api/void-damage/:eventId', async (req, res) => {
     }
 });
 
+// Confirmed assignments endpoint - returns players who accepted all their assignments
+app.get('/api/confirmed-assignments/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // First, get all assignment entries for this event
+        const assignmentsResult = await client.query(`
+            SELECT character_name, class_name, dungeon, wing, boss
+            FROM raid_assignment_entries 
+            WHERE event_id = $1 
+              AND character_name IS NOT NULL 
+              AND character_name != ''
+            ORDER BY character_name, dungeon, wing, boss
+        `, [eventId]);
+        
+        // Get all accepts for this event
+        const acceptsResult = await client.query(`
+            SELECT character_name, dungeon, wing, boss, accept_status
+            FROM raid_assignment_entry_accepts
+            WHERE event_id = $1
+              AND accept_status = 'accept'
+        `, [eventId]);
+        
+        // Group assignments by character (lowercase for case-insensitive comparison)
+        const assignmentsByChar = {};
+        assignmentsResult.rows.forEach(row => {
+            const charKey = String(row.character_name || '').toLowerCase();
+            if (!assignmentsByChar[charKey]) {
+                assignmentsByChar[charKey] = {
+                    character_name: row.character_name, // Keep original casing
+                    class_name: row.class_name,
+                    assignments: []
+                };
+            }
+            assignmentsByChar[charKey].assignments.push({
+                dungeon: row.dungeon,
+                wing: row.wing || '',
+                boss: row.boss
+            });
+        });
+        
+        // Group accepts by character
+        const acceptsByChar = {};
+        acceptsResult.rows.forEach(row => {
+            const charKey = String(row.character_name || '').toLowerCase();
+            if (!acceptsByChar[charKey]) {
+                acceptsByChar[charKey] = [];
+            }
+            acceptsByChar[charKey].push({
+                dungeon: row.dungeon,
+                wing: row.wing || '',
+                boss: row.boss
+            });
+        });
+        
+        // Find characters who accepted ALL their assignments
+        const confirmedPlayers = [];
+        
+        for (const charKey in assignmentsByChar) {
+            const charData = assignmentsByChar[charKey];
+            const assignments = charData.assignments;
+            const accepts = acceptsByChar[charKey] || [];
+            
+            // Check if all assignments are accepted
+            const allAccepted = assignments.every(assignment => {
+                return accepts.some(accept => 
+                    accept.dungeon === assignment.dungeon &&
+                    accept.wing === assignment.wing &&
+                    accept.boss === assignment.boss
+                );
+            });
+            
+            if (allAccepted && assignments.length > 0) {
+                confirmedPlayers.push({
+                    character_name: charData.character_name,
+                    character_class: charData.class_name,
+                    assignments_count: assignments.length,
+                    points: 10 // 10 points for confirming all assignments
+                });
+            }
+        }
+        
+        console.log(`✅ [CONFIRMED ASSIGNMENTS] Found ${confirmedPlayers.length} players who confirmed all assignments`);
+        
+        res.json({
+            success: true,
+            data: confirmedPlayers
+        });
+        
+    } catch (error) {
+        console.error('❌ [CONFIRMED ASSIGNMENTS] Error fetching confirmed assignments:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error fetching confirmed assignments',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // Helper function to map spec to role (matches frontend logic)
 function mapSpecToRole(spec) {
     if (!spec) return 'unknown';
@@ -13506,6 +13780,241 @@ app.get('/api/guild-members/:eventId', async (req, res) => {
             success: false, 
             message: 'Error retrieving guild membership data',
             error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get weekly NAX raid count for each player in the current event
+app.get('/api/weekly-nax-raids/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    console.log(`🏆 [WEEKLY NAX] Retrieving weekly NAX raid counts for event: ${eventId}`);
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Get the event date to determine which week it belongs to
+        const eventResult = await client.query(`
+            SELECT event_data FROM raid_helper_events_cache WHERE event_id = $1
+        `, [eventId]);
+        
+        if (eventResult.rows.length === 0) {
+            return res.json({ success: true, data: [], eventId, weekInfo: null });
+        }
+        
+        const eventData = eventResult.rows[0].event_data || {};
+        const eventDateStr = eventData.date;
+        if (!eventDateStr) {
+            return res.json({ success: true, data: [], eventId, weekInfo: null });
+        }
+        
+        // Parse event date and calculate WoW week (Wednesday to Tuesday)
+        const eventDate = parseEventDate(eventDateStr);
+        if (!eventDate) {
+            return res.json({ success: true, data: [], eventId, weekInfo: null });
+        }
+        const wowWeekInfo = getWoWWeekNumber(eventDate);
+        
+        console.log(`🏆 [WEEKLY NAX] Event date: ${eventDateStr}, WoW week: ${wowWeekInfo.weekYear}-${wowWeekInfo.weekNumber}`);
+        
+        // Get participants from this event (resolve discord_id if missing)
+        const eventRows = await client.query(`
+            SELECT character_name, character_class, discord_id
+            FROM log_data
+            WHERE event_id = $1
+        `, [eventId]);
+        
+        if (eventRows.rows.length === 0) {
+            return res.json({ success: true, data: [], eventId, weekInfo: wowWeekInfo });
+        }
+        
+        // Build Discord ID resolvers (same as guild members)
+        const ldResolver = await client.query(`
+            SELECT DISTINCT LOWER(character_name) AS name_lower,
+                            LOWER(character_class) AS class_lower,
+                            discord_id
+            FROM log_data
+            WHERE discord_id IS NOT NULL
+        `);
+        const nameClassToDiscord = new Map(ldResolver.rows.map(r => [`${r.name_lower}|${r.class_lower}`, String(r.discord_id)]));
+        
+        const playersResolver = await client.query(`
+            SELECT LOWER(character_name) AS name_lower,
+                   LOWER(class) AS class_lower,
+                   discord_id
+            FROM players
+            WHERE discord_id IS NOT NULL
+        `);
+        const playersNameClassToDiscord = new Map();
+        playersResolver.rows.forEach(r => {
+            const key = `${r.name_lower}|${r.class_lower}`;
+            const did = String(r.discord_id);
+            if (!playersNameClassToDiscord.has(key)) playersNameClassToDiscord.set(key, did);
+            else if (playersNameClassToDiscord.get(key) !== did) playersNameClassToDiscord.set(key, '__MULTI__');
+        });
+        
+        const rosterRes = await client.query(`
+            SELECT LOWER(assigned_char_name) AS name_lower, discord_user_id
+            FROM roster_overrides
+            WHERE event_id = $1 AND discord_user_id IS NOT NULL AND assigned_char_name IS NOT NULL
+        `, [eventId]);
+        const rosterNameToDiscord = new Map(rosterRes.rows.map(r => [String(r.name_lower), String(r.discord_user_id)]));
+        
+        const ldNameOnlyRes = await client.query(`
+            SELECT LOWER(character_name) AS name_lower,
+                   ARRAY_AGG(DISTINCT discord_id) FILTER (WHERE discord_id IS NOT NULL) AS dids
+            FROM log_data
+            GROUP BY LOWER(character_name)
+        `);
+        const ldNameOnly = new Map();
+        ldNameOnlyRes.rows.forEach(r => {
+            const arr = Array.isArray(r.dids) ? r.dids.map(String).filter(Boolean) : [];
+            if (arr.length === 1) ldNameOnly.set(String(r.name_lower), arr[0]);
+        });
+        
+        const playersNameOnlyRes = await client.query(`
+            SELECT LOWER(character_name) AS name_lower,
+                   ARRAY_AGG(DISTINCT discord_id) FILTER (WHERE discord_id IS NOT NULL) AS dids
+            FROM players
+            GROUP BY LOWER(character_name)
+        `);
+        const playersNameOnly = new Map();
+        playersNameOnlyRes.rows.forEach(r => {
+            const arr = Array.isArray(r.dids) ? r.dids.map(String).filter(Boolean) : [];
+            if (arr.length === 1) playersNameOnly.set(String(r.name_lower), arr[0]);
+        });
+        
+        // Resolve participants to Discord IDs
+        const participantsMap = new Map(); // discord_id -> { character_name, character_class }
+        for (const r of eventRows.rows) {
+            let did = r.discord_id ? String(r.discord_id) : null;
+            if (!did) {
+                const nm = String(r.character_name||'').toLowerCase();
+                const cls = String(r.character_class||'').toLowerCase();
+                did = rosterNameToDiscord.get(nm) || nameClassToDiscord.get(`${nm}|${cls}`) || null;
+                if (!did) {
+                    const pDid = playersNameClassToDiscord.get(`${nm}|${cls}`);
+                    if (pDid && pDid !== '__MULTI__') did = pDid;
+                }
+                if (!did) did = ldNameOnly.get(nm) || playersNameOnly.get(nm) || null;
+            }
+            if (!did) continue;
+            if (!participantsMap.has(did)) {
+                participantsMap.set(did, { character_name: r.character_name, character_class: r.character_class });
+            }
+        }
+        
+        // Get all NAX raids this week for these players
+        // First, get NAX channel IDs
+        const naxChannelsResult = await client.query(`
+            SELECT channel_id FROM channel_filters WHERE is_nax = true
+        `);
+        const naxChannelIds = naxChannelsResult.rows.map(r => String(r.channel_id));
+        
+        console.log(`🏆 [WEEKLY NAX] Found ${naxChannelIds.length} NAX channels`);
+        
+        if (naxChannelIds.length === 0) {
+            // No NAX channels defined, return empty
+            return res.json({ success: true, data: [], eventId, weekInfo: wowWeekInfo });
+        }
+        
+        // Get all events in this WoW week that are NAX raids
+        const weekNaxEventsResult = await client.query(`
+            SELECT DISTINCT rhec.event_id, rhec.event_data
+            FROM raid_helper_events_cache rhec
+            WHERE rhec.event_data->>'date' IS NOT NULL
+            AND (rhec.event_data->>'channelId' = ANY($1) OR rhec.event_data->>'channelID' = ANY($1))
+        `, [naxChannelIds]);
+        
+        // Filter events to only those in the same WoW week
+        const weekNaxEventIds = [];
+        for (const row of weekNaxEventsResult.rows) {
+            const data = row.event_data || {};
+            const dateStr = data.date;
+            if (!dateStr) continue;
+            const d = parseEventDate(dateStr);
+            if (!d) continue;
+            const weekInfo = getWoWWeekNumber(d);
+            if (weekInfo.weekYear === wowWeekInfo.weekYear && weekInfo.weekNumber === wowWeekInfo.weekNumber) {
+                weekNaxEventIds.push(row.event_id);
+            }
+        }
+        
+        console.log(`🏆 [WEEKLY NAX] Found ${weekNaxEventIds.length} NAX events in this week`);
+        
+        if (weekNaxEventIds.length === 0) {
+            // No NAX raids this week
+            return res.json({ success: true, data: [], eventId, weekInfo: wowWeekInfo });
+        }
+        
+        // Count raids per player (by discord_id) this week
+        const playerRaidCounts = new Map(); // discord_id -> Set(event_ids)
+        
+        const weekRaidsResult = await client.query(`
+            SELECT event_id, character_name, character_class, discord_id
+            FROM log_data
+            WHERE event_id = ANY($1)
+        `, [weekNaxEventIds]);
+        
+        for (const row of weekRaidsResult.rows) {
+            let did = row.discord_id ? String(row.discord_id) : null;
+            if (!did) {
+                const nm = String(row.character_name||'').toLowerCase();
+                const cls = String(row.character_class||'').toLowerCase();
+                did = nameClassToDiscord.get(`${nm}|${cls}`) || null;
+                if (!did) {
+                    const pDid = playersNameClassToDiscord.get(`${nm}|${cls}`);
+                    if (pDid && pDid !== '__MULTI__') did = pDid;
+                }
+                if (!did) did = ldNameOnly.get(nm) || playersNameOnly.get(nm) || null;
+            }
+            if (!did) continue;
+            
+            if (!playerRaidCounts.has(did)) playerRaidCounts.set(did, new Set());
+            playerRaidCounts.get(did).add(row.event_id);
+        }
+        
+        // Build output for participants in current event
+        const out = [];
+        for (const [did, charInfo] of participantsMap.entries()) {
+            const raidCount = playerRaidCounts.has(did) ? playerRaidCounts.get(did).size : 0;
+            
+            // Award points: 1st raid = 0pts, 2nd raid = 5pts, 3rd+ raid = 10pts
+            let points = 0;
+            if (raidCount >= 3) points = 10;
+            else if (raidCount === 2) points = 5;
+            
+            // Only include players with 2+ raids (who get points)
+            if (points > 0) {
+                out.push({
+                    character_name: charInfo.character_name,
+                    character_class: charInfo.character_class,
+                    discord_id: did,
+                    raid_count: raidCount,
+                    points: points
+                });
+            }
+        }
+        
+        console.log(`🏆 [WEEKLY NAX] Found ${out.length} players with 2+ raids this week`);
+        
+        res.json({
+            success: true,
+            data: out,
+            eventId,
+            weekInfo: wowWeekInfo,
+            totalNaxRaidsThisWeek: weekNaxEventIds.length
+        });
+        
+    } catch (error) {
+        console.error('❌ [WEEKLY NAX] Error retrieving weekly NAX raid counts:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error retrieving weekly NAX raid counts',
+            error: error.message
         });
     } finally {
         if (client) client.release();
@@ -21268,6 +21777,51 @@ function getCustomWeekNumber(date) {
         weekYear: year,
         weekNumber: weeksDiff + 1
     };
+}
+
+// Helper function to calculate WoW week number (Wednesday to Tuesday)
+// WoW servers reset on Wednesday, so week starts on Wednesday
+function getWoWWeekNumber(date) {
+    const d = new Date(date);
+    const year = d.getFullYear();
+    
+    // Find first Wednesday of the year
+    const jan1 = new Date(year, 0, 1);
+    const jan1Day = jan1.getDay(); // 0=Sunday, 3=Wednesday
+    const daysToFirstWed = jan1Day <= 3 ? (3 - jan1Day) : (10 - jan1Day);
+    const firstWednesday = new Date(year, 0, 1 + daysToFirstWed);
+    
+    // If date is before first Wednesday, it belongs to previous year
+    if (d < firstWednesday) {
+        const prevJan1 = new Date(year - 1, 0, 1);
+        const prevJan1Day = prevJan1.getDay();
+        const prevDaysToFirstWed = prevJan1Day <= 3 ? (3 - prevJan1Day) : (10 - prevJan1Day);
+        const prevFirstWednesday = new Date(year - 1, 0, 1 + prevDaysToFirstWed);
+        const weeksDiff = Math.floor((d - prevFirstWednesday) / (7 * 24 * 60 * 60 * 1000));
+        return {
+            weekYear: year - 1,
+            weekNumber: weeksDiff + 1
+        };
+    }
+    
+    // Calculate weeks from first Wednesday of this year
+    const weeksDiff = Math.floor((d - firstWednesday) / (7 * 24 * 60 * 60 * 1000));
+    return {
+        weekYear: year,
+        weekNumber: weeksDiff + 1
+    };
+}
+
+// Helper function to parse event date string (DD-M-YYYY format)
+function parseEventDate(dateStr) {
+    if (!dateStr) return null;
+    const parts = String(dateStr).split('-');
+    if (parts.length !== 3) return null;
+    const day = parseInt(parts[0]);
+    const month = parseInt(parts[1]) - 1; // JS months are 0-indexed
+    const year = parseInt(parts[2]);
+    if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+    return new Date(year, month, day);
 }
 
 // Helper function to calculate player streak from attendance cache

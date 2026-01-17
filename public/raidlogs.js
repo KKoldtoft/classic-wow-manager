@@ -33,6 +33,7 @@ class RaidLogsManager {
         this.interruptsSettings = { points_per_interrupt: 1, interrupts_needed: 1, max_points: 5 };
         this.disarmsData = [];
         this.disarmsSettings = { points_per_disarm: 1, disarms_needed: 1, max_points: 5 };
+        this.confirmedAssignmentsData = [];
         this.sunderData = [];
         this.sunderSettings = { point_ranges: [] };
         this.curseData = [];
@@ -59,6 +60,7 @@ class RaidLogsManager {
         this.windfurySettings = { threshold: 10, points_per_totem: 1, max_points: 10 };
         this.playerStreaksData = [];
         this.guildMembersData = [];
+        this.weeklyNaxRaidsData = [];
         this.rewardSettings = {};
         this.worldBuffsData = [];
         this.worldBuffsRequiredBuffs = 6;
@@ -914,6 +916,7 @@ class RaidLogsManager {
                 this.fetchRunesData(),
                 this.fetchInterruptsData(),
                 this.fetchDisarmsData(),
+                this.fetchConfirmedAssignmentsData(),
                 this.fetchSunderData(),
                 this.fetchCurseData(),
                 this.fetchCurseShadowData(),
@@ -933,6 +936,7 @@ class RaidLogsManager {
                 this.fetchShameData(),
                 this.fetchPlayerStreaksData(),
                 this.fetchGuildMembersData(),
+                this.fetchWeeklyNaxRaidsData(),
                 this.fetchWorldBuffsData(),
                 this.fetchFrostResistanceData(),
                 this.fetchWorldBuffsArchiveUrl(),
@@ -1475,6 +1479,35 @@ class RaidLogsManager {
             this.disarmsSettings = { points_per_disarm: 1, disarms_needed: 1, max_points: 5 }; // fallback
         }
     }
+    
+    async fetchConfirmedAssignmentsData() {
+        console.log(`📝 [CONFIRMED ASSIGNMENTS] Fetching data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/confirmed-assignments/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                console.error(`📝 [CONFIRMED ASSIGNMENTS] API returned status: ${response.status}`);
+                throw new Error(`Failed to fetch confirmed assignments data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            console.log(`📝 [CONFIRMED ASSIGNMENTS] API response:`, result);
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch confirmed assignments data');
+            }
+            
+            this.confirmedAssignmentsData = result.data || [];
+            console.log(`📝 [CONFIRMED ASSIGNMENTS] Loaded ${this.confirmedAssignmentsData.length} players who confirmed all assignments:`, this.confirmedAssignmentsData);
+            
+        } catch (error) {
+            console.error('📝 [CONFIRMED ASSIGNMENTS] Error fetching data:', error);
+            // Don't fail the whole page if confirmed assignments fail - just show empty data
+            this.confirmedAssignmentsData = [];
+        }
+    }
+    
     async fetchSunderData() {
         console.log(`⚔️ Fetching sunder armor data for event: ${this.activeEventId}`);
         
@@ -1940,6 +1973,33 @@ class RaidLogsManager {
         }
     }
 
+    async fetchWeeklyNaxRaidsData() {
+        console.log(`🏆 Fetching weekly NAX raids data for event: ${this.activeEventId}`);
+        
+        try {
+            const response = await fetch(`/api/weekly-nax-raids/${this.activeEventId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch weekly NAX raids data: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch weekly NAX raids data');
+            }
+            
+            this.weeklyNaxRaidsData = result.data || [];
+            console.log(`🏆 Loaded weekly NAX raids data:`, this.weeklyNaxRaidsData);
+            console.log(`🏆 Found ${this.weeklyNaxRaidsData.length} players with 2+ NAX raids this week`);
+            
+        } catch (error) {
+            console.error('Error fetching weekly NAX raids data:', error);
+            // Don't fail the whole page if weekly NAX fails - just show empty data
+            this.weeklyNaxRaidsData = [];
+        }
+    }
+
     updateStatCards() {
         // Update RPB Archive card
         this.updateRPBArchiveCard();
@@ -2341,6 +2401,16 @@ class RaidLogsManager {
             // Guild members points (variable: 10 for direct, 5 for alts)
             if (this.guildMembersData && Array.isArray(this.guildMembersData)) {
                 this.guildMembersData.forEach(row => {
+                    const nm = String(row.character_name || '').toLowerCase();
+                    if (!confirmedNameSet.has(nm)) return;
+                    const pts = Number(row.points) || 0;
+                    positivePoints += pts;
+                });
+            }
+
+            // Weekly NAX raids (2nd raid: 5pts, 3rd+ raid: 10pts)
+            if (this.weeklyNaxRaidsData && Array.isArray(this.weeklyNaxRaidsData)) {
+                this.weeklyNaxRaidsData.forEach(row => {
                     const nm = String(row.character_name || '').toLowerCase();
                     if (!confirmedNameSet.has(nm)) return;
                     const pts = Number(row.points) || 0;
@@ -2997,6 +3067,7 @@ class RaidLogsManager {
         this.displayPlayerStreaksRankings(this.playerStreaksData);
         }
         this.displayGuildMembersRankings(this.guildMembersData);
+        this.displayWeeklyNaxRaidsRankings(this.weeklyNaxRaidsData);
         if (!this.snapshotLocked && this.engineResult) {
             // Render damage/healing directly from engine rows
             try { this.displayDamageRankings(damageDealer); } catch {}
@@ -3079,6 +3150,8 @@ class RaidLogsManager {
         } else {
         this.displayDisarmsRankings(this.disarmsData);
         }
+        // Confirmed assignments display - always use raw API data (not from engine)
+        this.displayConfirmedAssignmentsRankings(this.confirmedAssignmentsData);
         if (!this.snapshotLocked && this.engineResult) {
             try {
                 const panel = (this.engineResult.panels||[]).find(p=>p.panel_key==='sunder');
@@ -3310,6 +3383,8 @@ class RaidLogsManager {
             { key: 'too_low_healing', name: 'Too Low Healing', containerId: 'too-low-healing-list' },
             { key: 'attendance_streaks', name: 'Attendance Streak Champions', containerId: 'player-streaks-list' },
             { key: 'guild_members', name: 'Guild Members', containerId: 'guild-members-list' },
+            { key: 'weekly_nax_raids', name: 'Weekly Streak Champions', containerId: 'weekly-nax-raids-list' },
+            { key: 'confirmed_assignments', name: 'Confirmed assignments', containerId: 'confirmed-assignments-list' },
             { key: 'big_buyer', name: 'Big Buyer Bonus', containerId: 'big-buyer-list' }
         ];
 
@@ -3729,6 +3804,8 @@ class RaidLogsManager {
                     const pts = pointsEl ? Math.round(Number(pointsEl.textContent||0)) : 0;
                     // Capture wf_tooltip attribute if present
                     const wfTooltip = detailsEl && detailsEl.getAttribute ? detailsEl.getAttribute('data-wf-tooltip') : null;
+                    // Capture assignments_count for confirmed_assignments panel
+                    const assignmentsCount = (cfg.key === 'confirmed_assignments' && item && item.getAttribute) ? (item.getAttribute('data-assignments-count') || null) : null;
                     entries.push({
                         panel_key: cfg.key,
                         panel_name: cfg.name,
@@ -3744,6 +3821,7 @@ class RaidLogsManager {
                             if (img && img.src) o.icon_url = img.src; 
                             if (itemKeyAttr) o.item_key = itemKeyAttr; 
                             if (wfTooltip) o.wf_tooltip = wfTooltip;
+                            if (assignmentsCount) o.assignments_count = parseInt(assignmentsCount, 10);
                             return o; 
                         })()
                     });
@@ -3948,6 +4026,73 @@ class RaidLogsManager {
             `;
         }).join('');
     }
+
+    displayWeeklyNaxRaidsRankings(players) {
+        const container = document.getElementById('weekly-nax-raids-list');
+        const section = container ? container.closest('.rankings-section') : null;
+        if (section) section.classList.add('weekly-nax-section');
+
+        if (!container) {
+            console.warn('⚠️ Weekly NAX raids container not found');
+            return;
+        }
+
+        if (!players || players.length === 0) {
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-calendar-week"></i>
+                    <p>No players with 2+ NAX raids this week</p>
+                </div>
+            `;
+            return;
+        }
+
+        console.log(`🏆 Displaying ${players.length} weekly NAX raid champions`);
+
+        // Sort by raid count (highest first), then by points, then alphabetically
+        const sortedPlayers = [...players].sort((a, b) => {
+            const countA = Number(a.raid_count) || 0;
+            const countB = Number(b.raid_count) || 0;
+            if (countB !== countA) return countB - countA;
+            const ptsA = Number(a.points) || 0;
+            const ptsB = Number(b.points) || 0;
+            if (ptsB !== ptsA) return ptsB - ptsA;
+            return String(a.character_name).localeCompare(String(b.character_name));
+        });
+
+        const maxRaidCount = Math.max(...sortedPlayers.map(p => p.raid_count));
+
+        container.innerHTML = sortedPlayers.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const points = Number(player.points) || 0;
+            const raidCount = Number(player.raid_count) || 0;
+            const fillPercentage = Math.min(100, Math.round((raidCount / maxRaidCount) * 100));
+            
+            // Build details text showing which raid # this is
+            const ordinal = raidCount === 2 ? '2nd' : raidCount === 3 ? '3rd' : `${raidCount}th`;
+            const detailsText = `${ordinal} raid this week`;
+            
+            return `
+                <div class="ranking-item">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%">
+                        <div class="character-name">${this.getClassIconHtml(player.character_class)}${player.character_name}</div>
+                        <div class="character-details" title="${raidCount} NAX raids this week">
+                            ${detailsText}
+                        </div>
+                    </div>
+                    <div class="performance-amount">
+                        <div class="amount-value">${points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+    
     calculateGodGamerDPS(players) {
         if (players.length < 2) {
             return null; // Need at least 2 players to compare
@@ -5564,6 +5709,70 @@ class RaidLogsManager {
         }
     }
 
+    displayConfirmedAssignmentsRankings(players) {
+        console.log(`📝 [CONFIRMED ASSIGNMENTS] Displaying panel with ${players ? players.length : 0} players:`, players);
+        
+        const container = document.getElementById('confirmed-assignments-list');
+        if (!container) {
+            console.error(`📝 [CONFIRMED ASSIGNMENTS] Container 'confirmed-assignments-list' not found!`);
+            return;
+        }
+        
+        const section = container.closest('.rankings-section');
+        if (section) {
+            section.classList.add('confirmed-assignments');
+        }
+
+        if (!players || players.length === 0) {
+            console.log(`📝 [CONFIRMED ASSIGNMENTS] No players to display, showing empty state`);
+            container.innerHTML = `
+                <div class="rankings-empty">
+                    <i class="fas fa-clipboard-check"></i>
+                    <p>No players confirmed their assignments</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Sort by assignments count (desc), then name (asc)
+        const sortedPlayers = [...players].sort((a, b) => {
+            const countA = Number(a.assignments_count) || 0;
+            const countB = Number(b.assignments_count) || 0;
+            if (countB !== countA) return countB - countA;
+            return String(a.character_name).localeCompare(String(b.character_name));
+        });
+
+        // Get max assignments for percentage calculation
+        const maxAssignments = Math.max(...sortedPlayers.map(p => p.assignments_count)) || 1;
+
+        container.innerHTML = sortedPlayers.map((player, index) => {
+            const position = index + 1;
+            const characterClass = this.normalizeClassName(player.character_class);
+            const fillPercentage = Math.max(5, (player.assignments_count / maxAssignments) * 100);
+            const assignmentsText = `${player.assignments_count} assignment${player.assignments_count !== 1 ? 's' : ''} confirmed`;
+
+            return `
+                <div class="ranking-item" data-assignments-count="${player.assignments_count}">
+                    <div class="ranking-position">
+                        <span class="ranking-number">#${position}</span>
+                    </div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%;">
+                        <div class="character-name">
+                            ${this.getClassIconHtml(player.character_class)}${player.character_name}
+                        </div>
+                        <div class="character-details" title="${assignmentsText}">
+                            ${assignmentsText}
+                        </div>
+                    </div>
+                    <div class="performance-amount">
+                        <div class="amount-value">${player.points}</div>
+                        <div class="points-label">points</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
     populateManualRewardsTable() {
         const rewardsCol = document.getElementById('manual-rewards-list-rewards');
         const dedsCol = document.getElementById('manual-rewards-list-deductions');
@@ -6994,7 +7203,7 @@ class RaidLogsManager {
         let damageMap=new Map(), healingMap=new Map(), godDpsMap=new Map(), godHealMap=new Map();
         let shamanMap=new Map(), priestMap=new Map(), druidMap=new Map();
         let tooLowDpsMap=new Map(), tooLowHpsMap=new Map();
-        let streakMap=new Map(), guildMap=new Map();
+        let streakMap=new Map(), guildMap=new Map(), weeklyNaxMap=new Map();
 
         if (this.snapshotLocked && Array.isArray(this.snapshotEntries) && this.snapshotEntries.length > 0) {
             buildSnapshotIndex();
@@ -7048,6 +7257,7 @@ class RaidLogsManager {
             // Streaks & guild
             streakMap=new Map(); (this.playerStreaksData||[]).forEach(r=>{ const s=Number(r.player_streak)||0; let pts=0; if(s>=8)pts=15; else if(s===7)pts=12; else if(s===6)pts=9; else if(s===5)pts=6; else if(s===4)pts=3; if(pts) streakMap.set(nameKey(r),pts); });
             guildMap=new Map(); (this.guildMembersData||[]).forEach(r=>{ const pts=Number(r.points)||0; if(pts) guildMap.set(nameKey(r),pts); });
+            weeklyNaxMap=new Map(); (this.weeklyNaxRaidsData||[]).forEach(r=>{ const pts=Number(r.points)||0; if(pts) weeklyNaxMap.set(nameKey(r),pts); });
         }
 
         // Debug table removed; keep totals computation for internal consistency if container exists
@@ -7493,6 +7703,7 @@ class RaidLogsManager {
                 // Streaks/Guild
                 try { const row=(this.playerStreaksData||[]).find(r=> lower(r.character_name)===nameKey); if(row){ const s=Number(row.player_streak)||0; let pts=0; if(s>=8)pts=15; else if(s===7)pts=12; else if(s===6)pts=9; else if(s===5)pts=6; else if(s===4)pts=3; push('Streak', pts);} } catch {}
                 try { const row=(this.guildMembersData||[]).find(r=> lower(r.character_name)===nameKey); if(row){ const pts=Number(row.points)||0; if(pts) push('Guild Mem', pts);} } catch {}
+                try { const row=(this.weeklyNaxRaidsData||[]).find(r=> lower(r.character_name)===nameKey); if(row){ const pts=Number(row.points)||0; if(pts) push('Weekly NAX', pts);} } catch {}
                 // Big Buyer
                 push('Big Buyer', sumFrom(this.bigBuyerData, nameKey));
                 // Manual rewards split
@@ -9024,6 +9235,7 @@ class RaidLogsManager {
         addFromArray(this.frostResistanceData);
         addFromArray(this.playerStreaksData);
         addFromArray(this.guildMembersData);
+        addFromArray(this.weeklyNaxRaidsData);
         addFromArray(this.rocketHelmetData);
         addFromArray(this.bigBuyerData);
         

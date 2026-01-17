@@ -2980,6 +2980,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // Send assignments button handler
+    const sendAssignmentsButton = document.getElementById('send-assignments-button');
+    if (sendAssignmentsButton) {
+        sendAssignmentsButton.addEventListener('click', async () => {
+            try {
+                sendAssignmentsButton.disabled = true;
+                sendAssignmentsButton.classList.add('active');
+                await sendAssignmentsDMs();
+            } catch (e) {
+                console.error('Send assignments error:', e);
+                showAlert('Send assignments error', e?.message || 'Unexpected error');
+            } finally {
+                sendAssignmentsButton.disabled = false;
+                sendAssignmentsButton.classList.remove('active');
+            }
+        });
+    }
+
     async function runAutoAssignmentsEntry() {
         // Load current assignments once to decide warning and proceed
         const assignRes = await fetch(`/api/assignments/${eventId}`);
@@ -3874,6 +3892,264 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.error('Error force creating character:', error);
             showAlert('Create Character Error', `Error creating character: ${error.message}`);
         }
+    }
+
+    async function sendAssignmentsDMs() {
+        // Create and show the overlay
+        const { wrap, listWrap, sendBtn, cbAll } = createAssignmentsOverlay();
+        await populateAssignmentsOverlayList(listWrap);
+        wireAssignmentsSelectAll(cbAll, listWrap);
+        sendBtn.onclick = () => { sendAssignmentsBatch(listWrap, sendBtn); };
+    }
+
+    function createAssignmentsOverlay() {
+        let wrap = document.getElementById('assignmentsDmOverlay');
+        if (wrap) {
+            wrap.remove();
+        }
+        wrap = document.createElement('div');
+        wrap.id = 'assignmentsDmOverlay';
+        wrap.style.position = 'fixed';
+        wrap.style.inset = '0';
+        wrap.style.background = 'rgba(0,0,0,0.6)';
+        wrap.style.zIndex = '1000';
+        wrap.style.display = 'flex';
+        wrap.style.alignItems = 'center';
+        wrap.style.justifyContent = 'center';
+        
+        const panel = document.createElement('div');
+        panel.style.background = '#111827';
+        panel.style.border = '1px solid #374151';
+        panel.style.borderRadius = '10px';
+        panel.style.width = 'min(720px, 92vw)';
+        panel.style.maxHeight = '80vh';
+        panel.style.display = 'flex';
+        panel.style.flexDirection = 'column';
+        panel.style.padding = '14px';
+        panel.style.color = '#e5e7eb';
+        panel.id = 'assignmentsDmOverlayPanel';
+        
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.alignItems = 'center';
+        header.style.justifyContent = 'space-between';
+        header.style.marginBottom = '8px';
+        
+        const title = document.createElement('div');
+        title.textContent = 'Send assignment DMs';
+        title.style.fontWeight = '800';
+        title.style.fontSize = '18px';
+        
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '✕';
+        closeBtn.style.background = 'transparent';
+        closeBtn.style.border = '1px solid #4b5563';
+        closeBtn.style.color = '#e5e7eb';
+        closeBtn.style.borderRadius = '6px';
+        closeBtn.style.padding = '4px 8px';
+        closeBtn.style.cursor = 'pointer';
+        closeBtn.onclick = () => { document.body.removeChild(wrap); };
+        
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+        
+        const controls = document.createElement('div');
+        controls.style.display = 'flex';
+        controls.style.alignItems = 'center';
+        controls.style.gap = '10px';
+        controls.style.margin = '6px 0 10px 0';
+        
+        const selectAll = document.createElement('label');
+        selectAll.style.cursor = 'pointer';
+        const cbAll = document.createElement('input');
+        cbAll.type = 'checkbox';
+        cbAll.checked = true;
+        cbAll.style.marginRight = '6px';
+        cbAll.style.cursor = 'pointer';
+        selectAll.appendChild(cbAll);
+        selectAll.appendChild(document.createTextNode('Select all'));
+        controls.appendChild(selectAll);
+        
+        const listWrap = document.createElement('div');
+        listWrap.id = 'assignmentsDmOverlayList';
+        listWrap.style.overflow = 'auto';
+        listWrap.style.border = '1px solid #374151';
+        listWrap.style.borderRadius = '8px';
+        listWrap.style.padding = '8px';
+        listWrap.style.flex = '1 1 auto';
+        listWrap.style.maxHeight = '58vh';
+        
+        const footer = document.createElement('div');
+        footer.style.display = 'flex';
+        footer.style.alignItems = 'center';
+        footer.style.justifyContent = 'flex-end';
+        footer.style.gap = '10px';
+        footer.style.marginTop = '10px';
+        
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.background = '#1f2937';
+        cancelBtn.style.border = '1px solid #4b5563';
+        cancelBtn.style.color = '#e5e7eb';
+        cancelBtn.style.borderRadius = '8px';
+        cancelBtn.style.padding = '8px 12px';
+        cancelBtn.style.cursor = 'pointer';
+        cancelBtn.onclick = () => { document.body.removeChild(wrap); };
+        
+        const sendBtn = document.createElement('button');
+        sendBtn.id = 'assignmentsDmOverlaySendBtn';
+        sendBtn.textContent = 'Send to selected';
+        sendBtn.style.background = '#2563eb';
+        sendBtn.style.border = '1px solid #1d4ed8';
+        sendBtn.style.color = '#e5e7eb';
+        sendBtn.style.borderRadius = '8px';
+        sendBtn.style.padding = '8px 12px';
+        sendBtn.style.cursor = 'pointer';
+        
+        footer.appendChild(cancelBtn);
+        footer.appendChild(sendBtn);
+        
+        panel.appendChild(header);
+        panel.appendChild(controls);
+        panel.appendChild(listWrap);
+        panel.appendChild(footer);
+        wrap.appendChild(panel);
+        document.body.appendChild(wrap);
+        
+        return { wrap, listWrap, sendBtn, cbAll };
+    }
+
+    async function populateAssignmentsOverlayList(listWrap) {
+        listWrap.innerHTML = '<div style="text-align: center; padding: 20px; color: #9ca3af;">Loading players...</div>';
+        
+        try {
+            // Fetch roster data
+            const response = await fetch(`/api/assignments/${eventId}/roster`);
+            const data = await response.json();
+            
+            if (!data || !data.success || !Array.isArray(data.roster)) {
+                throw new Error('Failed to load roster');
+            }
+            
+            const players = data.roster
+                .filter(p => p.character_name && p.discord_user_id)
+                .sort((a, b) => String(a.character_name || '').localeCompare(String(b.character_name || '')));
+            
+            listWrap.innerHTML = '';
+            
+            players.forEach(p => {
+                const row = document.createElement('div');
+                row.style.display = 'grid';
+                row.style.gridTemplateColumns = '24px 1fr 140px';
+                row.style.gap = '8px';
+                row.style.alignItems = 'center';
+                row.style.padding = '6px 4px';
+                row.style.borderBottom = '1px solid #1f2937';
+                
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = true;
+                cb.className = 'assignments-dm-select';
+                cb.style.cursor = 'pointer';
+                
+                const name = document.createElement('div');
+                name.textContent = String(p.character_name || '');
+                
+                const status = document.createElement('div');
+                status.textContent = 'pending';
+                status.style.color = '#9ca3af';
+                status.style.textAlign = 'right';
+                status.className = 'assignments-dm-status';
+                
+                row.dataset.playerName = String(p.character_name || '');
+                row.dataset.discordUserId = String(p.discord_user_id || '');
+                row.appendChild(cb);
+                row.appendChild(name);
+                row.appendChild(status);
+                listWrap.appendChild(row);
+            });
+            
+            if (players.length === 0) {
+                listWrap.innerHTML = '<div style="text-align: center; padding: 20px; color: #9ca3af;">No players found in roster</div>';
+            }
+        } catch (error) {
+            console.error('Error loading players:', error);
+            listWrap.innerHTML = '<div style="text-align: center; padding: 20px; color: #ef4444;">Error loading players</div>';
+        }
+    }
+
+    function wireAssignmentsSelectAll(cbAll, listWrap) {
+        cbAll.addEventListener('change', () => {
+            listWrap.querySelectorAll('input.assignments-dm-select:not(:disabled)').forEach(cb => {
+                cb.checked = cbAll.checked;
+            });
+        });
+    }
+
+    async function sendAssignmentsBatch(listWrap, sendBtn) {
+        const rows = Array.from(listWrap.children);
+        const selected = rows.filter(r => r.querySelector('input.assignments-dm-select')?.checked);
+        
+        if (selected.length === 0) {
+            showAlert('No players selected', 'Please select at least one player to send DMs to.');
+            return;
+        }
+        
+        const original = sendBtn.textContent;
+        sendBtn.textContent = 'Sending…';
+        sendBtn.disabled = true;
+        
+        let delayMs = 250; // 4 msgs/sec
+        
+        for (let i = 0; i < selected.length; i++) {
+            const row = selected[i];
+            const discordUserId = row.dataset.discordUserId;
+            const playerName = row.dataset.playerName;
+            const statusEl = row.querySelector('.assignments-dm-status');
+            
+            try {
+                const response = await fetch(`/api/discord/send-assignment/${eventId}/${discordUserId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (response.status === 429) {
+                    // Rate limited
+                    try {
+                        const data = await response.json();
+                        const ra = Number(data && data.retry_after);
+                        if (!isNaN(ra) && ra > 0) {
+                            delayMs = Math.max(delayMs * 2, Math.ceil(ra * 1000));
+                        } else {
+                            delayMs = Math.min(2000, delayMs * 2);
+                        }
+                    } catch {
+                        delayMs = Math.min(2000, delayMs * 2);
+                    }
+                    statusEl.textContent = 'rate limited';
+                    statusEl.style.color = '#f59e0b';
+                } else if (response.ok) {
+                    statusEl.textContent = 'sent';
+                    statusEl.style.color = '#22c55e';
+                    // Relax delay after success
+                    delayMs = Math.max(200, Math.floor(delayMs * 0.9));
+                } else {
+                    const result = await response.json();
+                    statusEl.textContent = 'failed';
+                    statusEl.style.color = '#ef4444';
+                    console.error(`Failed to send DM to ${playerName}:`, result.error);
+                }
+            } catch (error) {
+                statusEl.textContent = 'failed';
+                statusEl.style.color = '#ef4444';
+                console.error(`Error sending DM to ${playerName}:`, error);
+            }
+            
+            await new Promise(r => setTimeout(r, delayMs));
+        }
+        
+        sendBtn.textContent = original;
+        sendBtn.disabled = false;
     }
 
     window.addEventListener('click', () => {

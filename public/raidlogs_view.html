@@ -302,6 +302,10 @@
         infoTitle = 'Avoidable Void Damage';
         infoSubtitle = 'Penalties for standing in bad';
         infoBody = 'Taking damage from Void Blast or Void Zone costs points. Avoid the effects to keep your score clean. The panel shows totals and a breakdown by source.';
+      } else if (has('confirmed-assignments-section')) {
+        infoTitle = 'Confirmed assignments';
+        infoSubtitle = 'Bonus points for confirming all assignments';
+        infoBody = 'Players who confirmed all their assignments by clicking the checkmarks on the myassignments page receive 10 bonus points.';
       } else if (has('big-buyer-section')) {
         infoTitle = 'Big Buyer Bonus';
         infoSubtitle = 'Top 3 spenders (≥25,000 gold) earn bonus points';
@@ -513,6 +517,8 @@
         case 'world_buffs_copy': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_arcane_teleportorgrimmar.jpg" alt="World Buffs" style="${iconStyle}"> `;
         case 'attendance_streaks': return `<img src="https://wow.zamimg.com/images/wow/icons/large/ability_hunter_beastcall.jpg" alt="Attendance Streaks" style="${iconStyle}"> `;
         case 'guild_members': return `<img src="https://wow.zamimg.com/images/wow/icons/large/inv_shirt_guildtabard_01.jpg" alt="Guild Members" style="${iconStyle}"> `;
+        case 'weekly_nax_raids': return `<img src="https://wow.zamimg.com/images/wow/icons/large/inv_misc_tournaments_banner_orc.jpg" alt="Weekly NAX Raids" style="${iconStyle}"> `;
+        case 'confirmed_assignments': return `<img src="https://wow.zamimg.com/images/wow/icons/large/inv_misc_note_06.jpg" alt="Confirmed assignments" style="${iconStyle}"> `;
         case 'abilities': return `<img src="https://wow.zamimg.com/images/wow/icons/large/inv_misc_bomb_06.jpg" alt="Explosives" style="${iconStyle}"> `;
         case 'mana_potions': return `<img src="https://wow.zamimg.com/images/wow/icons/large/inv_potion_76.jpg" alt="Major Mana Potion" style="${iconStyle}"> `;
         case 'runes': return `<img src="https://wow.zamimg.com/images/wow/icons/large/spell_shadow_sealofkings.jpg" alt="Dark/Demonic Runes" style="${iconStyle}"> `;
@@ -565,6 +571,8 @@
         case 'too_low_healing': return 'too-low-healing-section';
         case 'attendance_streaks': return 'streak-section';
         case 'guild_members': return 'guild-section';
+        case 'weekly_nax_raids': return 'weekly-nax-section';
+        case 'confirmed_assignments': return 'confirmed-assignments-section';
         case 'big_buyer': return 'big-buyer-section';
         default: return '';
       }
@@ -1435,6 +1443,13 @@
           const out = hasAltText ? `${prefix}${base} (But on another character)` : `${prefix}${base}`;
           r.character_details_edited = out;
         }
+        if (String(r.panel_key||'') === 'confirmed_assignments'){
+          const assignmentsCount = Number(r.aux_json?.assignments_count) || 0;
+          const assignmentsText = assignmentsCount > 0 
+            ? `${assignmentsCount} assignment${assignmentsCount !== 1 ? 's' : ''} confirmed`
+            : 'Confirmed';
+          r.character_details_edited = assignmentsText;
+        }
         return r;
       });
       const byPanel = {};
@@ -1709,7 +1724,7 @@
 
       // Fifth row: Guild Members, Attendance Streak Champions
       (function(){
-        const keys = ['guild_members','attendance_streaks'];
+        const keys = ['guild_members','attendance_streaks','weekly_nax_raids'];
         const row = document.createElement('div');
         row.className = 'rankings-container god-gamer-row';
         keys.forEach((key)=>{
@@ -1732,6 +1747,8 @@
             rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
             // Calculate fill percentages - Guild Members and Attendance all show as 100% or relative to their points
             const isGuildMembers = (key === 'guild_members');
+            const isWeeklyNax = (key === 'weekly_nax_raids');
+            const isConfirmedAssignments = (key === 'confirmed_assignments');
             const pointsVals = rows.map(r => Math.max(0, Number((r.point_value_edited != null ? r.point_value_edited : (r.points != null ? r.points : r.point_value_original)) || 0)));
             const maxPts = Math.max(1, ...pointsVals);
             rows.forEach((rowItem, idx)=>{
@@ -1744,7 +1761,7 @@
               const amtClass = points>0 ? 'positive' : points<0 ? 'negative' : 'zero';
               const iconUrlPub = rowItem.aux_json && (rowItem.aux_json.icon_url || rowItem.aux_json['icon_url']);
               const icon = iconUrlPub || classIconUrl(clsName);
-              const fillPct = isGuildMembers ? 100 : Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
+              const fillPct = (isGuildMembers || isWeeklyNax || isConfirmedAssignments) ? Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100))) : Math.max(5, Math.min(100, Math.round((pointsVals[idx] / maxPts) * 100)));
               item.innerHTML = `
                 <div class=\"ranking-number\">#${idx+1}</div>
                 <div class=\"character-info ${clsName?('class-'+clsName):'class-unknown'}\" style="--fill-percentage: ${fillPct}%">\n                  ${icon?`<img src=\"${icon}\" class=\"spec-icon\" alt=\"${clsName}\" width=\"47\" height=\"47\">`:''}
@@ -2147,27 +2164,27 @@
         panelsDiv.appendChild(row);
       })();
 
-      // Eleventh row: Disarmed enemies, Avoidable Void Damage
+      // Eleventh row: Disarmed enemies, Avoidable Void Damage, Confirmed assignments
       (function(){
-        const keys = ['disarms','void_damage'];
+        const keys = ['disarms','void_damage','confirmed_assignments'];
         const row = document.createElement('div');
         row.className = 'rankings-container god-gamer-row';
         keys.forEach((key)=>{
-          const obj = byPanel[key] || { name: (key==='void_damage' ? 'Avoidable Void Damage' : slugToTitle(key)), rows: [] };
+          const obj = byPanel[key] || { name: (key==='void_damage' ? 'Avoidable Void Damage' : (key==='confirmed_assignments' ? 'Confirmed assignments' : slugToTitle(key))), rows: [] };
           const section = document.createElement('div');
           const cls = panelClassForKey(key);
           section.className = 'rankings-section' + (cls? (' '+cls) : '');
           const header = document.createElement('div');
           header.className = 'section-header';
           const h2 = document.createElement('h2');
-          h2.innerHTML = getIconForPanel(key) + (obj.name || (key==='void_damage' ? 'Avoidable Void Damage' : slugToTitle(key)));
+          h2.innerHTML = getIconForPanel(key) + (obj.name || (key==='void_damage' ? 'Avoidable Void Damage' : (key==='confirmed_assignments' ? 'Confirmed assignments' : slugToTitle(key))));
           header.appendChild(h2);
           section.appendChild(header);
           const list = document.createElement('div');
           list.className = 'rankings-list';
           const rows = (obj.rows||[]).slice();
           if (!rows.length) {
-            list.innerHTML = (key==='void_damage') ? emptyStateHtml('No players took avoidable void damage!') : emptyStateHtml();
+            list.innerHTML = (key==='void_damage') ? emptyStateHtml('No players took avoidable void damage!') : (key==='confirmed_assignments') ? emptyStateHtml('No players confirmed their assignments') : emptyStateHtml();
           } else {
             rows.sort((a,b)=> (b.points||0)-(a.points||0) || String(a.character_name).localeCompare(String(b.character_name)));
             // Calculate fill percentages based on points (for negative values, use absolute value)
