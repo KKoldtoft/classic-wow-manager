@@ -3130,6 +3130,21 @@ app.get('/user', async (req, res) => {
       const isManagement = !!(perms && perms.hasManagementRole);
       const isHelper = !!(perms && perms.hasHelperRole);
 
+      // Fetch user's characters
+      let characters = [];
+      try {
+        const charResult = await pool.query(
+          'SELECT character_name, class FROM players WHERE discord_id = $1 ORDER BY character_name',
+          [req.user.id]
+        );
+        characters = charResult.rows.map(row => ({
+          name: row.character_name,
+          class: row.class
+        }));
+      } catch (charError) {
+        console.error('Error fetching user characters:', charError);
+      }
+
       res.json({
         loggedIn: true,
         id: req.user.id,
@@ -3139,6 +3154,7 @@ app.get('/user', async (req, res) => {
         email: req.user.email,
         hasManagementRole: isManagement,
         hasHelperRole: isHelper,
+        characters: characters,
         permissions: {
           canManage: isManagement,
           canManageRoster: (isManagement || isHelper)
@@ -3155,6 +3171,7 @@ app.get('/user', async (req, res) => {
         email: req.user.email,
         hasManagementRole: false,
         hasHelperRole: false,
+        characters: [],
         permissions: {
           canManage: false,
           canManageRoster: false
@@ -13434,7 +13451,7 @@ app.get('/api/guild-members/:eventId', async (req, res) => {
 
         const out = [];
         const seen = new Set();
-        // Add direct name+class matches first
+        // Add direct name+class matches first (raid character IS in guild = 10 points)
         directMatchesRes.rows.forEach(r => {
             const key = `${String(r.character_name)}|${String(r.character_class)}`;
             if (seen.has(key)) return;
@@ -13444,33 +13461,42 @@ app.get('/api/guild-members/:eventId', async (req, res) => {
                 character_class: r.character_class,
                 discord_id: null,
                 guild_character_name: r.character_name,
-                points: 10
+                points: 10,
+                is_raid_char_in_guild: true
             });
         });
-        // Add discord-linked matches (covers alts in guild)
+        // Add discord-linked matches (raid character is NOT in guild, but player has guild alt = 5 points)
         dids.forEach(did => {
             if (!guildSet.has(did)) return;
             const info = participantsMap.get(did);
             if (!info) return;
             const key = `${String(info.character_name)}|${String(info.character_class)}`;
-            if (seen.has(key)) return;
+            if (seen.has(key)) return; // Already added as direct match
             seen.add(key);
+            const guildCharName = guildSet.get(did) || info.character_name;
+            // Check if raid character matches guild character (shouldn't happen if not in directSet, but safety check)
+            const isDirectMatch = String(info.character_name).toLowerCase() === String(guildCharName).toLowerCase();
             out.push({
                 character_name: info.character_name,
                 character_class: info.character_class,
                 discord_id: did,
-                guild_character_name: guildSet.get(did) || info.character_name,
-                points: 10
+                guild_character_name: guildCharName,
+                points: isDirectMatch ? 10 : 5,
+                is_raid_char_in_guild: isDirectMatch
             });
         });
 
-        console.log(`🏰 [GUILD MEMBERS] Found ${out.length} guild members in raid for event: ${eventId}`);
+        const fullGuildMembers = out.filter(m => m.points === 10).length;
+        const altMembers = out.filter(m => m.points === 5).length;
+        console.log(`🏰 [GUILD MEMBERS] Found ${out.length} guild members in raid for event: ${eventId} (${fullGuildMembers} on guild char, ${altMembers} on alt)`);
         
         res.json({ 
             success: true, 
             data: out,
             eventId,
-            pointsPerMember: 10,
+            pointsPerMember: '10 (guild char) or 5 (alt)',
+            fullGuildMembers,
+            altMembers,
             totalCount: out.length
         });
         

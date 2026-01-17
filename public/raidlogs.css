@@ -3312,4 +3312,350 @@ body.raid-active .scroll-target {
     .manual-rewards-table td {
         padding: 6px 8px;
     }
+}
+
+/* ===== MY CHARACTER HIGHLIGHT ANIMATION (PROFESSIONAL & SLEEK) ===== */
+
+/* Text animation - subtle and refined */
+@keyframes myCharacterPulse {
+    0% {
+        transform: scale(1);
+        text-shadow: 0 0 0px rgba(255, 215, 0, 0);
+    }
+    15% {
+        transform: scale(1.08);
+        text-shadow: 0 0 8px rgba(255, 215, 0, 0.8),
+                     0 0 16px rgba(255, 215, 0, 0.5),
+                     0 0 24px rgba(255, 215, 0, 0.3);
+    }
+    30% {
+        transform: scale(1.04);
+        text-shadow: 0 0 6px rgba(255, 215, 0, 0.7),
+                     0 0 14px rgba(255, 215, 0, 0.4),
+                     0 0 20px rgba(255, 215, 0, 0.25);
+    }
+    45% {
+        transform: scale(1.06);
+        text-shadow: 0 0 7px rgba(255, 215, 0, 0.75),
+                     0 0 15px rgba(255, 215, 0, 0.45),
+                     0 0 22px rgba(255, 215, 0, 0.28);
+    }
+    60% {
+        transform: scale(1.03);
+        text-shadow: 0 0 5px rgba(255, 215, 0, 0.65),
+                     0 0 12px rgba(255, 215, 0, 0.35),
+                     0 0 18px rgba(255, 215, 0, 0.2);
+    }
+    75% {
+        transform: scale(1.04);
+        text-shadow: 0 0 6px rgba(255, 215, 0, 0.7),
+                     0 0 13px rgba(255, 215, 0, 0.4),
+                     0 0 19px rgba(255, 215, 0, 0.23);
+    }
+    100% {
+        transform: scale(1);
+        text-shadow: 0 0 0px rgba(255, 215, 0, 0);
+    }
+}
+
+/* Elegant card border pulse */
+@keyframes characterCardPulse {
+    0% {
+        box-shadow: inset 0 0 0 2px rgba(255, 215, 0, 0);
+    }
+    15% {
+        box-shadow: inset 0 0 0 2px rgba(255, 215, 0, 0.4);
+    }
+    30% {
+        box-shadow: inset 0 0 0 2px rgba(255, 215, 0, 0.3);
+    }
+    45% {
+        box-shadow: inset 0 0 0 2px rgba(255, 215, 0, 0.35);
+    }
+    60% {
+        box-shadow: inset 0 0 0 2px rgba(255, 215, 0, 0.25);
+    }
+    75% {
+        box-shadow: inset 0 0 0 2px rgba(255, 215, 0, 0.3);
+    }
+    100% {
+        box-shadow: inset 0 0 0 2px rgba(255, 215, 0, 0);
+    }
+}
+
+/* Spec icon subtle pulse */
+@keyframes specIconPulse {
+    0%, 100% {
+        transform: translateY(-50%) scale(1);
+        filter: drop-shadow(0 0 0px rgba(255, 215, 0, 0));
+    }
+    15%, 45%, 75% {
+        transform: translateY(-50%) scale(1.08);
+        filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.6));
+    }
+    30%, 60% {
+        transform: translateY(-50%) scale(1.04);
+        filter: drop-shadow(0 0 3px rgba(255, 215, 0, 0.4));
+    }
+}
+
+/* Base styling for character names */
+.character-name.my-character {
+    display: inline-block;
+    transform-origin: center;
+    position: relative;
+    z-index: 10;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Animation trigger for text */
+.character-name.my-character-animate {
+    animation: myCharacterPulse 2s cubic-bezier(0.4, 0, 0.2, 1);
+    animation-fill-mode: forwards;
+}
+
+/* Animate the entire character card with elegant border */
+.character-info:has(.character-name.my-character-animate) {
+    animation: characterCardPulse 2s cubic-bezier(0.4, 0, 0.2, 1);
+    animation-fill-mode: forwards;
+}
+
+/* Animate the spec icon */
+.character-info:has(.character-name.my-character-animate) .spec-icon {
+    animation: specIconPulse 2s cubic-bezier(0.4, 0, 0.2, 1);
+    animation-fill-mode: forwards;
+}
+
+/* Refined permanent highlight */
+.character-name.my-character.animation-complete {
+    text-shadow: 0 0 4px rgba(255, 215, 0, 0.35),
+                 0 1px 2px rgba(0, 0, 0, 0.3);
+    font-weight: 600;
+}
+
+/* Subtle permanent border on card */
+.character-info:has(.character-name.my-character.animation-complete) {
+    box-shadow: inset 0 0 0 1px rgba(255, 215, 0, 0.25);
+}
+
+/* Different panel contexts */
+.rankings-section .character-name.my-character,
+.manual-rewards-section .character-name.my-character,
+.stats-dashboard .stat-value.my-character,
+.wall-of-shame-dashboard .stat-value.my-character {
+    display: inline-block;
+    transform-origin: center;
+    position: relative;
+    z-index: 10;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.rankings-section .character-name.my-character-animate,
+.manual-rewards-section .character-name.my-character-animate,
+.stats-dashboard .stat-value.my-character-animate,
+.wall-of-shame-dashboard .stat-value.my-character-animate {
+    animation: myCharacterPulse 2s cubic-bezier(0.4, 0, 0.2, 1);
+    animation-fill-mode: forwards;
+}
+
+/* Stat card glow for dashboard */
+.stat-card:has(.stat-value.my-character-animate) {
+    animation: characterCardPulse 2s cubic-bezier(0.4, 0, 0.2, 1);
+    animation-fill-mode: forwards;
+}
+
+.stat-card:has(.stat-value.my-character.animation-complete) {
+    box-shadow: 0 8px 25px rgba(0, 122, 204, 0.15),
+                inset 0 0 0 1px rgba(255, 215, 0, 0.2);
+}
+
+/* Responsive - more subtle on mobile */
+@media (max-width: 768px) {
+    @keyframes myCharacterPulse {
+        0% {
+            transform: scale(1);
+            text-shadow: 0 0 0px rgba(255, 215, 0, 0);
+        }
+        15% {
+            transform: scale(1.06);
+            text-shadow: 0 0 6px rgba(255, 215, 0, 0.7),
+                         0 0 12px rgba(255, 215, 0, 0.4);
+        }
+        30% {
+            transform: scale(1.03);
+            text-shadow: 0 0 5px rgba(255, 215, 0, 0.6),
+                         0 0 10px rgba(255, 215, 0, 0.35);
+        }
+        45% {
+            transform: scale(1.05);
+            text-shadow: 0 0 5.5px rgba(255, 215, 0, 0.65),
+                         0 0 11px rgba(255, 215, 0, 0.38);
+        }
+        60% {
+            transform: scale(1.02);
+            text-shadow: 0 0 4px rgba(255, 215, 0, 0.55),
+                         0 0 9px rgba(255, 215, 0, 0.3);
+        }
+        75% {
+            transform: scale(1.04);
+            text-shadow: 0 0 5px rgba(255, 215, 0, 0.6),
+                         0 0 10px rgba(255, 215, 0, 0.33);
+        }
+        100% {
+            transform: scale(1);
+            text-shadow: 0 0 0px rgba(255, 215, 0, 0);
+        }
+    }
+    
+    @keyframes characterCardPulse {
+        0%, 100% {
+            box-shadow: inset 0 0 0 1px rgba(255, 215, 0, 0);
+        }
+        15%, 45%, 75% {
+            box-shadow: inset 0 0 0 1px rgba(255, 215, 0, 0.3);
+        }
+        30%, 60% {
+            box-shadow: inset 0 0 0 1px rgba(255, 215, 0, 0.2);
+        }
+    }
+}
+
+/* ===== SELF-CENTERED VIEW TOGGLE ===== */
+.self-centered-toggle {
+    display: block;
+    text-align: center;
+    margin: 20px auto;
+    max-width: 400px;
+    background: rgba(17, 24, 39, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 215, 0, 0.3);
+    border-radius: 8px;
+    padding: 12px 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3),
+                0 0 20px rgba(255, 215, 0, 0.1);
+}
+
+.self-centered-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+    margin: 0;
+}
+
+.self-centered-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: #FFD700;
+}
+
+.self-centered-text {
+    color: #e5e7eb;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+}
+
+.self-centered-label:hover .self-centered-text {
+    color: #FFD700;
+}
+
+.self-centered-label input[type="checkbox"]:checked + .self-centered-text {
+    color: #FFD700;
+    font-weight: 600;
+}
+
+/* When checkbox is checked, make all ranking items transparent except user's */
+body.self-centered-mode .ranking-item {
+    opacity: 0.25;
+    transition: opacity 0.3s ease;
+}
+
+body.self-centered-mode .ranking-item:has(.my-character) {
+    opacity: 1;
+}
+
+/* Make section headers transparent when panel doesn't contain user's character */
+body.self-centered-mode .section-header:not(:has(.my-character)) {
+    opacity: 0.25;
+    transition: opacity 0.3s ease;
+}
+
+/* Alternative: target section headers in panels without user's characters */
+body.self-centered-mode .rankings-section:not(:has(.my-character)) .section-header {
+    opacity: 0.25;
+    transition: opacity 0.3s ease;
+}
+
+/* Make totem subheaders transparent */
+body.self-centered-mode .totem-subheader {
+    opacity: 0.25;
+    transition: opacity 0.3s ease;
+}
+
+/* Make panel borders transparent */
+body.self-centered-mode .rankings-section {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    transition: border-color 0.3s ease;
+}
+
+body.self-centered-mode .rankings-section:has(.my-character) {
+    border-color: transparent !important; /* Keep original gradient border */
+}
+
+/* Make stat card borders more transparent */
+body.self-centered-mode .stat-card {
+    border-color: rgba(131, 168, 255, 0.025) !important;
+    transition: border-color 0.3s ease;
+}
+
+body.self-centered-mode .stat-card:has(.my-character) {
+    border-color: rgba(131, 168, 255, 0.18) !important; /* Keep original border */
+}
+
+/* Make manual rewards section border more transparent */
+body.self-centered-mode .manual-rewards-section {
+    border-color: rgba(139, 92, 246, 0.1) !important;
+    transition: border-color 0.3s ease;
+}
+
+body.self-centered-mode .manual-rewards-section:has(.my-character) {
+    border-color: #8b5cf6 !important; /* Keep original accent color */
+}
+
+/* Make stats section border more transparent */
+body.self-centered-mode .stats-section {
+    border-color: rgba(88, 101, 242, 0.1) !important;
+    transition: border-color 0.3s ease;
+}
+
+/* Make stats section transparent when it doesn't contain user's characters */
+body.self-centered-mode .stats-section {
+    opacity: 1; /* Keep stats section visible by default */
+}
+
+/* Also make stat cards in dashboard transparent except user's */
+body.self-centered-mode .stat-card:not(:has(.my-character)) {
+    opacity: 0.25;
+    transition: opacity 0.3s ease;
+}
+
+/* Responsive positioning */
+@media (max-width: 768px) {
+    .self-centered-toggle {
+        margin: 15px auto;
+        padding: 10px 16px;
+    }
+    
+    .self-centered-text {
+        font-size: 13px;
+    }
+    
+    .self-centered-label input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+    }
 } 

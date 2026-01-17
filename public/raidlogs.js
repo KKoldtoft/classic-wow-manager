@@ -957,6 +957,9 @@ class RaidLogsManager {
             this.updateGoldCards();
             // Points breakdown debug table removed
             
+            // Highlight user's own character names with animation
+            this.highlightMyCharacters();
+            
             // Update the original position now that content is loaded
             setTimeout(() => {
                 this.storeOriginalPosition();
@@ -2335,12 +2338,13 @@ class RaidLogsManager {
                 });
             }
 
-            // Guild members fixed +10
+            // Guild members points (variable: 10 for direct, 5 for alts)
             if (this.guildMembersData && Array.isArray(this.guildMembersData)) {
                 this.guildMembersData.forEach(row => {
                     const nm = String(row.character_name || '').toLowerCase();
                     if (!confirmedNameSet.has(nm)) return;
-                    positivePoints += 10;
+                    const pts = Number(row.points) || 0;
+                    positivePoints += pts;
                 });
             }
 
@@ -3903,24 +3907,41 @@ class RaidLogsManager {
 
         console.log(`🏰 Displaying ${players.length} guild members`);
 
-        // Since all guild members get 10 points, they all have 100% fill
-        container.innerHTML = players.map((player, index) => {
+        // Sort by points (10pt first, then 5pt) then alphabetically
+        const sortedPlayers = [...players].sort((a, b) => {
+            const ptsA = Number(a.points) || 0;
+            const ptsB = Number(b.points) || 0;
+            if (ptsB !== ptsA) return ptsB - ptsA;
+            return String(a.character_name).localeCompare(String(b.character_name));
+        });
+
+        container.innerHTML = sortedPlayers.map((player, index) => {
             const position = index + 1;
             const characterClass = this.normalizeClassName(player.character_class);
+            const points = Number(player.points) || 10;
+            const isAlt = points === 5 || !player.is_raid_char_in_guild;
+            const fillPercentage = (points / 10) * 100; // 10pts = 100%, 5pts = 50%
+            
+            // Build details text
+            let detailsText = 'Guild Member';
+            if (isAlt && player.guild_character_name && 
+                String(player.guild_character_name).toLowerCase() !== String(player.character_name).toLowerCase()) {
+                detailsText += ' (But on another character)';
+            }
             
             return `
                 <div class="ranking-item">
                     <div class="ranking-position">
                         <span class="ranking-number">#${position}</span>
                     </div>
-                                         <div class="character-info class-${characterClass}" style="--fill-percentage: 100%">
-                         <div class="character-name">${this.getClassIconHtml(player.character_class)}${player.character_name}</div>
-                         <div class="character-details" title="Guild member: ${player.guild_character_name}">
-                             Guild Member
-                         </div>
-                     </div>
-                    <div class="performance-amount">
-                        <div class="amount-value">10</div>
+                    <div class="character-info class-${characterClass}" style="--fill-percentage: ${fillPercentage}%">
+                        <div class="character-name">${this.getClassIconHtml(player.character_class)}${player.character_name}</div>
+                        <div class="character-details" title="Guild member: ${player.guild_character_name}">
+                            ${detailsText}
+                        </div>
+                    </div>
+                    <div class="performance-amount ${points === 5 ? 'partial-points' : ''}">
+                        <div class="amount-value">${points}</div>
                         <div class="points-label">points</div>
                     </div>
                 </div>
@@ -5575,6 +5596,11 @@ class RaidLogsManager {
             if (delBtn) delBtn.addEventListener('click', ()=> this.deleteEntry(e));
             if (val >= 0 || e.is_gold) rewardsCol.appendChild(item); else dedsCol.appendChild(item);
         });
+        
+        // Re-highlight user's characters after manual rewards are rendered
+        setTimeout(() => {
+            this.highlightMyCharacters();
+        }, 50);
     }
     displaySunderRankings(players) {
         const container = document.getElementById('sunder-list');
@@ -7021,7 +7047,7 @@ class RaidLogsManager {
 
             // Streaks & guild
             streakMap=new Map(); (this.playerStreaksData||[]).forEach(r=>{ const s=Number(r.player_streak)||0; let pts=0; if(s>=8)pts=15; else if(s===7)pts=12; else if(s===6)pts=9; else if(s===5)pts=6; else if(s===4)pts=3; if(pts) streakMap.set(nameKey(r),pts); });
-            guildMap=new Map(); (this.guildMembersData||[]).forEach(r=>{ guildMap.set(nameKey(r),10); });
+            guildMap=new Map(); (this.guildMembersData||[]).forEach(r=>{ const pts=Number(r.points)||0; if(pts) guildMap.set(nameKey(r),pts); });
         }
 
         // Debug table removed; keep totals computation for internal consistency if container exists
@@ -7466,7 +7492,7 @@ class RaidLogsManager {
                 }
                 // Streaks/Guild
                 try { const row=(this.playerStreaksData||[]).find(r=> lower(r.character_name)===nameKey); if(row){ const s=Number(row.player_streak)||0; let pts=0; if(s>=8)pts=15; else if(s===7)pts=12; else if(s===6)pts=9; else if(s===5)pts=6; else if(s===4)pts=3; push('Streak', pts);} } catch {}
-                try { const hit=(this.guildMembersData||[]).some(r=> lower(r.character_name)===nameKey); if(hit) push('Guild Mem', 10); } catch {}
+                try { const row=(this.guildMembersData||[]).find(r=> lower(r.character_name)===nameKey); if(row){ const pts=Number(row.points)||0; if(pts) push('Guild Mem', pts);} } catch {}
                 // Big Buyer
                 push('Big Buyer', sumFrom(this.bigBuyerData, nameKey));
                 // Manual rewards split
@@ -9191,6 +9217,157 @@ class RaidLogsManager {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    /**
+     * Highlights the logged-in user's character names across all panels with a pulse/zoom animation
+     * Animation triggers on page load and also uses IntersectionObserver for scroll-based animations
+     */
+    async highlightMyCharacters() {
+        try {
+            // Fetch current user data if not already loaded
+            if (!this.currentUser || !this.currentUser.characters) {
+                const response = await fetch('/user');
+                if (!response.ok) return;
+                this.currentUser = await response.json();
+            }
+
+            // Check if user has any characters linked
+            if (!this.currentUser || !this.currentUser.characters || this.currentUser.characters.length === 0) {
+                console.log('👤 No characters linked to current user');
+                return;
+            }
+
+            const myCharacterNames = this.currentUser.characters.map(c => c.name.toLowerCase());
+            console.log(`👤 Highlighting user's characters: ${myCharacterNames.join(', ')}`);
+
+            // Find all character-name elements across the page
+            const characterNameElements = document.querySelectorAll('.character-name');
+            const elementsToAnimate = [];
+
+            characterNameElements.forEach(element => {
+                const textContent = element.textContent.trim();
+                
+                // Check if this element contains one of the user's character names
+                myCharacterNames.forEach(charName => {
+                    if (textContent.toLowerCase().includes(charName)) {
+                        element.classList.add('my-character');
+                        elementsToAnimate.push(element);
+                    }
+                });
+            });
+
+            // Also check stat-value elements in dashboard cards (for Wall of Shame, etc.)
+            const statValueElements = document.querySelectorAll('.stat-value');
+            statValueElements.forEach(element => {
+                const textContent = element.textContent.trim();
+                
+                myCharacterNames.forEach(charName => {
+                    if (textContent.toLowerCase().includes(charName)) {
+                        element.classList.add('my-character');
+                        elementsToAnimate.push(element);
+                    }
+                });
+            });
+
+            console.log(`✨ Found ${elementsToAnimate.length} instances of user's characters`);
+
+            // Show the self-centered toggle if user has characters
+            if (elementsToAnimate.length > 0) {
+                const toggle = document.getElementById('self-centered-toggle');
+                if (toggle) toggle.style.display = 'block';
+            }
+
+            // Create an IntersectionObserver to trigger animations when elements come into view
+            const animationObserver = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        // Trigger animation every time element comes into view
+                        const element = entry.target;
+                        
+                        // Remove the animation class to reset
+                        element.classList.remove('my-character-animate');
+                        element.classList.remove('animation-complete');
+                        
+                        // Force a reflow to ensure the animation restarts
+                        void element.offsetWidth;
+                        
+                        // Re-add the animation class
+                        element.classList.add('my-character-animate');
+                        
+                        // Add permanent glow after animation completes (2s duration)
+                        setTimeout(() => {
+                            element.classList.add('animation-complete');
+                        }, 2000);
+                    } else {
+                        // When element leaves viewport, remove classes so it can re-trigger
+                        entry.target.classList.remove('my-character-animate');
+                        entry.target.classList.remove('animation-complete');
+                    }
+                });
+            }, {
+                threshold: 0.1, // Trigger when 10% of element is visible
+                rootMargin: '50px' // Start animation slightly before element enters viewport
+            });
+
+            // Observe all elements that need animation
+            elementsToAnimate.forEach(element => {
+                animationObserver.observe(element);
+            });
+
+            // For elements already visible on page load, trigger animation immediately
+            setTimeout(() => {
+                elementsToAnimate.forEach(element => {
+                    const rect = element.getBoundingClientRect();
+                    const isVisible = rect.top >= 0 && rect.bottom <= window.innerHeight;
+                    
+                    if (isVisible) {
+                        // Trigger initial animation for visible elements
+                        element.classList.add('my-character-animate');
+                        
+                        // Add permanent glow after animation completes
+                        setTimeout(() => {
+                            element.classList.add('animation-complete');
+                        }, 2000);
+                    }
+                });
+            }, 300); // Small delay to ensure DOM is fully rendered
+
+            // Setup self-centered mode toggle
+            this.setupSelfCenteredToggle();
+
+        } catch (error) {
+            console.error('❌ Error highlighting user characters:', error);
+        }
+    }
+
+    /**
+     * Setup self-centered mode toggle functionality
+     * Allows users to fade out everyone else's rankings
+     */
+    setupSelfCenteredToggle() {
+        const checkbox = document.getElementById('self-centered-checkbox');
+        if (!checkbox) return;
+
+        // Load saved preference
+        const savedPreference = localStorage.getItem('selfCenteredMode');
+        if (savedPreference === 'true') {
+            checkbox.checked = true;
+            document.body.classList.add('self-centered-mode');
+        }
+
+        // Handle checkbox change
+        checkbox.addEventListener('change', function() {
+            if (this.checked) {
+                document.body.classList.add('self-centered-mode');
+                localStorage.setItem('selfCenteredMode', 'true');
+                console.log('🎯 Self-centered mode: ENABLED - Focusing on your characters only');
+            } else {
+                document.body.classList.remove('self-centered-mode');
+                localStorage.setItem('selfCenteredMode', 'false');
+                console.log('👥 Self-centered mode: DISABLED - Showing everyone');
+            }
+        });
     }
 }
 
