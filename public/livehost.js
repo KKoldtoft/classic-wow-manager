@@ -1818,7 +1818,6 @@
         clearPhases();
         addPhase('phase1', 'Phase 1: Import Events');
         addPhase('phase2', 'Phase 2: Analysis');
-        addPhase('phase3', 'Phase 3: Real-time Polling');
         updatePhaseStatus('phase1', 'running');
         
         // Reset state
@@ -1979,7 +1978,6 @@
             
             updatePhaseStatus('analysis-bloodrage', 'complete');
             setStatus('complete', `Analysis complete - ${data.badBloodrages?.length || 0} bad bloodrages found`);
-            goBtn.textContent = 'Polling...';
         });
         
         eventSource.addEventListener('charge-analysis', (e) => {
@@ -2076,38 +2074,19 @@
             updatePhaseStatus('phase2', 'complete');
             
             setStatus('complete', 'Analysis complete!');
-            goBtn.textContent = 'Polling...';
+            goBtn.textContent = 'Import Complete';
         });
         
-        eventSource.addEventListener('live-started', (e) => {
+        eventSource.addEventListener('import-complete', (e) => {
             const data = JSON.parse(e.data);
-            console.log('[LIVE] Live tracking started:', data);
-            
-            // Mark Phase 3 as running
-            updatePhaseStatus('phase3', 'running');
-            
-            const refreshIntervalMin = Math.round(data.refreshInterval / 60000);
-            setStatus('complete', `Live tracking active - refreshing every ${refreshIntervalMin} minutes`);
-            goBtn.textContent = 'Live';
+            console.log('[LIVE] Import complete:', data);
+            setStatus('complete', 'Import and analysis complete!');
+            goBtn.textContent = 'Import Complete';
             goBtn.disabled = false;
-            goBtn.style.background = '#28a745'; // Green to show active
+            goBtn.style.background = '#28a745'; // Green to show complete
         });
         
-        eventSource.addEventListener('new-events', (e) => {
-            const data = JSON.parse(e.data);
-            totalEvents = data.totalEvents || 0;
-            updateStats();
-            
-            if (data.events && data.events.length > 0) {
-                addEventsToStream(data.events);
-                const cursorFormatted = formatNumber(data.cursor);
-                setStatus('complete', `✅ New events: +${data.count} | Cursor: ${cursorFormatted} | Total: ${formatNumber(totalEvents)}`);
-                
-                // Update PW:S and Renew highlights for live viewers
-                savePwsToBackend();
-                saveRenewToBackend();
-            }
-        });
+        // No more new-events listener - single import only
         
         eventSource.addEventListener('heartbeat', (e) => {
             const data = JSON.parse(e.data);
@@ -2222,7 +2201,7 @@
         scrollBtn.textContent = `Auto-scroll: ${autoScroll ? 'ON' : 'OFF'}`;
     }
 
-    // Stop the active polling session
+    // Stop the active import session
     async function stopSession() {
         if (eventSource) {
             eventSource.close();
