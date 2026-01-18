@@ -98,46 +98,6 @@
             50% { opacity: 0.5; }
         }
 
-        .countdown-section {
-            max-width: 600px;
-            margin: 20px auto 0;
-            padding: 15px 20px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-        }
-
-        .countdown-label {
-            font-size: 13px;
-            color: var(--text-dim);
-            margin-bottom: 8px;
-            text-align: center;
-        }
-
-        .countdown-bar-container {
-            position: relative;
-            height: 8px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 4px;
-            overflow: hidden;
-        }
-
-        .countdown-bar {
-            height: 100%;
-            width: 0%;
-            background: linear-gradient(90deg, #007bff, #0056b3);
-            border-radius: 4px;
-            transition: none; /* Smooth RAF animation */
-        }
-
-        .countdown-time {
-            text-align: center;
-            margin-top: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--accent);
-        }
-
         .viewer-count {
             color: var(--text-dim);
             font-size: 12px;
@@ -1251,15 +1211,6 @@
                 <span id="statusText">Connecting...</span>
             </div>
             <div class="viewer-count" id="viewerCount"></div>
-            
-            <!-- Countdown Timer -->
-            <div class="countdown-section" id="countdownSection" style="display: none;">
-                <div class="countdown-label">Next data refresh in:</div>
-                <div class="countdown-bar-container">
-                    <div class="countdown-bar" id="countdownBar"></div>
-                </div>
-                <div class="countdown-time" id="countdownTime">--:--</div>
-            </div>
         </div>
 
         <!-- Raid Info Panel -->
