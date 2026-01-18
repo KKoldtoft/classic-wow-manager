@@ -6754,9 +6754,20 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         
         sendEvent('meta', { actorCount: Object.keys(meta.actorsById).length, abilityCount: Object.keys(meta.abilitiesById).length });
         
-        // Step 3: Re-import ALL events (ON CONFLICT DO NOTHING prevents duplicates)
-        console.log(`[LIVE REFRESH ${refreshCount}] Re-importing all events from ${reportMinStart}ms to ${reportMaxEnd}ms...`);
-        sendEvent('refresh-status', { message: 'Re-importing all events from WCL...', refreshCount });
+        // Step 3: CLEAR existing data and do a fresh full re-import
+        console.log(`[LIVE REFRESH ${refreshCount}] Clearing old event data and highlights for this session...`);
+        await safeQuery(`
+          DELETE FROM wcl_event_pages 
+          WHERE event_id = $1 AND report_code = $2;
+        `, [sessionId, reportCode]);
+        
+        await safeQuery(`
+          DELETE FROM wcl_live_highlights
+          WHERE report_code = $1;
+        `, [reportCode]);
+        
+        console.log(`[LIVE REFRESH ${refreshCount}] Starting fresh import of all events from ${reportMinStart}ms to ${reportMaxEnd}ms...`);
+        sendEvent('refresh-status', { message: 'Clearing old data and re-importing fresh from WCL...', refreshCount });
         
         // Send initial progress to show import has started
         sendEvent('refresh-progress', { 
@@ -6783,11 +6794,10 @@ app.get('/api/wcl/stream-import', async (req, res) => {
           const reimportNextCursor = reimportPage.nextPageTimestamp;
           
           if (reimportEvents.length > 0) {
-            // Store events (ON CONFLICT DO NOTHING means no duplicates)
+            // Store events (fresh insert since we cleared old data)
             await safeQuery(`
               INSERT INTO wcl_event_pages (event_id, report_code, start_time, end_time, next_cursor, events)
-              VALUES ($1, $2, $3, $4, $5, $6)
-              ON CONFLICT (event_id, report_code, start_time, end_time) DO NOTHING;
+              VALUES ($1, $2, $3, $4, $5, $6);
             `, [sessionId, reportCode, reimportCursor, reimportEnd, reimportNextCursor, JSON.stringify(reimportEvents)]);
             
             reimportTotalEvents += reimportEvents.length;
