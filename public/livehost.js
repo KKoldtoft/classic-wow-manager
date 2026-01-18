@@ -2082,17 +2082,19 @@
             console.log('[LIVE] Import complete:', data);
             setStatus('complete', 'Import and analysis complete!');
             
-            // Update UI for completed import
-            goBtn.textContent = '✅ Import Complete';
-            goBtn.disabled = true;
-            goBtn.style.background = '#28a745'; // Green to show complete
-            goBtn.style.cursor = 'not-allowed';
-            goBtn.style.opacity = '0.7';
+            // Reset to GO button so user can import again
+            goBtn.textContent = 'GO';
+            goBtn.disabled = false;
+            goBtn.style.background = '';
+            goBtn.style.cursor = '';
+            goBtn.style.opacity = '';
             
             // Hide STOP button - nothing to stop anymore
             if (stopBtn) stopBtn.style.display = 'none';
             
             isImporting = false;
+            isHostingSession = false;
+            stopTitleFlash();
         });
         
         // No more new-events listener - single import only

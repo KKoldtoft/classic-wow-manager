@@ -4564,8 +4564,8 @@ function broadcastHighlightsToViewers(data) {
   }
 }
 
-// Save highlights to cache table and broadcast to viewers
-async function saveAndBroadcastHighlights(reportCode, highlightType, highlights) {
+// Save highlights to cache table WITHOUT broadcasting to viewers (only save to DB)
+async function saveHighlightsToCache(reportCode, highlightType, highlights) {
   try {
     await pool.query(`
       INSERT INTO wcl_live_highlights (report_code, highlight_type, highlights, version, updated_at)
@@ -4573,16 +4573,31 @@ async function saveAndBroadcastHighlights(reportCode, highlightType, highlights)
       ON CONFLICT (report_code, highlight_type) 
       DO UPDATE SET highlights = $3, version = wcl_live_highlights.version + 1, updated_at = NOW()
     `, [reportCode, highlightType, JSON.stringify(highlights)]);
-    
-    // Broadcast to connected viewers
-    broadcastHighlightsToViewers({
-      type: highlightType,
-      reportCode,
-      data: highlights,
-      timestamp: Date.now()
-    });
   } catch (err) {
-    console.error(`[LIVE] Error saving/broadcasting ${highlightType}:`, err.message);
+    console.error(`[LIVE] Error saving ${highlightType}:`, err.message);
+  }
+}
+
+// Broadcast all highlights to viewers at once (call this when import is complete)
+async function broadcastAllHighlightsToViewers(reportCode) {
+  try {
+    const result = await pool.query(
+      'SELECT highlight_type, highlights FROM wcl_live_highlights WHERE report_code = $1',
+      [reportCode]
+    );
+    
+    console.log(`[LIVE] Broadcasting ${result.rows.length} highlight types to ${liveViewerConnections.size} viewers`);
+    
+    for (const row of result.rows) {
+      broadcastHighlightsToViewers({
+        type: row.highlight_type,
+        reportCode,
+        data: JSON.parse(row.highlights),
+        timestamp: Date.now()
+      });
+    }
+  } catch (err) {
+    console.error('[LIVE] Error broadcasting highlights:', err.message);
   }
 }
 
@@ -6181,10 +6196,10 @@ app.get('/api/wcl/stream-import', async (req, res) => {
       }
       sendEvent('fights', { count: fights.length, startTime: reportMinStart, endTime: reportMaxEnd, fights: fights.map(f => ({ id: f.id, name: f.name, startTime: f.startTime, endTime: f.endTime, kill: f.kill, encounterID: f.encounterID })) });
       
-      // Save fights to cache and broadcast to live viewers immediately
+      // Save fights to cache (will broadcast all at once when import is complete)
       const fightsForLive = fights.map(f => ({ id: f.id, name: f.name, startTime: f.startTime, endTime: f.endTime, kill: f.kill, encounterID: f.encounterID }));
-      await saveAndBroadcastHighlights(reportCode, 'meta', { fights: fightsForLive, tanks: [], hostName, hostId });
-      console.log(`[LIVE] Saved ${fightsForLive.length} fights to meta cache for live viewers (host: ${hostName})`);
+      await saveHighlightsToCache(reportCode, 'meta', { fights: fightsForLive, tanks: [], hostName, hostId });
+      console.log(`[LIVE] Saved ${fightsForLive.length} fights to meta cache (host: ${hostName})`);
     } catch (err) {
       sendEvent('warning', { message: 'Failed to fetch fights list' });
     }
@@ -6402,7 +6417,7 @@ app.get('/api/wcl/stream-import', async (req, res) => {
       sendEvent('bloodrage-analysis', bloodrageData);
       
       // Save to cache and broadcast to live viewers
-      await saveAndBroadcastHighlights(reportCode, 'bloodrages', bloodrageData);
+      await saveHighlightsToCache(reportCode, 'bloodrages', bloodrageData);
       
       console.log(`[LIVE] Bloodrage analysis complete: ${analysisResult.badBloodrages.length} bad out of ${analysisResult.totalBloodrages}`);
     } catch (analysisErr) {
@@ -6420,7 +6435,7 @@ app.get('/api/wcl/stream-import', async (req, res) => {
       };
       sendEvent('player-stats', playerStatsData);
       // Save to cache for live page
-      await saveAndBroadcastHighlights(reportCode, 'playerstats', playerStatsData);
+      await saveHighlightsToCache(reportCode, 'playerstats', playerStatsData);
       console.log(`[LIVE] Player stats from WCL: ${playerStats.damage.length} damage dealers, ${playerStats.healing.length} healers`);
     } catch (statsErr) {
       console.error('[LIVE] WCL Player stats error:', statsErr.message);
@@ -6443,7 +6458,7 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         sendEvent('charge-analysis', chargeData);
         
         // Save to cache and broadcast to live viewers
-        await saveAndBroadcastHighlights(reportCode, 'charges', chargeData);
+        await saveHighlightsToCache(reportCode, 'charges', chargeData);
         
         console.log(`[LIVE] Charge analysis complete: ${chargeResult.badCharges} bad out of ${chargeResult.totalCharges}`);
       } catch (chargeErr) {
@@ -6461,7 +6476,7 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         totalInterrupts: interruptResult.totalInterrupts
       };
       sendEvent('interrupt-analysis', interruptData);
-      await saveAndBroadcastHighlights(reportCode, 'interrupts', interruptData);
+      await saveHighlightsToCache(reportCode, 'interrupts', interruptData);
       console.log(`[LIVE] Interrupt analysis complete: ${interruptResult.totalInterrupts} by ${interruptResult.playerStats.length} players`);
     } catch (err) {
       console.error('[LIVE] Interrupt analysis error:', err.message);
@@ -6476,7 +6491,7 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         totalDecurses: decurseResult.totalDecurses
       };
       sendEvent('decurse-analysis', decurseData);
-      await saveAndBroadcastHighlights(reportCode, 'decurses', decurseData);
+      await saveHighlightsToCache(reportCode, 'decurses', decurseData);
       console.log(`[LIVE] Decurse analysis complete: ${decurseResult.totalDecurses} by ${decurseResult.playerStats.length} players`);
     } catch (err) {
       console.error('[LIVE] Decurse analysis error:', err.message);
@@ -6492,7 +6507,7 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         totalSunders: sunderResult.totalSunders
       };
       sendEvent('sunder-analysis', sunderData);
-      await saveAndBroadcastHighlights(reportCode, 'sunders', sunderData);
+      await saveHighlightsToCache(reportCode, 'sunders', sunderData);
       console.log(`[LIVE] Sunder analysis complete: ${sunderResult.effectiveSunders} effective by ${sunderResult.playerStats.length} players`);
     } catch (err) {
       console.error('[LIVE] Sunder analysis error:', err.message);
@@ -6508,7 +6523,7 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         totalScorches: scorchResult.totalScorches
       };
       sendEvent('scorch-analysis', scorchData);
-      await saveAndBroadcastHighlights(reportCode, 'scorches', scorchData);
+      await saveHighlightsToCache(reportCode, 'scorches', scorchData);
       console.log(`[LIVE] Scorch analysis complete: ${scorchResult.effectiveScorches} effective by ${scorchResult.playerStats.length} players`);
     } catch (err) {
       console.error('[LIVE] Scorch analysis error:', err.message);
@@ -6523,7 +6538,7 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         totalDisarms: disarmResult.totalDisarms
       };
       sendEvent('disarm-analysis', disarmData);
-      await saveAndBroadcastHighlights(reportCode, 'disarms', disarmData);
+      await saveHighlightsToCache(reportCode, 'disarms', disarmData);
       console.log(`[LIVE] Disarm analysis complete: ${disarmResult.totalDisarms} by ${disarmResult.playerStats.length} players`);
     } catch (err) {
       console.error('[LIVE] Disarm analysis error:', err.message);
@@ -6627,11 +6642,11 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         deaths: deathsByFight[f.id] || 0
       }));
 
-      await saveAndBroadcastHighlights(reportCode, 'meta', { fights: fightsWithDeaths, tanks: tankNames, hostName, hostId, deathLog });
+      await saveHighlightsToCache(reportCode, 'meta', { fights: fightsWithDeaths, tanks: tankNames, hostName, hostId, deathLog });
       console.log(`[LIVE] Player deaths calculated: ${deathLog.length} total across ${Object.keys(deathsByFight).length} fights`);
       
       // Also save deaths as a separate highlight for the deaths panel
-      await saveAndBroadcastHighlights(reportCode, 'deaths', { deaths: deathLog, count: deathLog.length });
+      await saveHighlightsToCache(reportCode, 'deaths', { deaths: deathLog, count: deathLog.length });
     } catch (err) {
       console.error('[LIVE] Deaths calculation error:', err.message);
     }
@@ -6646,7 +6661,7 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         curseWindows: curseResult.curseWindows
       };
       sendEvent('curse-damage-analysis', curseData);
-      await saveAndBroadcastHighlights(reportCode, 'curseDamage', curseData);
+      await saveHighlightsToCache(reportCode, 'curseDamage', curseData);
       console.log(`[LIVE] Curse damage analysis complete: ${curseResult.totalDamage.toLocaleString()} damage by ${curseResult.playerStats.length} mages during ${curseResult.curseWindows} curse windows`);
     } catch (err) {
       console.error('[LIVE] Curse damage analysis error:', err.message);
@@ -6661,13 +6676,17 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         totalSpores: sporeResult.totalSpores
       };
       sendEvent('spore-analysis', sporeData);
-      await saveAndBroadcastHighlights(reportCode, 'spores', sporeData);
+      await saveHighlightsToCache(reportCode, 'spores', sporeData);
       console.log(`[LIVE] Spore analysis complete: ${sporeResult.totalSpores} spores tracked`);
     } catch (err) {
       console.error('[LIVE] Spore analysis error:', err.message);
     }
     
     console.log('[LIVE] ====== PHASE 2 COMPLETE - ALL ANALYSIS DONE ======');
+    
+    // NOW broadcast all highlights to /live viewers at once
+    console.log('[LIVE] Broadcasting all highlights to live viewers...');
+    await broadcastAllHighlightsToViewers(reportCode);
     
     // Keep connection alive with simple heartbeats
     console.log('[LIVE] Import complete - keeping connection alive');
@@ -7134,10 +7153,10 @@ app.post('/api/live/highlights/pws', express.json({ limit: '5mb' }), async (req,
     return res.status(400).json({ ok: false, error: 'Missing reportCode or events' });
   }
   try {
-    await saveAndBroadcastHighlights(reportCode, 'pws', { events, count: events.length });
+    await saveHighlightsToCache(reportCode, 'pws', { events, count: events.length });
     // Also save meta data (fights, tanks) for detail modals on live page
     if (fights || tanks) {
-      await saveAndBroadcastHighlights(reportCode, 'meta', { fights: fights || [], tanks: tanks || [] });
+      await saveHighlightsToCache(reportCode, 'meta', { fights: fights || [], tanks: tanks || [] });
     }
     res.json({ ok: true, count: events.length });
   } catch (err) {
@@ -7152,7 +7171,7 @@ app.post('/api/live/highlights/renew', express.json({ limit: '5mb' }), async (re
     return res.status(400).json({ ok: false, error: 'Missing reportCode or events' });
   }
   try {
-    await saveAndBroadcastHighlights(reportCode, 'renew', { events, count: events.length });
+    await saveHighlightsToCache(reportCode, 'renew', { events, count: events.length });
     res.json({ ok: true, count: events.length });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
