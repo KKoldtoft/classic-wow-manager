@@ -4588,7 +4588,12 @@ async function broadcastAllHighlightsToViewers(reportCode) {
     
     console.log(`[LIVE] Broadcasting ${result.rows.length} highlight types to ${liveViewerConnections.size} viewers`);
     
+    if (liveViewerConnections.size === 0) {
+      console.log('[LIVE] WARNING: No viewers connected to broadcast to!');
+    }
+    
     for (const row of result.rows) {
+      console.log(`[LIVE] Broadcasting type: ${row.highlight_type}`);
       broadcastHighlightsToViewers({
         type: row.highlight_type,
         reportCode,
@@ -4596,6 +4601,8 @@ async function broadcastAllHighlightsToViewers(reportCode) {
         timestamp: Date.now()
       });
     }
+    
+    console.log('[LIVE] ✅ All highlights broadcast complete');
   } catch (err) {
     console.error('[LIVE] Error broadcasting highlights:', err.message);
   }

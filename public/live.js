@@ -1886,6 +1886,7 @@
                 setStatus('waiting', 'Session stopped');
                 break;
             case 'import-complete':
+                console.log('[LIVE] ✅ Import complete event received!');
                 setStatus('connected', 'Import complete - data updated!');
                 // Show all grids
                 if (raidInfoPanel) raidInfoPanel.classList.add('active');
@@ -2093,6 +2094,7 @@
         
         eventSource.addEventListener('highlights-update', (e) => {
             const data = JSON.parse(e.data);
+            console.log('[LIVE] ✅ Received highlights-update:', data.type, 'at', new Date().toLocaleTimeString());
             handleHighlightsUpdate(data);
         });
         
