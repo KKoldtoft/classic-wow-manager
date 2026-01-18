@@ -6685,6 +6685,15 @@ app.get('/api/wcl/stream-import', async (req, res) => {
     
     // NOW broadcast all highlights to /live viewers at once
     console.log('[LIVE] Broadcasting all highlights to live viewers...');
+    
+    // First, let viewers know import is complete (clears "analyzing" states)
+    broadcastHighlightsToViewers({ 
+      type: 'import-complete', 
+      reportCode, 
+      timestamp: Date.now() 
+    });
+    
+    // Then send all the actual data
     await broadcastAllHighlightsToViewers(reportCode);
     
     // Keep connection alive with simple heartbeats

@@ -1885,6 +1885,15 @@
             case 'stopped':
                 setStatus('waiting', 'Session stopped');
                 break;
+            case 'import-complete':
+                setStatus('connected', 'Import complete - data updated!');
+                // Show all grids
+                if (raidInfoPanel) raidInfoPanel.classList.add('active');
+                if (highlightsGrid) highlightsGrid.style.display = 'grid';
+                if (leaderboardsGrid) leaderboardsGrid.style.display = 'grid';
+                if (tooLowGrid) tooLowGrid.style.display = 'grid';
+                if (bossEncountersPanel) bossEncountersPanel.classList.add('active');
+                break;
             case 'session-start':
                 setStatus('connected', 'Live session active - importing...');
                 // Show raid info panel
