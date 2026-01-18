@@ -42,6 +42,11 @@
     let titleFlashInterval = null; // For flashing browser tab title
     const originalTitle = document.title;
     
+    // Auto-refresh countdown
+    let autoRefreshCountdown = null; // Countdown interval ID
+    let autoRefreshTimeRemaining = 0; // Seconds remaining
+    const AUTO_REFRESH_DELAY = 120; // 2 minutes in seconds
+    
     // Phase Tracker Functions
     function addPhase(id, label) {
         if (phases[id]) return; // Already exists
@@ -118,6 +123,49 @@
             titleFlashInterval = null;
         }
         document.title = originalTitle;
+    }
+    
+    // Auto-refresh countdown functions
+    function startAutoRefreshCountdown() {
+        // Cancel any existing countdown
+        cancelAutoRefreshCountdown();
+        
+        autoRefreshTimeRemaining = AUTO_REFRESH_DELAY;
+        console.log(`[AUTO-REFRESH] Starting ${AUTO_REFRESH_DELAY}s countdown...`);
+        
+        // Update button text immediately
+        updateGoButtonWithCountdown();
+        
+        autoRefreshCountdown = setInterval(() => {
+            autoRefreshTimeRemaining--;
+            updateGoButtonWithCountdown();
+            
+            if (autoRefreshTimeRemaining <= 0) {
+                cancelAutoRefreshCountdown();
+                console.log('[AUTO-REFRESH] Countdown complete - auto-clicking GO');
+                goBtn.click(); // Automatically trigger import
+            }
+        }, 1000);
+    }
+    
+    function cancelAutoRefreshCountdown() {
+        if (autoRefreshCountdown) {
+            clearInterval(autoRefreshCountdown);
+            autoRefreshCountdown = null;
+            autoRefreshTimeRemaining = 0;
+            console.log('[AUTO-REFRESH] Countdown cancelled');
+        }
+    }
+    
+    function updateGoButtonWithCountdown() {
+        if (autoRefreshTimeRemaining > 0) {
+            const minutes = Math.floor(autoRefreshTimeRemaining / 60);
+            const seconds = autoRefreshTimeRemaining % 60;
+            const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            goBtn.textContent = `GO (auto in ${timeStr})`;
+        } else {
+            goBtn.textContent = 'GO';
+        }
     }
     
     // Prevent accidental page close while hosting
@@ -1804,6 +1852,9 @@
             return;
         }
         
+        // Cancel auto-refresh countdown if user manually clicks GO
+        cancelAutoRefreshCountdown();
+        
         // Prevent double-start
         if (isImporting) return;
         isImporting = true;
@@ -2095,6 +2146,9 @@
             isImporting = false;
             isHostingSession = false;
             stopTitleFlash();
+            
+            // Start 2-minute countdown for auto-refresh
+            startAutoRefreshCountdown();
         });
         
         // No more new-events listener - single import only
@@ -2221,6 +2275,7 @@
         isImporting = false;
         isHostingSession = false; // Session ended - disable beforeunload warning
         stopTitleFlash(); // Stop flashing browser tab
+        cancelAutoRefreshCountdown(); // Cancel auto-refresh
         try {
             await fetch('/api/live/stop', { method: 'POST' });
             setStatus('stopped', 'Import stopped');
@@ -2241,6 +2296,9 @@
     async function clearAll() {
         // Local clear
         clearStream();
+        
+        // Cancel auto-refresh countdown
+        cancelAutoRefreshCountdown();
         
         // Server clear (clears database cache and notifies live viewers)
         try {
