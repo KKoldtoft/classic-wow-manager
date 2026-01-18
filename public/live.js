@@ -4,6 +4,9 @@
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
     const viewerCount = document.getElementById('viewerCount');
+    const countdownSection = document.getElementById('countdownSection');
+    const countdownBar = document.getElementById('countdownBar');
+    const countdownTime = document.getElementById('countdownTime');
     
     // Highlight panels
     const pwsList = document.getElementById('pwsList');
@@ -2087,11 +2090,65 @@
             handleHighlightsUpdate(data);
         });
         
+        // Smooth countdown animation state
+        let countdownAnimationFrame = null;
+        let countdownStartTime = null;
+        let countdownTotalWait = null;
+        
+        function animateCountdown() {
+            if (!countdownStartTime || !countdownTotalWait) return;
+            
+            const now = Date.now();
+            const elapsed = now - countdownStartTime;
+            const progress = Math.min(100, (elapsed / countdownTotalWait) * 100);
+            
+            if (countdownBar) {
+                countdownBar.style.width = `${progress}%`;
+            }
+            
+            // Calculate time remaining
+            const remainingMs = Math.max(0, countdownTotalWait - elapsed);
+            const seconds = Math.round(remainingMs / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            const timeStr = minutes > 0 ? `${minutes}:${secs.toString().padStart(2, '0')}` : `${secs}s`;
+            
+            if (countdownTime) {
+                countdownTime.textContent = timeStr;
+            }
+            
+            // Continue animating if not complete
+            if (progress < 100) {
+                countdownAnimationFrame = requestAnimationFrame(animateCountdown);
+            }
+        }
+        
         eventSource.addEventListener('heartbeat', (e) => {
             const data = JSON.parse(e.data);
             if (data.viewerCount) {
                 viewerCount.textContent = `${data.viewerCount} viewer${data.viewerCount !== 1 ? 's' : ''} connected`;
                 if (raidViewerCountEl) raidViewerCountEl.textContent = data.viewerCount;
+            }
+            
+            // Show countdown timer if next refresh is known
+            if (data.nextRefreshIn != null && countdownSection) {
+                countdownSection.style.display = 'block';
+                
+                const totalWait = data.refreshCount === 1 ? 10000 : 180000; // 10s or 3min
+                
+                // Initialize smooth animation if not already running
+                if (!countdownStartTime || !countdownAnimationFrame) {
+                    countdownTotalWait = totalWait;
+                    countdownStartTime = Date.now() - (totalWait - data.nextRefreshIn);
+                    
+                    // Cancel any existing animation
+                    if (countdownAnimationFrame) {
+                        cancelAnimationFrame(countdownAnimationFrame);
+                    }
+                    
+                    // Start smooth animation
+                    animateCountdown();
+                }
             }
         });
         

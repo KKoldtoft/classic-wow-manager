@@ -2109,6 +2109,40 @@
             }
         });
         
+        // Smooth progress animation state
+        let countdownAnimationFrame = null;
+        let countdownStartTime = null;
+        let countdownTotalWait = null;
+        let countdownTargetProgress = 100;
+        
+        function animateCountdownProgress() {
+            if (!countdownStartTime || !countdownTotalWait) return;
+            
+            const now = Date.now();
+            const elapsed = now - countdownStartTime;
+            const progress = Math.min(100, (elapsed / countdownTotalWait) * 100);
+            
+            if (progressBar) {
+                progressBar.style.width = `${progress}%`;
+            }
+            
+            // Calculate time remaining
+            const remainingMs = Math.max(0, countdownTotalWait - elapsed);
+            const seconds = Math.round(remainingMs / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            const timeStr = minutes > 0 ? `${minutes}m ${secs}s` : `${secs}s`;
+            
+            if (progressText) {
+                progressText.textContent = `Next refresh: ${timeStr}`;
+            }
+            
+            // Continue animating if not complete
+            if (progress < 100) {
+                countdownAnimationFrame = requestAnimationFrame(animateCountdownProgress);
+            }
+        }
+        
         eventSource.addEventListener('heartbeat', (e) => {
             const data = JSON.parse(e.data);
             
@@ -2121,18 +2155,25 @@
                 
                 setStatus('complete', `💓 Keep-alive | Next refresh in ${timeStr}`);
                 
-                // Update progress bar to show countdown (reverse progress)
+                // Update progress bar to show countdown with smooth animation
                 if (progressBar) {
                     const totalWait = data.refreshCount === 1 ? 10000 : 180000; // 10s or 3min
-                    const elapsed = totalWait - data.nextRefreshIn;
-                    const progress = Math.min(100, (elapsed / totalWait) * 100);
-                    progressBar.style.background = 'linear-gradient(90deg, #007bff, #0056b3)';
-                    progressBar.style.width = `${progress}%`;
-                    progressBar.style.transition = 'width 1s linear';
-                }
-                
-                if (progressText) {
-                    progressText.textContent = `Next refresh: ${timeStr}`;
+                    
+                    // Initialize smooth animation if not already running
+                    if (!countdownStartTime || !countdownAnimationFrame) {
+                        countdownTotalWait = totalWait;
+                        countdownStartTime = Date.now() - (totalWait - data.nextRefreshIn);
+                        progressBar.style.background = 'linear-gradient(90deg, #007bff, #0056b3)';
+                        progressBar.style.transition = 'none'; // Remove transition for smooth RAF animation
+                        
+                        // Cancel any existing animation
+                        if (countdownAnimationFrame) {
+                            cancelAnimationFrame(countdownAnimationFrame);
+                        }
+                        
+                        // Start smooth animation
+                        animateCountdownProgress();
+                    }
                 }
             } else {
                 // Old-style heartbeat (for backwards compatibility)
@@ -2152,6 +2193,19 @@
             console.log(`[LIVE] Refresh #${data.refreshCount} starting...`);
             setStatus('importing', `🔄 Importing new logs (refresh #${data.refreshCount})...`);
             updateProgress(0, 'Re-importing all logs...');
+            
+            // Stop countdown animation during refresh
+            if (countdownAnimationFrame) {
+                cancelAnimationFrame(countdownAnimationFrame);
+                countdownAnimationFrame = null;
+                countdownStartTime = null;
+            }
+            
+            // Reset progress bar for import
+            if (progressBar) {
+                progressBar.style.background = 'linear-gradient(90deg, #28a745, #20c997)';
+                progressBar.style.transition = 'width 0.3s ease';
+            }
         });
         
         eventSource.addEventListener('refresh-progress', (e) => {
