@@ -6756,15 +6756,17 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         
         // Step 3: CLEAR existing data and do a fresh full re-import
         console.log(`[LIVE REFRESH ${refreshCount}] Clearing old event data and highlights for this session...`);
-        await safeQuery(`
+        const deleteEventsResult = await safeQuery(`
           DELETE FROM wcl_event_pages 
           WHERE event_id = $1 AND report_code = $2;
         `, [sessionId, reportCode]);
+        console.log(`[LIVE REFRESH ${refreshCount}] Deleted ${deleteEventsResult ? deleteEventsResult.rowCount : 0} event page rows`);
         
-        await safeQuery(`
+        const deleteHighlightsResult = await safeQuery(`
           DELETE FROM wcl_live_highlights
           WHERE report_code = $1;
         `, [reportCode]);
+        console.log(`[LIVE REFRESH ${refreshCount}] Deleted ${deleteHighlightsResult ? deleteHighlightsResult.rowCount : 0} highlight rows`);
         
         console.log(`[LIVE REFRESH ${refreshCount}] Starting fresh import of all events from ${reportMinStart}ms to ${reportMaxEnd}ms...`);
         sendEvent('refresh-status', { message: 'Clearing old data and re-importing fresh from WCL...', refreshCount });
@@ -6795,10 +6797,14 @@ app.get('/api/wcl/stream-import', async (req, res) => {
           
           if (reimportEvents.length > 0) {
             // Store events (fresh insert since we cleared old data)
-            await safeQuery(`
+            const insertResult = await safeQuery(`
               INSERT INTO wcl_event_pages (event_id, report_code, start_time, end_time, next_cursor, events)
               VALUES ($1, $2, $3, $4, $5, $6);
             `, [sessionId, reportCode, reimportCursor, reimportEnd, reimportNextCursor, JSON.stringify(reimportEvents)]);
+            
+            if (!insertResult) {
+              console.error(`[LIVE REFRESH ${refreshCount}] WARNING: Failed to insert events for page ${reimportPageCount}`);
+            }
             
             reimportTotalEvents += reimportEvents.length;
           }
