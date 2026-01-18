@@ -2081,9 +2081,18 @@
             const data = JSON.parse(e.data);
             console.log('[LIVE] Import complete:', data);
             setStatus('complete', 'Import and analysis complete!');
-            goBtn.textContent = 'Import Complete';
-            goBtn.disabled = false;
+            
+            // Update UI for completed import
+            goBtn.textContent = '✅ Import Complete';
+            goBtn.disabled = true;
             goBtn.style.background = '#28a745'; // Green to show complete
+            goBtn.style.cursor = 'not-allowed';
+            goBtn.style.opacity = '0.7';
+            
+            // Hide STOP button - nothing to stop anymore
+            if (stopBtn) stopBtn.style.display = 'none';
+            
+            isImporting = false;
         });
         
         // No more new-events listener - single import only
@@ -2207,13 +2216,20 @@
             eventSource.close();
             eventSource = null;
         }
+        isImporting = false;
         isHostingSession = false; // Session ended - disable beforeunload warning
         stopTitleFlash(); // Stop flashing browser tab
         try {
             await fetch('/api/live/stop', { method: 'POST' });
-            setStatus('stopped', 'Session stopped');
+            setStatus('stopped', 'Import stopped');
             stopBtn.style.display = 'none';
+            
+            // Reset GO button to initial state
             goBtn.disabled = false;
+            goBtn.textContent = 'GO';
+            goBtn.style.background = '';
+            goBtn.style.cursor = '';
+            goBtn.style.opacity = '';
         } catch (err) {
             console.error('Stop error:', err);
         }
@@ -2232,7 +2248,7 @@
             console.error('Clear error:', err);
         }
         
-        // Reset UI
+        // Reset UI completely
         progressSection.style.display = 'none';
         statsGrid.style.display = 'none';
         fightsPanel.style.display = 'none';
@@ -2240,6 +2256,13 @@
         if (leaderboardsGrid) leaderboardsGrid.style.display = 'none';
         if (tooLowGrid) tooLowGrid.style.display = 'none';
         currentReportCode = null;
+        
+        // Reset GO button to initial state
+        goBtn.textContent = 'GO';
+        goBtn.disabled = false;
+        goBtn.style.background = '';
+        goBtn.style.cursor = '';
+        goBtn.style.opacity = '';
     }
 
     // Save PW:S events to backend for live viewers
