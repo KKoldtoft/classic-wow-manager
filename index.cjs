@@ -4557,8 +4557,10 @@ const liveViewerConnections = new Set();
 function broadcastHighlightsToViewers(data) {
   for (const res of liveViewerConnections) {
     try {
-      res.write(`event: highlights-update\ndata: ${JSON.stringify(data)}\n\n`);
-    } catch (_) {
+      const jsonData = JSON.stringify(data);
+      res.write(`event: highlights-update\ndata: ${jsonData}\n\n`);
+    } catch (err) {
+      console.error('[LIVE] Error broadcasting highlights:', err.message, 'Data type:', data.type);
       liveViewerConnections.delete(res);
     }
   }
@@ -4594,10 +4596,19 @@ async function broadcastAllHighlightsToViewers(reportCode) {
     
     for (const row of result.rows) {
       console.log(`[LIVE] Broadcasting type: ${row.highlight_type}`);
+      
+      // Parse highlights if it's a string (from DB), or use as-is if already an object
+      let highlightsData;
+      if (typeof row.highlights === 'string') {
+        highlightsData = JSON.parse(row.highlights);
+      } else {
+        highlightsData = row.highlights;
+      }
+      
       broadcastHighlightsToViewers({
         type: row.highlight_type,
         reportCode,
-        data: JSON.parse(row.highlights),
+        data: highlightsData,
         timestamp: Date.now()
       });
     }
