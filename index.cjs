@@ -6152,8 +6152,7 @@ app.get('/api/wcl/stream-import', async (req, res) => {
     // Send initial connection event
     sendEvent('connected', { sessionId, reportCode, status: 'starting' });
     
-    // Notify any connected viewers that a new session started
-    broadcastHighlightsToViewers({ type: 'session-start', reportCode, timestamp: Date.now() });
+    // Don't notify viewers yet - wait until import is complete
     
     // Fetch report metadata first
     sendEvent('progress', { phase: 'meta', message: 'Fetching report metadata...' });
