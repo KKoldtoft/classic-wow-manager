@@ -2133,6 +2133,62 @@
     panelDiv.appendChild(header);
     panelDiv.appendChild(content);
 
+    // Add copy macro button (visible to everyone)
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-macro-btn';
+    copyBtn.innerHTML = '<i class="fas fa-copy"></i>';
+    copyBtn.title = 'Copy macro';
+    copyBtn.style.cssText = 'position: absolute; bottom: 10px; right: 10px; padding: 8px 12px; background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; border-radius: 6px; color: #3b82f6; cursor: pointer; font-size: 14px; transition: all 0.2s; z-index: 10;';
+    copyBtn.addEventListener('mouseenter', () => {
+      copyBtn.style.background = 'rgba(59, 130, 246, 0.3)';
+      copyBtn.style.transform = 'scale(1.05)';
+    });
+    copyBtn.addEventListener('mouseleave', () => {
+      copyBtn.style.background = 'rgba(59, 130, 246, 0.2)';
+      copyBtn.style.transform = 'scale(1)';
+    });
+    copyBtn.addEventListener('click', () => {
+      const panelName = boss || 'Assignment';
+      
+      // Build macro lines
+      const lines = [`/rw ${panelName}`];
+      
+      // Get visible entries (non-grid entries)
+      visibleEntries.forEach(e => {
+        const charName = (e.character_name || '').trim();
+        const assignment = (e.assignment || '').trim();
+        
+        if (charName && assignment) {
+          // Try to extract action from assignment
+          // For most assignments, the full assignment text is the target
+          // The action is based on the panel
+          const action = panelName;
+          lines.push(`/ra ${charName} ${action} ${assignment}`);
+        }
+      });
+      
+      const macroText = lines.join('\n');
+      navigator.clipboard.writeText(macroText).then(() => {
+        const originalHtml = copyBtn.innerHTML;
+        copyBtn.innerHTML = '<i class="fas fa-check"></i>';
+        copyBtn.style.color = '#10b981';
+        copyBtn.style.borderColor = '#10b981';
+        setTimeout(() => {
+          copyBtn.innerHTML = originalHtml;
+          copyBtn.style.color = '#3b82f6';
+          copyBtn.style.borderColor = '#3b82f6';
+        }, 2000);
+      }).catch(err => {
+        console.error('Failed to copy macro:', err);
+        alert('Failed to copy macro. Please try again.');
+      });
+    });
+    
+    // Make panel position relative so absolute button works
+    panelDiv.style.position = 'relative';
+    panelDiv.style.paddingBottom = '50px';
+    panelDiv.appendChild(copyBtn);
+
       if (canManage) {
         // Panel-level Edit/Save
         const editBtn = header.querySelector('.btn-edit');
@@ -3875,6 +3931,66 @@
     content.appendChild(list);
     panelDiv.appendChild(header);
     panelDiv.appendChild(content);
+
+    // Add copy macro button (visible to everyone)
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-macro-btn';
+    copyBtn.innerHTML = '<i class="fas fa-copy"></i>';
+    copyBtn.title = 'Copy macro';
+    copyBtn.style.cssText = 'position: absolute; bottom: 10px; right: 10px; padding: 8px 12px; background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; border-radius: 6px; color: #3b82f6; cursor: pointer; font-size: 14px; transition: all 0.2s;';
+    copyBtn.addEventListener('mouseenter', () => {
+      copyBtn.style.background = 'rgba(59, 130, 246, 0.3)';
+      copyBtn.style.transform = 'scale(1.05)';
+    });
+    copyBtn.addEventListener('mouseleave', () => {
+      copyBtn.style.background = 'rgba(59, 130, 246, 0.2)';
+      copyBtn.style.transform = 'scale(1)';
+    });
+    copyBtn.addEventListener('click', () => {
+      const panelName = boss || 'Assignment';
+      const variantLower = String(panel.variant || '').toLowerCase();
+      
+      // Determine action based on panel type
+      let action = panelName;
+      if (variantLower === 'healing') action = 'Heal';
+      else if (variantLower === 'buffs') action = 'Buff';
+      else if (variantLower === 'curses') action = 'Decurse';
+      else if (variantLower === 'soul') action = 'Soulstone';
+      else if (variantLower === 'pi') action = 'Power Infusion';
+      else if (String(boss).toLowerCase() === 'tanking') action = 'Tank';
+      
+      // Build macro lines
+      const lines = [`/rw ${panelName}`];
+      const rows = list.querySelectorAll('.assignment-entry-row[data-entry="1"]');
+      rows.forEach(row => {
+        const charName = row.querySelector('.character-name')?.textContent?.trim();
+        const assignment = row.dataset.assignment || '';
+        if (charName && assignment) {
+          lines.push(`/ra ${charName} ${action} ${assignment}`);
+        }
+      });
+      
+      const macroText = lines.join('\n');
+      navigator.clipboard.writeText(macroText).then(() => {
+        const originalHtml = copyBtn.innerHTML;
+        copyBtn.innerHTML = '<i class="fas fa-check"></i>';
+        copyBtn.style.color = '#10b981';
+        copyBtn.style.borderColor = '#10b981';
+        setTimeout(() => {
+          copyBtn.innerHTML = originalHtml;
+          copyBtn.style.color = '#3b82f6';
+          copyBtn.style.borderColor = '#3b82f6';
+        }, 2000);
+      }).catch(err => {
+        console.error('Failed to copy macro:', err);
+        alert('Failed to copy macro. Please try again.');
+      });
+    });
+    
+    // Make panel position relative so absolute button works
+    panelDiv.style.position = 'relative';
+    panelDiv.style.paddingBottom = '50px';
+    panelDiv.appendChild(copyBtn);
 
     if (canManage) {
       const editBtn = header.querySelector('.btn-edit');
