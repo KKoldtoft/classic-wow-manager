@@ -5,6 +5,12 @@ body.all-assignments {
   padding-bottom: 60px;
 }
 
+#all-assignments-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
 .page-header {
   text-align: center;
   padding: 30px 20px 20px;
@@ -81,31 +87,22 @@ body.all-assignments {
 /* Boss Grid - Responsive columns */
 .boss-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 20px;
   margin-bottom: 30px;
 }
 
-@media (min-width: 1400px) {
-  .boss-grid {
-    grid-template-columns: repeat(5, 1fr);
-  }
-}
-
-@media (min-width: 1100px) and (max-width: 1399px) {
-  .boss-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
-@media (min-width: 768px) and (max-width: 1099px) {
-  .boss-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
+/* Main Assignments: 3 columns layout */
+.boss-grid.main-grid {
+  grid-template-columns: repeat(3, 1fr);
 }
 
 @media (max-width: 767px) {
   .boss-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .boss-grid.main-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
@@ -161,23 +158,11 @@ body.all-assignments {
   margin-bottom: 6px;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.2);
-  border-left: 3px solid transparent;
 }
 
 .assignment-compact:last-child {
   margin-bottom: 0;
 }
-
-/* Class color border on left */
-.assignment-compact[data-class="warrior"] { border-left-color: #C79C6E; }
-.assignment-compact[data-class="paladin"] { border-left-color: #F58CBA; }
-.assignment-compact[data-class="hunter"] { border-left-color: #ABD473; }
-.assignment-compact[data-class="rogue"] { border-left-color: #FFF569; }
-.assignment-compact[data-class="priest"] { border-left-color: #FFFFFF; }
-.assignment-compact[data-class="shaman"] { border-left-color: #0070DE; }
-.assignment-compact[data-class="mage"] { border-left-color: #69CCF0; }
-.assignment-compact[data-class="warlock"] { border-left-color: #9482C9; }
-.assignment-compact[data-class="druid"] { border-left-color: #FF7D0A; }
 
 .character-badge {
   display: flex;
@@ -212,7 +197,7 @@ body.all-assignments {
   text-overflow: ellipsis;
   padding: 4px 8px;
   border-radius: 4px;
-  min-width: 0;
+  min-width: 75px;
   flex-shrink: 1;
 }
 
@@ -243,6 +228,7 @@ body.all-assignments {
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.3;
+  cursor: help;
 }
 
 /* Empty state */
@@ -252,6 +238,206 @@ body.all-assignments {
   color: var(--text-secondary, #6b7280);
   font-style: italic;
   font-size: 0.85em;
+}
+
+/* Spore Grid Compact Styling */
+.spore-grid-card {
+  grid-column: 1 / -1 !important;
+}
+
+.spore-grid-body {
+  padding: 16px;
+}
+
+.spore-groups-compact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.spore-group-compact {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.spore-group-header {
+  font-weight: 700;
+  font-size: 0.9em;
+  color: #22c55e;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(34, 197, 94, 0.3);
+  text-align: center;
+}
+
+.spore-player-compact {
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spore-player-compact:last-child {
+  margin-bottom: 0;
+}
+
+.spore-player-compact .character-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.spore-player-compact .character-name-compact {
+  min-width: 140px;
+}
+
+/* Kel'Thuzad Grid Compact Styling */
+.kel-grid-card {
+  grid-column: 1 / -1 !important;
+}
+
+.kel-grid-body {
+  padding: 16px;
+}
+
+.kel-groups-compact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.kel-group-compact {
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.kel-group-header {
+  font-weight: 700;
+  font-size: 0.9em;
+  color: #8b5cf6;
+  margin-bottom: 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(139, 92, 246, 0.3);
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.kel-group-description {
+  font-size: 0.75em;
+  color: #a78bfa;
+  text-align: center;
+  margin-bottom: 8px;
+  font-style: italic;
+}
+
+.group-marker-icon {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.kel-player-compact {
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kel-player-compact:last-child {
+  margin-bottom: 0;
+}
+
+.kel-player-compact .character-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.kel-player-compact .character-name-compact {
+  min-width: 140px;
+}
+
+/* Acceptance Status Icons */
+.acceptance-status-icon {
+  margin-left: auto;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.acceptance-status-icon.accepted {
+  color: #10b981;
+}
+
+.acceptance-status-icon.declined {
+  color: #ef4444;
+}
+
+.acceptance-status-icon.ignored {
+  color: #9ca3af;
+  font-size: 10px;
+}
+
+/* C'Thun Grid Compact Styling */
+.cthun-grid-card {
+  grid-column: 1 / -1 !important;
+}
+
+.cthun-grid-body {
+  padding: 16px;
+}
+
+.cthun-groups-compact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.cthun-group-compact {
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.cthun-group-header {
+  font-weight: 700;
+  font-size: 0.9em;
+  color: #dc2626;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(220, 38, 38, 0.3);
+  text-align: center;
+}
+
+.cthun-player-compact {
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cthun-player-compact:last-child {
+  margin-bottom: 0;
+}
+
+.cthun-player-compact .character-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.cthun-player-compact .character-name-compact {
+  min-width: 140px;
 }
 
 /* Scrollbar styling */
