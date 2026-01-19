@@ -3098,6 +3098,10 @@
                 if (t1) toAdd.push({ r: t1, icon: icons.skull, text: 'Tank Boss' });
                 if (t2) toAdd.push({ r: t2, icon: icons.skull, text: 'Backup Tank Boss (in casee main tank fails fear dodge)' });
                 if (t3) toAdd.push({ r: t3, icon: 'https://wow.zamimg.com/images/wow/icons/large/spell_shadow_deathscream.jpg', text: 'Piercing Howl Tank adds' });
+                // Druid for kiting zombies - lowest by group/slot
+                const druids = filterAssignable((Array.isArray(roster)?roster:[]).filter(r => String(r.class_name||'').toLowerCase()==='druid'))
+                  .sort((a,b)=> ((Number(a.party_id)||99)-(Number(b.party_id)||99)) || ((Number(a.slot_id)||99)-(Number(b.slot_id)||99)));
+                if (druids[0]) toAdd.push({ r: druids[0], icon: icons.star, text: 'Kite Zombie Chow (stay max range from boss)' });
               } catch {}
             } else if (bossKey.includes("sapph")) {
               // Sapphiron defaults

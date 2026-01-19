@@ -13611,6 +13611,24 @@ app.get('/api/weekly-nax-raids/:eventId', async (req, res) => {
             return res.json({ success: true, data: [], eventId, weekInfo: null });
         }
         
+        // Check if this event is in a NAX channel - only show Weekly NAX panel for NAX raids
+        const eventChannelId = eventData.channelId || eventData.channelID;
+        if (eventChannelId) {
+            const isNaxCheck = await client.query(
+                `SELECT is_nax FROM channel_filters WHERE channel_id = $1`,
+                [String(eventChannelId)]
+            );
+            const isNaxRaid = isNaxCheck.rows.length > 0 && isNaxCheck.rows[0].is_nax === true;
+            if (!isNaxRaid) {
+                console.log(`🏆 [WEEKLY NAX] Event ${eventId} is not a NAX raid (channel ${eventChannelId}), skipping`);
+                return res.json({ success: true, data: [], eventId, weekInfo: null, isNaxRaid: false });
+            }
+        } else {
+            // No channel ID found, can't determine if NAX - skip
+            console.log(`🏆 [WEEKLY NAX] Event ${eventId} has no channel ID, skipping`);
+            return res.json({ success: true, data: [], eventId, weekInfo: null, isNaxRaid: false });
+        }
+        
         // Parse event date and calculate WoW week (Wednesday to Tuesday)
         const eventDate = parseEventDate(eventDateStr);
         if (!eventDate) {
