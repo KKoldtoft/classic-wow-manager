@@ -2703,7 +2703,6 @@ app.post('/api/discord/prompt-goldcuts', requireRosterManager, async (req, res) 
 // Send assignment DM to a single player
 app.post('/api/discord/send-assignment/:eventId/:discordUserId', requireRosterManager, async (req, res) => {
   const { eventId, discordUserId } = req.params;
-  const TEST_USER_ID = '492023474437619732'; // Kim's Discord ID for testing
   
   try {
     const botToken = process.env.DISCORD_BOT_TOKEN;
@@ -2778,9 +2777,6 @@ app.post('/api/discord/send-assignment/:eventId/:discordUserId', requireRosterMa
 
     const numAssignments = assignmentsResult.rows.length;
     
-    // For testing, send all DMs to Kim
-    const targetUserId = TEST_USER_ID;
-    
     // Build the DM message
     const assignmentsUrl = `https://www.1principles.net/event/${encodeURIComponent(eventId)}/assignments/myassignments`;
     
@@ -2830,7 +2826,7 @@ app.post('/api/discord/send-assignment/:eventId/:discordUserId', requireRosterMa
         'Authorization': `Bot ${botToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ recipient_id: targetUserId })
+      body: JSON.stringify({ recipient_id: discordUserId })
     }, { maxRetries: 3, timeoutMs: 10000 });
 
     if (!dmResponse.ok) {

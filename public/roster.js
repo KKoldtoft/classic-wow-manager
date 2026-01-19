@@ -2966,6 +2966,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Auto assignments runner entrypoint
     if (autoAssignmentsButton) {
         autoAssignmentsButton.addEventListener('click', async () => {
+            // Check if raidleader-input has a value
+            const raidleaderInput = document.getElementById('raidleader-input');
+            if (!raidleaderInput || !raidleaderInput.value.trim()) {
+                showAlert('Auto assignments', 'Please enter a name in the Raidleader input field, before doing assignments');
+                return;
+            }
             try {
                 autoAssignmentsButton.disabled = true;
                 autoAssignmentsButton.classList.add('active');

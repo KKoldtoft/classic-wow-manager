@@ -1273,6 +1273,14 @@
                 else if (prev === 'accept') next = 'decline';
                 else next = '';
                 horseGridState.acceptByRow[rowIdx] = next;
+                // Also update underlying entry for progress tracker
+                try {
+                  const matchEntry = (Array.isArray(panel.entries)?panel.entries:[]).find(e => 
+                    String(e.assignment||'').startsWith('__HGRID__:') && 
+                    String(e.character_name||'').toLowerCase() === String(charName||'').toLowerCase()
+                  );
+                  if (matchEntry) matchEntry.accept_status = next || '';
+                } catch {}
                 const eventId = getActiveEventId();
                 try {
                   await fetch(`/api/assignments/${eventId}/entry/accept`, {
@@ -1281,6 +1289,8 @@
                   });
                 } catch {}
                 btn.innerHTML = getStatusIconHtml(next, true);
+                // Update progress tracker
+                if (window._myAssignmentsProgressUpdate) window._myAssignmentsProgressUpdate();
               });
               cell.appendChild(btn);
             } else {
@@ -1355,10 +1365,22 @@
       panelDiv._getHorseGridState = () => horseGridState;
     }
 
+    // Helper: Check if a player has a main (non-grid) assignment in this panel
+    // If yes, they should change status from the main table, not the grid (to avoid conflicts)
+    function hasMainAssignmentForBoss(playerName) {
+      return (Array.isArray(panel.entries) ? panel.entries : []).some(en => {
+        const name = String(en.character_name || '').toLowerCase();
+        const assignment = String(en.assignment || '');
+        const isGrid = assignment.startsWith('__SPORE__:') || assignment.startsWith('__KEL__:') || 
+                       assignment.startsWith('__CTHUN__:') || assignment.startsWith('__HGRID__:');
+        return name === playerName.toLowerCase() && !isGrid && assignment;
+      });
+    }
+
     // Special section for Loatheb: Spore Groups grid (6 groups x 5 slots)
     const isLoathebPanel = String((boss || '')).toLowerCase().includes('loatheb');
     let sporeGridWrap = null;
-    let sporeGridState = null; // { groups: {1:[n1..n5],...,6:[..]} }
+    let sporeGridState = null; // { groups: {1:[n1..n5],...,6:[..]}, acceptByPosition: {'g:s': 'accept'|'decline'|''} }
     if (isLoathebPanel) {
       sporeGridWrap = document.createElement('div');
       sporeGridWrap.className = 'spore-grid-wrap';
@@ -1386,18 +1408,39 @@
         });
         return map;
       }
+      function deriveSporeAcceptFromEntries(allEntries) {
+        const map = {};
+        (Array.isArray(allEntries)?allEntries:[]).forEach(en => {
+          const m = String(en.assignment||'').match(/^__SPORE__:(\d+):(\d+)$/);
+          if (m) {
+            const g = Number(m[1]);
+            const s = Number(m[2]);
+            map[`${g}:${s}`] = en.accept_status || '';
+          }
+        });
+        return map;
+      }
       const initialSpore = panel.spore_groups || deriveSporeFromEntries(panel.entries);
-      sporeGridState = { groups: {} };
+      sporeGridState = { groups: {}, acceptByPosition: {} };
       for (let g=1; g<=6; g++) {
         const arr = Array.isArray(initialSpore[g]) ? initialSpore[g] : [];
         sporeGridState.groups[g] = [arr[0]||null, arr[1]||null, arr[2]||null, arr[3]||null, arr[4]||null];
       }
+      // Pull accept states from hidden entries
+      try { sporeGridState.acceptByPosition = deriveSporeAcceptFromEntries(panel.entries) || {}; } catch {}
 
       function getAllPlayerOptionsHtml(selectedName) {
         const opts = ['<option value="">Select player...</option>'].concat(
           (Array.isArray(roster)?roster:[]).map(r => `<option value="${r.character_name}" ${String(r.character_name)===String(selectedName)?'selected':''}>${r.character_name}</option>`)
         );
         return opts.join('');
+      }
+
+      function getSporeStatusIconHtml(status, interactive) {
+        if (status === 'accept') return `<i class="fas fa-check-circle" style="color:#10b981; font-size:16px; line-height:16px;"></i>`;
+        if (status === 'decline') return `<i class="fas fa-ban" style="color:#ef4444; font-size:16px; line-height:16px;"></i>`;
+        const color = interactive ? '#fbbf24' : '#9ca3af';
+        return `<i class="fas fa-check-circle" style="color:${color}; font-size:16px; line-height:16px;"></i>`;
       }
 
       function renderSporeGrid(readOnly) {
@@ -1430,20 +1473,83 @@
             cell.style.alignItems = 'center';
             cell.style.justifyContent = 'center';
             const currentName = sporeGridState.groups[g][slotIdx-1] || '';
+            const posKey = `${g}:${slotIdx}`;
             if (readOnly) {
               const wrap = document.createElement('div');
               wrap.style.minHeight = '28px';
               wrap.style.display = 'inline-flex';
               wrap.style.alignItems = 'center';
               wrap.style.justifyContent = 'center';
-              wrap.style.gap = '8px';
+              wrap.style.gap = '6px';
               wrap.style.borderRadius = '8px';
               wrap.style.padding = '6px 10px';
-              wrap.style.width = '100px';
+              wrap.style.minWidth = '100px';
               const color = getRosterClassColorByName(roster, (currentName||'').trim());
               wrap.style.background = color ? color : 'rgba(255,255,255,0.08)';
               const span = document.createElement('span'); span.textContent = currentName || '—'; span.style.color = '#000'; span.style.fontWeight='700';
               wrap.appendChild(span);
+              // Add accept status icon next to name if player assigned
+              if (currentName) {
+                const ownerId = nameToDiscordId.get(String(currentName||'').toLowerCase()) || null;
+                const isOwner = !!(user && user.loggedIn && user.id && ownerId && String(user.id) === String(ownerId));
+                const showControls = !!(user && user.loggedIn && (isOwner || canManage));
+                const curStatus = sporeGridState.acceptByPosition[posKey] || '';
+                // If player has a main assignment for this boss, make grid entry read-only
+                // They should change status from the main table to avoid confusion
+                const hasMainAssign = hasMainAssignmentForBoss(currentName);
+                if (showControls && !hasMainAssign) {
+                  const btn = document.createElement('button');
+                  btn.className = 'status-toggle-btn';
+                  btn.type = 'button';
+                  btn.style.background = 'transparent';
+                  btn.style.border = 'none';
+                  btn.style.cursor = 'pointer';
+                  btn.style.padding = '2px';
+                  btn.style.marginLeft = '4px';
+                  btn.innerHTML = getSporeStatusIconHtml(curStatus, true);
+                  btn.addEventListener('click', async (ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    const prev = sporeGridState.acceptByPosition[posKey] || '';
+                    let next = '';
+                    if (!prev) next = 'accept';
+                    else if (prev === 'accept') next = 'decline';
+                    else next = '';
+                    sporeGridState.acceptByPosition[posKey] = next;
+                    // Also update underlying entry for progress tracker
+                    try {
+                      const matchEntry = (Array.isArray(panel.entries)?panel.entries:[]).find(e => 
+                        String(e.assignment||'').startsWith('__SPORE__:') && 
+                        String(e.character_name||'').toLowerCase() === String(currentName||'').toLowerCase()
+                      );
+                      if (matchEntry) matchEntry.accept_status = next || '';
+                    } catch {}
+                    const eventId = getActiveEventId();
+                    try {
+                      await fetch(`/api/assignments/${eventId}/entry/accept`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ dungeon, wing: wing || '', boss, character_name: (currentName||'').trim(), accept_status: next || null })
+                      });
+                    } catch {}
+                    btn.innerHTML = getSporeStatusIconHtml(next, true);
+                    // If in myassignments context, use larger icon
+                    if (btn.closest('[data-myassignments-context]')) {
+                      const icon = btn.querySelector('i.fas, i.fa');
+                      if (icon) { icon.style.fontSize = '30px'; icon.style.lineHeight = '30px'; }
+                    }
+                    // Update progress tracker
+                    if (window._myAssignmentsProgressUpdate) window._myAssignmentsProgressUpdate();
+                  });
+                  wrap.appendChild(btn);
+                } else if (curStatus && !hasMainAssign) {
+                  // Show read-only status only if no main assignment (avoid duplicate/conflicting icons)
+                  const statusIcon = document.createElement('span');
+                  statusIcon.innerHTML = getSporeStatusIconHtml(curStatus, false);
+                  statusIcon.style.marginLeft = '4px';
+                  wrap.appendChild(statusIcon);
+                }
+                // If hasMainAssign, don't show any icon - user sees/controls status from main table
+              }
               cell.appendChild(wrap);
             } else {
               const wrap = document.createElement('div');
@@ -1456,7 +1562,19 @@
               sel.innerHTML = getAllPlayerOptionsHtml(currentName);
               sel.addEventListener('change', () => {
                 const val = sel.value || null;
+                const oldName = sporeGridState.groups[g][slotIdx-1];
                 sporeGridState.groups[g][slotIdx-1] = val;
+                // Reset acceptance when player changes
+                if (oldName !== val) {
+                  sporeGridState.acceptByPosition[posKey] = '';
+                  const eventId = getActiveEventId();
+                  try {
+                    fetch(`/api/assignments/${eventId}/entry/accept`, {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ dungeon, wing: wing || '', boss, character_name: (val||'').trim(), accept_status: null })
+                    });
+                  } catch {}
+                }
               });
               wrap.appendChild(sel);
               // Delete button
@@ -1464,7 +1582,7 @@
               del.className = 'delete-x';
               del.innerHTML = '&times;';
               del.title = 'Remove player';
-              del.addEventListener('click', () => { sporeGridState.groups[g][slotIdx-1] = null; renderSporeGrid(false); });
+              del.addEventListener('click', () => { sporeGridState.groups[g][slotIdx-1] = null; sporeGridState.acceptByPosition[posKey] = ''; renderSporeGrid(false); });
               wrap.appendChild(del);
               cell.appendChild(wrap);
             }
@@ -1489,7 +1607,7 @@
     // Special section for Kel'Thuzad: Group grid (A, B, C, D)
     const isKelPanel = String((boss || '')).toLowerCase().includes('kel');
     let kelGridWrap = null;
-    let kelGridState = null; // { groups: {1:[...],2:[...],3:[...],4:[...] } }
+    let kelGridState = null; // { groups: {1:[...],2:[...],3:[...],4:[...]}, acceptByPosition: {'g:s': 'accept'|'decline'|''} }
     if (isKelPanel) {
       kelGridWrap = document.createElement('div');
       kelGridWrap.className = 'kel-grid-wrap';
@@ -1517,12 +1635,33 @@
         });
         return map;
       }
+      function deriveKelAcceptFromEntries(allEntries) {
+        const map = {};
+        (Array.isArray(allEntries)?allEntries:[]).forEach(en => {
+          const m = String(en.assignment||'').match(/^__KEL__:(\d+):(\d+)$/);
+          if (m) {
+            const g = Number(m[1]);
+            const s = Number(m[2]);
+            map[`${g}:${s}`] = en.accept_status || '';
+          }
+        });
+        return map;
+      }
       const initialKel = panel.kel_groups || deriveKelFromEntries(panel.entries);
-      kelGridState = { groups: { 1: [], 2: [], 3: [], 4: [] } };
+      kelGridState = { groups: { 1: [], 2: [], 3: [], 4: [] }, acceptByPosition: {} };
       for (let g=1; g<=4; g++) {
         const arr = Array.isArray(initialKel[g]) ? initialKel[g] : [];
         // default to up to 8 slots; will expand dynamically when rendering
         kelGridState.groups[g] = arr.slice();
+      }
+      // Pull accept states from hidden entries
+      try { kelGridState.acceptByPosition = deriveKelAcceptFromEntries(panel.entries) || {}; } catch {}
+
+      function getKelStatusIconHtml(status, interactive) {
+        if (status === 'accept') return `<i class="fas fa-check-circle" style="color:#10b981; font-size:16px; line-height:16px;"></i>`;
+        if (status === 'decline') return `<i class="fas fa-ban" style="color:#ef4444; font-size:16px; line-height:16px;"></i>`;
+        const color = interactive ? '#fbbf24' : '#9ca3af';
+        return `<i class="fas fa-check-circle" style="color:${color}; font-size:16px; line-height:16px;"></i>`;
       }
 
       function renderKelGrid(readOnly) {
@@ -1573,20 +1712,82 @@
             cell.style.alignItems = 'center';
             cell.style.justifyContent = 'center';
             const currentName = (groups[g] && groups[g][slotIdx-1]) || '';
+            const posKey = `${g}:${slotIdx}`;
             if (readOnly) {
               const wrap = document.createElement('div');
               wrap.style.minHeight = '28px';
               wrap.style.display = 'inline-flex';
               wrap.style.alignItems = 'center';
               wrap.style.justifyContent = 'center';
-              wrap.style.gap = '8px';
+              wrap.style.gap = '6px';
               wrap.style.borderRadius = '8px';
               wrap.style.padding = '6px 10px';
-              wrap.style.width = '100px';
+              wrap.style.minWidth = '100px';
               const color = getRosterClassColorByName(roster, currentName);
               wrap.style.background = color ? color : 'rgba(255,255,255,0.08)';
               const span = document.createElement('span'); span.textContent = currentName || '—'; span.style.color = '#000'; span.style.fontWeight='700';
               wrap.appendChild(span);
+              // Add accept status icon next to name if player assigned
+              if (currentName) {
+                const ownerId = nameToDiscordId.get(String(currentName||'').toLowerCase()) || null;
+                const isOwner = !!(user && user.loggedIn && user.id && ownerId && String(user.id) === String(ownerId));
+                const showControls = !!(user && user.loggedIn && (isOwner || canManage));
+                const curStatus = kelGridState.acceptByPosition[posKey] || '';
+                // If player has a main assignment for this boss, make grid entry read-only
+                const hasMainAssign = hasMainAssignmentForBoss(currentName);
+                if (showControls && !hasMainAssign) {
+                  const btn = document.createElement('button');
+                  btn.className = 'status-toggle-btn';
+                  btn.type = 'button';
+                  btn.style.background = 'transparent';
+                  btn.style.border = 'none';
+                  btn.style.cursor = 'pointer';
+                  btn.style.padding = '2px';
+                  btn.style.marginLeft = '4px';
+                  btn.innerHTML = getKelStatusIconHtml(curStatus, true);
+                  btn.addEventListener('click', async (ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    const prev = kelGridState.acceptByPosition[posKey] || '';
+                    let next = '';
+                    if (!prev) next = 'accept';
+                    else if (prev === 'accept') next = 'decline';
+                    else next = '';
+                    kelGridState.acceptByPosition[posKey] = next;
+                    // Also update underlying entry for progress tracker
+                    try {
+                      const matchEntry = (Array.isArray(panel.entries)?panel.entries:[]).find(e => 
+                        String(e.assignment||'').startsWith('__KEL__:') && 
+                        String(e.character_name||'').toLowerCase() === String(currentName||'').toLowerCase()
+                      );
+                      if (matchEntry) matchEntry.accept_status = next || '';
+                    } catch {}
+                    const eventId = getActiveEventId();
+                    try {
+                      await fetch(`/api/assignments/${eventId}/entry/accept`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ dungeon, wing: wing || '', boss, character_name: (currentName||'').trim(), accept_status: next || null })
+                      });
+                    } catch {}
+                    btn.innerHTML = getKelStatusIconHtml(next, true);
+                    // If in myassignments context, use larger icon
+                    if (btn.closest('[data-myassignments-context]')) {
+                      const icon = btn.querySelector('i.fas, i.fa');
+                      if (icon) { icon.style.fontSize = '30px'; icon.style.lineHeight = '30px'; }
+                    }
+                    // Update progress tracker
+                    if (window._myAssignmentsProgressUpdate) window._myAssignmentsProgressUpdate();
+                  });
+                  wrap.appendChild(btn);
+                } else if (curStatus && !hasMainAssign) {
+                  // Show read-only status only if no main assignment (avoid duplicate/conflicting icons)
+                  const statusIcon = document.createElement('span');
+                  statusIcon.innerHTML = getKelStatusIconHtml(curStatus, false);
+                  statusIcon.style.marginLeft = '4px';
+                  wrap.appendChild(statusIcon);
+                }
+                // If hasMainAssign, don't show any icon - user sees/controls status from main table
+              }
               cell.appendChild(wrap);
             } else {
               const wrap = document.createElement('div');
@@ -1601,15 +1802,27 @@
                 .join('');
               sel.addEventListener('change', () => {
                 const val = sel.value || null;
+                const oldName = (groups[g] && groups[g][slotIdx-1]) || '';
                 if (!groups[g]) groups[g] = [];
                 groups[g][slotIdx-1] = val;
+                // Reset acceptance when player changes
+                if (oldName !== val) {
+                  kelGridState.acceptByPosition[posKey] = '';
+                  const eventId = getActiveEventId();
+                  try {
+                    fetch(`/api/assignments/${eventId}/entry/accept`, {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ dungeon, wing: wing || '', boss, character_name: (val||'').trim(), accept_status: null })
+                    });
+                  } catch {}
+                }
               });
               wrap.appendChild(sel);
               const del = document.createElement('button');
               del.className = 'delete-x';
               del.innerHTML = '&times;';
               del.title = 'Remove player';
-              del.addEventListener('click', () => { if (!groups[g]) groups[g]=[]; groups[g][slotIdx-1] = null; renderKelGrid(false); });
+              del.addEventListener('click', () => { if (!groups[g]) groups[g]=[]; groups[g][slotIdx-1] = null; kelGridState.acceptByPosition[posKey] = ''; renderKelGrid(false); });
               wrap.appendChild(del);
               cell.appendChild(wrap);
             }
@@ -1634,7 +1847,7 @@
     // Special section for C'Thun: Positions grid (8 groups x 5 slots)
     const isCthunPanel = String((boss || '')).toLowerCase().includes("c'thun") || String((boss || '')).toLowerCase().includes('cthun');
     let cthunGridWrap = null;
-    let cthunGridState = null; // { groups: {1:[n1..n5],...,8:[..]} }
+    let cthunGridState = null; // { groups: {1:[n1..n5],...,8:[..]}, acceptByPosition: {'g:s': 'accept'|'decline'|''} }
     if (isCthunPanel) {
       cthunGridWrap = document.createElement('div');
       cthunGridWrap.className = 'cthun-grid-wrap';
@@ -1663,18 +1876,39 @@
         });
         return map;
       }
+      function deriveCthunAcceptFromEntries(allEntries) {
+        const map = {};
+        (Array.isArray(allEntries)?allEntries:[]).forEach(en => {
+          const m = String(en.assignment||'').match(/^__CTHUN__:(\d+):(\d+)$/);
+          if (m) {
+            const g = Number(m[1]);
+            const s = Number(m[2]);
+            map[`${g}:${s}`] = en.accept_status || '';
+          }
+        });
+        return map;
+      }
       const initialCthun = panel.cthun_positions || deriveCthunFromEntries(panel.entries);
-      cthunGridState = { groups: {} };
+      cthunGridState = { groups: {}, acceptByPosition: {} };
       for (let g=1; g<=8; g++) {
         const arr = Array.isArray(initialCthun[g]) ? initialCthun[g] : [];
         cthunGridState.groups[g] = [arr[0]||null, arr[1]||null, arr[2]||null, arr[3]||null, arr[4]||null];
       }
+      // Pull accept states from hidden entries
+      try { cthunGridState.acceptByPosition = deriveCthunAcceptFromEntries(panel.entries) || {}; } catch {}
 
       function getAllPlayerOptionsHtml(selectedName) {
         const opts = ['<option value="">Select player...</option>'].concat(
           (Array.isArray(roster)?roster:[]).map(r => `<option value="${r.character_name}" ${String(r.character_name)===String(selectedName)?'selected':''}>${r.character_name}</option>`)
         );
         return opts.join('');
+      }
+
+      function getCthunStatusIconHtml(status, interactive) {
+        if (status === 'accept') return `<i class="fas fa-check-circle" style="color:#10b981; font-size:16px; line-height:16px;"></i>`;
+        if (status === 'decline') return `<i class="fas fa-ban" style="color:#ef4444; font-size:16px; line-height:16px;"></i>`;
+        const color = interactive ? '#fbbf24' : '#9ca3af';
+        return `<i class="fas fa-check-circle" style="color:${color}; font-size:16px; line-height:16px;"></i>`;
       }
 
       function renderCthunGrid(readOnly) {
@@ -1725,16 +1959,17 @@
             cell.style.alignItems = 'center';
             cell.style.justifyContent = 'center';
             const currentName = cthunGridState.groups[g][slotIdx-1] || '';
+            const posKey = `${g}:${slotIdx}`;
             if (readOnly) {
               const wrap = document.createElement('div');
               wrap.style.minHeight = '28px';
               wrap.style.display = 'inline-flex';
               wrap.style.alignItems = 'center';
               wrap.style.justifyContent = 'center';
-              wrap.style.gap = '8px';
+              wrap.style.gap = '4px';
               wrap.style.borderRadius = '8px';
-              wrap.style.padding = '6px 10px';
-              wrap.style.width = '100px';
+              wrap.style.padding = '6px 8px';
+              wrap.style.minWidth = '100px';
               const color = getRosterClassColorByName(roster, currentName);
               wrap.style.background = color ? color : 'rgba(255,255,255,0.08)';
               const span = document.createElement('span');
@@ -1758,6 +1993,67 @@
                 span.style.fontWeight = '700';
               }
               wrap.appendChild(span);
+              // Add accept status icon next to name if player assigned
+              if (currentName) {
+                const ownerId = nameToDiscordId.get(String(currentName||'').toLowerCase()) || null;
+                const isOwner = !!(user && user.loggedIn && user.id && ownerId && String(user.id) === String(ownerId));
+                const showControls = !!(user && user.loggedIn && (isOwner || canManage));
+                const curStatus = cthunGridState.acceptByPosition[posKey] || '';
+                // If player has a main assignment for this boss, make grid entry read-only
+                const hasMainAssign = hasMainAssignmentForBoss(currentName);
+                if (showControls && !hasMainAssign) {
+                  const btn = document.createElement('button');
+                  btn.className = 'status-toggle-btn';
+                  btn.type = 'button';
+                  btn.style.background = 'transparent';
+                  btn.style.border = 'none';
+                  btn.style.cursor = 'pointer';
+                  btn.style.padding = '2px';
+                  btn.style.marginLeft = '2px';
+                  btn.innerHTML = getCthunStatusIconHtml(curStatus, true);
+                  btn.addEventListener('click', async (ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    const prev = cthunGridState.acceptByPosition[posKey] || '';
+                    let next = '';
+                    if (!prev) next = 'accept';
+                    else if (prev === 'accept') next = 'decline';
+                    else next = '';
+                    cthunGridState.acceptByPosition[posKey] = next;
+                    // Also update underlying entry for progress tracker
+                    try {
+                      const matchEntry = (Array.isArray(panel.entries)?panel.entries:[]).find(e => 
+                        String(e.assignment||'').startsWith('__CTHUN__:') && 
+                        String(e.character_name||'').toLowerCase() === String(currentName||'').toLowerCase()
+                      );
+                      if (matchEntry) matchEntry.accept_status = next || '';
+                    } catch {}
+                    const eventId = getActiveEventId();
+                    try {
+                      await fetch(`/api/assignments/${eventId}/entry/accept`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ dungeon, wing: wing || '', boss, character_name: (currentName||'').trim(), accept_status: next || null })
+                      });
+                    } catch {}
+                    btn.innerHTML = getCthunStatusIconHtml(next, true);
+                    // If in myassignments context, use larger icon
+                    if (btn.closest('[data-myassignments-context]')) {
+                      const icon = btn.querySelector('i.fas, i.fa');
+                      if (icon) { icon.style.fontSize = '30px'; icon.style.lineHeight = '30px'; }
+                    }
+                    // Update progress tracker
+                    if (window._myAssignmentsProgressUpdate) window._myAssignmentsProgressUpdate();
+                  });
+                  wrap.appendChild(btn);
+                } else if (curStatus && !hasMainAssign) {
+                  // Show read-only status only if no main assignment (avoid duplicate/conflicting icons)
+                  const statusIcon = document.createElement('span');
+                  statusIcon.innerHTML = getCthunStatusIconHtml(curStatus, false);
+                  statusIcon.style.marginLeft = '2px';
+                  wrap.appendChild(statusIcon);
+                }
+                // If hasMainAssign, don't show any icon - user sees/controls status from main table
+              }
               cell.appendChild(wrap);
             } else {
               const wrap = document.createElement('div');
@@ -1770,14 +2066,26 @@
               sel.innerHTML = getAllPlayerOptionsHtml(currentName);
               sel.addEventListener('change', () => {
                 const val = sel.value || null;
+                const oldName = cthunGridState.groups[g][slotIdx-1];
                 cthunGridState.groups[g][slotIdx-1] = val;
+                // Reset acceptance when player changes
+                if (oldName !== val) {
+                  cthunGridState.acceptByPosition[posKey] = '';
+                  const eventId = getActiveEventId();
+                  try {
+                    fetch(`/api/assignments/${eventId}/entry/accept`, {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ dungeon, wing: wing || '', boss, character_name: (val||'').trim(), accept_status: null })
+                    });
+                  } catch {}
+                }
               });
               wrap.appendChild(sel);
               const del = document.createElement('button');
               del.className = 'delete-x';
               del.innerHTML = '&times;';
               del.title = 'Remove player';
-              del.addEventListener('click', () => { cthunGridState.groups[g][slotIdx-1] = null; renderCthunGrid(false); });
+              del.addEventListener('click', () => { cthunGridState.groups[g][slotIdx-1] = null; cthunGridState.acceptByPosition[posKey] = ''; renderCthunGrid(false); });
               wrap.appendChild(del);
               cell.appendChild(wrap);
             }
@@ -1811,7 +2119,7 @@
       clearBtn.style.color = '#ef4444';
       clearBtn.addEventListener('click', () => {
         try {
-          for (let g=1; g<=8; g++) { for (let s=1; s<=5; s++) { cthunGridState.groups[g][s-1] = null; } }
+          for (let g=1; g<=8; g++) { for (let s=1; s<=5; s++) { cthunGridState.groups[g][s-1] = null; cthunGridState.acceptByPosition[`${g}:${s}`] = ''; } }
           if (typeof panelDiv._renderCthunGrid === 'function') panelDiv._renderCthunGrid(false);
         } catch {}
       });
@@ -3007,15 +3315,36 @@
               }
               if (isLoathebPanel && sporeGridState) {
                 payloadPanel.spore_groups = sporeGridState.groups;
-                Object.entries(sporeGridState.groups).forEach(([group, arr]) => { (arr||[]).forEach((name, idx) => { if (!name) return; payloadPanel.entries.push({ character_name: name, marker_icon_url: null, assignment: `__SPORE__:${group}:${idx+1}`, accept_status: null }); }); });
+                Object.entries(sporeGridState.groups).forEach(([group, arr]) => { 
+                  (arr||[]).forEach((name, idx) => { 
+                    if (!name) return; 
+                    const posKey = `${group}:${idx+1}`;
+                    const acceptStatus = (sporeGridState.acceptByPosition && sporeGridState.acceptByPosition[posKey]) || null;
+                    payloadPanel.entries.push({ character_name: name, marker_icon_url: null, assignment: `__SPORE__:${group}:${idx+1}`, accept_status: acceptStatus }); 
+                  }); 
+                });
               }
               if (isKelPanel && kelGridState) {
                 payloadPanel.kel_groups = kelGridState.groups;
-                Object.entries(kelGridState.groups).forEach(([group, arr]) => { (arr||[]).forEach((name, idx) => { if (!name) return; payloadPanel.entries.push({ character_name: name, marker_icon_url: null, assignment: `__KEL__:${group}:${idx+1}`, accept_status: null }); }); });
+                Object.entries(kelGridState.groups).forEach(([group, arr]) => { 
+                  (arr||[]).forEach((name, idx) => { 
+                    if (!name) return; 
+                    const posKey = `${group}:${idx+1}`;
+                    const acceptStatus = (kelGridState.acceptByPosition && kelGridState.acceptByPosition[posKey]) || null;
+                    payloadPanel.entries.push({ character_name: name, marker_icon_url: null, assignment: `__KEL__:${group}:${idx+1}`, accept_status: acceptStatus }); 
+                  }); 
+                });
               }
               if (isCthunPanel && cthunGridState) {
                 payloadPanel.cthun_positions = cthunGridState.groups;
-                Object.entries(cthunGridState.groups).forEach(([group, arr]) => { (arr||[]).forEach((name, idx) => { if (!name) return; payloadPanel.entries.push({ character_name: name, marker_icon_url: null, assignment: `__CTHUN__:${group}:${idx+1}`, accept_status: null }); }); });
+                Object.entries(cthunGridState.groups).forEach(([group, arr]) => { 
+                  (arr||[]).forEach((name, idx) => { 
+                    if (!name) return; 
+                    const posKey = `${group}:${idx+1}`;
+                    const acceptStatus = (cthunGridState.acceptByPosition && cthunGridState.acceptByPosition[posKey]) || null;
+                    payloadPanel.entries.push({ character_name: name, marker_icon_url: null, assignment: `__CTHUN__:${group}:${idx+1}`, accept_status: acceptStatus }); 
+                  }); 
+                });
               }
               for (const row of Array.from(list.children)) {
                 if (!row.querySelector) continue;
@@ -4026,6 +4355,421 @@
           return String(a.character_name||'').localeCompare(String(b.character_name||''));
         });
 
+        // ═══════════════════════════════════════════════════════════════════════
+        // COLLECT ALL ASSIGNMENTS (Main table + Special Grids)
+        // ═══════════════════════════════════════════════════════════════════════
+        // Collect grid assignments for Horsemen, Spore, Kel, Cthun
+        const myGridEntries = [];
+        
+        // Helper to check if player has a main (non-grid) assignment for a boss
+        // and get the main entry's accept_status (grid entries share status with main)
+        function getMainAssignForBoss(bossName, charName) {
+          const bossLower = String(bossName||'').toLowerCase();
+          return myEntries.find(e => 
+            String(e.boss||'').toLowerCase().includes(bossLower) && 
+            String(e.character_name||'').toLowerCase() === String(charName||'').toLowerCase()
+          );
+        }
+
+        // Horsemen grid entries
+        try {
+          const horsePanel = panels.find(p => String(p.boss||'').toLowerCase().includes('horse'));
+          if (horsePanel) {
+            const entries = Array.isArray(horsePanel.entries) ? horsePanel.entries : [];
+            for (const en of entries) {
+              const a = String(en.assignment||'');
+              if (!a.startsWith('__HGRID__:')) continue;
+              const name = String(en.character_name||'');
+              if (!myNames.has(name)) continue;
+              // Check if player has main assignment - if so, grid shares that status
+              const mainAssign = getMainAssignForBoss('horse', name);
+              myGridEntries.push({
+                type: 'horsemen',
+                boss: String(horsePanel.boss||''),
+                dungeon: String(horsePanel.dungeon||''),
+                wing: String(horsePanel.wing||''),
+                character_name: name,
+                assignment: a,
+                accept_status: en.accept_status || '',
+                _entry: en, // Keep reference for live updates
+                _linkedMain: mainAssign || null // If set, status is controlled by main assignment
+              });
+            }
+          }
+        } catch {}
+
+        // Spore grid entries (Loatheb)
+        try {
+          const loathebPanel = panels.find(p => String(p.boss||'').toLowerCase().includes('loatheb'));
+          if (loathebPanel) {
+            const entries = Array.isArray(loathebPanel.entries) ? loathebPanel.entries : [];
+            for (const en of entries) {
+              const a = String(en.assignment||'');
+              if (!a.startsWith('__SPORE__:')) continue;
+              const name = String(en.character_name||'');
+              if (!myNames.has(name)) continue;
+              const mainAssign = getMainAssignForBoss('loatheb', name);
+              myGridEntries.push({
+                type: 'spore',
+                boss: String(loathebPanel.boss||''),
+                dungeon: String(loathebPanel.dungeon||''),
+                wing: String(loathebPanel.wing||''),
+                character_name: name,
+                assignment: a,
+                accept_status: en.accept_status || '',
+                _entry: en,
+                _linkedMain: mainAssign || null
+              });
+            }
+          }
+        } catch {}
+
+        // Kel'Thuzad grid entries
+        try {
+          const kelPanel = panels.find(p => String(p.boss||'').toLowerCase().includes('kel'));
+          if (kelPanel) {
+            const entries = Array.isArray(kelPanel.entries) ? kelPanel.entries : [];
+            for (const en of entries) {
+              const a = String(en.assignment||'');
+              if (!a.startsWith('__KEL__:')) continue;
+              const name = String(en.character_name||'');
+              if (!myNames.has(name)) continue;
+              const mainAssign = getMainAssignForBoss('kel', name);
+              myGridEntries.push({
+                type: 'kel',
+                boss: String(kelPanel.boss||''),
+                dungeon: String(kelPanel.dungeon||''),
+                wing: String(kelPanel.wing||''),
+                character_name: name,
+                assignment: a,
+                accept_status: en.accept_status || '',
+                _entry: en,
+                _linkedMain: mainAssign || null
+              });
+            }
+          }
+        } catch {}
+
+        // C'Thun grid entries (Non-NAX)
+        try {
+          const cthPanel = panels.find(p => String(p.boss||'').toLowerCase().includes("c'thun") || String(p.boss||'').toLowerCase().includes('cthun'));
+          if (cthPanel) {
+            const entries = Array.isArray(cthPanel.entries) ? cthPanel.entries : [];
+            for (const en of entries) {
+              const a = String(en.assignment||'');
+              if (!a.startsWith('__CTHUN__:')) continue;
+              const name = String(en.character_name||'');
+              if (!myNames.has(name)) continue;
+              const mainAssign = getMainAssignForBoss('thun', name);
+              myGridEntries.push({
+                type: 'cthun',
+                boss: String(cthPanel.boss||''),
+                dungeon: String(cthPanel.dungeon||''),
+                wing: String(cthPanel.wing||''),
+                character_name: name,
+                assignment: a,
+                accept_status: en.accept_status || '',
+                _entry: en,
+                _linkedMain: mainAssign || null
+              });
+            }
+          }
+        } catch {}
+
+        // Combined all assignments for tracking
+        const allMyAssignments = [...myEntries, ...myGridEntries];
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // GAMIFIED PROGRESS TRACKER (placed at top of container, outside panels)
+        // ═══════════════════════════════════════════════════════════════════════
+        const progressTracker = document.createElement('div');
+        progressTracker.className = 'assignment-progress-tracker';
+        progressTracker.innerHTML = `
+          <style>
+            .assignment-progress-tracker {
+              position: sticky;
+              top: 100px;
+              z-index: 500;
+              width: 600px;
+              max-width: calc(100% - 40px);
+              margin: 0 auto 24px auto;
+              background: linear-gradient(145deg, #1a1f2e 0%, #0f1318 100%);
+              border-radius: 16px;
+              padding: 20px 24px;
+              box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05), inset 0 1px 0 rgba(255,255,255,0.1);
+              backdrop-filter: blur(10px);
+              overflow: hidden;
+            }
+            /* When top bar is hidden (scrolling down), move tracker up */
+            body:has(.top-bar.hidden) .assignment-progress-tracker {
+              top: 54px;
+            }
+            /* Fallback for browsers without :has() - use default positioning */
+            @supports not selector(:has(*)) {
+              .assignment-progress-tracker {
+                top: 100px;
+              }
+            }
+            .progress-tracker-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 16px;
+            }
+            .progress-tracker-title {
+              font-size: 14px;
+              font-weight: 600;
+              color: #9ca3af;
+              text-transform: uppercase;
+              letter-spacing: 1px;
+              display: flex;
+              align-items: center;
+              gap: 10px;
+            }
+            .progress-tracker-count {
+              font-size: 20px;
+              font-weight: 700;
+              color: #e5e7eb;
+              display: flex;
+              align-items: baseline;
+              gap: 4px;
+            }
+            .progress-tracker-count .current {
+              color: #10b981;
+              font-size: 28px;
+              font-weight: 800;
+              transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+              display: inline-block;
+            }
+            .progress-tracker-count .current.bump {
+              transform: scale(1.3);
+            }
+            .progress-tracker-count .total {
+              color: #6b7280;
+            }
+            .progress-bar-container {
+              position: relative;
+              height: 28px;
+              max-height: 28px;
+              background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+              border-radius: 14px;
+              overflow: hidden;
+              box-shadow: inset 0 2px 8px rgba(0,0,0,0.5), inset 0 -1px 0 rgba(255,255,255,0.05);
+              transition: max-height 0.3s ease, opacity 0.3s ease, margin 0.3s ease;
+            }
+            .progress-bar-fill {
+              position: absolute;
+              top: 2px;
+              left: 2px;
+              height: calc(100% - 4px);
+              border-radius: 12px;
+              background: linear-gradient(90deg, #059669 0%, #10b981 50%, #34d399 100%);
+              box-shadow: 0 0 20px rgba(16, 185, 129, 0.4), inset 0 1px 0 rgba(255,255,255,0.3);
+              transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+              overflow: hidden;
+            }
+            .progress-bar-fill::before {
+              content: '';
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              background: linear-gradient(90deg, 
+                transparent 0%, 
+                rgba(255,255,255,0.2) 50%, 
+                transparent 100%);
+              animation: liquid-shine 2s ease-in-out infinite;
+            }
+            .progress-bar-fill::after {
+              content: '';
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              height: 50%;
+              background: linear-gradient(180deg, rgba(255,255,255,0.15) 0%, transparent 100%);
+              border-radius: 12px 12px 0 0;
+            }
+            @keyframes liquid-shine {
+              0% { transform: translateX(-100%); }
+              100% { transform: translateX(200%); }
+            }
+            .progress-bar-fill.declined {
+              background: linear-gradient(90deg, #dc2626 0%, #ef4444 50%, #f87171 100%);
+              box-shadow: 0 0 20px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255,255,255,0.3);
+            }
+            .progress-tracker-status {
+              margin-top: 12px;
+              text-align: center;
+              font-size: 13px;
+              color: #6b7280;
+              min-height: 24px;
+              max-height: 50px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 8px;
+              transition: max-height 0.3s ease, opacity 0.3s ease, margin 0.3s ease;
+            }
+            .progress-tracker-status.complete {
+              color: #10b981;
+              font-weight: 600;
+            }
+            .success-icon {
+              font-size: 24px;
+              display: inline-block;
+              animation: success-bounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+            }
+            @keyframes success-bounce {
+              0% { transform: scale(0); opacity: 0; }
+              50% { transform: scale(1.4); }
+              100% { transform: scale(1); opacity: 1; }
+            }
+            .confetti-container {
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              pointer-events: none;
+              overflow: hidden;
+              border-radius: 16px;
+            }
+            .confetti {
+              position: absolute;
+              width: 8px;
+              height: 8px;
+              border-radius: 2px;
+              animation: confetti-fall 1s ease-out forwards;
+            }
+            @keyframes confetti-fall {
+              0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+              100% { transform: translateY(100px) rotate(720deg); opacity: 0; }
+            }
+          </style>
+          <div class="confetti-container"></div>
+          <div class="progress-tracker-header">
+            <span class="progress-tracker-title">Assignment Progress</span>
+            <div class="progress-tracker-count">
+              <span class="current">0</span>
+              <span class="separator">/</span>
+              <span class="total">0</span>
+            </div>
+          </div>
+          <div class="progress-bar-container">
+            <div class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+          <div class="progress-tracker-status">Accept all assignments to earn <strong style="color:#fbbf24;">+10 bonus points</strong></div>
+        `;
+        
+        // Insert at top of container (before any panels)
+        container.appendChild(progressTracker);
+
+        // Progress tracker state and update function
+        const trackerState = {
+          total: allMyAssignments.length,
+          accepted: 0,
+          hasDeclined: false
+        };
+
+        function updateProgressTracker() {
+          const fill = progressTracker.querySelector('.progress-bar-fill');
+          const currentEl = progressTracker.querySelector('.current');
+          const totalEl = progressTracker.querySelector('.total');
+          const statusEl = progressTracker.querySelector('.progress-tracker-status');
+          const confettiContainer = progressTracker.querySelector('.confetti-container');
+
+          // Count accepted and check for declined from ALL assignments
+          let accepted = 0;
+          let hasDeclined = false;
+          
+          // Count from main entries
+          for (const entry of myEntries) {
+            if (entry.accept_status === 'accept') accepted++;
+            if (entry.accept_status === 'decline') hasDeclined = true;
+          }
+          
+          // Count from grid entries
+          for (const gridEntry of myGridEntries) {
+            let status = '';
+            // If linked to a main assignment, use that status (they share acceptance in DB)
+            if (gridEntry._linkedMain) {
+              status = gridEntry._linkedMain.accept_status || '';
+            } else {
+              // Sync status from the original entry reference
+              if (gridEntry._entry) {
+                gridEntry.accept_status = gridEntry._entry.accept_status || '';
+              }
+              status = gridEntry.accept_status || '';
+            }
+            if (status === 'accept') accepted++;
+            if (status === 'decline') hasDeclined = true;
+          }
+
+          const total = allMyAssignments.length;
+          const prevAccepted = trackerState.accepted;
+          trackerState.accepted = accepted;
+          trackerState.hasDeclined = hasDeclined;
+
+          // Update count with bump animation
+          totalEl.textContent = total;
+          if (accepted !== prevAccepted) {
+            currentEl.textContent = accepted;
+            currentEl.classList.add('bump');
+            setTimeout(() => currentEl.classList.remove('bump'), 300);
+          }
+
+          // Update progress bar
+          const percent = total > 0 ? (accepted / total) * 100 : 0;
+          
+          if (hasDeclined) {
+            fill.style.width = '0%';
+            fill.classList.add('declined');
+            statusEl.className = 'progress-tracker-status';
+            statusEl.innerHTML = '<i class="fas fa-exclamation-triangle" style="color:#ef4444;"></i> You have declined assignments - change to accept for bonus points';
+          } else {
+            fill.classList.remove('declined');
+            fill.style.width = percent + '%';
+
+            if (accepted === total && total > 0) {
+              // Success state
+              statusEl.className = 'progress-tracker-status complete';
+              statusEl.innerHTML = '<span class="success-icon">🎉</span> All assignments accepted! <strong style="color:#10b981;">+10 bonus points earned!</strong> <span class="success-icon">👍</span>';
+              
+              // Confetti burst
+              confettiContainer.innerHTML = '';
+              const colors = ['#10b981', '#34d399', '#fbbf24', '#f59e0b', '#3b82f6', '#8b5cf6'];
+              for (let i = 0; i < 20; i++) {
+                const confetti = document.createElement('div');
+                confetti.className = 'confetti';
+                confetti.style.left = Math.random() * 100 + '%';
+                confetti.style.top = Math.random() * 50 + '%';
+                confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                confetti.style.animationDelay = Math.random() * 0.3 + 's';
+                confettiContainer.appendChild(confetti);
+              }
+              setTimeout(() => confettiContainer.innerHTML = '', 1500);
+            } else {
+              statusEl.className = 'progress-tracker-status';
+              const remaining = total - accepted;
+              statusEl.innerHTML = remaining > 0 
+                ? `Accept <strong style="color:#fbbf24;">${remaining}</strong> more assignment${remaining !== 1 ? 's' : ''} to earn <strong style="color:#fbbf24;">+10 bonus points</strong>`
+                : 'Accept all assignments to earn <strong style="color:#fbbf24;">+10 bonus points</strong>';
+            }
+          }
+        }
+
+        // Initial update
+        updateProgressTracker();
+
+        // Make updateProgressTracker accessible for status toggles
+        window._myAssignmentsProgressUpdate = updateProgressTracker;
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // END PROGRESS TRACKER
+        // ═══════════════════════════════════════════════════════════════════════
+
         // Table
         const tableWrap = document.createElement('div');
         tableWrap.style.padding = '0 20px 20px 20px';
@@ -4117,6 +4861,8 @@
               });
             } catch {}
             btn.innerHTML = getStatusIconHtml(next, true);
+            // Update progress tracker
+            if (typeof updateProgressTracker === 'function') updateProgressTracker();
           });
           tdStatus.appendChild(btn);
 
@@ -4186,6 +4932,94 @@
               });
             }
           } catch {}
+          // Make status icons bigger on myassignments page for better visibility
+          // AND hide status icons for other players (only show your own)
+          try {
+            // Create lowercase set for case-insensitive matching
+            const myNamesLower = new Set([...myNames].map(n => n.toLowerCase()));
+            
+            // Helper to find player name from a status button/icon element
+            function getPlayerNameFromElement(el) {
+              // For Horsemen grid: status is in .accept-col, name is in first cell of same row
+              const acceptCol = el.closest('.accept-col');
+              if (acceptCol) {
+                const row = acceptCol.parentElement;
+                if (row) {
+                  // First cell contains the warrior name
+                  const firstCell = row.children[0];
+                  if (firstCell) {
+                    const nameSpan = firstCell.querySelector('span');
+                    return nameSpan ? nameSpan.textContent.trim() : '';
+                  }
+                }
+                return '';
+              }
+              // For Spore/Kel/Cthun grids: name span is sibling in same wrapper (parent div)
+              let parentWrap = el.parentElement;
+              // If el is a span containing an icon, go up one more level
+              if (parentWrap && parentWrap.tagName === 'SPAN') {
+                parentWrap = parentWrap.parentElement;
+              }
+              if (parentWrap) {
+                // Find the first span that contains text (the name), not an icon
+                for (const child of parentWrap.children) {
+                  if (child.tagName === 'SPAN' && !child.querySelector('i') && child.textContent.trim()) {
+                    return child.textContent.trim();
+                  }
+                }
+              }
+              return '';
+            }
+            
+            // Process all status toggle buttons (interactive icons)
+            div.querySelectorAll('.status-toggle-btn').forEach(btn => {
+              const playerName = getPlayerNameFromElement(btn);
+              const isMyChar = playerName && myNamesLower.has(playerName.toLowerCase());
+              if (isMyChar) {
+                // Make icon bigger for my characters (Spore/Kel/Cthun only - Horsemen already 40px)
+                const isHorsemen = btn.closest('.horsemen-grid-wrap');
+                if (!isHorsemen) {
+                  const icon = btn.querySelector('i.fas, i.fa');
+                  if (icon) {
+                    icon.style.fontSize = '30px';
+                    icon.style.lineHeight = '30px';
+                  }
+                }
+              } else {
+                // Hide status icons for other players
+                btn.remove();
+              }
+            });
+            
+            // Handle non-interactive status icons (.status-icon divs in Horsemen)
+            div.querySelectorAll('.accept-col .status-icon').forEach(statusDiv => {
+              const playerName = getPlayerNameFromElement(statusDiv);
+              const isMyChar = playerName && myNamesLower.has(playerName.toLowerCase());
+              if (!isMyChar) {
+                statusDiv.innerHTML = ''; // Clear the icon
+              }
+            });
+            
+            // Handle non-interactive status icons in Spore/Kel/Cthun grids (span > i.fas)
+            // These are spans containing icons that are NOT inside buttons
+            div.querySelectorAll('.spore-grid-wrap i.fas, .kel-grid-wrap i.fas, .cthun-grid-wrap i.fas').forEach(icon => {
+              // Skip if already in a button (handled above)
+              if (icon.closest('.status-toggle-btn')) return;
+              const playerName = getPlayerNameFromElement(icon);
+              const isMyChar = playerName && myNamesLower.has(playerName.toLowerCase());
+              if (!isMyChar) {
+                // Remove the span containing the icon
+                const parentSpan = icon.parentElement;
+                if (parentSpan) parentSpan.remove();
+              } else {
+                // Make icon bigger for my character
+                icon.style.fontSize = '30px';
+                icon.style.lineHeight = '30px';
+              }
+            });
+          } catch {}
+          // Mark this panel as myassignments context so click handlers can use larger icons
+          div.dataset.myassignmentsContext = 'true';
           container.appendChild(div);
         }
 

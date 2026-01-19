@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Channel Management - Classic WoW Manager</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        :root {
+            --bg: #f4f4f4;
+            --text: #333333;
+            --heading: #2c3e50;
+            --muted: #7f8c8d;
+            --panel-bg: #ffffff;
+            --panel-elev: #f8f9fa;
+            --border: #e5e7eb;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0f1115;
+                --text: #e5e7eb;
+                --heading: #e5e7eb;
+                --muted: #a0aec0;
+                --panel-bg: #151922;
+                --panel-elev: #1a1f2b;
+                --border: #2a2f3a;
+            }
+
+            body.admin [style*="background: white"],
+            body.admin [style*="background:#fff"] { background-color: var(--panel-bg) !important; }
+
+            body.admin [style*="background: #f8f9fa"],
+            body.admin [style*="background:#f8f9fa"] { background-color: var(--panel-elev) !important; }
+
+            body.admin [style*="border: 1px solid #dee2e6"],
+            body.admin [style*="border: 1px solid #e0e0e0"] { border-color: var(--border) !important; }
+
+            body.admin [style*="color: #2c3e50"],
+            body.admin [style*="color:#2c3e50"],
+            body.admin [style*="color: #495057"] { color: var(--heading) !important; }
+
+            body.admin [style*="color: #6c757d"],
+            body.admin [style*="color:#6c757d"],
+            body.admin [style*="color: #7f8c8d"] { color: var(--muted) !important; }
+
+            body.admin [style*="background: #d4edda"] {
+                background-color: #12321f !important;
+                border-color: #1f5131 !important;
+                color: #c8f3d1 !important;
+            }
+
+            body.admin [style*="background: #fff3cd"] {
+                background-color: #3a3115 !important;
+                border-color: #6b5e1c !important;
+                color: #f2e3b0 !important;
+            }
+
+            body.admin .channel-toggle { background: #374151 !important; }
+            body.admin .channel-toggle.toggle-on { background: #16a34a !important; }
+            body.admin .channel-toggle.toggle-off { background: #7f1d1d !important; }
+            body.admin .channel-toggle .toggle-slider { box-shadow: 0 2px 4px rgba(0,0,0,0.6) !important; }
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .page-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .page-header h1 {
+            margin: 0;
+            color: var(--heading);
+        }
+
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            text-decoration: none;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .back-btn:hover {
+            background: var(--panel-elev);
+        }
+
+        .permission-card {
+            background: var(--panel-bg);
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .permission-card h2 {
+            margin-top: 0;
+            color: var(--heading);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #ffffff;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn.danger {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        }
+
+        .btn.danger:hover {
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--muted);
+        }
+
+        .access-denied {
+            text-align: center;
+            padding: 40px;
+            color: #dc3545;
+        }
+
+        .channel-card {
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .channel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px;
+            background: var(--panel-elev);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .channel-name {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .channel-name h3 {
+            margin: 0;
+            color: var(--heading);
+        }
+
+        .channel-name .channel-id {
+            font-size: 12px;
+            color: var(--muted);
+            font-family: monospace;
+        }
+
+        .channel-body {
+            padding: 20px;
+        }
+
+        .channel-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .control-group {
+            background: var(--panel-elev);
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .control-group h4 {
+            margin: 0 0 12px 0;
+            font-size: 14px;
+            color: var(--heading);
+        }
+
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .channel-toggle {
+            width: 50px;
+            height: 25px;
+            background: #ccc;
+            border-radius: 25px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .channel-toggle.toggle-on {
+            background: #28a745;
+        }
+
+        .channel-toggle.toggle-off {
+            background: #dc3545;
+        }
+
+        .toggle-slider {
+            width: 21px;
+            height: 21px;
+            background: white;
+            border-radius: 50%;
+            position: absolute;
+            top: 2px;
+            transition: transform 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .toggle-on .toggle-slider {
+            transform: translateX(25px);
+        }
+
+        .toggle-off .toggle-slider {
+            transform: translateX(2px);
+        }
+
+        .status-text {
+            font-weight: 500;
+            min-width: 60px;
+        }
+
+        .status-text.visible { color: #28a745; }
+        .status-text.hidden { color: #dc3545; }
+
+        .background-preview {
+            display: flex;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .preview-box {
+            width: 150px;
+            height: 90px;
+            border-radius: 6px;
+            border: 2px solid var(--border);
+            background-size: cover;
+            background-position: center;
+        }
+
+        .preview-box.grayscale {
+            filter: grayscale(100%);
+        }
+
+        .global-settings {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .setting-card {
+            background: var(--panel-elev);
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #6f42c1;
+        }
+
+        .setting-card.darken {
+            border-left-color: #dc3545;
+        }
+
+        .setting-card h4 {
+            margin: 0 0 10px 0;
+            color: var(--heading);
+        }
+
+        .setting-card p {
+            color: var(--muted);
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+
+        .slider-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .slider-row input[type="range"] {
+            flex: 1;
+            max-width: 200px;
+        }
+
+        .slider-row input[type="number"] {
+            width: 80px;
+            padding: 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            text-align: center;
+            background: var(--panel-bg);
+            color: var(--text);
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 10px;
+        }
+
+        .tab-btn {
+            padding: 10px 20px;
+            background: transparent;
+            border: none;
+            color: var(--muted);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 8px 8px 0 0;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover {
+            color: var(--text);
+            background: var(--panel-elev);
+        }
+
+        .tab-btn.active {
+            color: #667eea;
+            background: var(--panel-elev);
+            border-bottom: 2px solid #667eea;
+            margin-bottom: -12px;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .raid-stats {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 5px;
+        }
+
+        .save-bar {
+            position: sticky;
+            bottom: 20px;
+            background: var(--panel-bg);
+            padding: 15px 20px;
+            border-radius: 10px;
+            box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 20px;
+        }
+
+        .save-bar.hidden {
+            display: none;
+        }
+
+        .save-status {
+            color: var(--muted);
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body class="admin">
+    <div id="top-bar"></div>
+
+    <div class="container">
+        <div class="page-header">
+            <a href="/admin.html" class="back-btn">
+                <i class="fas fa-arrow-left"></i> Back to Admin
+            </a>
+            <h1><i class="fas fa-hashtag" style="color: #7289da;"></i> Channel Management</h1>
+        </div>
+
+        <div id="loading" class="loading">
+            <i class="fas fa-spinner fa-spin fa-2x"></i>
+            <p>Loading channels...</p>
+        </div>
+
+        <div id="access-denied" class="access-denied" style="display: none;">
+            <h2>Access Denied</h2>
+            <p>You need to be logged in with Management role to access this page.</p>
+            <a href="/admin.html" class="btn">Go to Admin</a>
+        </div>
+
+        <div id="main-content" style="display: none;">
+            <!-- Global Background Settings -->
+            <div class="permission-card">
+                <h2><i class="fas fa-sliders-h"></i> Global Background Settings</h2>
+                <p style="color: var(--muted); margin-bottom: 20px;">These settings apply to all channel backgrounds across the site.</p>
+                
+                <div class="global-settings">
+                    <div class="setting-card">
+                        <h4><i class="fas fa-adjust"></i> Background Blur</h4>
+                        <p>Apply a blur effect to all background images.</p>
+                        <div class="slider-row">
+                            <label>Blur:</label>
+                            <input type="range" id="blur-slider" min="0" max="10" step="0.5" value="0" oninput="updateBlurPreview(this.value)">
+                            <input type="number" id="blur-input" min="0" max="10" step="0.5" value="0" oninput="updateBlurFromInput(this.value)">
+                            <span style="color: var(--muted);">px</span>
+                            <button class="btn" onclick="saveBlurSetting()" id="save-blur-btn">
+                                <i class="fas fa-save"></i> Save
+                            </button>
+                        </div>
+                        <div id="blur-status" style="margin-top: 10px; font-size: 14px;"></div>
+                    </div>
+
+                    <div class="setting-card darken">
+                        <h4><i class="fas fa-moon"></i> Background Darken</h4>
+                        <p>Apply a darkening effect to all background images.</p>
+                        <div class="slider-row">
+                            <label>Brightness:</label>
+                            <input type="range" id="darken-slider" min="50" max="100" step="5" value="100" oninput="updateDarkenPreview(this.value)">
+                            <input type="number" id="darken-input" min="50" max="100" step="5" value="100" oninput="updateDarkenFromInput(this.value)">
+                            <span style="color: var(--muted);">%</span>
+                            <button class="btn" onclick="saveDarkenSetting()" id="save-darken-btn">
+                                <i class="fas fa-save"></i> Save
+                            </button>
+                        </div>
+                        <div id="darken-status" style="margin-top: 10px; font-size: 14px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Channel List -->
+            <div class="permission-card">
+                <h2><i class="fas fa-list"></i> Discord Channels</h2>
+                <p style="color: var(--muted); margin-bottom: 20px;">
+                    Manage visibility, webhook URLs, and background images for each channel. 
+                    Channels appear here based on raids scheduled in Raid-Helper.
+                </p>
+
+                <div style="margin-bottom: 20px; display: flex; gap: 10px;">
+                    <button class="btn" onclick="refreshChannelNames()" id="refresh-names-btn">
+                        <i class="fas fa-sync"></i> Refresh Channel Names
+                    </button>
+                </div>
+
+                <div id="channels-list">
+                    <!-- Channels will be rendered here -->
+                </div>
+            </div>
+
+            <!-- Sticky Save Bar -->
+            <div id="save-bar" class="save-bar hidden">
+                <span class="save-status"><i class="fas fa-exclamation-circle"></i> You have unsaved changes</span>
+                <button class="btn" onclick="saveAllChanges()" id="save-all-btn">
+                    <i class="fas fa-save"></i> Save All Changes
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/top-bar.js"></script>
+    <script>
+        let currentUser = null;
+        let channelsData = [];
+        let backgroundsData = [];
+        let hasUnsavedChanges = false;
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', async () => {
+            await initPage();
+        });
+
+        async function initPage() {
+            try {
+                const response = await fetch('/user');
+                const user = await response.json();
+
+                if (!user.loggedIn) {
+                    showAccessDenied();
+                    return;
+                }
+
+                // Check management role
+                const hasRole = user.hasManagementRole;
+                if (!hasRole) {
+                    showAccessDenied();
+                    return;
+                }
+
+                currentUser = user;
+                await loadAllData();
+
+            } catch (error) {
+                console.error('Error initializing page:', error);
+                showAccessDenied();
+            }
+        }
+
+        function showAccessDenied() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('access-denied').style.display = 'block';
+        }
+
+        async function loadAllData() {
+            try {
+                // Load channels, backgrounds, and settings in parallel
+                const [channelsRes, backgroundsRes] = await Promise.all([
+                    fetch('/api/admin/channel-filters'),
+                    fetch('/api/admin/channel-backgrounds')
+                ]);
+
+                const channelsJson = await channelsRes.json();
+                const backgroundsJson = await backgroundsRes.json();
+
+                if (!channelsJson.success) {
+                    throw new Error(channelsJson.message || 'Failed to load channels');
+                }
+
+                channelsData = channelsJson.channels || [];
+                backgroundsData = backgroundsJson.backgrounds || [];
+
+                // Load blur/darken settings
+                await Promise.all([loadBlurSetting(), loadDarkenSetting()]);
+
+                // Render the UI
+                renderChannels();
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('main-content').style.display = 'block';
+
+            } catch (error) {
+                console.error('Error loading data:', error);
+                document.getElementById('loading').innerHTML = `
+                    <div class="access-denied">
+                        <h3>Error Loading Data</h3>
+                        <p>${error.message}</p>
+                        <button class="btn" onclick="location.reload()">Retry</button>
+                    </div>
+                `;
+            }
+        }
+
+        function renderChannels() {
+            const container = document.getElementById('channels-list');
+
+            if (!channelsData || channelsData.length === 0) {
+                container.innerHTML = `
+                    <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 20px; border-radius: 8px; color: #856404;">
+                        <h4 style="margin: 0 0 10px 0;">No Channels Found</h4>
+                        <p style="margin: 0;">No raids with Discord channels were found. Channels appear here when you have raids scheduled in Raid-Helper.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Create backgrounds map for quick lookup
+            const bgMap = {};
+            backgroundsData.forEach(bg => {
+                bgMap[bg.channel_id] = bg;
+            });
+
+            let html = '';
+
+            channelsData.forEach(channel => {
+                const isVisible = channel.is_visible !== false;
+                const isNax = !!channel.is_nax;
+                const webhookUrl = channel.webhook_url || '';
+                const background = bgMap[channel.channel_id];
+                const channelName = channel.channel_name || `Channel ${channel.channel_id}`;
+
+                html += `
+                    <div class="channel-card" data-channel-id="${channel.channel_id}">
+                        <div class="channel-header">
+                            <div class="channel-name">
+                                <i class="fas fa-hashtag" style="color: #7289da; font-size: 20px;"></i>
+                                <div>
+                                    <h3>${channelName}</h3>
+                                    <div class="channel-id">ID: ${channel.channel_id}</div>
+                                    <div class="raid-stats">
+                                        ${channel.upcoming_count ? `<i class="fas fa-calendar"></i> ${channel.upcoming_count} upcoming` : ''}
+                                        ${channel.historic_count ? `<i class="fas fa-history"></i> ${channel.historic_count} completed` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="channel-body">
+                            <div class="channel-controls">
+                                <!-- Visibility Toggle -->
+                                <div class="control-group">
+                                    <h4><i class="fas fa-eye"></i> Visibility</h4>
+                                    <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px 0;">
+                                        Show or hide raids from this channel in the events list.
+                                    </p>
+                                    <div class="toggle-row">
+                                        <span class="status-text ${isVisible ? 'visible' : 'hidden'}">${isVisible ? 'Shown' : 'Hidden'}</span>
+                                        <div class="channel-toggle ${isVisible ? 'toggle-on' : 'toggle-off'}" 
+                                             data-channel-id="${channel.channel_id}" 
+                                             onclick="toggleVisibility('${channel.channel_id}')">
+                                            <div class="toggle-slider"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- NAX Toggle -->
+                                <div class="control-group">
+                                    <h4><i class="fas fa-skull"></i> Raid Type</h4>
+                                    <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px 0;">
+                                        Mark this channel as a Naxxramas channel.
+                                    </p>
+                                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                        <input type="checkbox" class="nax-toggle" data-channel-id="${channel.channel_id}" 
+                                               ${isNax ? 'checked' : ''} onchange="markUnsaved()">
+                                        <span>${isNax ? 'Is NAX' : 'Not NAX'}</span>
+                                    </label>
+                                </div>
+
+                                <!-- Webhook URL -->
+                                <div class="control-group" style="grid-column: span 2;">
+                                    <h4><i class="fas fa-link"></i> Webhook URL</h4>
+                                    <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px 0;">
+                                        Discord webhook URL for sending notifications to this channel.
+                                    </p>
+                                    <input type="url" class="webhook-input" data-channel-id="${channel.channel_id}" 
+                                           placeholder="https://discord.com/api/webhooks/..." 
+                                           value="${webhookUrl.replace(/"/g, '&quot;')}"
+                                           oninput="markUnsaved()"
+                                           style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-bg); color: var(--text);">
+                                </div>
+
+                                <!-- Background Image -->
+                                <div class="control-group" style="grid-column: span 2;">
+                                    <h4><i class="fas fa-image"></i> Background Image</h4>
+                                    <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px 0;">
+                                        Background image for raid cards. Shows in color for upcoming, B&W for completed.
+                                    </p>
+                                    
+                                    ${background ? `
+                                        <div class="background-preview">
+                                            <div>
+                                                <p style="margin: 0 0 5px 0; font-size: 12px; color: var(--muted);">Color (Upcoming)</p>
+                                                <div class="preview-box" style="background-image: url('${background.background_image_url}');"></div>
+                                            </div>
+                                            <div>
+                                                <p style="margin: 0 0 5px 0; font-size: 12px; color: var(--muted);">B&W (Completed)</p>
+                                                <div class="preview-box grayscale" style="background-image: url('${background.background_image_url}');"></div>
+                                            </div>
+                                            <div style="display: flex; align-items: flex-end;">
+                                                <button class="btn danger" onclick="deleteBackground('${channel.channel_id}', '${channelName.replace(/'/g, "\\'")}')">
+                                                    <i class="fas fa-trash"></i> Delete
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ` : ''}
+                                    
+                                    <div style="margin-top: 15px;">
+                                        <form id="upload-form-${channel.channel_id}" style="display: flex; gap: 10px; align-items: end; flex-wrap: wrap;">
+                                            <div style="flex: 1; min-width: 200px;">
+                                                <input type="file" id="file-${channel.channel_id}" accept="image/*"
+                                                       style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel-bg); color: var(--text);"
+                                                       onchange="previewImage('${channel.channel_id}')">
+                                                <small style="color: var(--muted);">Max 10MB. JPG, PNG, GIF, WebP</small>
+                                            </div>
+                                            <button type="button" class="btn" onclick="uploadBackground('${channel.channel_id}', '${channelName.replace(/'/g, "\\'")}')" id="upload-btn-${channel.channel_id}">
+                                                <i class="fas fa-upload"></i> Upload
+                                            </button>
+                                        </form>
+                                        
+                                        <div id="preview-${channel.channel_id}" style="margin-top: 15px; display: none;">
+                                            <p style="margin: 0 0 5px 0; font-size: 12px; color: var(--muted);">Preview</p>
+                                            <div class="background-preview">
+                                                <div>
+                                                    <div id="preview-color-${channel.channel_id}" class="preview-box"></div>
+                                                </div>
+                                                <div>
+                                                    <div id="preview-bw-${channel.channel_id}" class="preview-box grayscale"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function toggleVisibility(channelId) {
+            const toggle = document.querySelector(`.channel-toggle[data-channel-id="${channelId}"]`);
+            const statusSpan = toggle.closest('.control-group').querySelector('.status-text');
+
+            if (toggle.classList.contains('toggle-on')) {
+                toggle.classList.remove('toggle-on');
+                toggle.classList.add('toggle-off');
+                statusSpan.textContent = 'Hidden';
+                statusSpan.classList.remove('visible');
+                statusSpan.classList.add('hidden');
+            } else {
+                toggle.classList.remove('toggle-off');
+                toggle.classList.add('toggle-on');
+                statusSpan.textContent = 'Shown';
+                statusSpan.classList.remove('hidden');
+                statusSpan.classList.add('visible');
+            }
+
+            markUnsaved();
+        }
+
+        function markUnsaved() {
+            hasUnsavedChanges = true;
+            document.getElementById('save-bar').classList.remove('hidden');
+        }
+
+        async function saveAllChanges() {
+            const saveBtn = document.getElementById('save-all-btn');
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+            // Collect all channel settings
+            const filterSettings = [];
+            document.querySelectorAll('.channel-card').forEach(card => {
+                const channelId = card.dataset.channelId;
+                const toggle = card.querySelector('.channel-toggle');
+                const isVisible = toggle.classList.contains('toggle-on');
+                const naxToggle = card.querySelector('.nax-toggle');
+                const isNax = naxToggle ? naxToggle.checked : false;
+                const webhookInput = card.querySelector('.webhook-input');
+                const webhookUrl = webhookInput ? webhookInput.value.trim() : '';
+
+                filterSettings.push({
+                    channel_id: channelId,
+                    is_visible: isVisible,
+                    is_nax: isNax,
+                    webhook_url: webhookUrl || null
+                });
+            });
+
+            try {
+                const response = await fetch('/api/admin/channel-filters', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filters: filterSettings })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    hasUnsavedChanges = false;
+                    document.getElementById('save-bar').classList.add('hidden');
+                    
+                    // Show success notification
+                    showNotification('Changes saved successfully!', 'success');
+                } else {
+                    showNotification(`Error: ${data.message}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error saving:', error);
+                showNotification('Network error occurred while saving.', 'error');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save All Changes';
+            }
+        }
+
+        function showNotification(message, type) {
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 80px;
+                right: 20px;
+                padding: 15px 20px;
+                border-radius: 8px;
+                color: white;
+                font-weight: 500;
+                z-index: 9999;
+                animation: slideIn 0.3s ease;
+                ${type === 'success' ? 'background: #28a745;' : 'background: #dc3545;'}
+            `;
+            notification.innerHTML = `<i class="fas fa-${type === 'success' ? 'check' : 'exclamation-triangle'}"></i> ${message}`;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.style.animation = 'slideOut 0.3s ease';
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        async function refreshChannelNames() {
+            const btn = document.getElementById('refresh-names-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+
+            try {
+                const r = await fetch('/api/admin/channel-names/refresh', { method: 'POST' });
+                const j = await r.json();
+                if (r.ok && j.success) {
+                    showNotification(`Refreshed channel names. Updated: ${j.upserts || 0}`, 'success');
+                    await loadAllData();
+                } else {
+                    showNotification('Failed to refresh channel names', 'error');
+                }
+            } catch (e) {
+                showNotification('Network error', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-sync"></i> Refresh Channel Names';
+            }
+        }
+
+        // Background blur/darken functions
+        async function loadBlurSetting() {
+            try {
+                const response = await fetch('/api/ui/background-blur');
+                const data = await response.json();
+                if (data.success) {
+                    const blurValue = data.blurValue || 0;
+                    document.getElementById('blur-slider').value = blurValue;
+                    document.getElementById('blur-input').value = blurValue;
+                }
+            } catch (error) {
+                console.error('Error loading blur setting:', error);
+            }
+        }
+
+        function updateBlurPreview(value) {
+            document.getElementById('blur-slider').value = value;
+            document.getElementById('blur-input').value = value;
+        }
+
+        function updateBlurFromInput(value) {
+            updateBlurPreview(value);
+        }
+
+        async function saveBlurSetting() {
+            const blurValue = parseFloat(document.getElementById('blur-input').value);
+            const saveBtn = document.getElementById('save-blur-btn');
+            const statusDiv = document.getElementById('blur-status');
+
+            if (isNaN(blurValue) || blurValue < 0 || blurValue > 10) {
+                statusDiv.innerHTML = '<span style="color: #dc3545;">Blur must be 0-10</span>';
+                return;
+            }
+
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            try {
+                const response = await fetch('/api/admin/background-blur', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ blurValue })
+                });
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    statusDiv.innerHTML = '<span style="color: #28a745;">Saved!</span>';
+                    setTimeout(() => statusDiv.innerHTML = '', 3000);
+                } else {
+                    statusDiv.innerHTML = `<span style="color: #dc3545;">${data.message}</span>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = '<span style="color: #dc3545;">Network error</span>';
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+            }
+        }
+
+        async function loadDarkenSetting() {
+            try {
+                const response = await fetch('/api/ui/background-darken');
+                const data = await response.json();
+                if (data.success) {
+                    const darkenValue = data.darkenValue || 100;
+                    document.getElementById('darken-slider').value = darkenValue;
+                    document.getElementById('darken-input').value = darkenValue;
+                }
+            } catch (error) {
+                console.error('Error loading darken setting:', error);
+            }
+        }
+
+        function updateDarkenPreview(value) {
+            document.getElementById('darken-slider').value = value;
+            document.getElementById('darken-input').value = value;
+        }
+
+        function updateDarkenFromInput(value) {
+            updateDarkenPreview(value);
+        }
+
+        async function saveDarkenSetting() {
+            const darkenValue = parseFloat(document.getElementById('darken-input').value);
+            const saveBtn = document.getElementById('save-darken-btn');
+            const statusDiv = document.getElementById('darken-status');
+
+            if (isNaN(darkenValue) || darkenValue < 50 || darkenValue > 100) {
+                statusDiv.innerHTML = '<span style="color: #dc3545;">Brightness must be 50-100</span>';
+                return;
+            }
+
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            try {
+                const response = await fetch('/api/admin/background-darken', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ darkenValue })
+                });
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    statusDiv.innerHTML = '<span style="color: #28a745;">Saved!</span>';
+                    setTimeout(() => statusDiv.innerHTML = '', 3000);
+                } else {
+                    statusDiv.innerHTML = `<span style="color: #dc3545;">${data.message}</span>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = '<span style="color: #dc3545;">Network error</span>';
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+            }
+        }
+
+        // Image upload functions
+        function previewImage(channelId) {
+            const fileInput = document.getElementById(`file-${channelId}`);
+            const previewDiv = document.getElementById(`preview-${channelId}`);
+            const previewColor = document.getElementById(`preview-color-${channelId}`);
+            const previewBW = document.getElementById(`preview-bw-${channelId}`);
+
+            if (fileInput.files && fileInput.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    previewColor.style.backgroundImage = `url("${e.target.result}")`;
+                    previewBW.style.backgroundImage = `url("${e.target.result}")`;
+                    previewDiv.style.display = 'block';
+                };
+                reader.readAsDataURL(fileInput.files[0]);
+            } else {
+                previewDiv.style.display = 'none';
+            }
+        }
+
+        async function uploadBackground(channelId, channelName) {
+            const fileInput = document.getElementById(`file-${channelId}`);
+            const uploadBtn = document.getElementById(`upload-btn-${channelId}`);
+
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('Please select an image file first.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('backgroundImage', fileInput.files[0]);
+            formData.append('channelId', channelId);
+            formData.append('channelName', channelName);
+
+            uploadBtn.disabled = true;
+            uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+
+            try {
+                const response = await fetch('/api/admin/channel-backgrounds/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    showNotification('Background uploaded successfully!', 'success');
+                    await loadAllData();
+                } else {
+                    showNotification(`Error: ${data.message}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error uploading:', error);
+                showNotification('Network error occurred.', 'error');
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = '<i class="fas fa-upload"></i> Upload';
+            }
+        }
+
+        async function deleteBackground(channelId, channelName) {
+            if (!confirm(`Delete background image for ${channelName}?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/channel-backgrounds/${channelId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    showNotification('Background deleted!', 'success');
+                    await loadAllData();
+                } else {
+                    showNotification(`Error: ${data.message}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error deleting:', error);
+                showNotification('Network error occurred.', 'error');
+            }
+        }
+
+        // Warn before leaving with unsaved changes
+        window.addEventListener('beforeunload', (e) => {
+            if (hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+    </script>
+
+    <style>
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+    </style>
+</body>
+</html>
