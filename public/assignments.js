@@ -2150,24 +2150,37 @@
     copyBtn.addEventListener('click', () => {
       const panelName = boss || 'Assignment';
       
-      // Build macro lines
-      const lines = [`/rw ${panelName}`];
-      
-      // Get visible entries (non-grid entries)
+      // Collect assignments
+      const assignments = [];
       visibleEntries.forEach(e => {
         const charName = (e.character_name || '').trim();
         const assignment = (e.assignment || '').trim();
         
         if (charName && assignment) {
-          // Try to extract action from assignment
-          // For most assignments, the full assignment text is the target
-          // The action is based on the panel
-          const action = panelName;
-          lines.push(`/ra ${charName} ${action} ${assignment}`);
+          assignments.push({ charName, assignment });
         }
       });
       
-      const macroText = lines.join('\n');
+      // Try full format first
+      let lines = [`/rw ${panelName}`];
+      assignments.forEach(a => {
+        lines.push(`/ra ${a.charName} ${panelName} ${a.assignment}`);
+      });
+      let macroText = lines.join('\n');
+      
+      // If too long, use shortened format
+      if (macroText.length > 255) {
+        lines = [`/rw ${panelName}`];
+        assignments.forEach(a => {
+          // Abbreviate "Group X and Y" to "GX + GY"
+          let shortAssignment = a.assignment
+            .replace(/Group\s+(\d+)\s+and\s+(\d+)/gi, 'G$1 + G$2')
+            .replace(/Group\s+(\d+)/gi, 'G$1');
+          lines.push(`/ra ${a.charName} - ${shortAssignment}`);
+        });
+        macroText = lines.join('\n');
+      }
+      
       navigator.clipboard.writeText(macroText).then(() => {
         const originalHtml = copyBtn.innerHTML;
         copyBtn.innerHTML = '<i class="fas fa-check"></i>';
@@ -3959,18 +3972,37 @@
       else if (variantLower === 'pi') action = 'Power Infusion';
       else if (String(boss).toLowerCase() === 'tanking') action = 'Tank';
       
-      // Build macro lines
-      const lines = [`/rw ${panelName}`];
+      // Build macro lines (try full format first)
       const rows = list.querySelectorAll('.assignment-entry-row[data-entry="1"]');
+      const assignments = [];
       rows.forEach(row => {
         const charName = row.querySelector('.character-name')?.textContent?.trim();
         const assignment = row.dataset.assignment || '';
         if (charName && assignment) {
-          lines.push(`/ra ${charName} ${action} ${assignment}`);
+          assignments.push({ charName, assignment });
         }
       });
       
-      const macroText = lines.join('\n');
+      // Try full format
+      let lines = [`/rw ${panelName}`];
+      assignments.forEach(a => {
+        lines.push(`/ra ${a.charName} ${action} ${a.assignment}`);
+      });
+      let macroText = lines.join('\n');
+      
+      // If too long, use shortened format
+      if (macroText.length > 255) {
+        lines = [`/rw ${panelName}`];
+        assignments.forEach(a => {
+          // Abbreviate "Group X and Y" to "GX + GY"
+          let shortAssignment = a.assignment
+            .replace(/Group\s+(\d+)\s+and\s+(\d+)/gi, 'G$1 + G$2')
+            .replace(/Group\s+(\d+)/gi, 'G$1');
+          lines.push(`/ra ${a.charName} - ${shortAssignment}`);
+        });
+        macroText = lines.join('\n');
+      }
+      
       navigator.clipboard.writeText(macroText).then(() => {
         const originalHtml = copyBtn.innerHTML;
         copyBtn.innerHTML = '<i class="fas fa-check"></i>';
