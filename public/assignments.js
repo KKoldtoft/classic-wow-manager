@@ -51,6 +51,7 @@
       buttonsContainer.innerHTML = `
         <a class="nav-btn" data-wing="main" href="#"><i class="fas fa-home"></i> <span>Main</span></a>
         <a class="nav-btn" data-wing="myassignments" href="#"><i class="fas fa-user-check"></i> <span>My Assignments</span></a>
+        <a class="nav-btn" data-wing="allassignments" href="#" style="background: linear-gradient(135deg, #3b82f6, #2563eb);"><i class="fas fa-list"></i> <span>All Assignments</span></a>
         <a class="nav-btn" data-wing="aq40" href="#"><i class="fas fa-mountain"></i> <span>AQ40</span></a>
         <a class="nav-btn" data-wing="bwl" href="#"><i class="fas fa-fire"></i> <span>BWL</span></a>
         <a class="nav-btn" data-wing="mc" href="#"><i class="fas fa-fire-alt"></i> <span>MC</span></a>

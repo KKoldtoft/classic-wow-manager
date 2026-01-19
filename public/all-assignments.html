@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Raid Assignments - Classic WoW Manager</title>
+  <title>All Assignments Summary - Classic WoW Manager</title>
   <link rel="stylesheet" href="/style.css?v=frsync-2">
   <link rel="stylesheet" href="/raidlogs.css?v=frsync-2">
   <link rel="stylesheet" href="/assignments.css?v=3">
-  <link rel="stylesheet" href="/confirmation-modal.css">
+  <link rel="stylesheet" href="/all-assignments.css?v=1">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
-<body class="assignments">
+<body class="all-assignments">
   <div class="top-bar">
     <div class="top-bar-left">
       <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
@@ -39,8 +39,11 @@
         <a href="#" class="raid-nav-link" id="raid-roster-link">
           <i class="fas fa-users"></i> Roster
         </a>
-        <a href="#" class="raid-nav-link active" id="raid-assignments-link">
+        <a href="#" class="raid-nav-link" id="raid-assignments-link">
           <i class="fas fa-tasks"></i> Assignments
+        </a>
+        <a href="#" class="raid-nav-link active" id="raid-all-assignments-link">
+          <i class="fas fa-list"></i> All Assignments
         </a>
         <a href="/raidlogs" class="raid-nav-link" id="raid-logs-link">
           <i class="fas fa-chart-line"></i> Raid Logs
@@ -60,30 +63,23 @@
     </div>
   </div>
 
-  <!-- Floating sub-navigation (same styling as raidlogs) -->
-  <div class="floating-nav" id="assignments-floating-nav">
-    <div class="nav-buttons" id="assignments-nav-buttons">
-      <a class="nav-btn" data-wing="main" href="#"><i class="fas fa-home"></i> <span>Main</span></a>
-      <a class="nav-btn" data-wing="myassignments" href="#"><i class="fas fa-user-check"></i> <span>My Assignments</span></a>
-      <a class="nav-btn" data-wing="allassignments" href="#" style="background: linear-gradient(135deg, #3b82f6, #2563eb);"><i class="fas fa-list"></i> <span>All Assignments</span></a>
-      <a class="nav-btn" data-wing="military" href="#"><i class="fas fa-chess-knight"></i> <span>Military Wing</span></a>
-      <a class="nav-btn" data-wing="spider" href="#"><i class="fas fa-spider"></i> <span>Spider Wing</span></a>
-      <a class="nav-btn" data-wing="abomination" href="#"><i class="fas fa-skull-crossbones"></i> <span>Abomination Wing</span></a>
-      <a class="nav-btn" data-wing="plague" href="#"><i class="fas fa-biohazard"></i> <span>Plague Wing</span></a>
-      <a class="nav-btn" data-wing="frostwyrm_lair" href="#"><i class="fas fa-dragon"></i> <span>Frostwyrm Lair</span></a>
+  <!-- Page content container -->
+  <div class="container" id="all-assignments-container">
+    <div class="page-header">
+      <h1><i class="fas fa-list"></i> All Assignments Summary</h1>
+      <p class="page-subtitle">Compact view of all boss assignments</p>
+    </div>
+    
+    <div id="loading" class="loading-state">
+      <i class="fas fa-spinner fa-spin"></i> Loading assignments...
+    </div>
+    
+    <div id="content" style="display: none;">
+      <!-- Content will be dynamically inserted here -->
     </div>
   </div>
 
-  <!-- Page content container; JS fills content depending on current wing route -->
-  <div class="container" id="assignments-container" style="max-width: 1200px; margin: 0 auto; padding: 20px;">
-    <!-- Panels inserted by JS based on current subpage (main/spider/military/plague/abomination) -->
-  </div>
-
   <script src="/top-bar.js?v=frsync-2"></script>
-  <script src="/confirmation-modal.js"></script>
-  <script src="/assignments.js?v=3"></script>
+  <script src="/all-assignments.js?v=1"></script>
 </body>
 </html>
-
-
-

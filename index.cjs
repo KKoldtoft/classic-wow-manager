@@ -2710,17 +2710,30 @@ app.post('/api/discord/send-assignment/:eventId/:discordUserId', requireRosterMa
       return res.status(500).json({ ok: false, error: 'DISCORD_BOT_TOKEN not set' });
     }
 
-    // 1) Fetch event details from cache
-    const eventResult = await pool.query(
-      'SELECT event_data FROM raid_helper_events_cache WHERE event_id = $1',
-      [eventId]
-    );
+    // 1) Fetch event details from cache, or from API if not cached
+    let eventData = await getCachedRaidHelperEvent(eventId);
     
-    if (!eventResult.rows.length) {
-      return res.status(404).json({ ok: false, error: 'Event not found' });
+    if (!eventData) {
+      // Event not in cache, fetch from Raid-Helper API
+      console.log(`🔄 Event ${eventId} not in cache, fetching from Raid-Helper API`);
+      try {
+        const response = await axios.get(`https://raid-helper.dev/api/v2/events/${eventId}`, {
+          timeout: 10000,
+          headers: { 
+            'Authorization': process.env.RAID_HELPER_API_KEY,
+            'User-Agent': 'ClassicWoWManagerApp/1.0.0 (Node.js)'
+          }
+        });
+        
+        eventData = response.data;
+        // Cache the event for future use
+        await setCachedRaidHelperEvent(eventId, eventData);
+        console.log(`✅ Event ${eventId} fetched and cached`);
+      } catch (apiError) {
+        console.error(`❌ Failed to fetch event ${eventId} from Raid-Helper API:`, apiError.message);
+        return res.status(404).json({ ok: false, error: 'Event not found in cache or Raid-Helper API' });
+      }
     }
-
-    const eventData = eventResult.rows[0].event_data;
     const eventTitle = eventData.title || 'Tonight\'s raid';
     const invitesBy = eventData.invitedBy || 'the raid leader';
 
@@ -7919,6 +7932,10 @@ app.get('/event/:eventId/assignments', (req, res) => {
 });
 
 // Subpage routes for assignments wings
+app.get('/event/:eventId/assignments/allassignments', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'all-assignments.html'));
+});
+
 app.get('/event/:eventId/assignments/:wing', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'assignments.html'));
 });
@@ -7926,6 +7943,10 @@ app.get('/event/:eventId/assignments/:wing', (req, res) => {
 // Non-event scoped assignments routes (used by placeholder and generic links)
 app.get('/assignments', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'assignments.html'));
+});
+
+app.get('/assignments/allassignments', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'all-assignments.html'));
 });
 
 app.get('/assignments/:wing', (req, res) => {
