@@ -8918,7 +8918,7 @@ app.put('/api/players/:discordUserId/fix-name', async (req, res) => {
             await client.query(
                 `INSERT INTO players (discord_id, character_name, class)
                  VALUES ($1, $2, $3)
-                 ON CONFLICT DO NOTHING`,
+                 ON CONFLICT (discord_id, character_name, class) DO NOTHING`,
                 [discordUserId, newName, characterClass]
             );
         }
@@ -10381,7 +10381,7 @@ app.post('/api/roster/:eventId/convert-placeholder', requireRosterManager, async
         await client.query(`
             INSERT INTO players (discord_id, character_name, class) 
             VALUES ($1, $2, $3)
-            ON CONFLICT DO NOTHING`,
+            ON CONFLICT (discord_id, character_name, class) DO NOTHING`,
             [discordId, characterName, characterClass]
         );
         
@@ -10524,7 +10524,7 @@ app.post('/api/roster/:eventId/add-character', requireRosterManager, async (req,
         await client.query(`
             INSERT INTO players (discord_id, character_name, class) 
             VALUES ($1, $2, $3)
-            ON CONFLICT DO NOTHING`,
+            ON CONFLICT (discord_id, character_name, class) DO NOTHING`,
             [discordId, characterName, characterClass]
         );
 
@@ -15592,7 +15592,7 @@ app.post('/api/add-character', async (req, res) => {
         
         // Insert new character
         await client.query(
-            'INSERT INTO players (discord_id, character_name, class) VALUES ($1, $2, $3)',
+            'INSERT INTO players (discord_id, character_name, class) VALUES ($1, $2, $3) ON CONFLICT (discord_id, character_name, class) DO NOTHING',
             [discordId, characterName, characterClass]
         );
         
