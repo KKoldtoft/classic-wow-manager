@@ -4650,6 +4650,663 @@ async function clearHighlightsForReport(reportCode) {
   }
 }
 
+// =============================================================================
+// SINGLE-PASS ANALYSIS: Load events once, run ALL analyzers in one loop
+// This dramatically reduces memory usage vs loading events 10+ times
+// =============================================================================
+async function runAllAnalyzersInSinglePass(reportCode, fights, meta, tankNames = []) {
+  console.log('[SINGLE-PASS] Starting unified analysis for report:', reportCode);
+  const startTime = Date.now();
+  
+  // Get all event pages for this report (LOADED ONCE)
+  const pagesResult = await pool.query(
+    'SELECT events FROM wcl_event_pages WHERE report_code = $1 ORDER BY start_time',
+    [reportCode]
+  );
+  
+  if (pagesResult.rows.length === 0) {
+    console.log('[SINGLE-PASS] No event pages found');
+    return {
+      bloodrages: { badBloodrages: [], totalBloodrages: 0, combatSegmentCount: 0, damageEventCount: 0 },
+      charges: { charges: [], totalCharges: 0, badCharges: 0 },
+      interrupts: { playerStats: [], totalInterrupts: 0 },
+      decurses: { playerStats: [], totalDecurses: 0 },
+      sunders: { playerStats: [], effectiveSunders: 0, totalSunders: 0 },
+      scorches: { playerStats: [], effectiveScorches: 0, totalScorches: 0 },
+      disarms: { playerStats: [], totalDisarms: 0 },
+      deaths: { deaths: [], count: 0, deathsByFight: {} },
+      curseDamage: { playerStats: [], totalDamage: 0, curseWindows: 0 },
+      spores: { sporeGroups: [], totalSpores: 0 }
+    };
+  }
+  
+  console.log(`[SINGLE-PASS] Processing ${pagesResult.rows.length} event pages...`);
+  
+  // ===== Pre-compute useful lookups =====
+  const playerActorIds = new Set();
+  const mageActorIds = new Set();
+  const tankActorIds = new Set();
+  const tankNamesLower = tankNames.map(n => n.toLowerCase());
+  
+  if (meta && meta.actorsById) {
+    for (const [id, actor] of Object.entries(meta.actorsById)) {
+      if (actor && actor.type === 'Player') {
+        playerActorIds.add(Number(id));
+        if (actor.subType && actor.subType.toLowerCase() === 'mage') {
+          mageActorIds.add(Number(id));
+        }
+        if (tankNamesLower.includes(actor.name?.toLowerCase())) {
+          tankActorIds.add(Number(id));
+        }
+      }
+    }
+  }
+  
+  // Build fight lookup
+  const validFightIds = new Set(fights.map(f => f.id));
+  const bossFightRanges = fights
+    .filter(f => f.encounterID && f.encounterID > 0)
+    .map(f => ({ start: f.startTime, end: f.endTime }));
+  
+  // Loatheb fight ranges for spore analysis
+  const loathebFights = fights.filter(f =>
+    f.encounterID === 1115 || f.encounterID === 51115 ||
+    (f.name && (f.name.toLowerCase().includes('loatheb') || f.name.toLowerCase() === 'spore'))
+  );
+  const loathebTimeRanges = loathebFights.length > 0 ? [{
+    start: Math.min(...loathebFights.map(f => f.startTime)),
+    end: Math.max(...loathebFights.map(f => f.endTime))
+  }] : [];
+  
+  // ===== Collectors for each analyzer =====
+  
+  // Bloodrages
+  const damageTimestamps = [];
+  const bloodrageEvents = [];
+  
+  // Charges
+  const chargeCollector = { allEvents: [] };
+  
+  // Interrupts
+  const interruptCounts = {};
+  let totalInterrupts = 0;
+  
+  // Decurses
+  const DECURSE_ABILITIES = ['remove curse', 'remove lesser curse', 'abolish poison'];
+  const decurseCounts = {};
+  let totalDecurses = 0;
+  
+  // Sunders
+  const sunderCounts = {};
+  let sunderEffective = 0;
+  let sunderCasts = 0;
+  
+  // Scorches
+  const FIRE_VULN_IDS = [22959, 12873, 12872, 12871, 12870, 12869];
+  const scorchCounts = {};
+  let scorchEffective = 0;
+  let scorchCasts = 0;
+  
+  // Disarms
+  const disarmCounts = {};
+  let totalDisarms = 0;
+  
+  // Deaths
+  const deathLog = [];
+  const deathsByFight = {};
+  
+  // Curse damage (mage damage while curses active)
+  const CURSE_NAMES = ['veil of darkness', 'curse of the plaguebringer', 'life drain'];
+  const curseEvents = [];
+  const mageDamageEvents = [];
+  
+  // Loatheb spores
+  const sporeCasts = [];
+  const sporeDebuffApplications = [];
+  
+  // Helper to get source info
+  const getSourceInfo = (ev) => {
+    let sourceName = ev.sourceName;
+    let sourceSubType = ev.sourceSubType;
+    if (!sourceName && ev.sourceID != null && meta.actorsById && meta.actorsById[ev.sourceID]) {
+      sourceName = meta.actorsById[ev.sourceID].name;
+      sourceSubType = meta.actorsById[ev.sourceID].subType;
+    }
+    return { sourceName, sourceSubType };
+  };
+  
+  const getTargetName = (ev) => {
+    let targetName = ev.targetName;
+    if (!targetName && ev.targetID != null && meta.actorsById && meta.actorsById[ev.targetID]) {
+      targetName = meta.actorsById[ev.targetID].name;
+    }
+    return targetName;
+  };
+  
+  const getAbilityInfo = (ev) => {
+    const abilityId = ev.abilityGameID ?? ev.ability?.guid;
+    let abilityName = '';
+    if (abilityId != null && meta.abilitiesById && meta.abilitiesById[abilityId]) {
+      abilityName = meta.abilitiesById[abilityId].name;
+    }
+    return { abilityId, abilityName };
+  };
+  
+  // ===== SINGLE PASS THROUGH ALL EVENTS =====
+  let totalEventsProcessed = 0;
+  
+  for (const row of pagesResult.rows) {
+    const events = typeof row.events === 'string' ? JSON.parse(row.events) : row.events;
+    
+    for (const ev of events) {
+      totalEventsProcessed++;
+      const type = String(ev.type || '').toLowerCase();
+      const { abilityId, abilityName } = getAbilityInfo(ev);
+      const abilityLower = abilityName.toLowerCase();
+      const { sourceName, sourceSubType } = getSourceInfo(ev);
+      const targetName = getTargetName(ev);
+      const timestamp = ev.timestamp;
+      
+      // ----- BLOODRAGES: Track damage and bloodrage casts -----
+      if (type === 'damage' && timestamp != null) {
+        damageTimestamps.push(timestamp);
+        
+        // Also track for curse damage (mage damage)
+        if (mageActorIds.has(ev.sourceID) && ev.amount > 0) {
+          mageDamageEvents.push({
+            sourceId: ev.sourceID,
+            sourceName,
+            timestamp,
+            amount: ev.amount,
+            abilityName: abilityName || 'Unknown',
+            targetName: targetName || 'Unknown'
+          });
+        }
+      }
+      
+      if (type === 'cast' && (abilityLower === 'bloodrage' || abilityId === 2687)) {
+        bloodrageEvents.push({
+          ...ev,
+          sourceName,
+          sourceSubType,
+          abilityName: abilityName || 'Bloodrage'
+        });
+      }
+      
+      // ----- CHARGES: Collect all events for charge analysis -----
+      if (tankNames.length > 0) {
+        chargeCollector.allEvents.push({
+          ...ev,
+          sourceName,
+          sourceSubType,
+          targetName,
+          abilityName
+        });
+      }
+      
+      // ----- INTERRUPTS -----
+      if (type === 'interrupt' && sourceName) {
+        if (!interruptCounts[sourceName]) {
+          interruptCounts[sourceName] = { count: 0, sourceSubType, spells: {}, events: [] };
+        }
+        interruptCounts[sourceName].count++;
+        totalInterrupts++;
+        
+        const extraAbilityId = ev.extraAbilityGameID ?? ev.ability?.guid;
+        let spellName = 'Unknown';
+        if (extraAbilityId != null && meta.abilitiesById && meta.abilitiesById[extraAbilityId]) {
+          spellName = meta.abilitiesById[extraAbilityId].name;
+        }
+        interruptCounts[sourceName].spells[spellName] = (interruptCounts[sourceName].spells[spellName] || 0) + 1;
+        interruptCounts[sourceName].events.push({ timestamp, extraAbilityName: spellName });
+      }
+      
+      // ----- DECURSES -----
+      if (type === 'dispel' && sourceName) {
+        const isDecurse = DECURSE_ABILITIES.some(d => abilityLower.includes(d.split(' ')[0])) ||
+                          (abilityLower.includes('remove') && abilityLower.includes('curse'));
+        if (isDecurse) {
+          if (!decurseCounts[sourceName]) {
+            decurseCounts[sourceName] = { count: 0, sourceSubType, curses: {}, events: [] };
+          }
+          decurseCounts[sourceName].count++;
+          totalDecurses++;
+          
+          const extraAbilityId = ev.extraAbilityGameID;
+          let curseName = 'Unknown';
+          if (extraAbilityId != null && meta.abilitiesById && meta.abilitiesById[extraAbilityId]) {
+            curseName = meta.abilitiesById[extraAbilityId].name;
+          }
+          decurseCounts[sourceName].curses[curseName] = (decurseCounts[sourceName].curses[curseName] || 0) + 1;
+          decurseCounts[sourceName].events.push({ timestamp, extraAbilityName: curseName });
+        }
+      }
+      
+      // ----- SUNDERS -----
+      if (abilityLower.includes('sunder armor') && sourceName) {
+        if (!sunderCounts[sourceName]) {
+          sunderCounts[sourceName] = { effective: 0, total: 0, sourceSubType, events: [] };
+        }
+        if (type === 'cast') {
+          sunderCounts[sourceName].total++;
+          sunderCasts++;
+        }
+        if (type === 'applydebuff' || type === 'applydebuffstack') {
+          sunderCounts[sourceName].effective++;
+          sunderEffective++;
+          sunderCounts[sourceName].events.push({ timestamp, targetName: targetName || 'Unknown' });
+        }
+      }
+      
+      // ----- SCORCHES -----
+      if (type === 'cast' && abilityLower === 'scorch' && sourceName) {
+        if (!scorchCounts[sourceName]) {
+          scorchCounts[sourceName] = { effective: 0, total: 0, sourceSubType, events: [] };
+        }
+        scorchCounts[sourceName].total++;
+        scorchCasts++;
+      }
+      if ((type === 'applydebuff' || type === 'applydebuffstack') && sourceName) {
+        const isFireVuln = FIRE_VULN_IDS.includes(abilityId) ||
+                           abilityLower.includes('fire vulnerability') ||
+                           abilityLower.includes('improved scorch');
+        if (isFireVuln) {
+          if (!scorchCounts[sourceName]) {
+            scorchCounts[sourceName] = { effective: 0, total: 0, sourceSubType, events: [] };
+          }
+          scorchCounts[sourceName].effective++;
+          scorchEffective++;
+          scorchCounts[sourceName].events.push({ timestamp, targetName: targetName || 'Unknown' });
+        }
+      }
+      
+      // ----- DISARMS -----
+      if (type === 'applydebuff' && abilityLower === 'disarm' && sourceName) {
+        if (!disarmCounts[sourceName]) {
+          disarmCounts[sourceName] = { count: 0, sourceSubType, targets: {}, events: [] };
+        }
+        disarmCounts[sourceName].count++;
+        totalDisarms++;
+        if (targetName) {
+          disarmCounts[sourceName].targets[targetName] = (disarmCounts[sourceName].targets[targetName] || 0) + 1;
+        }
+        disarmCounts[sourceName].events.push({ timestamp, targetName: targetName || 'Unknown' });
+      }
+      
+      // ----- DEATHS -----
+      if (type === 'death' && playerActorIds.has(ev.targetID)) {
+        const killingAbilityId = ev.abilityGameID || ev.killingAbilityGameID || ev.ability?.guid || 0;
+        const killingAbilityName = (killingAbilityId && meta.abilitiesById && meta.abilitiesById[killingAbilityId])
+          ? meta.abilitiesById[killingAbilityId].name
+          : (killingAbilityId ? `Ability #${killingAbilityId}` : 'Unknown');
+        
+        // Filter out Feign Death
+        const isFeignDeath = killingAbilityId === 0 || killingAbilityId === 5384 ||
+                             ev.abilityGameID === 5384 || ev.killingAbilityGameID === 5384 ||
+                             killingAbilityName.toLowerCase().includes('feign') ||
+                             (ev.sourceID === ev.targetID && ev.sourceID > 0);
+        
+        if (!isFeignDeath && ev.fight && validFightIds.has(ev.fight)) {
+          const playerName = meta.actorsById[ev.targetID]?.name || `Player #${ev.targetID}`;
+          deathLog.push({
+            timestamp,
+            playerName,
+            abilityName: killingAbilityName,
+            abilityId: killingAbilityId,
+            fightId: ev.fight
+          });
+          deathsByFight[ev.fight] = (deathsByFight[ev.fight] || 0) + 1;
+        }
+      }
+      
+      // ----- CURSE DAMAGE: Track curse apply/remove on friendly players -----
+      if ((type === 'applydebuff' || type === 'removedebuff') && playerActorIds.has(ev.targetID)) {
+        const isCurse = CURSE_NAMES.some(curse => abilityLower.includes(curse.split(' ')[0]));
+        if (isCurse) {
+          curseEvents.push({
+            type: type === 'applydebuff' ? 'apply' : 'remove',
+            targetId: ev.targetID,
+            timestamp,
+            curseName: abilityLower
+          });
+        }
+      }
+      
+      // ----- LOATHEB SPORES -----
+      if (abilityId === 29232 && loathebTimeRanges.length > 0) {
+        const inLoatheb = loathebTimeRanges.some(r => timestamp >= r.start && timestamp <= r.end);
+        if (inLoatheb) {
+          if (type === 'cast' && ev.targetID === -1) {
+            sporeCasts.push({ timestamp });
+          }
+          if (type === 'applydebuff' && playerActorIds.has(ev.targetID)) {
+            sporeDebuffApplications.push({
+              timestamp,
+              targetId: ev.targetID,
+              targetName: targetName || `Player #${ev.targetID}`
+            });
+          }
+        }
+      }
+    }
+  }
+  
+  console.log(`[SINGLE-PASS] Processed ${totalEventsProcessed} events in ${Date.now() - startTime}ms`);
+  
+  // ===== POST-PROCESSING: Convert collected data to final results =====
+  
+  // ----- Bloodrages post-processing -----
+  const bloodrageResult = processBloodrageData(damageTimestamps, bloodrageEvents, bossFightRanges);
+  
+  // ----- Charges post-processing -----
+  const chargeResult = tankNames.length > 0 
+    ? processChargeData(chargeCollector.allEvents, tankNames, meta)
+    : { charges: [], totalCharges: 0, badCharges: 0 };
+  
+  // ----- Interrupts final format -----
+  const interruptStats = Object.entries(interruptCounts)
+    .map(([name, data]) => ({
+      name,
+      count: data.count,
+      sourceSubType: data.sourceSubType,
+      topSpells: Object.entries(data.spells).sort((a, b) => b[1] - a[1]).slice(0, 3),
+      events: data.events
+    }))
+    .sort((a, b) => b.count - a.count);
+  
+  // ----- Decurses final format -----
+  const decurseStats = Object.entries(decurseCounts)
+    .map(([name, data]) => ({
+      name,
+      count: data.count,
+      sourceSubType: data.sourceSubType,
+      topCurses: Object.entries(data.curses).sort((a, b) => b[1] - a[1]).slice(0, 3),
+      events: data.events
+    }))
+    .sort((a, b) => b.count - a.count);
+  
+  // ----- Sunders final format -----
+  const sunderStats = Object.entries(sunderCounts)
+    .filter(([_, data]) => data.effective > 0)
+    .map(([name, data]) => ({
+      name,
+      effective: data.effective,
+      total: data.total,
+      sourceSubType: data.sourceSubType,
+      events: data.events
+    }))
+    .sort((a, b) => b.effective - a.effective);
+  
+  // ----- Scorches final format -----
+  const scorchStats = Object.entries(scorchCounts)
+    .filter(([_, data]) => data.effective > 0)
+    .map(([name, data]) => ({
+      name,
+      effective: data.effective,
+      total: data.total,
+      sourceSubType: data.sourceSubType,
+      events: data.events || []
+    }))
+    .sort((a, b) => b.effective - a.effective);
+  
+  // ----- Disarms final format -----
+  const disarmStats = Object.entries(disarmCounts)
+    .map(([name, data]) => ({
+      name,
+      count: data.count,
+      sourceSubType: data.sourceSubType,
+      topTargets: Object.entries(data.targets).sort((a, b) => b[1] - a[1]).slice(0, 3),
+      events: data.events
+    }))
+    .sort((a, b) => b.count - a.count);
+  
+  // ----- Curse damage post-processing -----
+  const curseDamageResult = processCurseDamageData(curseEvents, mageDamageEvents);
+  
+  // ----- Spores post-processing -----
+  const sporeResult = processSporeData(sporeCasts, sporeDebuffApplications);
+  
+  console.log(`[SINGLE-PASS] Analysis complete in ${Date.now() - startTime}ms`);
+  console.log(`[SINGLE-PASS] Results: bloodrages=${bloodrageResult.totalBloodrages}, interrupts=${totalInterrupts}, decurses=${totalDecurses}, sunders=${sunderEffective}, scorches=${scorchEffective}, disarms=${totalDisarms}, deaths=${deathLog.length}`);
+  
+  return {
+    bloodrages: bloodrageResult,
+    charges: chargeResult,
+    interrupts: { playerStats: interruptStats, totalInterrupts },
+    decurses: { playerStats: decurseStats, totalDecurses },
+    sunders: { playerStats: sunderStats, effectiveSunders: sunderEffective, totalSunders: sunderCasts },
+    scorches: { playerStats: scorchStats, effectiveScorches: scorchEffective, totalScorches: scorchCasts },
+    disarms: { playerStats: disarmStats, totalDisarms },
+    deaths: { deaths: deathLog, count: deathLog.length, deathsByFight },
+    curseDamage: curseDamageResult,
+    spores: sporeResult
+  };
+}
+
+// Helper: Process bloodrage data (combat detection logic)
+function processBloodrageData(damageTimestamps, bloodrageEvents, bossFightRanges) {
+  const COMBAT_GAP_MS = 3000;
+  const BAD_THRESHOLD_MS = 3000;
+  const MIN_COMBAT_DURATION_MS = 5000;
+  
+  if (damageTimestamps.length === 0) {
+    return { badBloodrages: [], totalBloodrages: bloodrageEvents.length, combatSegmentCount: 0, damageEventCount: 0 };
+  }
+  
+  damageTimestamps.sort((a, b) => a - b);
+  
+  // Build combat segments
+  const combatSegments = [];
+  let segmentStart = damageTimestamps[0];
+  let lastDamageTime = damageTimestamps[0];
+  
+  for (let i = 1; i < damageTimestamps.length; i++) {
+    const ts = damageTimestamps[i];
+    if (ts - lastDamageTime > COMBAT_GAP_MS) {
+      if (lastDamageTime - segmentStart >= MIN_COMBAT_DURATION_MS) {
+        combatSegments.push({ start: segmentStart, end: lastDamageTime });
+      }
+      segmentStart = ts;
+    }
+    lastDamageTime = ts;
+  }
+  if (lastDamageTime - segmentStart >= MIN_COMBAT_DURATION_MS) {
+    combatSegments.push({ start: segmentStart, end: lastDamageTime });
+  }
+  
+  // Filter out boss fights
+  const trashSegments = combatSegments.filter(seg => {
+    return !bossFightRanges.some(boss => seg.start >= boss.start && seg.end <= boss.end);
+  });
+  
+  // Find bad bloodrages
+  const badBloodrages = [];
+  for (const br of bloodrageEvents) {
+    const brTime = br.timestamp;
+    const inBossFight = bossFightRanges.some(b => brTime >= b.start && brTime <= b.end);
+    if (inBossFight) continue;
+    
+    for (const seg of trashSegments) {
+      const timeSinceCombatEnd = brTime - seg.end;
+      if (timeSinceCombatEnd > 0 && timeSinceCombatEnd <= BAD_THRESHOLD_MS) {
+        badBloodrages.push({
+          ...br,
+          timeSinceCombatEnd,
+          combatSegment: seg
+        });
+        break;
+      }
+    }
+  }
+  
+  return {
+    badBloodrages,
+    totalBloodrages: bloodrageEvents.length,
+    combatSegmentCount: trashSegments.length,
+    damageEventCount: damageTimestamps.length
+  };
+}
+
+// Helper: Process charge data
+function processChargeData(allEvents, tankNames, meta) {
+  const LOOKBACK_MS = 10000;
+  const STUNNABLE_MOBS = ['plagued ghoul', 'spirit of naxxramas', 'shade of naxxramas', 'necro knight', 'stitched spewer', 'zombie chow'];
+  const ALWAYS_OK_MOBS = ['maggot', 'rat'];
+  const tankNamesLower = tankNames.map(n => n.toLowerCase());
+  
+  const charges = [];
+  let totalCharges = 0;
+  let badCharges = 0;
+  
+  for (const ev of allEvents) {
+    const type = String(ev.type || '').toLowerCase();
+    if (type !== 'cast') continue;
+    
+    const abilityLower = (ev.abilityName || '').toLowerCase();
+    if (abilityLower !== 'charge') continue;
+    
+    totalCharges++;
+    const chargeTime = ev.timestamp;
+    const targetName = ev.targetName || 'Unknown';
+    const targetLower = targetName.toLowerCase();
+    
+    // Skip always-ok mobs
+    if (ALWAYS_OK_MOBS.some(m => targetLower.includes(m))) continue;
+    
+    // Check if stunnable
+    const isStunnable = STUNNABLE_MOBS.some(m => targetLower.includes(m));
+    
+    // Check if tank hit target recently
+    let tankHitTarget = false;
+    if (!isStunnable) {
+      for (const checkEv of allEvents) {
+        if (checkEv.timestamp > chargeTime) break;
+        if (checkEv.timestamp < chargeTime - LOOKBACK_MS) continue;
+        
+        const checkType = String(checkEv.type || '').toLowerCase();
+        if (checkType !== 'damage') continue;
+        
+        const checkSourceLower = (checkEv.sourceName || '').toLowerCase();
+        const checkTargetLower = (checkEv.targetName || '').toLowerCase();
+        
+        if (tankNamesLower.includes(checkSourceLower) && checkTargetLower === targetLower) {
+          tankHitTarget = true;
+          break;
+        }
+      }
+    }
+    
+    const isBad = isStunnable || !tankHitTarget;
+    if (isBad) {
+      badCharges++;
+      charges.push({
+        timestamp: chargeTime,
+        sourceName: ev.sourceName,
+        sourceSubType: ev.sourceSubType,
+        targetName,
+        reason: isStunnable ? 'Stunnable mob' : 'Tank not engaged'
+      });
+    }
+  }
+  
+  return { charges, totalCharges, badCharges };
+}
+
+// Helper: Process curse damage data
+function processCurseDamageData(curseEvents, mageDamageEvents) {
+  if (curseEvents.length === 0) {
+    return { playerStats: [], totalDamage: 0, curseWindows: 0 };
+  }
+  
+  curseEvents.sort((a, b) => a.timestamp - b.timestamp);
+  
+  const playerCurseState = {};
+  const curseWindows = [];
+  let globalCurseStart = null;
+  let activeCurseCount = 0;
+  const GRACE_PERIOD_MS = 1000;
+  
+  for (const ev of curseEvents) {
+    if (ev.type === 'apply') {
+      if (!playerCurseState[ev.targetId]) playerCurseState[ev.targetId] = { curseCount: 0 };
+      playerCurseState[ev.targetId].curseCount++;
+      activeCurseCount++;
+      if (activeCurseCount === 1) globalCurseStart = ev.timestamp + GRACE_PERIOD_MS;
+    } else if (ev.type === 'remove') {
+      if (playerCurseState[ev.targetId]?.curseCount > 0) {
+        playerCurseState[ev.targetId].curseCount--;
+        activeCurseCount--;
+        if (activeCurseCount === 0 && globalCurseStart !== null) {
+          if (ev.timestamp > globalCurseStart) {
+            curseWindows.push({ start: globalCurseStart, end: ev.timestamp });
+          }
+          globalCurseStart = null;
+        }
+      }
+    }
+  }
+  
+  const mageDamage = {};
+  let totalDamageWhileCurseUp = 0;
+  
+  for (const dmg of mageDamageEvents) {
+    const inCurseWindow = curseWindows.some(w => dmg.timestamp >= w.start && dmg.timestamp <= w.end);
+    if (!inCurseWindow) continue;
+    
+    if (!mageDamage[dmg.sourceName]) mageDamage[dmg.sourceName] = { totalDamage: 0, events: [] };
+    mageDamage[dmg.sourceName].totalDamage += dmg.amount;
+    mageDamage[dmg.sourceName].events.push({
+      timestamp: dmg.timestamp,
+      amount: dmg.amount,
+      abilityName: dmg.abilityName,
+      targetName: dmg.targetName
+    });
+    totalDamageWhileCurseUp += dmg.amount;
+  }
+  
+  const playerStats = Object.entries(mageDamage)
+    .map(([name, data]) => ({ name, damage: data.totalDamage, eventCount: data.events.length, events: data.events }))
+    .sort((a, b) => b.damage - a.damage);
+  
+  return { playerStats, totalDamage: totalDamageWhileCurseUp, curseWindows: curseWindows.length };
+}
+
+// Helper: Process spore data
+function processSporeData(sporeCasts, debuffApplications) {
+  if (sporeCasts.length === 0) {
+    return { sporeGroups: [], totalSpores: 0 };
+  }
+  
+  sporeCasts.sort((a, b) => a.timestamp - b.timestamp);
+  debuffApplications.sort((a, b) => a.timestamp - b.timestamp);
+  
+  const SPORE_WINDOW_MS = 100;
+  const sporeGroups = [];
+  
+  for (let i = 0; i < sporeCasts.length; i++) {
+    const cast = sporeCasts[i];
+    const nextCastTime = i < sporeCasts.length - 1 ? sporeCasts[i + 1].timestamp : Infinity;
+    
+    const players = debuffApplications
+      .filter(d => d.timestamp >= cast.timestamp && d.timestamp < Math.min(cast.timestamp + SPORE_WINDOW_MS, nextCastTime))
+      .map(d => d.targetName);
+    
+    if (players.length > 0) {
+      sporeGroups.push({
+        sporeNumber: i + 1,
+        timestamp: cast.timestamp,
+        players
+      });
+    }
+  }
+  
+  return { sporeGroups, totalSpores: sporeGroups.length };
+}
+
+// =============================================================================
+// LEGACY INDIVIDUAL ANALYZERS (kept for backward compatibility)
+// =============================================================================
+
 // Analyze bloodrages from ALL events in database
 // Returns bad bloodrages (within 3s of trash combat ending, not during boss fights)
 async function analyzeBloodragesFromDB(reportCode, fights, meta) {
@@ -6455,238 +7112,61 @@ app.get('/api/wcl/stream-import', async (req, res) => {
       message: 'Import complete! Analyzing bloodrages...'
     });
     
-    // Phase 2: Backend analysis of bad bloodrages
-    // This uses ALL events from the database for accurate combat detection
-    console.log('[LIVE] ====== STARTING PHASE 2: ANALYSIS ======');
-    sendEvent('progress', { phase: 'analyzing', message: 'Analyzing all events for bad bloodrages...' });
+    // Phase 2: SINGLE-PASS ANALYSIS
+    // Load events ONCE and run ALL analyzers in a single loop (10x memory reduction)
+    console.log('[LIVE] ====== STARTING PHASE 2: SINGLE-PASS ANALYSIS ======');
+    sendEvent('progress', { phase: 'analyzing', message: 'Running unified analysis (loading events once)...' });
     
-    try {
-      console.log('[LIVE] Starting bloodrage analysis...');
-      const analysisResult = await analyzeBloodragesFromDB(reportCode, fights, meta);
-      const bloodrageData = {
-        badBloodrages: analysisResult.badBloodrages,
-        totalBloodrages: analysisResult.totalBloodrages,
-        combatSegments: analysisResult.combatSegmentCount,
-        damageEvents: analysisResult.damageEventCount
-      };
-      sendEvent('bloodrage-analysis', bloodrageData);
-      
-      // Save to cache and broadcast to live viewers
-      await saveHighlightsToCache(reportCode, 'bloodrages', bloodrageData);
-      
-      console.log(`[LIVE] Bloodrage analysis complete: ${analysisResult.badBloodrages.length} bad out of ${analysisResult.totalBloodrages}`);
-    } catch (analysisErr) {
-      console.error('[LIVE] Bloodrage analysis error:', analysisErr.message);
-      sendEvent('warning', { message: 'Bloodrage analysis failed: ' + analysisErr.message });
-    }
-    
-    // Phase 2c: Player stats from WCL API (exact numbers with class info)
-    sendEvent('progress', { phase: 'analyzing', message: 'Fetching damage and healing stats from WCL...' });
-    try {
-      const playerStats = await fetchPlayerStatsFromWCL(reportCode);
-      const playerStatsData = {
-        damage: playerStats.damage, // Top 30 damage
-        healing: playerStats.healing // Top 15 healers
-      };
-      sendEvent('player-stats', playerStatsData);
-      // Save to cache for live page
-      await saveHighlightsToCache(reportCode, 'playerstats', playerStatsData);
-      console.log(`[LIVE] Player stats from WCL: ${playerStats.damage.length} damage dealers, ${playerStats.healing.length} healers`);
-    } catch (statsErr) {
-      console.error('[LIVE] WCL Player stats error:', statsErr.message);
-      sendEvent('warning', { message: 'Player stats fetch failed: ' + statsErr.message });
-    }
-    
-    // Phase 2b: Charge analysis (if tank names provided)
+    // Get tank names for charge analysis
     const tankNamesParam = String(req.query.tanks || '').trim();
     const tankNames = tankNamesParam ? tankNamesParam.split(',').map(n => n.trim()).filter(Boolean) : [];
     
-    if (tankNames.length > 0) {
-      sendEvent('progress', { phase: 'analyzing', message: 'Analyzing charges...' });
-      try {
-        const chargeResult = await analyzeChargesFromDB(reportCode, tankNames, meta);
+    try {
+      // Run ALL analyzers in a single pass through the events
+      const allResults = await runAllAnalyzersInSinglePass(reportCode, fights, meta, tankNames);
+      
+      // Send bloodrage results
+      const bloodrageData = {
+        badBloodrages: allResults.bloodrages.badBloodrages,
+        totalBloodrages: allResults.bloodrages.totalBloodrages,
+        combatSegments: allResults.bloodrages.combatSegmentCount,
+        damageEvents: allResults.bloodrages.damageEventCount
+      };
+      sendEvent('bloodrage-analysis', bloodrageData);
+      await saveHighlightsToCache(reportCode, 'bloodrages', bloodrageData);
+      
+      // Send charge results (if tanks provided)
+      if (tankNames.length > 0) {
         const chargeData = {
-          charges: chargeResult.charges,
-          totalCharges: chargeResult.totalCharges,
-          badCharges: chargeResult.badCharges
+          charges: allResults.charges.charges,
+          totalCharges: allResults.charges.totalCharges,
+          badCharges: allResults.charges.badCharges
         };
         sendEvent('charge-analysis', chargeData);
-        
-        // Save to cache and broadcast to live viewers
         await saveHighlightsToCache(reportCode, 'charges', chargeData);
-        
-        console.log(`[LIVE] Charge analysis complete: ${chargeResult.badCharges} bad out of ${chargeResult.totalCharges}`);
-      } catch (chargeErr) {
-        console.error('[LIVE] Charge analysis error:', chargeErr.message);
-        sendEvent('warning', { message: 'Charge analysis failed: ' + chargeErr.message });
       }
-    }
-    
-    // Phase 2d: Interrupts analysis
-    sendEvent('progress', { phase: 'analyzing', message: 'Analyzing interrupts...' });
-    try {
-      const interruptResult = await analyzeInterruptsFromDB(reportCode, meta);
-      const interruptData = {
-        playerStats: interruptResult.playerStats,
-        totalInterrupts: interruptResult.totalInterrupts
-      };
-      sendEvent('interrupt-analysis', interruptData);
-      await saveHighlightsToCache(reportCode, 'interrupts', interruptData);
-      console.log(`[LIVE] Interrupt analysis complete: ${interruptResult.totalInterrupts} by ${interruptResult.playerStats.length} players`);
-    } catch (err) {
-      console.error('[LIVE] Interrupt analysis error:', err.message);
-    }
-    
-    // Phase 2e: Decurses analysis
-    sendEvent('progress', { phase: 'analyzing', message: 'Analyzing decurses...' });
-    try {
-      const decurseResult = await analyzeDecursesFromDB(reportCode, meta);
-      const decurseData = {
-        playerStats: decurseResult.playerStats,
-        totalDecurses: decurseResult.totalDecurses
-      };
-      sendEvent('decurse-analysis', decurseData);
-      await saveHighlightsToCache(reportCode, 'decurses', decurseData);
-      console.log(`[LIVE] Decurse analysis complete: ${decurseResult.totalDecurses} by ${decurseResult.playerStats.length} players`);
-    } catch (err) {
-      console.error('[LIVE] Decurse analysis error:', err.message);
-    }
-    
-    // Phase 2f: Sunder Armor analysis
-    sendEvent('progress', { phase: 'analyzing', message: 'Analyzing Sunder Armor...' });
-    try {
-      const sunderResult = await analyzeSundersFromDB(reportCode, meta);
-      const sunderData = {
-        playerStats: sunderResult.playerStats,
-        effectiveSunders: sunderResult.effectiveSunders,
-        totalSunders: sunderResult.totalSunders
-      };
-      sendEvent('sunder-analysis', sunderData);
-      await saveHighlightsToCache(reportCode, 'sunders', sunderData);
-      console.log(`[LIVE] Sunder analysis complete: ${sunderResult.effectiveSunders} effective by ${sunderResult.playerStats.length} players`);
-    } catch (err) {
-      console.error('[LIVE] Sunder analysis error:', err.message);
-    }
-    
-    // Phase 2g: Scorch (Fire Vulnerability) analysis
-    sendEvent('progress', { phase: 'analyzing', message: 'Analyzing Scorch...' });
-    try {
-      const scorchResult = await analyzeScorchesFromDB(reportCode, meta);
-      const scorchData = {
-        playerStats: scorchResult.playerStats,
-        effectiveScorches: scorchResult.effectiveScorches,
-        totalScorches: scorchResult.totalScorches
-      };
-      sendEvent('scorch-analysis', scorchData);
-      await saveHighlightsToCache(reportCode, 'scorches', scorchData);
-      console.log(`[LIVE] Scorch analysis complete: ${scorchResult.effectiveScorches} effective by ${scorchResult.playerStats.length} players`);
-    } catch (err) {
-      console.error('[LIVE] Scorch analysis error:', err.message);
-    }
-    
-    // Phase 2h: Disarm analysis
-    sendEvent('progress', { phase: 'analyzing', message: 'Analyzing Disarms...' });
-    try {
-      const disarmResult = await analyzeDisarmsFromDB(reportCode, meta);
-      const disarmData = {
-        playerStats: disarmResult.playerStats,
-        totalDisarms: disarmResult.totalDisarms
-      };
-      sendEvent('disarm-analysis', disarmData);
-      await saveHighlightsToCache(reportCode, 'disarms', disarmData);
-      console.log(`[LIVE] Disarm analysis complete: ${disarmResult.totalDisarms} by ${disarmResult.playerStats.length} players`);
-    } catch (err) {
-      console.error('[LIVE] Disarm analysis error:', err.message);
-    }
-    
-    // Phase 2i: Calculate player deaths per fight from stored events
-    sendEvent('progress', { phase: 'analyzing', message: 'Counting player deaths per encounter...' });
-    try {
-      // Get all death events from stored pages
-      const deathPagesResult = await pool.query(
-        'SELECT events FROM wcl_event_pages WHERE report_code = $1 ORDER BY start_time',
-        [reportCode]
-      );
-
-      // Build a set of player actor IDs (exclude pets and NPCs)
-      const playerActorIds = new Set();
-      if (meta && meta.actorsById) {
-        for (const [id, actor] of Object.entries(meta.actorsById)) {
-          // Only include actual players, not pets or NPCs
-          // In WCL data: type='Player' for players, type='Pet' for pets, type='NPC' for enemies
-          // subType contains class name for players (e.g., 'Warrior', 'Priest')
-          if (actor && actor.type === 'Player') {
-            playerActorIds.add(Number(id));
-          }
-        }
-      }
-      console.log(`[LIVE] Found ${playerActorIds.size} player actors for death counting`);
-
-      // Count PLAYER deaths per fight - only count deaths where target is a player
-      // Use the 'fight' field from death events (more accurate than timestamp matching)
-      const deathsByFight = {};
-      const deathLog = []; // Track individual deaths for the deaths panel
       
-      // Build a set of valid fight IDs for quick lookup
-      const validFightIds = new Set(fights.map(f => f.id));
-
-      for (const row of deathPagesResult.rows) {
-        const events = Array.isArray(row.events) ? row.events : [];
-        for (const ev of events) {
-          if (ev && (ev.type || '').toLowerCase() === 'death') {
-            const targetId = ev.targetID;
-
-            // Only count if target is a player (not a pet, NPC, or enemy)
-            if (!playerActorIds.has(targetId)) continue;
-
-            // Get ability info for filtering - check multiple possible fields
-            const abilityId = ev.abilityGameID || ev.killingAbilityGameID || ev.ability?.guid || 0;
-            const abilityName = (abilityId && meta.abilitiesById && meta.abilitiesById[abilityId])
-              ? meta.abilitiesById[abilityId].name
-              : (abilityId ? `Ability #${abilityId}` : 'Unknown');
-            
-            // Filter out Feign Death and fake deaths
-            // Feign Death ability ID is 5384, but WCL often logs it with abilityId=0 (no killing blow)
-            // Deaths with abilityId=0 are fake deaths (Feign Death, spirit release, etc.)
-            const sourceId = ev.sourceID;
-            const isFeignDeath = 
-              abilityId === 0 ||  // No killing blow = Feign Death or fake death
-              abilityId === 5384 || 
-              ev.abilityGameID === 5384 ||
-              ev.killingAbilityGameID === 5384 ||
-              abilityName.toLowerCase().includes('feign') ||
-              (sourceId === targetId && sourceId > 0); // Self-inflicted = Feign Death
-            
-            if (isFeignDeath) {
-              continue; // Skip Feign Death / fake deaths
-            }
-
-            // Use the fight field from the death event (WCL provides this)
-            const fightId = ev.fight;
-            if (!fightId || !validFightIds.has(fightId)) continue;
-            
-            // Get player name and death info
-            const playerName = meta.actorsById[targetId]?.name || `Player #${targetId}`;
-            const ts = ev.timestamp;
-
-            // Add to death log
-            deathLog.push({
-              timestamp: ts,
-              playerName,
-              abilityName,
-              abilityId,
-              fightId
-            });
-
-            // Count deaths per fight using the fight field
-            deathsByFight[fightId] = (deathsByFight[fightId] || 0) + 1;
-          }
-        }
-      }
-
-      console.log(`[LIVE] Player deaths found: ${deathLog.length} total across ${Object.keys(deathsByFight).length} fights`);
-
-      // Update fights with deaths count and re-save meta
+      // Send interrupt results
+      sendEvent('interrupt-analysis', allResults.interrupts);
+      await saveHighlightsToCache(reportCode, 'interrupts', allResults.interrupts);
+      
+      // Send decurse results
+      sendEvent('decurse-analysis', allResults.decurses);
+      await saveHighlightsToCache(reportCode, 'decurses', allResults.decurses);
+      
+      // Send sunder results
+      sendEvent('sunder-analysis', allResults.sunders);
+      await saveHighlightsToCache(reportCode, 'sunders', allResults.sunders);
+      
+      // Send scorch results
+      sendEvent('scorch-analysis', allResults.scorches);
+      await saveHighlightsToCache(reportCode, 'scorches', allResults.scorches);
+      
+      // Send disarm results
+      sendEvent('disarm-analysis', allResults.disarms);
+      await saveHighlightsToCache(reportCode, 'disarms', allResults.disarms);
+      
+      // Update fights with deaths count and save meta
       const fightsWithDeaths = fights.map(f => ({
         id: f.id,
         name: f.name,
@@ -6694,47 +7174,48 @@ app.get('/api/wcl/stream-import', async (req, res) => {
         endTime: f.endTime,
         kill: f.kill,
         encounterID: f.encounterID,
-        deaths: deathsByFight[f.id] || 0
+        deaths: allResults.deaths.deathsByFight[f.id] || 0
       }));
-
-      await saveHighlightsToCache(reportCode, 'meta', { fights: fightsWithDeaths, tanks: tankNames, hostName, hostId, deathLog });
-      console.log(`[LIVE] Player deaths calculated: ${deathLog.length} total across ${Object.keys(deathsByFight).length} fights`);
+      await saveHighlightsToCache(reportCode, 'meta', { 
+        fights: fightsWithDeaths, 
+        tanks: tankNames, 
+        hostName, 
+        hostId, 
+        deathLog: allResults.deaths.deaths 
+      });
+      await saveHighlightsToCache(reportCode, 'deaths', { 
+        deaths: allResults.deaths.deaths, 
+        count: allResults.deaths.count 
+      });
       
-      // Also save deaths as a separate highlight for the deaths panel
-      await saveHighlightsToCache(reportCode, 'deaths', { deaths: deathLog, count: deathLog.length });
-    } catch (err) {
-      console.error('[LIVE] Deaths calculation error:', err.message);
+      // Send curse damage results
+      sendEvent('curse-damage-analysis', allResults.curseDamage);
+      await saveHighlightsToCache(reportCode, 'curseDamage', allResults.curseDamage);
+      
+      // Send spore results
+      sendEvent('spore-analysis', allResults.spores);
+      await saveHighlightsToCache(reportCode, 'spores', allResults.spores);
+      
+      console.log('[LIVE] Single-pass analysis complete!');
+    } catch (analysisErr) {
+      console.error('[LIVE] Single-pass analysis error:', analysisErr.message);
+      sendEvent('warning', { message: 'Analysis failed: ' + analysisErr.message });
     }
     
-    // Phase 2j: Mage damage while curses are active
-    sendEvent('progress', { phase: 'analyzing', message: 'Analyzing mage damage during curses...' });
+    // Fetch player stats from WCL API (separate API call, not from stored events)
+    sendEvent('progress', { phase: 'analyzing', message: 'Fetching damage and healing stats from WCL...' });
     try {
-      const curseResult = await analyzeMageDamageWhileCurseUp(reportCode, meta);
-      const curseData = {
-        playerStats: curseResult.playerStats,
-        totalDamage: curseResult.totalDamage,
-        curseWindows: curseResult.curseWindows
+      const playerStats = await fetchPlayerStatsFromWCL(reportCode);
+      const playerStatsData = {
+        damage: playerStats.damage,
+        healing: playerStats.healing
       };
-      sendEvent('curse-damage-analysis', curseData);
-      await saveHighlightsToCache(reportCode, 'curseDamage', curseData);
-      console.log(`[LIVE] Curse damage analysis complete: ${curseResult.totalDamage.toLocaleString()} damage by ${curseResult.playerStats.length} mages during ${curseResult.curseWindows} curse windows`);
-    } catch (err) {
-      console.error('[LIVE] Curse damage analysis error:', err.message);
-    }
-    
-    // Phase 2k: Loatheb spore distribution
-    sendEvent('progress', { phase: 'analyzing', message: 'Analyzing Loatheb spores...' });
-    try {
-      const sporeResult = await analyzeLoathebSpores(reportCode, meta, fights);
-      const sporeData = {
-        sporeGroups: sporeResult.sporeGroups,
-        totalSpores: sporeResult.totalSpores
-      };
-      sendEvent('spore-analysis', sporeData);
-      await saveHighlightsToCache(reportCode, 'spores', sporeData);
-      console.log(`[LIVE] Spore analysis complete: ${sporeResult.totalSpores} spores tracked`);
-    } catch (err) {
-      console.error('[LIVE] Spore analysis error:', err.message);
+      sendEvent('player-stats', playerStatsData);
+      await saveHighlightsToCache(reportCode, 'playerstats', playerStatsData);
+      console.log(`[LIVE] Player stats from WCL: ${playerStats.damage.length} damage dealers, ${playerStats.healing.length} healers`);
+    } catch (statsErr) {
+      console.error('[LIVE] WCL Player stats error:', statsErr.message);
+      sendEvent('warning', { message: 'Player stats fetch failed: ' + statsErr.message });
     }
     
     console.log('[LIVE] ====== PHASE 2 COMPLETE - ALL ANALYSIS DONE ======');
