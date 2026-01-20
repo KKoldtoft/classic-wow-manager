@@ -1940,6 +1940,13 @@
             emptyState.style.display = 'none';
         }
         
+        // Close any existing EventSource connection before creating a new one
+        if (eventSource) {
+            console.log('[LIVE] Closing existing EventSource connection');
+            eventSource.close();
+            eventSource = null;
+        }
+        
         // Create SSE connection (session ID is derived from report code on backend)
         // Include tank names for charge analysis if available
         const tanksParam = tankNames.size > 0 ? `&tanks=${encodeURIComponent(Array.from(tankNames).join(','))}` : '';

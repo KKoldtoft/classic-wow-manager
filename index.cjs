@@ -1808,17 +1808,27 @@ const GUILD_CACHE_TTL = process.env.GUILD_CACHE_TTL_MS ? parseInt(process.env.GU
 // Clean up old cache entries every 30 minutes
 setInterval(() => {
     const now = Date.now();
-    let cleanedCount = 0;
+    let cleanedMemberCount = 0;
+    let cleanedInfoCount = 0;
     
+    // Clean userMemberCache
     for (const [key, value] of userMemberCache.entries()) {
         if (now - value.timestamp > USER_CACHE_TTL * 2) { // Remove entries older than 30 minutes
             userMemberCache.delete(key);
-            cleanedCount++;
+            cleanedMemberCount++;
         }
     }
     
-    if (cleanedCount > 0) {
-        console.log(`🧹 Cleaned up ${cleanedCount} old cache entries`);
+    // Clean userInfoCache (was never cleaned before - memory leak!)
+    for (const [key, value] of userInfoCache.entries()) {
+        if (now - value.timestamp > USER_INFO_TTL * 2) { // Remove entries older than 2x TTL
+            userInfoCache.delete(key);
+            cleanedInfoCount++;
+        }
+    }
+    
+    if (cleanedMemberCount > 0 || cleanedInfoCount > 0) {
+        console.log(`🧹 Cleaned up ${cleanedMemberCount} member cache + ${cleanedInfoCount} info cache entries`);
     }
 }, 30 * 60 * 1000); // Run every 30 minutes
 
@@ -4561,6 +4571,8 @@ async function ensureLiveHighlightsTable(client) {
 // In-memory store for active live session (for real-time push to viewers)
 let activeLiveSession = null;
 const liveViewerConnections = new Set();
+// Track active import SSE connections by sessionId to prevent memory leaks
+const activeImportConnections = new Map(); // sessionId -> { res, abortController }
 
 // Broadcast highlights update to all connected viewers
 function broadcastHighlightsToViewers(data) {
@@ -6109,6 +6121,17 @@ app.get('/api/wcl/stream-import', async (req, res) => {
   // Use report code as session ID for idempotent re-imports
   const sessionId = reportCode;
   
+  // Close any existing SSE connection for this session to prevent memory leaks
+  const existing = activeImportConnections.get(sessionId);
+  if (existing) {
+    console.log(`[SSE] Closing existing import connection for session ${sessionId}`);
+    try {
+      existing.res.write('event: replaced\ndata: {"message":"New import started"}\n\n');
+      existing.res.end();
+    } catch (_) {}
+    activeImportConnections.delete(sessionId);
+  }
+  
   const apiUrl = getWclApiUrlFromInput(reportInput);
   
   // Set up SSE headers
@@ -6117,6 +6140,9 @@ app.get('/api/wcl/stream-import', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
   res.flushHeaders();
+  
+  // Track this connection
+  activeImportConnections.set(sessionId, { res, startTime: Date.now() });
   
   // Helper to send SSE events
   const sendEvent = (type, data) => {
@@ -6137,8 +6163,11 @@ app.get('/api/wcl/stream-import', async (req, res) => {
   
   let aborted = false;
   
+  // Clean up connection tracking on close
   req.on('close', () => {
     aborted = true;
+    activeImportConnections.delete(sessionId);
+    console.log(`[SSE] Connection closed for session ${sessionId}. Active connections: ${activeImportConnections.size}`);
   });
   
   try {
@@ -6746,6 +6775,8 @@ app.get('/api/wcl/stream-import', async (req, res) => {
     sendEvent('error', { message: err.message || 'Unknown error' });
   } finally {
     activeLiveSession = null; // Clear active session when done
+    activeImportConnections.delete(sessionId); // Remove from tracking
+    console.log(`[SSE] Import ended for session ${sessionId}. Active connections: ${activeImportConnections.size}`);
     try { res.end(); } catch (_) {}
   }
 });

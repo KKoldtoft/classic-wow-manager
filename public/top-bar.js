@@ -188,13 +188,22 @@ async function updateLiveStatusIndicator() {
     }
 }
 
+// Track polling interval to prevent duplicates
+let liveStatusPollingInterval = null;
+
 // Start periodic live status checks
 function startLiveStatusPolling() {
+    // Clear any existing interval to prevent duplicates (memory leak fix)
+    if (liveStatusPollingInterval) {
+        clearInterval(liveStatusPollingInterval);
+        liveStatusPollingInterval = null;
+    }
+    
     // Initial check after a short delay to allow DOM to be ready
     setTimeout(updateLiveStatusIndicator, 100);
     
     // Poll every 10 seconds
-    setInterval(updateLiveStatusIndicator, 10000);
+    liveStatusPollingInterval = setInterval(updateLiveStatusIndicator, 10000);
 }
 
 // Inject a "Rules" link into the top navigation if not present
