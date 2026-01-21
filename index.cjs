@@ -556,13 +556,13 @@ migratePlayerConfirmedLogsTable();
     dbConnectionStatus = 'Failed to Connect';
   });
 
-// Function to ensure players table has correct PRIMARY KEY constraint
+// Function to ensure players and roster_overrides tables have correct constraints
 async function initializePlayersTable() {
   let client;
   try {
     client = await pool.connect();
     
-    // Create table if it doesn't exist with correct schema
+    // Create players table if it doesn't exist with correct schema
     await client.query(`
       CREATE TABLE IF NOT EXISTS players (
         discord_id VARCHAR(255),
@@ -572,7 +572,7 @@ async function initializePlayersTable() {
       )
     `);
     
-    // Check if the PRIMARY KEY constraint exists and is correct
+    // Check if the PRIMARY KEY constraint exists and is correct on players table
     const pkCheck = await client.query(`
       SELECT 
         tc.constraint_name,
@@ -619,11 +619,59 @@ async function initializePlayersTable() {
       console.log('✅ Players table initialized with correct schema');
     }
     
+    // Check and fix roster_overrides table UNIQUE constraint
+    const rosterCheck = await client.query(`
+      SELECT constraint_name 
+      FROM information_schema.table_constraints 
+      WHERE table_name = 'roster_overrides' 
+        AND constraint_type = 'UNIQUE'
+        AND constraint_name NOT LIKE '%_position_%'
+    `);
+    
+    // Check if we have a full UNIQUE constraint (not partial index)
+    const hasFullUnique = await client.query(`
+      SELECT conname 
+      FROM pg_constraint 
+      WHERE conrelid = 'roster_overrides'::regclass 
+        AND contype = 'u' 
+        AND conkey = (SELECT array_agg(attnum ORDER BY attnum) 
+                      FROM pg_attribute 
+                      WHERE attrelid = 'roster_overrides'::regclass 
+                        AND attname IN ('event_id', 'discord_user_id'))
+    `);
+    
+    if (hasFullUnique.rows.length === 0) {
+      console.log('⚠️  Roster overrides table missing UNIQUE constraint, adding...');
+      await client.query('BEGIN');
+      
+      try {
+        // Add UNIQUE constraint on (event_id, discord_user_id)
+        await client.query(`
+          ALTER TABLE roster_overrides 
+          ADD CONSTRAINT roster_overrides_event_discord_unique 
+          UNIQUE (event_id, discord_user_id)
+        `);
+        console.log('   ✓ Added UNIQUE constraint on (event_id, discord_user_id)');
+        await client.query('COMMIT');
+        console.log('✅ Roster overrides table schema fixed');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        // Constraint might already exist with different name, check error
+        if (err.code === '42P07' || err.code === '23505') {
+          console.log('   ℹ️  UNIQUE constraint already exists (possibly with different name)');
+        } else {
+          throw err;
+        }
+      }
+    } else {
+      console.log('✅ Roster overrides table UNIQUE constraint is correct');
+    }
+    
   } catch (error) {
     if (client) {
       try { await client.query('ROLLBACK'); } catch {}
     }
-    console.error('❌ Error initializing players table:', error);
+    console.error('❌ Error initializing tables:', error);
     throw error; // Re-throw to prevent startup with broken schema
   } finally {
     if (client) client.release();
@@ -11547,7 +11595,8 @@ app.post('/api/admin/setup-database', async (req, res) => {
                 party_id INTEGER,
                 slot_id INTEGER,
                 in_raid BOOLEAN DEFAULT FALSE,
-                is_placeholder BOOLEAN DEFAULT FALSE
+                is_placeholder BOOLEAN DEFAULT FALSE,
+                UNIQUE (event_id, discord_user_id)
             )
         `);
         
