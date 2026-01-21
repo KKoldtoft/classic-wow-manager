@@ -980,9 +980,75 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
     
+    // Helper function to create an event card element
+    function createEventCard(event, index) {
+        const eventDiv = document.createElement('a');
+        eventDiv.classList.add('event-panel');
+        eventDiv.setAttribute('data-event-index', index);
+        
+        const eventId = event.id || 'unknown';
+        const eventTitle = event.title || 'Untitled Event';
+        
+        // Apply channel-specific background if available
+        if (event.channelId) {
+            applyChannelBackground(eventDiv, event.channelId, false); // false = color (upcoming)
+        }
+
+        if (eventId !== 'unknown') {
+            eventDiv.href = `/event/${eventId}/roster`;
+        }
+
+        const eventStartDate = new Date(event.startTime * 1000);
+        const cetTimeZone = 'Europe/Copenhagen';
+        const nowInCET = new Date();
+        const todayAtMidnightCET = new Date(nowInCET.toLocaleDateString('en-CA', { timeZone: cetTimeZone }));
+        const eventDateOnly = new Date(eventStartDate.toLocaleDateString('en-CA', { timeZone: cetTimeZone }));
+
+        let dateDisplayHTML;
+        if (eventDateOnly.getTime() === todayAtMidnightCET.getTime()) {
+            dateDisplayHTML = `<span class="event-today-text">Today</span>`;
+            eventDiv.classList.add('event-panel-today');
+        } else {
+            const optionsDay = { weekday: 'long', timeZone: cetTimeZone };
+            const optionsDate = { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: cetTimeZone };
+            const formattedDayName = eventStartDate.toLocaleDateString('en-US', optionsDay);
+            const formattedDate = eventStartDate.toLocaleDateString('en-GB', optionsDate);
+            dateDisplayHTML = `${formattedDayName} (${formattedDate})`;
+        }
+        
+        const optionsTime = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: cetTimeZone };
+        const formattedStartTime = eventStartDate.toLocaleTimeString('en-GB', optionsTime);
+        const signUpCount = event.signUpCount || '0';
+        
+        let channelDisplayName = '#unknown-channel';
+        if (event.channelName && 
+            event.channelName.trim() && 
+            event.channelName !== event.channelId &&
+            !event.channelName.match(/^\d+$/)) {
+            channelDisplayName = `#${event.channelName}`;
+        } else if (event.channelId) {
+            channelDisplayName = `#channel-${event.channelId.slice(-4)}`;
+        }
+
+        eventDiv.innerHTML = `
+            <h3>${eventTitle}</h3>
+            <div class="event-time-info">
+                <p><i class="far fa-calendar-alt event-icon"></i> ${dateDisplayHTML}</p>
+                <p><i class="far fa-clock event-icon"></i> ${formattedStartTime}</p>
+                <p><i class="fas fa-user event-icon"></i> ${signUpCount} Signed</p>
+                <p class="channel-info"><i class="fas fa-hashtag event-icon"></i> ${channelDisplayName}</p>
+            </div>
+        `;
+        
+        return eventDiv;
+    }
+
     // Helper function to display events (extracted from fetchAndDisplayEvents)
     function displayEvents(scheduledEvents) {
         if (!eventsList) return;
+        
+        const nextRaidPanel = document.getElementById('next-raid-panel');
+        const nextRaidContainer = document.getElementById('next-raid-container');
         
         if (scheduledEvents && Array.isArray(scheduledEvents) && scheduledEvents.length > 0) {
             console.log('📅 Displaying events:', scheduledEvents.length);
@@ -1005,79 +1071,117 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             if (upcomingEvents.length === 0) {
                 eventsList.innerHTML = '<p>No upcoming events found for this server.</p>';
+                // Hide the next raid panel if no events
+                if (nextRaidPanel) nextRaidPanel.style.display = 'none';
                 return;
             }
             
             upcomingEvents.sort((a, b) => a.startTime - b.startTime);
             
-            upcomingEvents.forEach((event, index) => {
+            // Display the first event in the "Next Upcoming Raid" panel
+            if (nextRaidPanel && nextRaidContainer) {
+                // Remove any existing event-panel card or spark-border wrapper (but keep the actions div)
+                const existingSparkBorder = nextRaidContainer.querySelector('.spark-border');
+                if (existingSparkBorder) existingSparkBorder.remove();
+                const existingCard = nextRaidContainer.querySelector('.event-panel');
+                if (existingCard) existingCard.remove();
+                
                 try {
-                    const eventDiv = document.createElement('a');
-                    eventDiv.classList.add('event-panel');
-                    eventDiv.setAttribute('data-event-index', index);
+                    const nextEvent = upcomingEvents[0];
+                    const nextRaidCard = createEventCard(nextEvent, 0);
                     
-                    const eventId = event.id || 'unknown';
-                    const eventTitle = event.title || 'Untitled Event';
+                    // Calculate raid status based on time
+                    const now = Date.now();
+                    const raidStartTime = nextEvent.startTime * 1000; // Convert to milliseconds
+                    const oneHourBefore = raidStartTime - (60 * 60 * 1000);
+                    const fourHoursAfter = raidStartTime + (4 * 60 * 60 * 1000);
                     
-                    // Apply channel-specific background if available
-                    if (event.channelId) {
-                        applyChannelBackground(eventDiv, event.channelId, false); // false = color (upcoming)
-                    }
-
-                    if (eventId !== 'unknown') {
-                        eventDiv.href = `/event/${eventId}/roster`;
-                    }
-
-                    const eventStartDate = new Date(event.startTime * 1000);
-                    const cetTimeZone = 'Europe/Copenhagen';
-                    const nowInCET = new Date();
-                    const todayAtMidnightCET = new Date(nowInCET.toLocaleDateString('en-CA', { timeZone: cetTimeZone }));
-                    const eventDateOnly = new Date(eventStartDate.toLocaleDateString('en-CA', { timeZone: cetTimeZone }));
-
-                    let dateDisplayHTML;
-                    if (eventDateOnly.getTime() === todayAtMidnightCET.getTime()) {
-                        dateDisplayHTML = `<span class="event-today-text">Today</span>`;
-                        eventDiv.classList.add('event-panel-today');
+                    // Update panel title based on raid status
+                    const panelTitle = nextRaidPanel.querySelector('.panel-title');
+                    let isRaidActive = false;
+                    
+                    if (now >= oneHourBefore && now < raidStartTime) {
+                        // 1 hour before raid starts
+                        if (panelTitle) panelTitle.textContent = 'Raid Starting Soon';
+                        isRaidActive = true;
+                    } else if (now >= raidStartTime && now < fourHoursAfter) {
+                        // Raid is in progress (up to 4 hours after start)
+                        if (panelTitle) panelTitle.textContent = 'Raid In Progress';
+                        isRaidActive = true;
                     } else {
-                        const optionsDay = { weekday: 'long', timeZone: cetTimeZone };
-                        const optionsDate = { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: cetTimeZone };
-                        const formattedDayName = eventStartDate.toLocaleDateString('en-US', optionsDay);
-                        const formattedDate = eventStartDate.toLocaleDateString('en-GB', optionsDate);
-                        dateDisplayHTML = `${formattedDayName} (${formattedDate})`;
+                        // Default state
+                        if (panelTitle) panelTitle.textContent = 'Next Upcoming Raid';
                     }
                     
-                    const optionsTime = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: cetTimeZone };
-                    const formattedStartTime = eventStartDate.toLocaleTimeString('en-GB', optionsTime);
-                    const signUpCount = event.signUpCount || '0';
+                    // FOR TESTING: Always show spark animation (remove this line later)
+                    isRaidActive = true;
                     
-                    let channelDisplayName = '#unknown-channel';
-                    if (event.channelName && 
-                        event.channelName.trim() && 
-                        event.channelName !== event.channelId &&
-                        !event.channelName.match(/^\d+$/)) {
-                        channelDisplayName = `#${event.channelName}`;
-                    } else if (event.channelId) {
-                        channelDisplayName = `#channel-${event.channelId.slice(-4)}`;
+                    // Wrap card in spark-border if raid is active
+                    if (isRaidActive) {
+                        const sparkWrapper = document.createElement('div');
+                        sparkWrapper.className = 'spark-border';
+                        sparkWrapper.appendChild(nextRaidCard);
+                        nextRaidContainer.insertBefore(sparkWrapper, nextRaidContainer.firstChild);
+                    } else {
+                        // Insert card at the beginning (before the actions div)
+                        nextRaidContainer.insertBefore(nextRaidCard, nextRaidContainer.firstChild);
                     }
-
-                    eventDiv.innerHTML = `
-                        <h3>${eventTitle}</h3>
-                        <div class="event-time-info">
-                            <p><i class="far fa-calendar-alt event-icon"></i> ${dateDisplayHTML}</p>
-                            <p><i class="far fa-clock event-icon"></i> ${formattedStartTime}</p>
-                            <p><i class="fas fa-user event-icon"></i> ${signUpCount} Signed</p>
-                            <p class="channel-info"><i class="fas fa-hashtag event-icon"></i> ${channelDisplayName}</p>
-                        </div>
-                    `;
-                    eventsList.appendChild(eventDiv);
+                    nextRaidPanel.style.display = 'block';
+                    
+                    // Update button links with the event ID
+                    const eventId = nextEvent.id || nextEvent.eventId || 'unknown';
+                    if (eventId !== 'unknown') {
+                        const rosterBtn = document.getElementById('next-raid-btn-roster');
+                        const assignmentsBtn = document.getElementById('next-raid-btn-assignments');
+                        const myAssignmentsBtn = document.getElementById('next-raid-btn-my-assignments');
+                        const raidlogsBtn = document.getElementById('next-raid-btn-raidlogs');
+                        const goldpotBtn = document.getElementById('next-raid-btn-goldpot');
+                        const lootBtn = document.getElementById('next-raid-btn-loot');
+                        const signupBtn = document.getElementById('next-raid-btn-signup');
+                        
+                        if (rosterBtn) rosterBtn.href = `/event/${eventId}/roster`;
+                        if (assignmentsBtn) assignmentsBtn.href = `/event/${eventId}/assignments`;
+                        if (myAssignmentsBtn) myAssignmentsBtn.href = `/event/${eventId}/assignments/myassignments`;
+                        if (raidlogsBtn) raidlogsBtn.href = `/event/${eventId}/raidlogs`;
+                        if (goldpotBtn) goldpotBtn.href = `/event/${eventId}/gold`;
+                        if (lootBtn) lootBtn.href = `/event/${eventId}/loot`;
+                        
+                        // Set Discord channel link for signup button
+                        const channelId = nextEvent.channelId;
+                        if (signupBtn && channelId) {
+                            const discordGuildId = '777268886939893821';
+                            signupBtn.href = `https://discord.com/channels/${discordGuildId}/${channelId}`;
+                        }
+                    }
+                    
+                    console.log('📅 Displayed next upcoming raid in dedicated panel');
                 } catch (renderError) {
-                    console.error('Error rendering event:', renderError);
+                    console.error('Error rendering next raid card:', renderError);
+                    nextRaidPanel.style.display = 'none';
                 }
-            });
+            }
+            
+            // Display remaining events in the "Upcoming Raids" panel (skip the first one)
+            const remainingEvents = upcomingEvents.slice(1);
+            
+            if (remainingEvents.length === 0) {
+                eventsList.innerHTML = '<p>No additional upcoming events.</p>';
+            } else {
+                remainingEvents.forEach((event, index) => {
+                    try {
+                        const eventDiv = createEventCard(event, index + 1);
+                        eventsList.appendChild(eventDiv);
+                    } catch (renderError) {
+                        console.error('Error rendering event:', renderError);
+                    }
+                });
+            }
         } else {
             eventsList.innerHTML = '<p>No upcoming events found for this server.</p>';
+            // Hide the next raid panel if no events
+            if (nextRaidPanel) nextRaidPanel.style.display = 'none';
         }
-        }
+    }
 
     // Function to fetch and display historic events
     async function fetchAndDisplayHistoricEvents() {
@@ -1463,7 +1567,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
         const grid = document.querySelector('.main-content-grid');
         if (grid) {
-            const rowHeightUnit = parseInt(getComputedStyle(grid).getPropertyValue('grid-auto-rows')) || 8;
+            const rowHeightUnit = parseInt(getComputedStyle(grid).getPropertyValue('grid-auto-rows')) || 1;
             const rowGap = parseInt(getComputedStyle(grid).getPropertyValue('gap')) || 0;
             const items = Array.from(grid.children);
 

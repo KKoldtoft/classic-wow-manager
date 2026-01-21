@@ -197,7 +197,7 @@ body.all-assignments {
   text-overflow: ellipsis;
   padding: 4px 8px;
   border-radius: 4px;
-  min-width: 75px;
+  min-width: 100px;
   flex-shrink: 1;
 }
 

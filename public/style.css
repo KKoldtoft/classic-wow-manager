@@ -676,17 +676,141 @@ body.has-raid-bar {
     margin: 0 auto; /* Center the container */
 }
 
+/* Next Upcoming Raid container (2-column wide panel) */
+#next-raid-panel .next-raid-container {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    display: flex;
+    gap: 20px;
+    align-items: stretch;
+}
+
+#next-raid-panel .next-raid-container .event-panel {
+    flex: 0 0 48%;
+    width: 48% !important;
+    max-width: 48% !important;
+    box-sizing: border-box;
+    margin: 0;
+}
+
+/* Spark animation wrapper for active raid card */
+.spark-border {
+    flex: 0 0 48%;
+    width: 48% !important;
+    max-width: 48% !important;
+    position: relative;
+    padding: 3px;
+    border-radius: 11px;
+    box-sizing: border-box;
+    background: linear-gradient(
+        90deg,
+        #0d1117 0%,
+        #0d1117 10%,
+        #f59e0b 25%,
+        #fbbf24 40%,
+        #fef3c7 50%,
+        #fbbf24 60%,
+        #f59e0b 75%,
+        #0d1117 90%,
+        #0d1117 100%
+    );
+    background-size: 300% 100%;
+    animation: shimmer-border 4s linear infinite;
+}
+
+#next-raid-panel .next-raid-container .spark-border .event-panel {
+    position: relative;
+    z-index: 2;
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: 1 1 100% !important;
+    margin: 0 !important;
+    border-radius: 8px;
+}
+
+@keyframes shimmer-border {
+    0% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: -50% 50%;
+    }
+}
+
+#next-raid-panel .next-raid-actions {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: stretch;
+    padding: 0;
+    margin: 0;
+}
+
+/* Next Raid Action Button Grid */
+.next-raid-btn-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 12px;
+    width: 100%;
+    height: 100%;
+}
+
+.next-raid-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #ffffff;
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    background: linear-gradient(135deg, #5865F2 0%, #4752C4 100%);
+}
+
+.next-raid-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(88, 101, 242, 0.4);
+    filter: brightness(1.1);
+}
+
+.next-raid-btn:active {
+    transform: translateY(0);
+}
+
+.next-raid-btn i {
+    font-size: 16px;
+}
+
+/* Sign up button - full width, green */
+.next-raid-btn.btn-signup {
+    grid-column: span 2;
+    background: linear-gradient(135deg, #3d8c5c 0%, #2d6b45 100%);
+}
+
+.next-raid-btn.btn-signup:hover {
+    box-shadow: 0 4px 12px rgba(61, 140, 92, 0.4);
+}
+
 /* --- 4-Column Layout (masonry-ready) --- */
 .main-content-grid {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr 1fr; /* 4 equal columns */
-    gap: 30px; /* Space between columns */
+    gap: 20px; /* Space between columns */
     align-items: start;
     padding: 30px;
     max-width: 1800px; /* Wider to accommodate 4 columns */
     margin: 0 auto;
     grid-auto-flow: row dense; /* allow better packing around spanning items */
-    grid-auto-rows: 8px; /* base row height unit for masonry calculation */
+    grid-auto-rows: 1px; /* base row height unit for masonry calculation - smaller = more precise */
 }
 
 .grid-column {
@@ -1278,7 +1402,7 @@ body.faq .content { background: transparent; box-shadow: none; }
 @media (max-width: 1400px) {
     .main-content-grid {
         grid-template-columns: 1fr 1fr; /* 2 columns on medium screens */
-        gap: 25px;
+        gap: 20px;
         padding: 25px;
         max-width: 1200px;
     }

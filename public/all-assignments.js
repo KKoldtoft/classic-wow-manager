@@ -187,7 +187,7 @@
         if (!groups[groupNum]) groups[groupNum] = [];
         groups[groupNum][slotNum - 1] = {
           name: en.character_name,
-          class: en.character_class,
+          class: en.class_name,
           specEmote: en.spec_emote,
           specIconUrl: en.spec_icon_url,
           specName: en.spec_name,
@@ -282,7 +282,7 @@
         if (!groups[groupNum]) groups[groupNum] = [];
         groups[groupNum][slotNum - 1] = {
           name: en.character_name,
-          class: en.character_class,
+          class: en.class_name,
           specEmote: en.spec_emote,
           specIconUrl: en.spec_icon_url,
           specName: en.spec_name,
@@ -377,7 +377,7 @@
         if (!groups[groupNum]) groups[groupNum] = [];
         groups[groupNum][slotNum - 1] = {
           name: en.character_name,
-          class: en.character_class,
+          class: en.class_name,
           specEmote: en.spec_emote,
           specIconUrl: en.spec_icon_url,
           specName: en.spec_name,
@@ -504,7 +504,7 @@
         const acceptStatus = entry.accept_status || '';
         
         const rosterClass = getRosterClassByName(roster, charName);
-        const characterClass = entry.character_class || rosterClass || 'unknown';
+        const characterClass = entry.class_name || rosterClass || 'unknown';
         const canonClass = canonicalizeClass(characterClass, '');
 
         const assignmentDiv = document.createElement('div');
