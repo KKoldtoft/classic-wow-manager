@@ -1113,9 +1113,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                         if (panelTitle) panelTitle.textContent = 'Next Upcoming Raid';
                     }
                     
-                    // FOR TESTING: Always show spark animation (remove this line later)
-                    isRaidActive = true;
-                    
                     // Wrap card in spark-border if raid is active
                     if (isRaidActive) {
                         const sparkWrapper = document.createElement('div');
