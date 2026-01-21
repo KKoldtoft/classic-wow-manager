@@ -516,6 +516,9 @@ pool.connect()
     dbConnectionStatus = 'Connected';
     client.release();
     
+    // Initialize players table with correct schema FIRST (other tables may reference it)
+    await initializePlayersTable();
+    
     // Initialize events cache table
 initializeEventsCacheTable();
 
@@ -552,6 +555,80 @@ migratePlayerConfirmedLogsTable();
     console.error('Error connecting to PostgreSQL database:', err.stack);
     dbConnectionStatus = 'Failed to Connect';
   });
+
+// Function to ensure players table has correct PRIMARY KEY constraint
+async function initializePlayersTable() {
+  let client;
+  try {
+    client = await pool.connect();
+    
+    // Create table if it doesn't exist with correct schema
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS players (
+        discord_id VARCHAR(255),
+        character_name VARCHAR(255),
+        class VARCHAR(50),
+        PRIMARY KEY (discord_id, character_name, class)
+      )
+    `);
+    
+    // Check if the PRIMARY KEY constraint exists and is correct
+    const pkCheck = await client.query(`
+      SELECT 
+        tc.constraint_name,
+        kcu.column_name,
+        kcu.ordinal_position
+      FROM information_schema.table_constraints tc
+      JOIN information_schema.key_column_usage kcu
+        ON tc.constraint_name = kcu.constraint_name
+        AND tc.table_schema = kcu.table_schema
+      WHERE tc.table_name = 'players'
+        AND tc.constraint_type = 'PRIMARY KEY'
+      ORDER BY kcu.ordinal_position
+    `);
+    
+    const pkColumns = pkCheck.rows.map(row => row.column_name);
+    const expectedPK = ['discord_id', 'character_name', 'class'];
+    const pkCorrect = pkColumns.length === 3 && 
+                      pkColumns[0] === expectedPK[0] && 
+                      pkColumns[1] === expectedPK[1] && 
+                      pkColumns[2] === expectedPK[2];
+    
+    if (!pkCorrect && pkCheck.rows.length > 0) {
+      // Wrong PRIMARY KEY - need to migrate
+      console.log('⚠️  Players table has incorrect PRIMARY KEY, migrating...');
+      console.log('   Current PK columns:', pkColumns);
+      console.log('   Expected PK columns:', expectedPK);
+      
+      await client.query('BEGIN');
+      
+      // Drop the old PRIMARY KEY constraint
+      const constraintName = pkCheck.rows[0].constraint_name;
+      await client.query(`ALTER TABLE players DROP CONSTRAINT ${constraintName}`);
+      console.log('   ✓ Dropped old PRIMARY KEY constraint');
+      
+      // Add the new PRIMARY KEY constraint
+      await client.query(`ALTER TABLE players ADD PRIMARY KEY (discord_id, character_name, class)`);
+      console.log('   ✓ Added new PRIMARY KEY constraint (discord_id, character_name, class)');
+      
+      await client.query('COMMIT');
+      console.log('✅ Players table schema migrated successfully');
+    } else if (pkCorrect) {
+      console.log('✅ Players table schema is correct');
+    } else {
+      console.log('✅ Players table initialized with correct schema');
+    }
+    
+  } catch (error) {
+    if (client) {
+      try { await client.query('ROLLBACK'); } catch {}
+    }
+    console.error('❌ Error initializing players table:', error);
+    throw error; // Re-throw to prevent startup with broken schema
+  } finally {
+    if (client) client.release();
+  }
+}
 
 // Function to create events cache table if it doesn't exist
 async function initializeEventsCacheTable() {

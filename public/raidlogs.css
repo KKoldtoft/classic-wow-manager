@@ -3386,15 +3386,15 @@ body.raid-active .scroll-target {
 /* Spec icon subtle pulse */
 @keyframes specIconPulse {
     0%, 100% {
-        transform: translateY(-50%) scale(1);
+        transform: translate(0, -50%) scale(1);
         filter: drop-shadow(0 0 0px rgba(255, 215, 0, 0));
     }
     15%, 45%, 75% {
-        transform: translateY(-50%) scale(1.08);
+        transform: translate(0, -50%) scale(1.08);
         filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.6));
     }
     30%, 60% {
-        transform: translateY(-50%) scale(1.04);
+        transform: translate(0, -50%) scale(1.04);
         filter: drop-shadow(0 0 3px rgba(255, 215, 0, 0.4));
     }
 }
@@ -3424,6 +3424,7 @@ body.raid-active .scroll-target {
 .character-info:has(.character-name.my-character-animate) .spec-icon {
     animation: specIconPulse 2s cubic-bezier(0.4, 0, 0.2, 1);
     animation-fill-mode: forwards;
+    left: 4px !important; /* Ensure consistent positioning during animation */
 }
 
 /* Refined permanent highlight */
@@ -3436,6 +3437,12 @@ body.raid-active .scroll-target {
 /* Subtle permanent border on card */
 .character-info:has(.character-name.my-character.animation-complete) {
     box-shadow: inset 0 0 0 1px rgba(255, 215, 0, 0.25);
+}
+
+/* Ensure spec icon stays in correct position after animation */
+.character-info:has(.character-name.my-character.animation-complete) .spec-icon {
+    left: 4px !important;
+    transform: translateY(-50%) !important;
 }
 
 /* Different panel contexts */
