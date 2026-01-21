@@ -717,6 +717,11 @@ body.has-raid-bar {
     );
     background-size: 300% 100%;
     animation: shimmer-border 4s linear infinite;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.spark-border:hover {
+    transform: translateY(-3px);
 }
 
 #next-raid-panel .next-raid-container .spark-border .event-panel {
@@ -727,6 +732,11 @@ body.has-raid-bar {
     flex: 1 1 100% !important;
     margin: 0 !important;
     border-radius: 8px;
+}
+
+/* Prevent double transform on hover when inside spark-border */
+#next-raid-panel .next-raid-container .spark-border .event-panel:hover {
+    transform: none;
 }
 
 @keyframes shimmer-border {
