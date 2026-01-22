@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Four Horsemen Rotation Assistant - Classic WoW Manager</title>
+  <link rel="stylesheet" href="/style.css?v=frsync-2">
+  <link rel="stylesheet" href="/4hassistant.css?v=1">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="four-horsemen-assistant">
+  <div class="top-bar">
+    <div class="top-bar-left">
+      <img src="/images/1p_logo.png" alt="1Principles" class="app-logo" width="110" height="30">
+      <nav class="top-nav">
+        <a href="/" class="top-nav-link">Home</a>
+        <div class="top-nav-dropdown">
+          <button class="top-nav-link dropdown-toggle" id="upcoming-raids-dropdown">
+            Raids <i class="fas fa-chevron-down"></i>
+          </button>
+          <div class="dropdown-menu" id="upcoming-raids-menu">
+            <div class="dropdown-loading">Loading raids...</div>
+          </div>
+        </div>
+        <a href="/guild-members" class="top-nav-link">Members</a>
+        <a href="/attendance" class="top-nav-link">Attendance</a>
+      </nav>
+    </div>
+    <div id="auth-container"></div>
+  </div>
+
+  <!-- Active Raid Bar -->
+  <div class="raid-bar" id="raid-bar" style="display: none;">
+    <div class="raid-bar-left">
+      <span class="raid-title" id="raid-title">Loading...</span>
+      <nav class="raid-nav">
+        <a href="#" class="raid-nav-link" id="raid-roster-link">
+          <i class="fas fa-users"></i> Roster
+        </a>
+        <a href="#" class="raid-nav-link" id="raid-assignments-link">
+          <i class="fas fa-tasks"></i> Assignments
+        </a>
+        <a href="#" class="raid-nav-link active" id="raid-4hassistant-link">
+          <i class="fas fa-horse-head"></i> 4H Assistant
+        </a>
+      </nav>
+    </div>
+    <div class="raid-bar-right">
+      <button class="raid-close-btn" onclick="localStorage.removeItem('activeEventSession'); location.reload();">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <div class="assistant-container">
+    <!-- Header with title and back link -->
+    <div class="assistant-header">
+      <a href="#" class="back-link" id="back-to-assignments">
+        <i class="fas fa-arrow-left"></i> Back to Military Assignments
+      </a>
+      <h1 class="assistant-title">
+        <img src="https://res.cloudinary.com/duthjs0c3/image/upload/v1754993478/-16062_absih8.png" alt="4H" class="boss-icon">
+        Four Horsemen Rotation Assistant
+      </h1>
+    </div>
+
+    <!-- Player Controls -->
+    <div class="player-controls">
+      <button class="player-btn play-btn" id="play-btn" title="Play">
+        <i class="fas fa-play"></i>
+      </button>
+      <button class="player-btn pause-btn" id="pause-btn" title="Pause" style="display: none;">
+        <i class="fas fa-pause"></i>
+      </button>
+      <button class="player-btn reset-btn" id="reset-btn" title="Reset">
+        <i class="fas fa-undo"></i>
+      </button>
+      <div class="player-time">
+        <span id="current-time">0:00</span> / <span id="total-time">3:05</span>
+      </div>
+      <div class="player-status" id="player-status">Ready</div>
+      
+      <!-- Voice Controls -->
+      <div class="voice-controls">
+        <label class="voice-toggle-label">
+          <input type="checkbox" id="voice-toggle" checked>
+          <i class="fas fa-volume-up"></i>
+          Voice
+        </label>
+        <select id="voice-select" class="voice-select" title="Select voice">
+          <option>Loading voices...</option>
+        </select>
+        <button class="test-voice-btn" id="test-voice-btn" title="Test voice">
+          <i class="fas fa-microphone"></i> Test
+        </button>
+      </div>
+    </div>
+
+    <!-- Timeline Grid -->
+    <div class="timeline-wrapper">
+      <!-- Progress bar overlay -->
+      <div class="progress-track">
+        <div class="progress-bar" id="progress-bar"></div>
+        <div class="progress-head" id="progress-head"></div>
+      </div>
+
+      <!-- Column Headers -->
+      <div class="timeline-grid">
+        <div class="timeline-header">
+          <div class="timeline-cell header-cell title-cell">Rotation</div>
+          <div class="timeline-cell header-cell mark-cell" data-mark="1">Mark 1<span class="mark-time">0:20</span></div>
+          <div class="timeline-cell header-cell mark-cell" data-mark="2">Mark 2<span class="mark-time">0:35</span></div>
+          <div class="timeline-cell header-cell mark-cell" data-mark="3">Mark 3<span class="mark-time">0:50</span></div>
+          <div class="timeline-cell header-cell mark-cell" data-mark="4">Mark 4<span class="mark-time">1:05</span></div>
+          <div class="timeline-cell header-cell mark-cell" data-mark="5">Mark 5<span class="mark-time">1:20</span></div>
+          <div class="timeline-cell header-cell mark-cell" data-mark="6">Mark 6<span class="mark-time">1:35</span></div>
+          <div class="timeline-cell header-cell mark-cell" data-mark="7">Mark 7<span class="mark-time">1:50</span></div>
+          <div class="timeline-cell header-cell mark-cell" data-mark="8">Mark 8<span class="mark-time">2:05</span></div>
+          <div class="timeline-cell header-cell mark-cell" data-mark="9">Mark 9<span class="mark-time">2:20</span></div>
+          <div class="timeline-cell header-cell mark-cell" data-mark="10">Mark 10<span class="mark-time">2:35</span></div>
+          <div class="timeline-cell header-cell mark-cell" data-mark="11">Mark 11<span class="mark-time">2:50</span></div>
+          <div class="timeline-cell header-cell mark-cell" data-mark="12">Mark 12<span class="mark-time">3:05</span></div>
+        </div>
+
+        <!-- Healers Row -->
+        <div class="timeline-row healers-row">
+          <div class="timeline-cell title-cell">
+            <i class="fas fa-heart"></i> Healers
+          </div>
+          <div class="timeline-cell content-cell" data-mark="1" id="healers-mark-1"></div>
+          <div class="timeline-cell content-cell" data-mark="2" id="healers-mark-2"></div>
+          <div class="timeline-cell content-cell" data-mark="3" id="healers-mark-3"></div>
+          <div class="timeline-cell content-cell" data-mark="4" id="healers-mark-4"></div>
+          <div class="timeline-cell content-cell" data-mark="5" id="healers-mark-5"></div>
+          <div class="timeline-cell content-cell" data-mark="6" id="healers-mark-6"></div>
+          <div class="timeline-cell content-cell" data-mark="7" id="healers-mark-7"></div>
+          <div class="timeline-cell content-cell" data-mark="8" id="healers-mark-8"></div>
+          <div class="timeline-cell content-cell" data-mark="9" id="healers-mark-9"></div>
+          <div class="timeline-cell content-cell" data-mark="10" id="healers-mark-10"></div>
+          <div class="timeline-cell content-cell" data-mark="11" id="healers-mark-11"></div>
+          <div class="timeline-cell content-cell" data-mark="12" id="healers-mark-12"></div>
+        </div>
+
+        <!-- Tanks Row -->
+        <div class="timeline-row tanks-row">
+          <div class="timeline-cell title-cell">
+            <i class="fas fa-shield-alt"></i> Tanks
+          </div>
+          <div class="timeline-cell content-cell" data-mark="1" id="tanks-mark-1"></div>
+          <div class="timeline-cell content-cell" data-mark="2" id="tanks-mark-2"></div>
+          <div class="timeline-cell content-cell" data-mark="3" id="tanks-mark-3"></div>
+          <div class="timeline-cell content-cell" data-mark="4" id="tanks-mark-4"></div>
+          <div class="timeline-cell content-cell" data-mark="5" id="tanks-mark-5"></div>
+          <div class="timeline-cell content-cell" data-mark="6" id="tanks-mark-6"></div>
+          <div class="timeline-cell content-cell" data-mark="7" id="tanks-mark-7"></div>
+          <div class="timeline-cell content-cell" data-mark="8" id="tanks-mark-8"></div>
+          <div class="timeline-cell content-cell" data-mark="9" id="tanks-mark-9"></div>
+          <div class="timeline-cell content-cell" data-mark="10" id="tanks-mark-10"></div>
+          <div class="timeline-cell content-cell" data-mark="11" id="tanks-mark-11"></div>
+          <div class="timeline-cell content-cell" data-mark="12" id="tanks-mark-12"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TTS Console -->
+    <div class="tts-console">
+      <div class="console-header">
+        <i class="fas fa-terminal"></i> TTS Console Output
+        <button class="console-clear-btn" id="clear-console" title="Clear console">
+          <i class="fas fa-trash"></i>
+        </button>
+      </div>
+      <div class="console-output" id="console-output">
+        <div class="console-line system">[System] Four Horsemen Rotation Assistant loaded. Click Play when entering combat.</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/top-bar.js?v=frsync-2"></script>
+  <script src="/4hassistant.js?v=1"></script>
+</body>
+</html>

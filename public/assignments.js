@@ -4903,6 +4903,61 @@
                 confettiContainer.appendChild(confetti);
               }
               setTimeout(() => confettiContainer.innerHTML = '', 1500);
+              
+              // ═══════════════════════════════════════════════════════════════════════
+              // VERIFICATION: Log completion and verify server state matches client
+              // ═══════════════════════════════════════════════════════════════════════
+              (async () => {
+                try {
+                  const eventId = getActiveEventId();
+                  if (!eventId) return;
+                  
+                  // Build client-side assignments data for verification
+                  const clientAssignments = allMyAssignments.map(a => ({
+                    dungeon: a.dungeon || '',
+                    wing: a.wing || '',
+                    boss: a.boss || '',
+                    character_name: a.character_name || '',
+                    accept_status: a._linkedMain ? (a._linkedMain.accept_status || '') : (a.accept_status || '')
+                  }));
+                  
+                  const verifyRes = await fetch(`/api/assignments/${eventId}/verify-completion`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      discordUserId: myId || '',
+                      discordUsername: user?.username || user?.global_name || '',
+                      characterNames: Array.from(myNames),
+                      clientTotal: total,
+                      clientAccepted: accepted,
+                      clientAssignments
+                    })
+                  });
+                  
+                  const verifyData = await verifyRes.json();
+                  
+                  if (verifyData.success && !verifyData.verified) {
+                    // MISMATCH DETECTED - show warning to user
+                    console.warn('[ASSIGNMENT VERIFICATION MISMATCH]', verifyData);
+                    
+                    // Add a warning indicator below the success message
+                    const warningEl = document.createElement('div');
+                    warningEl.className = 'verification-warning';
+                    warningEl.style.cssText = 'margin-top:10px;padding:8px 12px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:12px;color:#fca5a5;';
+                    warningEl.innerHTML = `<i class="fas fa-exclamation-triangle" style="margin-right:6px;"></i>` +
+                      `Verification notice: Server shows ${verifyData.serverAccepted}/${verifyData.serverTotal} accepted. ` +
+                      `If you see this message, please refresh the page. If boxes are unchecked after refresh, screenshot and report to officers.`;
+                    
+                    // Only show warning once per session
+                    if (!progressTracker.querySelector('.verification-warning')) {
+                      statusEl.parentNode.insertBefore(warningEl, statusEl.nextSibling);
+                    }
+                  }
+                } catch (err) {
+                  console.error('[ASSIGNMENT VERIFICATION ERROR]', err);
+                  // Don't interrupt user experience on verification errors
+                }
+              })();
             } else {
               statusEl.className = 'progress-tracker-status';
               const remaining = total - accepted;

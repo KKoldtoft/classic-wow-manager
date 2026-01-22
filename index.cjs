@@ -985,6 +985,31 @@ async function initializeAssignmentsTables() {
     await pool.query(`ALTER TABLE raid_assignment_entry_accepts ADD COLUMN IF NOT EXISTS accept_status TEXT`);
     await pool.query(`ALTER TABLE raid_assignment_entry_accepts ADD COLUMN IF NOT EXISTS accept_set_by TEXT`);
     await pool.query(`ALTER TABLE raid_assignment_entry_accepts ADD COLUMN IF NOT EXISTS accept_updated_at TIMESTAMP`);
+    
+    // Create assignment confirmation logs table for monitoring/debugging
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS assignment_confirmation_logs (
+        id SERIAL PRIMARY KEY,
+        event_id VARCHAR(100) NOT NULL,
+        discord_user_id TEXT NOT NULL,
+        discord_username TEXT,
+        character_names TEXT[], -- Array of character names the user has
+        client_total_assignments INTEGER NOT NULL,
+        client_accepted_count INTEGER NOT NULL,
+        client_assignments JSONB, -- What the client thinks is accepted
+        server_total_assignments INTEGER NOT NULL,
+        server_accepted_count INTEGER NOT NULL,
+        server_assignments JSONB, -- What the server has in DB
+        is_match BOOLEAN NOT NULL, -- Whether client and server agree
+        mismatch_details JSONB, -- Details about any mismatches
+        user_agent TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_confirmation_logs_event ON assignment_confirmation_logs(event_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_confirmation_logs_user ON assignment_confirmation_logs(discord_user_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_confirmation_logs_mismatch ON assignment_confirmation_logs(is_match) WHERE is_match = false`);
+    
     console.log('✅ Assignments tables initialized');
   } catch (error) {
     console.error('❌ Error initializing assignments tables:', error);
@@ -8573,6 +8598,10 @@ app.get('/event/:eventId/assignments/allassignments', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'all-assignments.html'));
 });
 
+app.get('/event/:eventId/assignments/4hassistant', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', '4hassistant.html'));
+});
+
 app.get('/event/:eventId/assignments/:wing', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'assignments.html'));
 });
@@ -13631,6 +13660,167 @@ app.get('/api/confirmed-assignments/:eventId', async (req, res) => {
         res.status(500).json({ 
             success: false, 
             message: 'Error fetching confirmed assignments',
+            error: error.message 
+        });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Verify and log assignment completion - called when client shows "All assignments accepted!"
+// This creates an audit trail to detect client/server mismatches
+app.post('/api/assignments/:eventId/verify-completion', async (req, res) => {
+    const { eventId } = req.params;
+    const { 
+        discordUserId, 
+        discordUsername,
+        characterNames = [],
+        clientTotal, 
+        clientAccepted,
+        clientAssignments = [] // Array of { dungeon, wing, boss, character_name, accept_status }
+    } = req.body;
+    
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    
+    let client;
+    try {
+        client = await pool.connect();
+        
+        // Get all assignments for this user's characters from the database
+        const charNamesLower = characterNames.map(n => String(n).toLowerCase());
+        
+        // Get all assignment entries for user's characters
+        const assignmentsResult = await client.query(`
+            SELECT character_name, dungeon, wing, boss
+            FROM raid_assignment_entries 
+            WHERE event_id = $1 
+              AND LOWER(character_name) = ANY($2::text[])
+            ORDER BY character_name, dungeon, wing, boss
+        `, [eventId, charNamesLower]);
+        
+        // Get all accepts for user's characters
+        const acceptsResult = await client.query(`
+            SELECT character_name, dungeon, wing, boss, accept_status
+            FROM raid_assignment_entry_accepts
+            WHERE event_id = $1
+              AND LOWER(character_name) = ANY($2::text[])
+        `, [eventId, charNamesLower]);
+        
+        // Build server-side view
+        const serverAssignments = assignmentsResult.rows.map(r => ({
+            character_name: r.character_name,
+            dungeon: r.dungeon,
+            wing: r.wing || '',
+            boss: r.boss
+        }));
+        
+        const serverAccepts = acceptsResult.rows.filter(r => r.accept_status === 'accept').map(r => ({
+            character_name: r.character_name,
+            dungeon: r.dungeon,
+            wing: r.wing || '',
+            boss: r.boss,
+            accept_status: r.accept_status
+        }));
+        
+        const serverTotal = serverAssignments.length;
+        const serverAcceptedCount = serverAccepts.length;
+        
+        // Check if server agrees all are accepted
+        const serverAllAccepted = serverTotal > 0 && serverAssignments.every(assignment => {
+            return serverAccepts.some(accept => 
+                String(accept.character_name).toLowerCase() === String(assignment.character_name).toLowerCase() &&
+                accept.dungeon === assignment.dungeon &&
+                accept.wing === assignment.wing &&
+                accept.boss === assignment.boss
+            );
+        });
+        
+        // Determine if there's a mismatch
+        const clientClaimsComplete = clientAccepted === clientTotal && clientTotal > 0;
+        const isMatch = clientClaimsComplete === serverAllAccepted && clientTotal === serverTotal && clientAccepted === serverAcceptedCount;
+        
+        // Build mismatch details if there's a discrepancy
+        let mismatchDetails = null;
+        if (!isMatch) {
+            // Find missing accepts (client thinks accepted, server doesn't have)
+            const clientAcceptedAssignments = clientAssignments.filter(a => a.accept_status === 'accept');
+            const missingInServer = clientAcceptedAssignments.filter(clientA => {
+                return !serverAccepts.some(serverA => 
+                    String(serverA.character_name).toLowerCase() === String(clientA.character_name).toLowerCase() &&
+                    serverA.dungeon === clientA.dungeon &&
+                    serverA.wing === (clientA.wing || '') &&
+                    serverA.boss === clientA.boss
+                );
+            });
+            
+            // Find extra accepts (server has but client doesn't think accepted)
+            const extraInServer = serverAccepts.filter(serverA => {
+                return !clientAcceptedAssignments.some(clientA => 
+                    String(clientA.character_name).toLowerCase() === String(serverA.character_name).toLowerCase() &&
+                    clientA.dungeon === serverA.dungeon &&
+                    (clientA.wing || '') === serverA.wing &&
+                    clientA.boss === serverA.boss
+                );
+            });
+            
+            mismatchDetails = {
+                reason: !serverAllAccepted && clientClaimsComplete ? 'client_shows_complete_but_server_incomplete' : 'count_mismatch',
+                clientClaimsComplete,
+                serverAllAccepted,
+                missingInServer,
+                extraInServer,
+                totalDiff: clientTotal - serverTotal,
+                acceptedDiff: clientAccepted - serverAcceptedCount
+            };
+        }
+        
+        // Log to database
+        await client.query(`
+            INSERT INTO assignment_confirmation_logs (
+                event_id, discord_user_id, discord_username, character_names,
+                client_total_assignments, client_accepted_count, client_assignments,
+                server_total_assignments, server_accepted_count, server_assignments,
+                is_match, mismatch_details, user_agent
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        `, [
+            eventId,
+            discordUserId || 'unknown',
+            discordUsername || 'unknown',
+            characterNames,
+            clientTotal,
+            clientAccepted,
+            JSON.stringify(clientAssignments),
+            serverTotal,
+            serverAcceptedCount,
+            JSON.stringify(serverAccepts),
+            isMatch,
+            mismatchDetails ? JSON.stringify(mismatchDetails) : null,
+            userAgent
+        ]);
+        
+        // Log to console for immediate visibility
+        if (!isMatch) {
+            console.warn(`⚠️ [ASSIGNMENT VERIFICATION MISMATCH] User: ${discordUsername} (${discordUserId}), Event: ${eventId}`);
+            console.warn(`   Client: ${clientAccepted}/${clientTotal} accepted, Server: ${serverAcceptedCount}/${serverTotal} accepted`);
+            console.warn(`   Details:`, JSON.stringify(mismatchDetails, null, 2));
+        } else {
+            console.log(`✅ [ASSIGNMENT VERIFICATION] User: ${discordUsername} confirmed all ${serverTotal} assignments for event ${eventId}`);
+        }
+        
+        res.json({
+            success: true,
+            verified: isMatch,
+            serverTotal,
+            serverAccepted: serverAcceptedCount,
+            serverAllAccepted,
+            mismatchDetails: isMatch ? null : mismatchDetails
+        });
+        
+    } catch (error) {
+        console.error('❌ [ASSIGNMENT VERIFICATION] Error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error verifying assignment completion',
             error: error.message 
         });
     } finally {
