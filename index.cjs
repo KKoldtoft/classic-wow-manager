@@ -519,6 +519,9 @@ pool.connect()
     // Initialize players table with correct schema FIRST (other tables may reference it)
     await initializePlayersTable();
     
+    // Fix any bad color data in roster_overrides (one-time migration)
+    await fixBadColorData();
+    
     // Initialize events cache table
 initializeEventsCacheTable();
 
@@ -673,6 +676,46 @@ async function initializePlayersTable() {
     }
     console.error('❌ Error initializing tables:', error);
     throw error; // Re-throw to prevent startup with broken schema
+  } finally {
+    if (client) client.release();
+  }
+}
+
+// Function to fix bad color data in roster_overrides (one-time migration)
+async function fixBadColorData() {
+  let client;
+  try {
+    client = await pool.connect();
+    
+    // Find all rows with hex format colors (starting with #) and convert them to RGB format
+    const badColorRows = await client.query(`
+      SELECT event_id, discord_user_id, assigned_char_class, player_color 
+      FROM roster_overrides 
+      WHERE player_color LIKE '#%'
+    `);
+    
+    if (badColorRows.rows.length > 0) {
+      console.log(`⚠️  Found ${badColorRows.rows.length} roster entries with hex format colors, converting to RGB...`);
+      
+      for (const row of badColorRows.rows) {
+        const canonicalClass = getCanonicalClass(row.assigned_char_class);
+        const correctColor = CLASS_COLORS[canonicalClass] || '128, 128, 128';
+        
+        await client.query(`
+          UPDATE roster_overrides 
+          SET player_color = $1 
+          WHERE event_id = $2 AND discord_user_id = $3
+        `, [correctColor, row.event_id, row.discord_user_id]);
+        
+        console.log(`  ✓ Fixed color for ${row.discord_user_id} (${row.assigned_char_class}): ${row.player_color} → ${correctColor}`);
+      }
+      
+      console.log(`✅ Successfully fixed ${badColorRows.rows.length} color entries`);
+    } else {
+      console.log('✓ No bad color data found in roster_overrides');
+    }
+  } catch (error) {
+    console.error('❌ Error fixing bad color data:', error);
   } finally {
     if (client) client.release();
   }
@@ -10717,6 +10760,8 @@ app.put('/api/roster/:eventId/player/:discordUserId', requireRosterManager, asyn
     const { eventId, discordUserId } = req.params;
     let { characterName, characterClass } = req.body;
 
+    console.log(`[CHARACTER_SWAP_API] Received: characterName="${characterName}", characterClass="${characterClass}", type=${typeof characterClass}`);
+
     let client;
     try {
         client = await pool.connect();
@@ -10737,8 +10782,11 @@ app.put('/api/roster/:eventId/player/:discordUserId', requireRosterManager, asyn
             }
 
             const canonicalClass = getCanonicalClass(originalCharacter.class);
-            const color = CLASS_COLORS[canonicalClass] || '#808080';
+            const color = CLASS_COLORS[canonicalClass] || '128, 128, 128';
             const classIcon = CLASS_ICONS[canonicalClass] || null;
+            
+            // Debug logging
+            console.log(`[CHARACTER_REVERT] originalCharacter.class: "${originalCharacter.class}", canonicalClass: "${canonicalClass}", color: "${color}"`);
             
             await client.query(
                 `UPDATE roster_overrides SET assigned_char_name = $1, assigned_char_class = $2, player_color = $3, assigned_char_spec = NULL, assigned_char_spec_emote = $4 WHERE event_id = $5 AND discord_user_id = $6`,
@@ -10746,11 +10794,30 @@ app.put('/api/roster/:eventId/player/:discordUserId', requireRosterManager, asyn
             );
 
         } else { // This is a "swap to alt" action
+            // If characterClass is not provided or is invalid, try to fetch it from the players table
+            if (!characterClass || characterClass === 'null' || characterClass === 'undefined') {
+                console.log(`[CHARACTER_SWAP] characterClass is invalid ("${characterClass}"), querying players table for character: "${characterName}"`);
+                const playerClassResult = await client.query(
+                    'SELECT class FROM players WHERE discord_id = $1 AND character_name = $2 LIMIT 1',
+                    [discordUserId, characterName]
+                );
+                if (playerClassResult.rows.length > 0) {
+                    characterClass = playerClassResult.rows[0].class;
+                    console.log(`[CHARACTER_SWAP] Found class in players table: "${characterClass}"`);
+                } else {
+                    console.warn(`[CHARACTER_SWAP] Could not find character "${characterName}" for discord user ${discordUserId} in players table`);
+                    characterClass = 'unknown';
+                }
+            }
+
             const canonicalClass = getCanonicalClass(characterClass);
-            const color = CLASS_COLORS[canonicalClass] || '#808080';
+            const color = CLASS_COLORS[canonicalClass] || '128, 128, 128';
             
             // When swapping characters, reset spec to null and use class icon
             const classIcon = CLASS_ICONS[canonicalClass] || null;
+
+            // Debug logging
+            console.log(`[CHARACTER_SWAP] characterClass: "${characterClass}", canonicalClass: "${canonicalClass}", color: "${color}", classIcon: ${classIcon}`);
 
             await client.query(
                 `UPDATE roster_overrides 

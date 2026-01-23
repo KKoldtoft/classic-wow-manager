@@ -227,6 +227,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     let playerCharacterHistory = {}; // Track all characters each player has used
     let playerCharacterDetails = {}; // Track class info for each character
     let playersDbCache = {}; // Cache of players table entries by discord ID
+    
+    // Version check - updated 2026-01-23 to fix character swap color bug
+    console.log('[ROSTER] Version: 2026-01-23-v3 - Tank role mapping fix loaded');
 
     // Add utility functions for optimistic updates
     const OptimisticUpdates = {
@@ -633,6 +636,29 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Add character swapping animation
             cell.classList.add('character-swapping');
 
+            // If class is missing or invalid, fetch it from the API
+            if (!newCharacterClass || newCharacterClass === 'undefined' || newCharacterClass === 'null' || (typeof newCharacterClass === 'string' && newCharacterClass.trim() === '')) {
+                console.log(`[OPTIMISTIC_UPDATE] Class info missing for "${newCharacterName}", fetching from API...`);
+                try {
+                    const response = await fetch(`/api/players/by-discord-id/${userid}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        console.log(`[OPTIMISTIC_UPDATE] API returned ${data.characters?.length || 0} characters:`, data.characters);
+                        const character = data.characters?.find(c => c.character_name.toLowerCase() === newCharacterName.toLowerCase());
+                        if (character) {
+                            newCharacterClass = character.class;
+                            console.log(`[OPTIMISTIC_UPDATE] Found class from API: "${newCharacterClass}" for "${newCharacterName}"`);
+                        } else {
+                            console.warn(`[OPTIMISTIC_UPDATE] Character "${newCharacterName}" not found in API response`);
+                        }
+                    } else {
+                        console.warn(`[OPTIMISTIC_UPDATE] API returned status ${response.status}`);
+                    }
+                } catch (error) {
+                    console.error('[OPTIMISTIC_UPDATE] Failed to fetch class from API:', error);
+                }
+            }
+
             // Update player data
             playerData.mainCharacterName = newCharacterName;
             playerData.class = newCharacterClass;
@@ -640,6 +666,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Update color based on new class
             const canonicalClass = getCanonicalClass(newCharacterClass);
             playerData.color = getClassColor(canonicalClass);
+            
+            console.log(`[OPTIMISTIC_UPDATE] newCharacterClass="${newCharacterClass}", canonicalClass="${canonicalClass}", color="${playerData.color}"`);
 
             // Reset spec to a default for the new class
             const specsForClass = specData[canonicalClass] || [];
@@ -956,6 +984,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             cell.querySelectorAll('[data-action="swap-char"]:not(.disabled)').forEach(item => {
                 item.addEventListener('click', async (e) => {
                     const { userid, altName, altClass } = e.currentTarget.dataset;
+                    
+                    console.log(`[SWAP_CHAR_CLICK] Swapping to: name="${altName}", class="${altClass}", type=${typeof altClass}`);
                     
                     // Optimistic update
                     const rollbackInfo = await this.updatePlayerCharacter(userid, altName, altClass);
@@ -1942,6 +1972,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const characterIcon = charDetails ? charDetails.icon : null;
                 const characterColor = charDetails ? charDetails.color : null;
                 
+                // Debug logging for character class info
+                if (!charDetails) {
+                    console.log(`[DROPDOWN] No charDetails for "${characterName}", using fallback class: ${player.class}`);
+                }
+                
                 const canonicalClass = getCanonicalClass(characterClass);
                 const key = `${characterName}::${canonicalClass}`;
                 if (!existingKeys.has(key)) {
@@ -1964,8 +1999,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const colorStyle = char.color ? `style="color: rgb(${char.color});"` : '';
                 const disabledClass = char.isCurrent ? ' disabled' : '';
                 const itemText = char.isCurrent ? `${char.name} (Current)` : char.name;
+                // Use empty string instead of undefined/null to avoid "undefined" in HTML
+                const altClass = char.class || '';
                 
-                return `<div class="dropdown-item${disabledClass}" data-action="swap-char" data-userid="${player.userid}" data-alt-name="${char.name}" data-alt-class="${char.class}">${iconHtml}<span ${colorStyle}>${itemText}</span></div>`;
+                return `<div class="dropdown-item${disabledClass}" data-action="swap-char" data-userid="${player.userid}" data-alt-name="${char.name}" data-alt-class="${altClass}">${iconHtml}<span ${colorStyle}>${itemText}</span></div>`;
             }).join('');
         }
         return content;
@@ -2113,6 +2150,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     function getCanonicalClass(className) {
         if (!className) return 'unknown';
         const lower = className.toLowerCase();
+        
+        // Handle common role names from Raid Helper and map them to a default class
+        if (lower === 'tank') return 'warrior';
+        
+        // Handle class names
         if (lower.includes('death knight')) return 'death knight';
         if (lower.includes('druid')) return 'druid';
         if (lower.includes('hunter')) return 'hunter';

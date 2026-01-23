@@ -10,6 +10,8 @@ async function fetchRoster(eventId) {
 }
 
 async function updatePlayerCharacter(eventId, discordUserId, newCharacterName, newCharacterClass) {
+    console.log(`[ROSTER_API] updatePlayerCharacter called: name="${newCharacterName}", class="${newCharacterClass}", type=${typeof newCharacterClass}`);
+    
     const response = await fetch(`/api/roster/${eventId}/player/${discordUserId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
