@@ -21988,11 +21988,41 @@ app.get('/api/admin/backfill-rpb-durations/preview', async (req, res) => {
     }
 });
 
+// Track backfill status for async operation
+let backfillStatus = {
+    running: false,
+    startedAt: null,
+    processed: 0,
+    total: 0,
+    succeeded: 0,
+    failed: 0,
+    currentEvent: null,
+    completedAt: null,
+    results: []
+};
+
+// Get backfill status
+app.get('/api/admin/backfill-rpb-durations/status', async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    return res.json({ success: true, ...backfillStatus });
+});
+
 // Bulk backfill RPB durations for all events missing them
-// This endpoint fetches durations from RPB sheets for all events that have archive URLs but no stored duration
+// This endpoint runs ASYNCHRONOUSLY - returns immediately and processes in background
 app.post('/api/admin/backfill-rpb-durations', async (req, res) => {
     if (!req.isAuthenticated()) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    
+    // Check if already running
+    if (backfillStatus.running) {
+        return res.json({
+            success: false,
+            message: 'Backfill already in progress',
+            status: backfillStatus
+        });
     }
     
     try {
@@ -22022,76 +22052,95 @@ app.post('/api/admin/backfill-rpb-durations', async (req, res) => {
             });
         }
         
-        const results = [];
-        let succeeded = 0;
-        let failed = 0;
+        // Initialize status and return immediately
+        backfillStatus = {
+            running: true,
+            startedAt: new Date().toISOString(),
+            processed: 0,
+            total: totalEvents,
+            succeeded: 0,
+            failed: 0,
+            currentEvent: null,
+            completedAt: null,
+            results: []
+        };
         
-        for (let i = 0; i < result.rows.length; i++) {
-            const row = result.rows[i];
-            const progress = `[${i + 1}/${totalEvents}]`;
-            
-            console.log(`${progress} Processing event ${row.event_id} (${row.archive_name || 'unnamed'})...`);
-            
-            try {
-                // Fetch duration from sheet
-                const durationResult = await fetchRpbDurationFromSheet(row.archive_url);
+        // Return immediately - processing continues in background
+        res.json({
+            success: true,
+            message: `Backfill started for ${totalEvents} events. Check /api/admin/backfill-rpb-durations/status for progress.`,
+            total: totalEvents,
+            estimatedMinutes: Math.ceil(totalEvents * 1.5 / 60)
+        });
+        
+        // Process in background (don't await this)
+        (async () => {
+            for (let i = 0; i < result.rows.length; i++) {
+                const row = result.rows[i];
+                const progress = `[${i + 1}/${totalEvents}]`;
+                backfillStatus.currentEvent = row.archive_name || row.event_id;
                 
-                if (durationResult.success) {
-                    // Update the tracking record
-                    await pool.query(
-                        `UPDATE rpb_tracking SET rpb_duration_seconds = $1, updated_at = NOW() WHERE id = $2`,
-                        [durationResult.durationSeconds, row.id]
-                    );
+                console.log(`${progress} Processing event ${row.event_id} (${row.archive_name || 'unnamed'})...`);
+                
+                try {
+                    // Fetch duration from sheet
+                    const durationResult = await fetchRpbDurationFromSheet(row.archive_url);
                     
-                    const minutes = Math.round(durationResult.durationSeconds / 60);
-                    console.log(`${progress} ✅ Event ${row.event_id}: ${durationResult.durationString} (${minutes}m)`);
+                    if (durationResult.success) {
+                        // Update the tracking record
+                        await pool.query(
+                            `UPDATE rpb_tracking SET rpb_duration_seconds = $1, updated_at = NOW() WHERE id = $2`,
+                            [durationResult.durationSeconds, row.id]
+                        );
+                        
+                        const minutes = Math.round(durationResult.durationSeconds / 60);
+                        console.log(`${progress} ✅ Event ${row.event_id}: ${durationResult.durationString} (${minutes}m)`);
+                        
+                        backfillStatus.results.push({
+                            eventId: row.event_id,
+                            archiveName: row.archive_name,
+                            success: true,
+                            durationString: durationResult.durationString,
+                            durationMinutes: minutes
+                        });
+                        backfillStatus.succeeded++;
+                    } else {
+                        console.log(`${progress} ❌ Event ${row.event_id}: ${durationResult.error}`);
+                        backfillStatus.results.push({
+                            eventId: row.event_id,
+                            archiveName: row.archive_name,
+                            success: false,
+                            error: durationResult.error
+                        });
+                        backfillStatus.failed++;
+                    }
                     
-                    results.push({
-                        eventId: row.event_id,
-                        archiveName: row.archive_name,
-                        success: true,
-                        durationString: durationResult.durationString,
-                        durationMinutes: minutes
-                    });
-                    succeeded++;
-                } else {
-                    console.log(`${progress} ❌ Event ${row.event_id}: ${durationResult.error}`);
-                    results.push({
+                    // Small delay between requests to avoid rate limiting from Google
+                    if (i < result.rows.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                    }
+                    
+                } catch (error) {
+                    console.log(`${progress} ❌ Event ${row.event_id}: ${error.message}`);
+                    backfillStatus.results.push({
                         eventId: row.event_id,
                         archiveName: row.archive_name,
                         success: false,
-                        error: durationResult.error
+                        error: error.message
                     });
-                    failed++;
+                    backfillStatus.failed++;
                 }
                 
-                // Small delay between requests to avoid rate limiting from Google
-                if (i < result.rows.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 1500));
-                }
-                
-            } catch (error) {
-                console.log(`${progress} ❌ Event ${row.event_id}: ${error.message}`);
-                results.push({
-                    eventId: row.event_id,
-                    archiveName: row.archive_name,
-                    success: false,
-                    error: error.message
-                });
-                failed++;
+                backfillStatus.processed = i + 1;
             }
-        }
+            
+            backfillStatus.running = false;
+            backfillStatus.completedAt = new Date().toISOString();
+            backfillStatus.currentEvent = null;
+            console.log(`🔄 [BACKFILL] Complete! Processed: ${backfillStatus.processed}, Succeeded: ${backfillStatus.succeeded}, Failed: ${backfillStatus.failed}`);
+        })();
         
-        console.log(`🔄 [BACKFILL] Complete! Processed: ${totalEvents}, Succeeded: ${succeeded}, Failed: ${failed}`);
-        
-        return res.json({
-            success: true,
-            message: `Backfill complete`,
-            processed: totalEvents,
-            succeeded: succeeded,
-            failed: failed,
-            results: results
-        });
+        return; // Already sent response above
         
     } catch (error) {
         console.error(`❌ [BACKFILL] Error:`, error.message);
