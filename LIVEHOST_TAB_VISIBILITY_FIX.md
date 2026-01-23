@@ -28,12 +28,14 @@ Implemented a heartbeat mechanism that:
 
 ### 3. Silent Audio Trick 🔇 ⭐ **NEW**
 Prevents browser throttling by playing silent audio:
-- Creates an AudioContext with nearly silent oscillator (0.1% volume)
+- Creates an AudioContext with ultra-high frequency oscillator (20kHz - beyond human hearing)
+- Volume set to 1% (loud enough for browser to detect, but effectively inaudible)
 - Browser thinks tab is playing audio and doesn't throttle it
-- Tab shows "playing audio" indicator but no sound is heard
+- Tab shows "playing audio" indicator (speaker icon)
 - **Allows imports to run at full speed even when tab is hidden or minimized**
 - Automatically starts when streaming begins
 - Automatically stops when streaming ends
+- AudioContext is resumed if suspended (required by some browsers)
 
 ### 4. Enhanced Error Detection
 Improved error handling to:
@@ -73,11 +75,20 @@ setInterval(() => {
 }, 10000);
 
 // Silent audio trick - prevents throttling
-function startSilentAudio() {
+async function startSilentAudio() {
     audioContext = new AudioContext();
+    
+    // Resume if suspended (required by some browsers)
+    if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+    }
+    
     oscillator = audioContext.createOscillator();
     gainNode = audioContext.createGain();
-    gainNode.gain.value = 0.001; // Nearly silent (0.1% volume)
+    
+    oscillator.frequency.value = 20000; // 20kHz - beyond human hearing
+    gainNode.gain.value = 0.01; // 1% volume - inaudible but detectable by browser
+    
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
     oscillator.start(); // Browser won't throttle tabs "playing audio"
@@ -136,20 +147,29 @@ When working correctly, you should see:
 [LIVE] Closing existing EventSource connection (if any)
 [SSE] Connection established
 [AUDIO-TRICK] 🔇 Silent audio started - tab will not be throttled
-[AUDIO-TRICK] Browser will show "playing audio" indicator, but no sound will be heard
+[AUDIO-TRICK] AudioContext state: running
+[AUDIO-TRICK] Volume: 0.01 | Frequency: 20000Hz
+[AUDIO-TRICK] Browser should show "playing audio" indicator on tab
 [VISIBILITY] Tab became HIDDEN - browser may throttle updates!
 [HEARTBEAT] Connection alive (hidden for 15s)
 [HEARTBEAT] Connection alive (hidden for 25s)
 [VISIBILITY] Tab became VISIBLE - resuming normal operation
-[AUDIO-TRICK] 🔇 Silent audio stopped
+[AUDIO-TRICK] 🔇 Silent audio stopped (final state: closed)
 ```
+
+**Important:** Look for the speaker/audio icon on your browser tab. If you don't see it:
+1. Check if AudioContext state shows "running" (not "suspended")
+2. Try refreshing and starting a new import
+3. Check browser console for any AudioContext errors
 
 ## Known Limitations
 
 1. **Audio indicator displayed**: Browser will show a "playing audio" icon on the tab (speaker symbol), though no sound is actually heard
 2. **Browser support**: The AudioContext API is supported in all modern browsers (Chrome, Firefox, Edge, Safari)
-3. **Silent audio trick effectiveness**: The silent audio trick is very effective at preventing throttling, but keeping the tab visible is still the most guaranteed approach
-4. **No actual sound**: The audio is set to 0.1% volume (effectively silent), so you won't hear anything
+3. **User interaction may be required**: Some browsers require user interaction (click/keyboard) before allowing audio playback - if audio doesn't start, click the page and try again
+4. **AudioContext autoplay policy**: Browsers with strict autoplay policies may suspend the AudioContext until user interacts with the page
+5. **Silent audio trick effectiveness**: The silent audio trick is very effective at preventing throttling, but keeping the tab visible is still the most guaranteed approach
+6. **Inaudible frequency**: The audio uses 20kHz frequency (beyond human hearing range) at 1% volume - you shouldn't hear anything
 
 ## Recommendations for Users
 
@@ -166,11 +186,22 @@ When working correctly, you should see:
 3. ⚡ For absolute guaranteed performance, keeping tab visible is still optimal
 4. 🔄 If you restart the page, you'll need to start a new import to reactivate the trick
 
+### If Audio Icon Doesn't Appear:
+1. Check console for `[AUDIO-TRICK] AudioContext state: running`
+   - If it says "suspended", the browser blocked audio autoplay
+   - Try clicking anywhere on the page first, then starting import
+2. Verify the volume and frequency in console logs:
+   - Should show: `Volume: 0.01 | Frequency: 20000Hz`
+3. Check for any error messages in console
+4. Try in a different browser (Chrome, Firefox, Edge all support this)
+5. Some browsers require user interaction before allowing audio - click the page first
+
 ### If Connection Issues Occur:
 1. Check console logs for `[AUDIO-TRICK]` messages
 2. Verify you see "Silent audio started" message when import begins
-3. Look for visibility-related messages in console
-4. Report any persistent issues with console logs
+3. Verify AudioContext state is "running"
+4. Look for visibility-related messages in console
+5. Report any persistent issues with console logs
 
 ## Files Modified
 

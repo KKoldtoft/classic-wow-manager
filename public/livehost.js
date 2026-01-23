@@ -113,16 +113,27 @@
     }
     
     // Silent audio trick to prevent browser throttling when tab is hidden
-    function startSilentAudio() {
+    async function startSilentAudio() {
         if (audioContext) return; // Already running
         
         try {
+            // Create AudioContext
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            
+            // Resume context if it's suspended (required by some browsers)
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+            
             oscillator = audioContext.createOscillator();
             gainNode = audioContext.createGain();
             
-            // Set volume to nearly silent (0.001 = 0.1% volume)
-            gainNode.gain.value = 0.001;
+            // Set oscillator frequency (high frequency less likely to be heard)
+            oscillator.frequency.value = 20000; // 20kHz - beyond human hearing range
+            
+            // Set volume to very low but detectable by browser (0.01 = 1% volume)
+            // Note: Too low (0.001) and browser won't show audio indicator
+            gainNode.gain.value = 0.01;
             
             // Connect: oscillator -> gain -> speakers
             oscillator.connect(gainNode);
@@ -132,9 +143,11 @@
             oscillator.start();
             
             console.log('[AUDIO-TRICK] 🔇 Silent audio started - tab will not be throttled');
-            console.log('[AUDIO-TRICK] Browser will show "playing audio" indicator, but no sound will be heard');
+            console.log('[AUDIO-TRICK] AudioContext state:', audioContext.state);
+            console.log('[AUDIO-TRICK] Volume:', gainNode.gain.value, '| Frequency:', oscillator.frequency.value + 'Hz');
+            console.log('[AUDIO-TRICK] Browser should show "playing audio" indicator on tab');
         } catch (err) {
-            console.warn('[AUDIO-TRICK] Failed to start silent audio:', err);
+            console.error('[AUDIO-TRICK] Failed to start silent audio:', err);
         }
     }
     
@@ -150,12 +163,13 @@
                 gainNode = null;
             }
             if (audioContext) {
+                const finalState = audioContext.state;
                 audioContext.close();
                 audioContext = null;
+                console.log('[AUDIO-TRICK] 🔇 Silent audio stopped (final state:', finalState + ')');
             }
-            console.log('[AUDIO-TRICK] 🔇 Silent audio stopped');
         } catch (err) {
-            console.warn('[AUDIO-TRICK] Error stopping silent audio:', err);
+            console.error('[AUDIO-TRICK] Error stopping silent audio:', err);
         }
     }
     
