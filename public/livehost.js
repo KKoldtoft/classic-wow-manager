@@ -47,6 +47,118 @@
     let autoRefreshTimeRemaining = 0; // Seconds remaining
     const AUTO_REFRESH_DELAY = 120; // 2 minutes in seconds
     
+    // Page Visibility tracking
+    let isPageVisible = !document.hidden;
+    let lastVisibilityChange = Date.now();
+    let visibilityWarningShown = false;
+    
+    // Silent audio trick to prevent browser throttling
+    let audioContext = null;
+    let oscillator = null;
+    let gainNode = null;
+    
+    // Monitor page visibility to prevent browser throttling
+    document.addEventListener('visibilitychange', () => {
+        const wasVisible = isPageVisible;
+        isPageVisible = !document.hidden;
+        lastVisibilityChange = Date.now();
+        
+        if (isHostingSession) {
+            if (isPageVisible && !wasVisible) {
+                // Tab became visible again
+                console.log('[VISIBILITY] Tab became VISIBLE - resuming normal operation');
+                visibilityWarningShown = false;
+                
+                // Verify EventSource is still connected
+                if (eventSource && eventSource.readyState !== EventSource.OPEN) {
+                    console.warn('[VISIBILITY] EventSource was disconnected while hidden, attempting reconnect...');
+                    setStatus('error', 'Connection lost while tab was hidden. Please restart import.');
+                }
+            } else if (!isPageVisible && wasVisible) {
+                // Tab became hidden
+                console.warn('[VISIBILITY] ⚠️ Tab became HIDDEN - browser may throttle updates!');
+                console.warn('[VISIBILITY] Keep this tab visible for best performance during imports');
+                
+                // Show warning in status (but don't interrupt import)
+                if (!visibilityWarningShown) {
+                    visibilityWarningShown = true;
+                    const currentStatus = statusMessage.textContent;
+                    setStatus('importing', `⚠️ Tab hidden - ${currentStatus}`);
+                }
+            }
+        }
+    });
+    
+    // Heartbeat to keep connection alive even when tab is hidden
+    let heartbeatInterval = null;
+    function startHeartbeat() {
+        if (heartbeatInterval) return;
+        
+        heartbeatInterval = setInterval(() => {
+            if (eventSource && eventSource.readyState === EventSource.OPEN) {
+                // Log connection status
+                const hiddenTime = !isPageVisible ? Math.floor((Date.now() - lastVisibilityChange) / 1000) : 0;
+                if (!isPageVisible && hiddenTime > 10) {
+                    console.log(`[HEARTBEAT] Connection alive (hidden for ${hiddenTime}s)`);
+                }
+            }
+        }, 10000); // Check every 10 seconds
+    }
+    
+    function stopHeartbeat() {
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+        }
+    }
+    
+    // Silent audio trick to prevent browser throttling when tab is hidden
+    function startSilentAudio() {
+        if (audioContext) return; // Already running
+        
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            oscillator = audioContext.createOscillator();
+            gainNode = audioContext.createGain();
+            
+            // Set volume to nearly silent (0.001 = 0.1% volume)
+            gainNode.gain.value = 0.001;
+            
+            // Connect: oscillator -> gain -> speakers
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // Start the silent tone
+            oscillator.start();
+            
+            console.log('[AUDIO-TRICK] 🔇 Silent audio started - tab will not be throttled');
+            console.log('[AUDIO-TRICK] Browser will show "playing audio" indicator, but no sound will be heard');
+        } catch (err) {
+            console.warn('[AUDIO-TRICK] Failed to start silent audio:', err);
+        }
+    }
+    
+    function stopSilentAudio() {
+        try {
+            if (oscillator) {
+                oscillator.stop();
+                oscillator.disconnect();
+                oscillator = null;
+            }
+            if (gainNode) {
+                gainNode.disconnect();
+                gainNode = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            console.log('[AUDIO-TRICK] 🔇 Silent audio stopped');
+        } catch (err) {
+            console.warn('[AUDIO-TRICK] Error stopping silent audio:', err);
+        }
+    }
+    
     // Phase Tracker Functions
     function addPhase(id, label) {
         if (phases[id]) return; // Already exists
@@ -1959,8 +2071,15 @@
             currentReportCode = data.reportCode;
             isHostingSession = true; // Session started - enable beforeunload warning
             startTitleFlash(); // Start flashing browser tab
+            startHeartbeat(); // Start connection heartbeat
+            startSilentAudio(); // Start silent audio to prevent throttling
             setStatus('connected', `Connected: ${data.reportCode}`);
             if (stopBtn) stopBtn.style.display = 'inline-block';
+            
+            // Log visibility warning if tab is already hidden
+            if (!isPageVisible) {
+                console.warn('[VISIBILITY] ⚠️ Starting import with tab HIDDEN - keep tab visible for best performance!');
+            }
         });
         
         eventSource.addEventListener('progress', (e) => {
@@ -2153,6 +2272,7 @@
             isImporting = false;
             isHostingSession = false;
             stopTitleFlash();
+            stopSilentAudio();
             
             // Start 2-minute countdown for auto-refresh
             startAutoRefreshCountdown();
@@ -2197,7 +2317,11 @@
         
         eventSource.onerror = () => {
             if (eventSource.readyState === EventSource.CLOSED) {
-                setStatus('error', 'Connection closed');
+                const errorMsg = !isPageVisible 
+                    ? 'Connection closed (tab was hidden - this may have caused the disconnect)'
+                    : 'Connection closed';
+                console.error('[SSE] Connection error - readyState:', eventSource.readyState, 'isPageVisible:', isPageVisible);
+                setStatus('error', errorMsg);
                 stopStreaming();
             }
         };
@@ -2212,6 +2336,9 @@
         isImporting = false;
         isHostingSession = false; // Session ended - disable beforeunload warning
         stopTitleFlash(); // Stop flashing browser tab
+        stopHeartbeat(); // Stop connection heartbeat
+        stopSilentAudio(); // Stop silent audio
+        visibilityWarningShown = false; // Reset warning flag
         goBtn.disabled = false;
         goBtn.textContent = 'GO';
     }
@@ -2282,6 +2409,7 @@
         isImporting = false;
         isHostingSession = false; // Session ended - disable beforeunload warning
         stopTitleFlash(); // Stop flashing browser tab
+        stopSilentAudio(); // Stop silent audio
         cancelAutoRefreshCountdown(); // Cancel auto-refresh
         try {
             await fetch('/api/live/stop', { method: 'POST' });
