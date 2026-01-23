@@ -1033,6 +1033,13 @@ async function initializeRPBTrackingTable() {
         UNIQUE(event_id, log_url)
       )
     `);
+    
+    // Add rpb_duration_seconds column for storing accurate raid duration from RPB sheet
+    await pool.query(`
+      ALTER TABLE rpb_tracking 
+      ADD COLUMN IF NOT EXISTS rpb_duration_seconds INTEGER
+    `);
+    
     console.log('✅ RPB tracking table initialized');
   } catch (error) {
     console.error('❌ Error creating RPB tracking table:', error);
@@ -12085,6 +12092,25 @@ app.post('/api/admin/setup-database', async (req, res) => {
             throw new Error('analysis_type column was not created successfully');
         }
         
+        // Add rpb_duration_seconds column to rpb_tracking table (for storing accurate raid duration from RPB sheet)
+        console.log('🔧 [DB MIGRATION] Checking if rpb_duration_seconds column exists...');
+        const durationColumnCheck = await client.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'rpb_tracking' AND column_name = 'rpb_duration_seconds'
+        `);
+        
+        if (durationColumnCheck.rows.length === 0) {
+            console.log('🔧 [DB MIGRATION] Adding rpb_duration_seconds column...');
+            await client.query(`
+                ALTER TABLE rpb_tracking 
+                ADD COLUMN rpb_duration_seconds INTEGER
+            `);
+            console.log('✅ [DB MIGRATION] rpb_duration_seconds column added successfully');
+        } else {
+            console.log('ℹ️ [DB MIGRATION] rpb_duration_seconds column already exists');
+        }
+        
         // Create attendance_cache table for tracking weekly raid attendance
         await client.query(`
             CREATE TABLE IF NOT EXISTS attendance_cache (
@@ -19730,6 +19756,183 @@ app.put('/api/rewards-snapshot/:eventId/entry', requireManagement, async (req, r
 
 // --- Google Sheet Import Endpoints ---
 
+/**
+ * Fetch the raid duration from an RPB archive Google Sheet.
+ * The duration is stored in cell K1:M1 (merged) of the "All" tab (gid=0).
+ * Format: "Zone Day DD-MM-YYYY (ZoneName in H:MM:SS)"
+ * Example: "Nax Thursday 22-01-2026 (Naxx in 1:36:51)"
+ * 
+ * @param {string} sheetUrl - The Google Sheets URL
+ * @returns {Promise<{success: boolean, durationSeconds?: number, durationString?: string, error?: string}>}
+ */
+async function fetchRpbDurationFromSheet(sheetUrl) {
+  try {
+    console.log(`⏱️ [RPB DURATION] Fetching duration from sheet: ${sheetUrl}`);
+    
+    // Extract sheet ID from URL
+    const sheetIdMatch = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (!sheetIdMatch) {
+      console.warn(`⚠️ [RPB DURATION] Invalid Google Sheets URL format`);
+      return { success: false, error: 'Invalid Google Sheets URL format' };
+    }
+    
+    const sheetId = sheetIdMatch[1];
+    
+    // Try multiple CSV export URLs - the "All" tab might not be gid=0
+    // We first try without gid (gets the first/default sheet), then try gid=0
+    const csvUrls = [
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`, // Default sheet
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=0` // First tab by gid
+    ];
+    
+    let csvResponse = null;
+    let successfulUrl = null;
+    
+    for (const csvUrl of csvUrls) {
+      try {
+        console.log(`⏱️ [RPB DURATION] Trying CSV URL: ${csvUrl}`);
+        
+        csvResponse = await axios.get(csvUrl, {
+          timeout: 30000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          },
+          validateStatus: function (status) {
+            return status >= 200 && status < 300;
+          },
+          maxRedirects: 5
+        });
+        
+        // Check if response is actually CSV (not HTML error page)
+        if (!csvResponse.data.includes('<!DOCTYPE html>')) {
+          successfulUrl = csvUrl;
+          console.log(`✅ [RPB DURATION] Successfully fetched CSV from: ${csvUrl}`);
+          break;
+        } else {
+          console.log(`⚠️ [RPB DURATION] Response was HTML from: ${csvUrl}`);
+          csvResponse = null;
+        }
+      } catch (error) {
+        console.log(`⚠️ [RPB DURATION] Failed to fetch from ${csvUrl}: ${error.message}`);
+        continue;
+      }
+    }
+    
+    if (!csvResponse) {
+      console.warn(`⚠️ [RPB DURATION] Could not fetch CSV from any URL`);
+      return { success: false, error: 'Sheet not publicly accessible or could not fetch CSV' };
+    }
+    
+    const csvData = csvResponse.data;
+    const lines = csvData.split('\n');
+    
+    if (lines.length === 0) {
+      console.warn(`⚠️ [RPB DURATION] Empty CSV response`);
+      return { success: false, error: 'Empty CSV response' };
+    }
+    
+    // Get the first row - the duration is in a merged cell spanning K1:M1
+    // When exported to CSV, merged cells appear in the leftmost column of the merge
+    // The first row contains: column headers and possibly the merged cell content
+    const firstRow = lines[0];
+    console.log(`⏱️ [RPB DURATION] First row: ${firstRow.substring(0, 300)}...`);
+    
+    // Parse the CSV row properly (handling quoted fields)
+    const cells = [];
+    let currentCell = '';
+    let inQuotes = false;
+    for (let i = 0; i < firstRow.length; i++) {
+      const char = firstRow[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        cells.push(currentCell.trim());
+        currentCell = '';
+      } else {
+        currentCell += char;
+      }
+    }
+    cells.push(currentCell.trim()); // Add the last cell
+    
+    console.log(`⏱️ [RPB DURATION] Parsed ${cells.length} cells in first row`);
+    
+    // Search for the duration pattern in cells K (index 10) through M (index 12)
+    // Pattern: "(ZoneName in H:MM:SS)" or similar
+    const durationRegex = /\(([^)]+)\s+in\s+(\d+):(\d{2}):(\d{2})\)/i;
+    
+    let durationMatch = null;
+    let matchedCell = null;
+    
+    // Check cells K through M (indices 10, 11, 12) first, but also scan all cells
+    const priorityCells = [10, 11, 12]; // K, L, M columns (0-indexed)
+    
+    for (const cellIndex of priorityCells) {
+      if (cells[cellIndex]) {
+        const match = cells[cellIndex].match(durationRegex);
+        if (match) {
+          durationMatch = match;
+          matchedCell = cells[cellIndex];
+          console.log(`⏱️ [RPB DURATION] Found duration in cell index ${cellIndex}: ${matchedCell}`);
+          break;
+        }
+      }
+    }
+    
+    // If not found in K-M, search all cells
+    if (!durationMatch) {
+      for (let i = 0; i < cells.length; i++) {
+        const match = cells[i].match(durationRegex);
+        if (match) {
+          durationMatch = match;
+          matchedCell = cells[i];
+          console.log(`⏱️ [RPB DURATION] Found duration in cell index ${i}: ${matchedCell}`);
+          break;
+        }
+      }
+    }
+    
+    if (!durationMatch) {
+      console.warn(`⚠️ [RPB DURATION] Duration pattern not found in first row`);
+      console.log(`⏱️ [RPB DURATION] First 15 cells: ${cells.slice(0, 15).map((c, i) => `[${i}]="${c}"`).join(', ')}`);
+      return { success: false, error: 'Duration pattern not found in sheet' };
+    }
+    
+    // Parse the time components
+    const hours = parseInt(durationMatch[2], 10);
+    const minutes = parseInt(durationMatch[3], 10);
+    const seconds = parseInt(durationMatch[4], 10);
+    
+    const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+    const durationString = `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    
+    console.log(`✅ [RPB DURATION] Parsed duration: ${durationString} (${totalSeconds} seconds)`);
+    
+    return {
+      success: true,
+      durationSeconds: totalSeconds,
+      durationString: durationString,
+      rawMatch: matchedCell
+    };
+    
+  } catch (error) {
+    console.error(`❌ [RPB DURATION] Error fetching duration from sheet:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+// Debug endpoint to test RPB duration fetching from a sheet
+app.post('/api/debug-rpb-duration', async (req, res) => {
+  const { sheetUrl } = req.body;
+  
+  if (!sheetUrl) {
+    return res.status(400).json({ success: false, error: 'sheetUrl is required' });
+  }
+  
+  console.log(`🔧 [DEBUG] Testing RPB duration fetch from: ${sheetUrl}`);
+  const result = await fetchRpbDurationFromSheet(sheetUrl);
+  return res.json(result);
+});
+
 // Import World Buffs or Frost Resistance data from Google Sheet
 app.post('/api/import-world-buffs', async (req, res) => {
   const { sheetUrl, eventId, analysisType = 'world_buffs' } = req.body;
@@ -20731,11 +20934,24 @@ app.post('/api/rpb-tracking/:eventId', async (req, res) => {
     
     console.log(`📊 [TRACKING] Updating ${analysisType} status for event ${eventId}: ${status}`);
     
+    // If this is an RPB analysis with an archive URL, fetch the duration from the sheet
+    let rpbDurationSeconds = null;
+    if (analysisType === 'rpb' && archiveUrl) {
+      console.log(`⏱️ [TRACKING] Fetching RPB duration from archive sheet...`);
+      const durationResult = await fetchRpbDurationFromSheet(archiveUrl);
+      if (durationResult.success) {
+        rpbDurationSeconds = durationResult.durationSeconds;
+        console.log(`✅ [TRACKING] RPB duration fetched: ${durationResult.durationString} (${rpbDurationSeconds}s)`);
+      } else {
+        console.warn(`⚠️ [TRACKING] Could not fetch RPB duration: ${durationResult.error}`);
+      }
+    }
+    
     // First, try to insert a new record
     try {
       const insertResult = await pool.query(
-        `INSERT INTO rpb_tracking (event_id, log_url, analysis_type, rpb_status, rpb_completed_at, archive_url, archive_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        `INSERT INTO rpb_tracking (event_id, log_url, analysis_type, rpb_status, rpb_completed_at, archive_url, archive_name, rpb_duration_seconds)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
         [
           eventId, 
           logUrl, 
@@ -20743,7 +20959,8 @@ app.post('/api/rpb-tracking/:eventId', async (req, res) => {
           status, 
           status === 'completed' ? new Date() : null,
           archiveUrl || null,
-          archiveName || null
+          archiveName || null,
+          rpbDurationSeconds
         ]
       );
       
@@ -20764,6 +20981,7 @@ app.post('/api/rpb-tracking/:eventId', async (req, res) => {
                rpb_completed_at = $5,
                archive_url = COALESCE($6, archive_url),
                archive_name = COALESCE($7, archive_name),
+               rpb_duration_seconds = COALESCE($8, rpb_duration_seconds),
                updated_at = CURRENT_TIMESTAMP
            WHERE event_id = $1 AND log_url = $2 AND analysis_type = $3
            RETURNING *`,
@@ -20774,7 +20992,8 @@ app.post('/api/rpb-tracking/:eventId', async (req, res) => {
             status, 
             status === 'completed' ? new Date() : null,
             archiveUrl,
-            archiveName
+            archiveName,
+            rpbDurationSeconds
           ]
         );
         
@@ -21420,7 +21639,7 @@ app.get('/api/raid-stats/:eventId', async (req, res) => {
         
         // Get RPB archive information (filter strictly to RPB analysis type)
         const rpbResult = await client.query(`
-            SELECT archive_url, archive_name, rpb_completed_at
+            SELECT archive_url, archive_name, rpb_completed_at, rpb_duration_seconds
             FROM rpb_tracking 
             WHERE event_id = $1 AND archive_url IS NOT NULL AND analysis_type = 'rpb'
             ORDER BY created_at DESC 
@@ -21437,13 +21656,15 @@ app.get('/api/raid-stats/:eventId', async (req, res) => {
         `, [eventId]);
         
         let rpbData = null;
+        let rpbDurationSeconds = null;
         let raidStats = {
             totalTime: null,
             activeFightTime: null,
             bossesKilled: 0,
             lastBoss: null,
             firstMob: null,
-            logUrl: null
+            logUrl: null,
+            durationSource: null  // Track where the duration came from: 'rpb' or 'warcraftlogs'
         };
         
         // Process RPB data if available
@@ -21452,8 +21673,18 @@ app.get('/api/raid-stats/:eventId', async (req, res) => {
             rpbData = {
                 archiveUrl: rpb.archive_url,
                 archiveName: rpb.archive_name,
-                completedAt: rpb.rpb_completed_at
+                completedAt: rpb.rpb_completed_at,
+                durationSeconds: rpb.rpb_duration_seconds
             };
+            
+            // If RPB duration is available, use it as the primary source (more accurate)
+            if (rpb.rpb_duration_seconds) {
+                rpbDurationSeconds = rpb.rpb_duration_seconds;
+                const rpbMinutes = Math.round(rpbDurationSeconds / 60);
+                raidStats.totalTime = rpbMinutes;
+                raidStats.durationSource = 'rpb';
+                console.log(`✅ [RAID STATS] Using RPB duration: ${rpbMinutes} minutes (${rpbDurationSeconds}s)`);
+            }
         }
         
                 // Fetch WarcraftLogs data if we have a log_id
@@ -21489,12 +21720,19 @@ app.get('/api/raid-stats/:eventId', async (req, res) => {
                         // Calculate actual raid duration (including downtime)
                         const actualRaidDuration = logEndTime - logStartTime;
                         const actualRaidMinutes = Math.round(actualRaidDuration / 60000);
-                        console.log(`🕒 [RAID STATS] Actual raid duration: ${actualRaidMinutes} minutes`);
+                        console.log(`🕒 [RAID STATS] WarcraftLogs raid duration: ${actualRaidMinutes} minutes`);
                         
-                        // Store the actual duration
-                        raidStats.totalTime = actualRaidMinutes;
+                        // Only use WarcraftLogs duration if we don't have RPB duration (RPB is more accurate)
+                        if (!rpbDurationSeconds) {
+                            raidStats.totalTime = actualRaidMinutes;
+                            raidStats.durationSource = 'warcraftlogs';
+                            console.log(`📊 [RAID STATS] Using WarcraftLogs duration: ${actualRaidMinutes} minutes`);
+                        } else {
+                            console.log(`📊 [RAID STATS] RPB duration preferred over WarcraftLogs (${actualRaidMinutes}min)`);
+                        }
                         
-                        // Save duration to database for use on front page
+                        // Save WarcraftLogs duration to database for use on front page (as fallback)
+                        // Note: This is still useful for events without RPB data
                         try {
                             await client.query(`
                                 INSERT INTO raid_durations (event_id, duration_minutes, updated_at) 
@@ -21502,7 +21740,7 @@ app.get('/api/raid-stats/:eventId', async (req, res) => {
                                 ON CONFLICT (event_id) 
                                 DO UPDATE SET duration_minutes = $2, updated_at = NOW()
                             `, [eventId, actualRaidMinutes]);
-                            console.log(`💾 [RAID STATS] Saved duration ${actualRaidMinutes}min for event ${eventId}`);
+                            console.log(`💾 [RAID STATS] Saved WarcraftLogs duration ${actualRaidMinutes}min for event ${eventId}`);
                         } catch (saveError) {
                             console.warn(`⚠️ [RAID STATS] Failed to save duration for event ${eventId}:`, saveError.message);
                         }
@@ -21610,6 +21848,27 @@ app.get('/api/event-duration/:eventId', async (req, res) => {
     try {
         console.log(`⏱️ [EVENT DURATION] Fetching saved duration for event: ${eventId}`);
         
+        // First, check for RPB duration (more accurate)
+        const rpbResult = await pool.query(
+            `SELECT rpb_duration_seconds FROM rpb_tracking 
+             WHERE event_id = $1 AND rpb_duration_seconds IS NOT NULL AND analysis_type = 'rpb'
+             ORDER BY created_at DESC LIMIT 1`,
+            [eventId]
+        );
+        
+        if (rpbResult.rows.length > 0 && rpbResult.rows[0].rpb_duration_seconds) {
+            const durationSeconds = rpbResult.rows[0].rpb_duration_seconds;
+            const durationMinutes = Math.round(durationSeconds / 60);
+            console.log(`⏱️ [EVENT DURATION] Using RPB duration for event ${eventId}: ${durationMinutes} minutes (${durationSeconds}s)`);
+            return res.json({
+                success: true,
+                duration: durationMinutes,
+                durationSeconds: durationSeconds,
+                source: 'rpb'
+            });
+        }
+        
+        // Fallback to WarcraftLogs duration
         const result = await pool.query(
             'SELECT duration_minutes FROM raid_durations WHERE event_id = $1',
             [eventId]
@@ -21621,16 +21880,222 @@ app.get('/api/event-duration/:eventId', async (req, res) => {
         }
         
         const durationMinutes = result.rows[0].duration_minutes;
-        console.log(`⏱️ [EVENT DURATION] Found saved duration for event ${eventId}: ${durationMinutes} minutes`);
+        console.log(`⏱️ [EVENT DURATION] Using WarcraftLogs duration for event ${eventId}: ${durationMinutes} minutes`);
         
         return res.json({
             success: true,
-            duration: durationMinutes
+            duration: durationMinutes,
+            source: 'warcraftlogs'
         });
         
     } catch (error) {
         console.error(`❌ [EVENT DURATION] Error for event ${eventId}:`, error.message);
         return res.json({ success: false, error: 'Database error' });
+    }
+});
+
+// Refresh/fetch RPB duration from sheet for an event
+// This endpoint can be used to update the duration for events that already have archive URLs
+app.post('/api/refresh-rpb-duration/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    
+    try {
+        console.log(`⏱️ [REFRESH DURATION] Refreshing RPB duration for event: ${eventId}`);
+        
+        // Get the RPB archive URL for this event
+        const rpbResult = await pool.query(
+            `SELECT id, archive_url FROM rpb_tracking 
+             WHERE event_id = $1 AND archive_url IS NOT NULL AND analysis_type = 'rpb'
+             ORDER BY created_at DESC LIMIT 1`,
+            [eventId]
+        );
+        
+        if (rpbResult.rows.length === 0) {
+            console.log(`⚠️ [REFRESH DURATION] No RPB archive found for event: ${eventId}`);
+            return res.json({ success: false, error: 'No RPB archive found for this event' });
+        }
+        
+        const { id: trackingId, archive_url: archiveUrl } = rpbResult.rows[0];
+        
+        // Fetch the duration from the sheet
+        const durationResult = await fetchRpbDurationFromSheet(archiveUrl);
+        
+        if (!durationResult.success) {
+            console.warn(`⚠️ [REFRESH DURATION] Failed to fetch duration: ${durationResult.error}`);
+            return res.json({ success: false, error: durationResult.error });
+        }
+        
+        // Update the tracking record with the duration
+        await pool.query(
+            `UPDATE rpb_tracking SET rpb_duration_seconds = $1, updated_at = NOW() WHERE id = $2`,
+            [durationResult.durationSeconds, trackingId]
+        );
+        
+        const durationMinutes = Math.round(durationResult.durationSeconds / 60);
+        console.log(`✅ [REFRESH DURATION] Updated RPB duration for event ${eventId}: ${durationResult.durationString} (${durationMinutes}m)`);
+        
+        return res.json({
+            success: true,
+            durationSeconds: durationResult.durationSeconds,
+            durationString: durationResult.durationString,
+            durationMinutes: durationMinutes
+        });
+        
+    } catch (error) {
+        console.error(`❌ [REFRESH DURATION] Error for event ${eventId}:`, error.message);
+        return res.status(500).json({ success: false, error: 'Server error' });
+    }
+});
+
+// Preview/count events that need RPB duration backfill (dry run)
+app.get('/api/admin/backfill-rpb-durations/preview', async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    
+    try {
+        // Get count and list of events needing backfill
+        const result = await pool.query(`
+            SELECT event_id, archive_url, archive_name, created_at
+            FROM rpb_tracking 
+            WHERE archive_url IS NOT NULL 
+            AND analysis_type = 'rpb' 
+            AND (rpb_duration_seconds IS NULL OR rpb_duration_seconds = 0)
+            ORDER BY created_at DESC
+        `);
+        
+        const estimatedTimeSeconds = result.rows.length * 4; // ~4 seconds per event
+        const estimatedTimeMinutes = Math.ceil(estimatedTimeSeconds / 60);
+        
+        return res.json({
+            success: true,
+            count: result.rows.length,
+            estimatedTimeMinutes: estimatedTimeMinutes,
+            events: result.rows.map(r => ({
+                eventId: r.event_id,
+                archiveName: r.archive_name,
+                createdAt: r.created_at
+            }))
+        });
+        
+    } catch (error) {
+        console.error(`❌ [BACKFILL PREVIEW] Error:`, error.message);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Bulk backfill RPB durations for all events missing them
+// This endpoint fetches durations from RPB sheets for all events that have archive URLs but no stored duration
+app.post('/api/admin/backfill-rpb-durations', async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    
+    try {
+        console.log(`🔄 [BACKFILL] Starting bulk RPB duration backfill...`);
+        
+        // Get all RPB tracking records with archive URLs but missing durations
+        const result = await pool.query(`
+            SELECT id, event_id, archive_url, archive_name
+            FROM rpb_tracking 
+            WHERE archive_url IS NOT NULL 
+            AND analysis_type = 'rpb' 
+            AND (rpb_duration_seconds IS NULL OR rpb_duration_seconds = 0)
+            ORDER BY created_at DESC
+        `);
+        
+        const totalEvents = result.rows.length;
+        console.log(`🔄 [BACKFILL] Found ${totalEvents} events to process`);
+        
+        if (totalEvents === 0) {
+            return res.json({
+                success: true,
+                message: 'No events need duration backfill',
+                processed: 0,
+                succeeded: 0,
+                failed: 0,
+                results: []
+            });
+        }
+        
+        const results = [];
+        let succeeded = 0;
+        let failed = 0;
+        
+        for (let i = 0; i < result.rows.length; i++) {
+            const row = result.rows[i];
+            const progress = `[${i + 1}/${totalEvents}]`;
+            
+            console.log(`${progress} Processing event ${row.event_id} (${row.archive_name || 'unnamed'})...`);
+            
+            try {
+                // Fetch duration from sheet
+                const durationResult = await fetchRpbDurationFromSheet(row.archive_url);
+                
+                if (durationResult.success) {
+                    // Update the tracking record
+                    await pool.query(
+                        `UPDATE rpb_tracking SET rpb_duration_seconds = $1, updated_at = NOW() WHERE id = $2`,
+                        [durationResult.durationSeconds, row.id]
+                    );
+                    
+                    const minutes = Math.round(durationResult.durationSeconds / 60);
+                    console.log(`${progress} ✅ Event ${row.event_id}: ${durationResult.durationString} (${minutes}m)`);
+                    
+                    results.push({
+                        eventId: row.event_id,
+                        archiveName: row.archive_name,
+                        success: true,
+                        durationString: durationResult.durationString,
+                        durationMinutes: minutes
+                    });
+                    succeeded++;
+                } else {
+                    console.log(`${progress} ❌ Event ${row.event_id}: ${durationResult.error}`);
+                    results.push({
+                        eventId: row.event_id,
+                        archiveName: row.archive_name,
+                        success: false,
+                        error: durationResult.error
+                    });
+                    failed++;
+                }
+                
+                // Small delay between requests to avoid rate limiting from Google
+                if (i < result.rows.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                }
+                
+            } catch (error) {
+                console.log(`${progress} ❌ Event ${row.event_id}: ${error.message}`);
+                results.push({
+                    eventId: row.event_id,
+                    archiveName: row.archive_name,
+                    success: false,
+                    error: error.message
+                });
+                failed++;
+            }
+        }
+        
+        console.log(`🔄 [BACKFILL] Complete! Processed: ${totalEvents}, Succeeded: ${succeeded}, Failed: ${failed}`);
+        
+        return res.json({
+            success: true,
+            message: `Backfill complete`,
+            processed: totalEvents,
+            succeeded: succeeded,
+            failed: failed,
+            results: results
+        });
+        
+    } catch (error) {
+        console.error(`❌ [BACKFILL] Error:`, error.message);
+        return res.status(500).json({ success: false, error: error.message });
     }
 });
 

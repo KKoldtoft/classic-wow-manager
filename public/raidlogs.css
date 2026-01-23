@@ -1469,6 +1469,44 @@ body.stats .rankings-container .rankings-section {
     color: #007acc;
 }
 
+.stat-card.raid-duration {
+    position: relative;
+}
+
+.refresh-duration-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(0, 122, 204, 0.15);
+    border: 1px solid rgba(0, 122, 204, 0.3);
+    color: #007acc;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.refresh-duration-btn:hover {
+    background: rgba(0, 122, 204, 0.3);
+    color: #00a8ff;
+    border-color: rgba(0, 122, 204, 0.5);
+}
+
+.refresh-duration-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.refresh-duration-btn.spinning i {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 .stat-card.bosses-killed .stat-icon {
     color: #e74c3c;
 }

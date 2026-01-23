@@ -2044,7 +2044,8 @@ class RaidLogsManager {
 
     updateRaidDurationCard() {
         const valueElement = document.getElementById('raid-duration-value');
-        const detailElement = document.querySelector('.raid-duration .stat-detail');
+        const detailElement = document.getElementById('raid-duration-detail');
+        const refreshBtn = document.getElementById('refresh-duration-btn');
         
         if (this.raidStats.stats && this.raidStats.stats.totalTime) {
             const hours = Math.floor(this.raidStats.stats.totalTime / 60);
@@ -2057,8 +2058,10 @@ class RaidLogsManager {
                 valueElement.textContent = `${this.raidStats.stats.totalTime}m`;
             }
             
-            // Show active fight time in detail if available
-            if (this.raidStats.stats.activeFightTime) {
+            // Show source in detail
+            if (this.raidStats.stats.durationSource === 'rpb') {
+                detailElement.textContent = 'From RPB sheet';
+            } else if (this.raidStats.stats.activeFightTime) {
                 detailElement.textContent = `${this.raidStats.stats.activeFightTime}m active fight time`;
             } else {
                 detailElement.textContent = 'Total raid duration';
@@ -2066,6 +2069,69 @@ class RaidLogsManager {
         } else {
             valueElement.textContent = '--';
             detailElement.textContent = 'Minutes';
+        }
+        
+        // Show refresh button if there's an RPB archive URL (can refresh duration from sheet)
+        if (refreshBtn && this.raidStats.rpb && this.raidStats.rpb.archiveUrl) {
+            refreshBtn.style.display = 'block';
+            refreshBtn.onclick = () => this.refreshDurationFromRPB();
+        } else if (refreshBtn) {
+            refreshBtn.style.display = 'none';
+        }
+    }
+    
+    async refreshDurationFromRPB() {
+        const refreshBtn = document.getElementById('refresh-duration-btn');
+        const detailElement = document.getElementById('raid-duration-detail');
+        
+        if (!this.activeEventId) {
+            console.warn('No active event ID for duration refresh');
+            return;
+        }
+        
+        try {
+            // Show loading state
+            refreshBtn.disabled = true;
+            refreshBtn.classList.add('spinning');
+            detailElement.textContent = 'Refreshing...';
+            
+            const response = await fetch(`/api/refresh-rpb-duration/${this.activeEventId}`, {
+                method: 'POST'
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // Update the display with the new duration
+                const valueElement = document.getElementById('raid-duration-value');
+                const hours = Math.floor(result.durationMinutes / 60);
+                const minutes = result.durationMinutes % 60;
+                
+                if (hours > 0) {
+                    valueElement.textContent = `${hours}h ${minutes}m`;
+                } else {
+                    valueElement.textContent = `${result.durationMinutes}m`;
+                }
+                
+                detailElement.textContent = 'From RPB sheet (refreshed)';
+                
+                // Update the internal state
+                if (this.raidStats.stats) {
+                    this.raidStats.stats.totalTime = result.durationMinutes;
+                    this.raidStats.stats.durationSource = 'rpb';
+                }
+                
+                console.log(`✅ Duration refreshed: ${result.durationString} (${result.durationMinutes}m)`);
+            } else {
+                detailElement.textContent = result.error || 'Refresh failed';
+                console.warn('Duration refresh failed:', result.error);
+            }
+        } catch (error) {
+            console.error('Error refreshing duration:', error);
+            detailElement.textContent = 'Refresh error';
+        } finally {
+            refreshBtn.disabled = false;
+            refreshBtn.classList.remove('spinning');
         }
     }
 

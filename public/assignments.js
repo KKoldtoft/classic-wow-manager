@@ -298,6 +298,8 @@
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755093137/oUwfSmi_mp74xg.gif';
       } else if (bossKeyForIcon.includes('kel')) {
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1755110522/15945_eop7se.png';
+      } else if (bossKeyForIcon.includes('demo shout') || bossKeyForIcon.includes('demoshout')) {
+        bossIconUrl = 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_warcry.jpg';
       } else {
         bossIconUrl = 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754809667/30800_etmqmc.png';
       }
@@ -4215,6 +4217,31 @@
               const mg = mages[i];
               toAdd.push({ r: pr, icon: piIcon, text: mg.character_name, targetName: mg.character_name });
             }
+          } else if (bossLower === 'demo shout') {
+            // Demo Shout: assigned to Off Tank 1 (Cross/X marker from Tanking panel)
+            const containerEl = document.getElementById('assignments-container');
+            const tankPanel = containerEl?.querySelector('.manual-rewards-section[data-panel-boss="tanking"]');
+            const demoIcon = 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_warcry.jpg';
+            let offTank1 = null;
+            if (tankPanel) {
+              const rows = Array.from(tankPanel.querySelectorAll('.assignment-entry-row'));
+              // Find the entry with Cross marker (Off Tank 1)
+              for (const row of rows) {
+                const markerUrl = row.dataset.markerUrl || '';
+                if (markerUrl.toLowerCase().includes('cross')) {
+                  const sel = row.querySelector('[data-field="character_name"]');
+                  const nameEl = row.querySelector('.character-name');
+                  const charName = (sel && sel.value) ? sel.value : (nameEl?.textContent?.trim() || '');
+                  if (charName) {
+                    offTank1 = rosterData.find(r => String(r.character_name||'').toLowerCase() === charName.toLowerCase());
+                  }
+                  break;
+                }
+              }
+            }
+            if (offTank1) {
+              toAdd.push({ r: offTank1, icon: demoIcon, text: 'Keep Demoralizing Shout up on the boss at all times' });
+            }
           }
           Array.from(list.children).forEach(r => { if (typeof r._setEdit === 'function') r._setEdit(); });
           controls.style.display = 'flex';
@@ -4472,12 +4499,12 @@
           'frostwyrm lair': 'frostwyrm_lair'
         };
         const BOSS_ORDER = isNonNaxEvent ? {
-          main: ['tanking','healing','buffs','decurse and dispel','curses and soul stones','power infusion'],
+          main: ['tanking','healing','buffs','decurse and dispel','curses and soul stones','power infusion','demo shout'],
           aq40: ['skeram','bug','sartura','fank','visc','huhu','twin','twins trash','ouro',"c'thun",'cthun'],
           bwl: [],
           mc: []
         } : {
-          main: ['tanking','healing','buffs','decurse and dispel','curses and soul stones','power infusion'],
+          main: ['tanking','healing','buffs','decurse and dispel','curses and soul stones','power infusion','demo shout'],
           military: ['razu','goth','horse'],
           spider: ['anub','faerlina','maex'],
           abomination: ['patch','grobb','gluth','thadd'],
@@ -5351,6 +5378,19 @@
           fixed_icon_url: 'https://wow.zamimg.com/images/wow/icons/large/spell_holy_powerinfusion.jpg'
         }, user, roster);
 
+        const existingDemoShout = panels.find(p => String(p.boss || '').toLowerCase() === 'demo shout' && (!p.wing || String(p.wing).trim() === '' || String(p.wing).toLowerCase() === 'main'));
+        const demoShoutPanel = buildMainPanel({
+          dungeon: existingDemoShout?.dungeon || 'Naxxramas',
+          wing: '',
+          boss: 'Demo Shout',
+          strategy_text: existingDemoShout?.strategy_text || 'Keep Demoralizing Shout up on the boss at all times to reduce incoming damage.',
+          entries: Array.isArray(existingDemoShout?.entries) ? existingDemoShout.entries : [],
+          header_color: '#c79c6e',
+          header_icon_url: 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_warcry.jpg',
+          variant: 'demoshout',
+          fixed_icon_url: 'https://wow.zamimg.com/images/wow/icons/large/ability_warrior_warcry.jpg'
+        }, user, roster);
+
         // Place side by side using a simple grid wrapper
         const grid = document.createElement('div');
         grid.style.display = 'grid';
@@ -5371,12 +5411,22 @@
         below2.style.gridTemplateColumns = '1fr 1fr';
         below2.style.gap = '16px';
         below2.style.marginTop = '16px';
-        // Put soul panel next to an empty spacer for now
         below2.appendChild(soulPanel);
         below2.appendChild(piPanel);
+        // Demo Shout panel below (full width or in a row)
+        const below3 = document.createElement('div');
+        below3.style.display = 'grid';
+        below3.style.gridTemplateColumns = '1fr 1fr';
+        below3.style.gap = '16px';
+        below3.style.marginTop = '16px';
+        below3.appendChild(demoShoutPanel);
+        // Empty spacer for the right side
+        const spacer = document.createElement('div');
+        below3.appendChild(spacer);
         container.appendChild(grid);
         container.appendChild(below);
         container.appendChild(below2);
+        container.appendChild(below3);
         return;
       }
 

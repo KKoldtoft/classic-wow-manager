@@ -250,6 +250,261 @@
     return card;
   }
 
+  // Four Horsemen Rotation Configuration
+  const HORSEMEN_TANK_GRID = {
+    1: ['cross', null, null, null],
+    2: [null, 'cross', null, null],
+    3: ['skull', 'skull', 'cross', null],
+    4: [null, null, null, 'cross'],
+    5: ['moon', 'safe', 'square', 'safe'],
+    6: [null, 'moon', 'safe', 'square'],
+    7: ['square', 'safe', 'moon', 'safe'],
+    8: [null, 'square', 'safe', 'moon'],
+  };
+
+  const HORSEMEN_BOSS_NAMES = {
+    skull: 'Thane',
+    cross: 'Mograine',
+    square: 'Zeliek',
+    moon: 'Blaumeux',
+  };
+
+  const HORSEMEN_MARKER_ICONS = {
+    skull: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/1_skull_faqei8.png',
+    cross: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/2_cross_kj9wuf.png',
+    square: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/3_square_yqucv9.png',
+    moon: 'https://res.cloudinary.com/duthjs0c3/image/upload/v1754765896/4_moon_vwhoen.png',
+  };
+
+  // Starting tanks: which row picks up which boss at pull (phase 1)
+  const HORSEMEN_STARTING_TANKS = {
+    1: 'cross',   // Row 1 starts on Mograine
+    3: 'skull',   // Row 3 starts on Thane
+    5: 'moon',    // Row 5 starts on Blaumeux
+    7: 'square',  // Row 7 starts on Zeliek
+  };
+
+  const CLOCKWISE_ORDER = ['skull', 'cross', 'square', 'moon'];
+
+  function buildFourHorsemenRotationCard(panel, roster) {
+    const card = document.createElement('div');
+    card.className = 'boss-card horsemen-rotation-card';
+    card.style.gridColumn = '1 / -1'; // Span all columns
+
+    const header = document.createElement('div');
+    header.className = 'boss-card-header';
+    header.innerHTML = `
+      <i class="fas fa-shield-alt" style="width: 32px; height: 32px; font-size: 24px; color: #f59e0b;"></i>
+      <h3>Tank Rotation Timeline</h3>
+    `;
+
+    const body = document.createElement('div');
+    body.className = 'boss-card-body horsemen-rotation-body';
+
+    // Parse healers from entries
+    const entries = Array.isArray(panel.entries) ? panel.entries : [];
+    const healers = [];
+    
+    for (const entry of entries) {
+      const assignment = String(entry.assignment || '');
+      const name = String(entry.character_name || '');
+      
+      const match = assignment.match(/start on (\w+) rotate on (\d+)/i);
+      if (match && name) {
+        const marker = match[1].toLowerCase();
+        const rotation = parseInt(match[2], 10);
+        
+        if (HORSEMEN_BOSS_NAMES[marker] && rotation >= 1 && rotation <= 3) {
+          const rosterClass = getRosterClassByName(roster, name);
+          const characterClass = entry.class_name || rosterClass || 'unknown';
+          const canonClass = canonicalizeClass(characterClass, '');
+          
+          healers.push({
+            name,
+            marker,
+            rotation,
+            canonClass,
+            specEmote: entry.spec_emote,
+            specIconUrl: entry.spec_icon_url,
+            specName: entry.spec_name,
+            isPlaceholder: entry.is_placeholder,
+          });
+        }
+      }
+    }
+
+    // Sort healers by rotation then by clockwise order
+    healers.sort((a, b) => {
+      if (a.rotation !== b.rotation) return a.rotation - b.rotation;
+      return CLOCKWISE_ORDER.indexOf(a.marker) - CLOCKWISE_ORDER.indexOf(b.marker);
+    });
+
+    // Parse tanks from horsemen_tanks or __HGRID__ entries
+    const tanks = [];
+    const tanksByRow = panel.horsemen_tanks || {};
+    
+    // Also check hidden entries if horsemen_tanks is empty
+    const tankEntries = entries.filter(en => String(en.assignment || '').startsWith('__HGRID__:'));
+    
+    for (let row = 1; row <= 8; row++) {
+      let tankName = null;
+      let tankEntry = null;
+      
+      if (tanksByRow[row] && Array.isArray(tanksByRow[row]) && tanksByRow[row][0]) {
+        tankName = tanksByRow[row][0];
+        // Find matching entry for class info
+        tankEntry = tankEntries.find(en => {
+          const m = String(en.assignment || '').match(/^__HGRID__:(\d+):1$/);
+          return m && Number(m[1]) === row;
+        });
+      } else {
+        // Try from hidden entries
+        tankEntry = tankEntries.find(en => {
+          const m = String(en.assignment || '').match(/^__HGRID__:(\d+):1$/);
+          return m && Number(m[1]) === row;
+        });
+        if (tankEntry) {
+          tankName = tankEntry.character_name;
+        }
+      }
+      
+      if (tankName) {
+        const rosterClass = getRosterClassByName(roster, tankName);
+        const characterClass = (tankEntry && tankEntry.class_name) || rosterClass || 'warrior';
+        const canonClass = canonicalizeClass(characterClass, '');
+        
+        tanks.push({ 
+          name: tankName, 
+          row,
+          canonClass,
+          specEmote: tankEntry?.spec_emote,
+          specIconUrl: tankEntry?.spec_icon_url,
+          specName: tankEntry?.spec_name,
+          isPlaceholder: tankEntry?.is_placeholder,
+        });
+      }
+    }
+
+    // Build timeline events for each mark
+    const FIRST_MARK_TIME = 20000;
+    const MARK_INTERVAL = 15000;
+    const TOTAL_MARKS = 12;
+
+    function formatTime(ms) {
+      const totalSeconds = Math.floor(ms / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return `${minutes}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    function getHealersForMark(mark) {
+      const rotationNum = ((mark - 1) % 3) + 1;
+      return healers.filter(h => h.rotation === rotationNum);
+    }
+
+    function getTanksForMark(mark) {
+      const isTankRotation = [4, 7, 10].includes(mark);
+      if (!isTankRotation) return [];
+      
+      const phase = Math.ceil(mark / 3);
+      const result = [];
+      
+      for (const tank of tanks) {
+        const grid = HORSEMEN_TANK_GRID[tank.row];
+        if (!grid) continue;
+        
+        const newAssignment = grid[phase - 1];
+        if (newAssignment && newAssignment !== 'safe') {
+          result.push({
+            ...tank,
+            toBoss: HORSEMEN_BOSS_NAMES[newAssignment],
+          });
+        }
+      }
+      
+      return result;
+    }
+
+    // Create the timeline grid
+    const gridContainer = document.createElement('div');
+    gridContainer.className = 'horsemen-timeline-grid';
+
+    // Header row
+    const headerRow = document.createElement('div');
+    headerRow.className = 'horsemen-timeline-row horsemen-timeline-header';
+    
+    const rotationHeader = document.createElement('div');
+    rotationHeader.className = 'horsemen-timeline-cell horsemen-title-cell';
+    rotationHeader.textContent = 'Rotation';
+    headerRow.appendChild(rotationHeader);
+
+    for (let mark = 1; mark <= TOTAL_MARKS; mark++) {
+      const time = mark === 1 ? FIRST_MARK_TIME : FIRST_MARK_TIME + (mark - 1) * MARK_INTERVAL;
+      const markCell = document.createElement('div');
+      markCell.className = 'horsemen-timeline-cell horsemen-mark-header';
+      markCell.innerHTML = `Mark ${mark}<span class="horsemen-mark-time">${formatTime(time)}</span>`;
+      headerRow.appendChild(markCell);
+    }
+    gridContainer.appendChild(headerRow);
+
+    // Healers row
+    const healersRow = document.createElement('div');
+    healersRow.className = 'horsemen-timeline-row horsemen-healers-row';
+    
+    const healersTitleCell = document.createElement('div');
+    healersTitleCell.className = 'horsemen-timeline-cell horsemen-title-cell horsemen-healers-title';
+    healersTitleCell.innerHTML = '<i class="fas fa-heart"></i> Healers';
+    healersRow.appendChild(healersTitleCell);
+
+    for (let mark = 1; mark <= TOTAL_MARKS; mark++) {
+      const markHealers = getHealersForMark(mark);
+      const cell = document.createElement('div');
+      cell.className = 'horsemen-timeline-cell horsemen-content-cell';
+      
+      if (markHealers.length > 0) {
+        cell.innerHTML = markHealers.map(h => 
+          `<span class="horsemen-player-name" data-class="${h.canonClass}" title="${HORSEMEN_BOSS_NAMES[h.marker]}">${escapeHtml(h.name)}</span>`
+        ).join('');
+      } else {
+        cell.innerHTML = '<span class="horsemen-no-action">-</span>';
+      }
+      
+      healersRow.appendChild(cell);
+    }
+    gridContainer.appendChild(healersRow);
+
+    // Tanks row
+    const tanksRow = document.createElement('div');
+    tanksRow.className = 'horsemen-timeline-row horsemen-tanks-row';
+    
+    const tanksTitleCell = document.createElement('div');
+    tanksTitleCell.className = 'horsemen-timeline-cell horsemen-title-cell horsemen-tanks-title';
+    tanksTitleCell.innerHTML = '<i class="fas fa-shield-alt"></i> Tanks';
+    tanksRow.appendChild(tanksTitleCell);
+
+    for (let mark = 1; mark <= TOTAL_MARKS; mark++) {
+      const markTanks = getTanksForMark(mark);
+      const cell = document.createElement('div');
+      cell.className = 'horsemen-timeline-cell horsemen-content-cell';
+      
+      if (markTanks.length > 0) {
+        cell.innerHTML = markTanks.map(t => 
+          `<span class="horsemen-player-name" data-class="${t.canonClass}" title="Go to ${t.toBoss}">${escapeHtml(t.name)}</span>`
+        ).join('');
+      } else {
+        cell.innerHTML = '<span class="horsemen-no-action">-</span>';
+      }
+      
+      tanksRow.appendChild(cell);
+    }
+    gridContainer.appendChild(tanksRow);
+
+    body.appendChild(gridContainer);
+    card.appendChild(header);
+    card.appendChild(body);
+    return card;
+  }
+
   function buildCthunGridCard(panel, roster) {
     const card = document.createElement('div');
     card.className = 'boss-card cthun-grid-card';
@@ -538,6 +793,100 @@
       });
     }
 
+    // For Four Horsemen panel, add starting tanks section
+    const bossLower = String(boss || '').toLowerCase();
+    const isHorsemenPanel = bossLower.includes('horse') && !bossLower.includes('cleave');
+    
+    if (isHorsemenPanel) {
+      // Parse starting tanks from horsemen_tanks or __HGRID__ entries
+      const allEntries = Array.isArray(entries) ? entries : [];
+      const tanksByRow = panel.horsemen_tanks || {};
+      const tankEntries = allEntries.filter(en => String(en.assignment || '').startsWith('__HGRID__:'));
+      
+      const startingTanks = [];
+      
+      // Rows 1, 3, 5, 7 are the starting tanks
+      for (const [rowStr, marker] of Object.entries(HORSEMEN_STARTING_TANKS)) {
+        const row = Number(rowStr);
+        let tankName = null;
+        let tankEntry = null;
+        
+        if (tanksByRow[row] && Array.isArray(tanksByRow[row]) && tanksByRow[row][0]) {
+          tankName = tanksByRow[row][0];
+          tankEntry = tankEntries.find(en => {
+            const m = String(en.assignment || '').match(/^__HGRID__:(\d+):1$/);
+            return m && Number(m[1]) === row;
+          });
+        } else {
+          tankEntry = tankEntries.find(en => {
+            const m = String(en.assignment || '').match(/^__HGRID__:(\d+):1$/);
+            return m && Number(m[1]) === row;
+          });
+          if (tankEntry) {
+            tankName = tankEntry.character_name;
+          }
+        }
+        
+        if (tankName) {
+          const rosterClass = getRosterClassByName(roster, tankName);
+          const characterClass = (tankEntry && tankEntry.class_name) || rosterClass || 'warrior';
+          const canonClass = canonicalizeClass(characterClass, '');
+          
+          startingTanks.push({
+            name: tankName,
+            marker,
+            bossName: HORSEMEN_BOSS_NAMES[marker],
+            markerUrl: HORSEMEN_MARKER_ICONS[marker],
+            canonClass,
+            specEmote: tankEntry?.spec_emote,
+            specIconUrl: tankEntry?.spec_icon_url,
+            specName: tankEntry?.spec_name,
+            isPlaceholder: tankEntry?.is_placeholder,
+            acceptStatus: tankEntry?.accept_status || '',
+          });
+        }
+      }
+      
+      // Add starting tanks section if we have any
+      if (startingTanks.length > 0) {
+        // Add separator
+        const separator = document.createElement('div');
+        separator.className = 'horsemen-tanks-separator';
+        separator.innerHTML = '<span>Starting Tanks</span>';
+        body.appendChild(separator);
+        
+        // Add each tank
+        startingTanks.forEach(tank => {
+          const tankDiv = document.createElement('div');
+          tankDiv.className = 'assignment-compact';
+          tankDiv.setAttribute('data-class', tank.canonClass);
+          
+          let html = '<div class="character-badge">';
+          html += getSpecIconHtml(tank.specName, tank.canonClass, tank.specEmote, tank.specIconUrl, tank.isPlaceholder);
+          html += `<span class="character-name-compact" data-class="${tank.canonClass}">${escapeHtml(tank.name)}</span>`;
+          html += '</div>';
+          
+          // Add marker icon
+          html += `<img src="${escapeHtml(tank.markerUrl)}" class="marker-icon-compact" alt="${tank.bossName}">`;
+          
+          // Add boss name as assignment text
+          html += `<span class="assignment-text-compact" title="Picks up ${tank.bossName} on pull">${escapeHtml(tank.bossName)}</span>`;
+          
+          // Add acceptance status indicator
+          if (tank.acceptStatus === 'accept') {
+            html += `<i class="fas fa-check-circle acceptance-status-icon accepted" title="Accepted"></i>`;
+          } else if (tank.acceptStatus === 'decline') {
+            html += `<i class="fas fa-ban acceptance-status-icon declined" title="Declined"></i>`;
+          } else {
+            html += `<i class="fas fa-circle acceptance-status-icon ignored" title="Ignored"></i>`;
+          }
+          
+          tankDiv.innerHTML = html;
+          body.appendChild(tankDiv);
+        });
+      }
+    }
+
     card.appendChild(header);
     card.appendChild(body);
 
@@ -708,6 +1057,17 @@
           if (hasCthunGroups) {
             const cthunCard = buildCthunGridCard(panel, roster);
             grid.appendChild(cthunCard);
+          }
+        }
+        
+        // If this is Four Horsemen in Military wing, add tank rotation timeline
+        if (bossLower.includes('horse') && !bossLower.includes('cleave') && wingConfig.wing === 'Military') {
+          // Check if there are tanks assigned (either via horsemen_tanks or __HGRID__ entries)
+          const hasTanks = panel.horsemen_tanks && Object.values(panel.horsemen_tanks).some(arr => arr && arr[0]) ||
+                          entries.some(en => String(en.assignment || '').startsWith('__HGRID__:'));
+          if (hasTanks) {
+            const rotationCard = buildFourHorsemenRotationCard(panel, roster);
+            grid.appendChild(rotationCard);
           }
         }
       });

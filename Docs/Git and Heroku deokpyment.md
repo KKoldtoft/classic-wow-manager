@@ -63,3 +63,40 @@ npm run dev
 
 # This is how I doploy
 .\deploy.ps1 -message "Message"
+
+---
+
+## Sync Local Database with Heroku
+
+To pull the live Heroku database and replace your local database content, use:
+
+```powershell
+npm run sync-db
+```
+
+This is the **easiest method**. It runs `simple-sync.ps1` which:
+1. Disconnects any active connections to your local database
+2. Drops and recreates the local `classic_wow_manager` database
+3. Pulls a fresh copy from Heroku using `pg_dump` (excludes large tables for speed)
+
+> **Note**: The sync excludes data from `wcl_event_pages` (a large table storing WCL combat events). This table is only used for the `/live` and `/livehost` real-time raid analysis feature. All other features work normally. The table schema is created, just empty.
+
+> **Technical**: The script uses `pg_dump --format=custom` + `pg_restore` instead of piping to preserve all constraints and indexes properly.
+
+### Alternative: Interactive Sync
+
+For a more guided experience with confirmation prompts:
+
+```powershell
+.\sync-db-simple.ps1
+```
+
+This script will:
+- Prompt for your DATABASE_URL if not set
+- Ask for confirmation before proceeding
+- Show helpful error messages if something goes wrong
+
+### Prerequisites
+- Heroku CLI installed and logged in (`heroku login`)
+- Local PostgreSQL server running
+- No active connections to the local database (stop your dev server first)

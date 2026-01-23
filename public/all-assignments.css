@@ -440,6 +440,172 @@ body.all-assignments {
   min-width: 140px;
 }
 
+/* Four Horsemen Starting Tanks Separator */
+.horsemen-tanks-separator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 8px;
+  padding: 0;
+}
+
+.horsemen-tanks-separator::before,
+.horsemen-tanks-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #f59e0b40, transparent);
+}
+
+.horsemen-tanks-separator span {
+  color: #f59e0b;
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+/* Four Horsemen Rotation Timeline Styles */
+.horsemen-rotation-card {
+  grid-column: 1 / -1 !important;
+}
+
+.horsemen-rotation-body {
+  padding: 16px;
+  overflow-x: auto;
+}
+
+.horsemen-timeline-grid {
+  display: flex;
+  flex-direction: column;
+  background: #1a1f2e;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  overflow: hidden;
+  min-width: fit-content;
+}
+
+.horsemen-timeline-row {
+  display: grid;
+  grid-template-columns: 100px repeat(12, minmax(80px, 1fr));
+  gap: 1px;
+  background: #1e293b;
+}
+
+.horsemen-timeline-header {
+  background: #0f172a;
+}
+
+.horsemen-timeline-cell {
+  padding: 10px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50px;
+  background: #1a1f2e;
+  text-align: center;
+}
+
+.horsemen-title-cell {
+  font-weight: 600;
+  color: #e5e7eb;
+  font-size: 13px;
+  gap: 4px;
+  background: #0f172a;
+}
+
+.horsemen-title-cell i {
+  font-size: 14px;
+}
+
+.horsemen-healers-title {
+  color: #22c55e;
+}
+
+.horsemen-healers-title i {
+  color: #22c55e;
+}
+
+.horsemen-tanks-title {
+  color: #f59e0b;
+}
+
+.horsemen-tanks-title i {
+  color: #f59e0b;
+}
+
+.horsemen-mark-header {
+  background: #0f172a;
+  font-weight: 600;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.horsemen-mark-time {
+  display: block;
+  font-size: 10px;
+  color: #64748b;
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+.horsemen-content-cell {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.3;
+  gap: 2px;
+}
+
+.horsemen-player-name {
+  display: block;
+  padding: 3px 6px;
+  margin: 1px 0;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  border-radius: 4px;
+  color: #000;
+}
+
+/* Class background colors for horsemen rotation */
+.horsemen-player-name[data-class="warrior"] { background: #C79C6E; }
+.horsemen-player-name[data-class="paladin"] { background: #F58CBA; }
+.horsemen-player-name[data-class="hunter"] { background: #ABD473; }
+.horsemen-player-name[data-class="rogue"] { background: #FFF569; }
+.horsemen-player-name[data-class="priest"] { background: #FFFFFF; }
+.horsemen-player-name[data-class="shaman"] { background: #0070DE; color: #fff; }
+.horsemen-player-name[data-class="mage"] { background: #69CCF0; }
+.horsemen-player-name[data-class="warlock"] { background: #9482C9; color: #fff; }
+.horsemen-player-name[data-class="druid"] { background: #FF7D0A; }
+.horsemen-player-name[data-class="unknown"] { background: #6b7280; color: #fff; }
+
+.horsemen-no-action {
+  color: #475569;
+  font-style: italic;
+  font-size: 11px;
+}
+
+/* Responsive: scroll on smaller screens */
+@media (max-width: 1200px) {
+  .horsemen-timeline-row {
+    grid-template-columns: 80px repeat(12, minmax(70px, 1fr));
+  }
+  
+  .horsemen-timeline-cell {
+    padding: 8px 4px;
+  }
+  
+  .horsemen-player-name {
+    font-size: 10px;
+    padding: 2px 4px;
+  }
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
